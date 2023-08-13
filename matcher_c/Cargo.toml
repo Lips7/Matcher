@@ -1,0 +1,21 @@
+[package]
+name = "matcher_c"
+authors.workspace = true
+categories.workspace = true
+description.workspace = true
+edition.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[lib]
+name = "matcher_c"
+crate-type = ["cdylib"]
+
+[dependencies]
+matcher_rs = { path = "../matcher_rs" }
+rmp-serde = "1.1.2"
+serde_json = "1.0.103"

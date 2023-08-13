@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["matcher_rs", "matcher_py", "matcher_c"]
+
+[workspace.package]
+authors = ["Fuji Guo"]
+categories = ["text-processing"]
+description = "A high performance multiple functional word matcher"
+edition = "2021"
+homepage = "https://github.com/Lips7/Matcher"
+readme = "README.md"
+keywords = ["String Match"]
+license = "License.md"
+repository = "https://github.com/Lips7/Matcher"
+version = "1.7.1"
+
+[profile.release]
+strip = true
+opt-level = 3
+lto = true
+codegen-units = 1
+incremental = false
+debug = false
+debug-assertions = false
+overflow-checks = false
+# panic = "abort"

@@ -1,0 +1,43 @@
+[package]
+authors = ["Flier Lu <flier.lu@gmail.com>"]
+description = "Hyperscan bindings for Rust with Multiple Pattern and Streaming Scan"
+documentation = "https://docs.rs/crate/hyperscan-sys/"
+edition = "2018"
+homepage = "https://github.com/flier/rust-hyperscan"
+keywords = ["regex", "hyperscan", "streaming"]
+license = "MIT OR Apache-2.0"
+links = "hs"
+name = "hyperscan-sys"
+readme = "../README.md"
+repository = "https://github.com/flier/rust-hyperscan"
+version = "0.3.2"
+
+
+[features]
+chimera = ["static"]
+compile = []
+contained = ["static"]
+default = ["runtime"]
+docsrs = ["full", "chimera"]
+full = ["compile", "runtime"]
+gen = ["bindgen", "tracing"]
+runtime = []
+static = []
+tracing = []
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+anyhow = "1"
+cargo-emit = "0.2"
+pkg-config = "0.3"
+
+bindgen = {version = "0.63", optional = true}
+
+[lib]
+doctest = false
+
+[package.metadata.docs.rs]
+features = ["docsrs"]
+rustc-args = ["--cfg", "docsrs"]

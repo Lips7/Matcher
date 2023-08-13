@@ -1,0 +1,9 @@
+[submodule "matcher_rs/mimalloc-rust/mimalloc-rust-sys/mimalloc"]
+	path = matcher_rs/mimalloc-rust/mimalloc-rust-sys/mimalloc
+	url = https://github.com/microsoft/mimalloc
+[submodule "matcher_rs/rust-hyperscan/hyperscan-sys/hyperscan"]
+	path = matcher_rs/hyperscan/hyperscan-sys/hyperscan
+	url = https://github.com/intel/hyperscan
+[submodule "matcher_rs/rust-hyperscan/hyperscan-sys/vectorscan"]
+	path = matcher_rs/hyperscan/hyperscan-sys/vectorscan
+	url = https://github.com/VectorCamp/vectorscan.git
