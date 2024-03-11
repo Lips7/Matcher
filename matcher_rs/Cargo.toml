@@ -20,25 +20,24 @@ name = "bench"
 harness = false
 
 [dependencies]
-ahash = { version = "0.8.3", default-features = false, features = [
+ahash = { version = "0.8.11", default-features = false, features = [
     "std",
     "serde",
     "compile-time-rng",
 ] }
-aho-corasick = "1.0.2"
-bitflags = { version = "2.3.3", features = ["serde"] }
-bytecount = { version = "0.6.3", features = ["generic-simd"] }
-fancy-regex = "0.11.0"
-hyperscan = { path = "./rust-hyperscan" }
-libloading = "0.8.0"
-mimalloc-rust = { path = "./mimalloc-rust", default-features = false }
+aho-corasick = "1.1.2"
+bitflags = { version = "2.4.2", features = ["serde"] }
+bytecount = { version = "0.6.7", features = ["runtime-dispatch-simd"] }
+fancy-regex = "0.13.0"
+libloading = "0.8.3"
+mimalloc-rust = { version = "0.2.1", features = ["unstable"] }
 nohash-hasher = "0.2.0"
-regex = "1.9.1"
-serde = { version = "1.0.174", features = ["derive"] }
-serde_json = "1.0.103"
-strsim = "0.10.0"
+regex = "1.10.3"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+strsim = "0.11.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-zerovec = { version = "0.9.4", features = ["derive", "serde"] }
+zerovec = { version = "0.10.1", features = ["derive", "serde"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

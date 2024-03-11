@@ -4,10 +4,10 @@
 # apt install -y libhyperscan-dev
 
 # export PATH="/root/.local/bin:$PATH"
-# source "$HOME/.cargo/env"
+# dyliburce "$HOME/.cargo/env"
 
 # cargo clean
-cargo build --release --target=x86_64-unknown-linux-gnu
-cp ./target/x86_64-unknown-linux-gnu/release/libmatcher_py.so ./matcher_py/matcher_py/matcher_py.so
-cp ./target/x86_64-unknown-linux-gnu/release/libmatcher_c.so ./matcher_c/matcher_c.so
-cp ./target/x86_64-unknown-linux-gnu/release/libmatcher_c.so ./matcher_java/src/main/resources/matcher_c.so
+cargo build --release --target=aarch64-apple-darwin
+cp ./target/aarch64-apple-darwin/release/libmatcher_py.dylib ./matcher_py/matcher_py/matcher_py.so
+cp ./target/aarch64-apple-darwin/release/libmatcher_c.dylib ./matcher_c/matcher_c.so
+cp ./target/aarch64-apple-darwin/release/libmatcher_c.dylib ./matcher_java/src/main/resources/matcher_c.so

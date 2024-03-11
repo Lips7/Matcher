@@ -36,9 +36,6 @@ jobs:
     - name: Install maturin
       run: python3 -m pip install --user --upgrade pip maturin
 
-    - name: Install hyperscan
-      run: sudo apt install -y libhyperscan-dev
-
     - name: Build
       run: cargo build --verbose
 
