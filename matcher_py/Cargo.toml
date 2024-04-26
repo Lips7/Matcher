@@ -18,10 +18,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 matcher_rs = { path = "../matcher_rs" }
-numpy = "0.20.0"
-pyo3 = { version = "0.20.3", features = ["extension-module", "abi3-py310", "serde"] }
-rmp-serde = "1.1.2"
-serde = "1.0.197"
+numpy = "0.21.0"
+pyo3 = { version = "0.21.2", features = ["extension-module", "abi3-py310", "serde"] }
+rmp-serde = "1.2.0"
+serde = "1.0.198"
 
 [build-dependencies]
-pyo3-build-config = "0.20.3"
+pyo3-build-config = "0.21.2"

@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use numpy::PyArray1;
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{pyclass, pymethods, pymodule, Py, PyModule, PyObject, PyResult, Python};
-use pyo3::types::{PyBytes, PyDict, PyList, PyString};
-use pyo3::{intern, IntoPy, PyAny};
+use pyo3::types::{
+    PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods, PyString, PyStringMethods,
+};
+use pyo3::{intern, Bound, IntoPy, PyAny};
 
 use matcher_rs::{
     MatchTableDict as MatchTableDictRs, Matcher as MatcherRs, SimpleMatcher as SimpleMatcherRs,
@@ -15,7 +17,7 @@ struct SimpleResult<'a>(SimpleResultRs<'a>);
 
 impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
     fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
 
         dict.set_item(intern!(py, "word_id"), self.0.word_id)
             .unwrap();
@@ -35,10 +37,10 @@ struct Matcher {
 #[pymethods]
 impl Matcher {
     #[new]
-    fn new(_py: Python, match_table_dict_bytes: &PyBytes) -> PyResult<Matcher> {
+    fn new(py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
         // 之所以用msgpack而不是json，是因为serde json在做zero copy deserialization时，无法分辨一些特殊字符，eg. "It's /\/\y duty"
         let match_table_dict: MatchTableDictRs =
-            match rmp_serde::from_slice(match_table_dict_bytes.as_bytes()) {
+            match rmp_serde::from_slice(match_table_dict_bytes.as_unbound().as_bytes(py)) {
                 Ok(match_table_dict) => match_table_dict,
                 Err(e) => {
                     return Err(PyValueError::new_err(format!(
@@ -50,7 +52,7 @@ impl Matcher {
 
         Ok(Matcher {
             matcher: MatcherRs::new(&match_table_dict),
-            match_table_dict_bytes: match_table_dict_bytes.into(),
+            match_table_dict_bytes: match_table_dict_bytes.as_unbound().to_owned(),
         })
     }
 
@@ -63,31 +65,30 @@ impl Matcher {
         self.match_table_dict_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, match_table_dict_bytes: &PyBytes) -> PyResult<()> {
-        self.matcher =
-            MatcherRs::new(&rmp_serde::from_slice(match_table_dict_bytes.as_bytes()).unwrap());
-
-        Ok(())
+    fn __setstate__(&mut self, py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) {
+        self.matcher = MatcherRs::new(
+            &rmp_serde::from_slice(match_table_dict_bytes.as_unbound().as_bytes(py)).unwrap(),
+        );
     }
 
-    fn is_match(&self, _py: Python, text: &PyAny) -> bool {
+    fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.matcher
                 .is_match(unsafe { text.to_str().unwrap_unchecked() })
         })
     }
 
-    fn word_match(&self, _py: Python, text: &PyAny) -> HashMap<&str, String> {
+    fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<&str, String> {
         text.downcast::<PyString>().map_or(HashMap::new(), |text| {
             self.matcher
                 .word_match(unsafe { text.to_str().unwrap_unchecked() })
         })
     }
 
-    fn word_match_as_string(&self, py: Python, text: &PyAny) -> Py<PyString> {
+    fn word_match_as_string(&self, py: Python, text: &Bound<'_, PyAny>) -> Py<PyString> {
         text.downcast::<PyString>()
-            .map_or(PyString::intern(py, "{}"), |text| {
-                PyString::intern(
+            .map_or(PyString::intern_bound(py, "{}"), |text| {
+                PyString::intern_bound(
                     py,
                     &self
                         .matcher
@@ -97,22 +98,22 @@ impl Matcher {
             .into()
     }
 
-    fn batch_word_match_as_dict(&self, py: Python, text_array: &PyList) -> Py<PyList> {
-        let result_list = PyList::empty(py);
+    fn batch_word_match_as_dict(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
+        let result_list = PyList::empty_bound(py);
 
         text_array.iter().for_each(|text| {
-            result_list.append(self.word_match(py, text)).unwrap();
+            result_list.append(self.word_match(py, &text)).unwrap();
         });
 
         result_list.into()
     }
 
-    fn batch_word_match_as_string(&self, py: Python, text_array: &PyList) -> Py<PyList> {
-        let result_list = PyList::empty(py);
+    fn batch_word_match_as_string(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
+        let result_list = PyList::empty_bound(py);
 
         text_array.iter().for_each(|text| {
             result_list
-                .append(self.word_match_as_string(py, text))
+                .append(self.word_match_as_string(py, &text))
                 .unwrap();
         });
 
@@ -123,20 +124,20 @@ impl Matcher {
     fn numpy_word_match_as_dict(
         &self,
         py: Python,
-        text_array: &PyArray1<PyObject>,
+        text_array: &Bound<'_, PyArray1<PyObject>>,
         inplace: bool,
     ) -> Option<Py<PyArray1<PyObject>>> {
         if inplace {
             unsafe { text_array.as_array_mut() }.map_inplace(|text| {
-                *text = self.word_match(py, text.as_ref(py)).into_py(py);
+                *text = self.word_match(py, text.bind(py)).into_py(py);
             });
             None
         } else {
             Some(
-                PyArray1::<PyObject>::from_owned_array(
+                PyArray1::<PyObject>::from_owned_array_bound(
                     py,
                     unsafe { text_array.as_array() }
-                        .map(|text| self.word_match(py, text.as_ref(py)).into_py(py)),
+                        .map(|text| self.word_match(py, &text.bind(py)).into_py(py)),
                 )
                 .into(),
             )
@@ -147,20 +148,20 @@ impl Matcher {
     fn numpy_word_match_as_string(
         &self,
         py: Python,
-        text_array: &PyArray1<PyObject>,
+        text_array: &Bound<'_, PyArray1<PyObject>>,
         inplace: bool,
     ) -> Option<Py<PyArray1<PyObject>>> {
         if inplace {
             unsafe { text_array.as_array_mut() }.map_inplace(|text| {
-                *text = self.word_match_as_string(py, text.as_ref(py)).into_py(py);
+                *text = self.word_match_as_string(py, &text.bind(py)).into_py(py);
             });
             None
         } else {
             Some(
-                PyArray1::<PyObject>::from_owned_array(
+                PyArray1::<PyObject>::from_owned_array_bound(
                     py,
                     unsafe { text_array.as_array() }
-                        .map(|text| self.word_match_as_string(py, text.as_ref(py)).into_py(py)),
+                        .map(|text| self.word_match_as_string(py, &text.bind(py)).into_py(py)),
                 )
                 .into(),
             )
@@ -177,9 +178,9 @@ struct SimpleMatcher {
 #[pymethods]
 impl SimpleMatcher {
     #[new]
-    fn new(simple_wordlist_dict_bytes: &PyBytes) -> PyResult<SimpleMatcher> {
+    fn new(py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<SimpleMatcher> {
         let simple_wordlist_dict: SimpleWordlistDictRs =
-            match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()) {
+            match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_unbound().as_bytes(py)) {
                 Ok(simple_wordlist_dict) => simple_wordlist_dict,
                 Err(e) => return Err(PyValueError::new_err(
                     format!("Deserialize simple_wordlist_dict_bytes failed, Please check the input data.\n Err: {}", e.to_string()),
@@ -188,7 +189,7 @@ impl SimpleMatcher {
 
         Ok(SimpleMatcher {
             simple_matcher: SimpleMatcherRs::new(&simple_wordlist_dict),
-            simple_wordlist_dict_bytes: simple_wordlist_dict_bytes.into(),
+            simple_wordlist_dict_bytes: simple_wordlist_dict_bytes.as_unbound().to_owned(),
         })
     }
 
@@ -200,21 +201,20 @@ impl SimpleMatcher {
         self.simple_wordlist_dict_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, simple_wordlist_dict_bytes: &PyBytes) {
+    fn __setstate__(&mut self, py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()).unwrap(),
+            &rmp_serde::from_slice(simple_wordlist_dict_bytes.as_unbound().as_bytes(py)).unwrap(),
         );
-        self.simple_wordlist_dict_bytes = simple_wordlist_dict_bytes.into();
     }
 
-    fn is_match(&self, _py: Python, text: &PyAny) -> bool {
+    fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.simple_matcher
                 .is_match(unsafe { text.to_str().unwrap_unchecked() })
         })
     }
 
-    fn simple_process(&self, _py: Python, text: &PyAny) -> Vec<SimpleResult> {
+    fn simple_process(&self, _py: Python, text: &Bound<'_, PyAny>) -> Vec<SimpleResult> {
         text.downcast::<PyString>().map_or(Vec::new(), |text| {
             self.simple_matcher
                 .process(unsafe { text.to_str().unwrap_unchecked() })
@@ -224,12 +224,12 @@ impl SimpleMatcher {
         })
     }
 
-    fn batch_simple_process(&self, py: Python, text_array: &PyList) -> Py<PyList> {
-        let result_list = PyList::empty(py);
+    fn batch_simple_process(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
+        let result_list = PyList::empty_bound(py);
 
         text_array.iter().for_each(|text| {
             result_list
-                .append(self.simple_process(py, text).into_py(py))
+                .append(self.simple_process(py, &text).into_py(py))
                 .unwrap();
         });
 
@@ -240,20 +240,20 @@ impl SimpleMatcher {
     fn numpy_simple_process(
         &self,
         py: Python,
-        text_array: &PyArray1<PyObject>,
+        text_array: &Bound<'_, PyArray1<PyObject>>,
         inplace: bool,
     ) -> Option<Py<PyArray1<PyObject>>> {
         if inplace {
             unsafe { text_array.as_array_mut() }.map_inplace(|text| {
-                *text = self.simple_process(py, text.as_ref(py)).into_py(py);
+                *text = self.simple_process(py, &text.bind(py)).into_py(py);
             });
             None
         } else {
             Some(
-                PyArray1::<PyObject>::from_owned_array(
+                PyArray1::<PyObject>::from_owned_array_bound(
                     py,
                     unsafe { text_array.as_array() }
-                        .map(|text| self.simple_process(py, text.as_ref(py)).into_py(py)),
+                        .map(|text| self.simple_process(py, &text.bind(py)).into_py(py)),
                 )
                 .into(),
             )
@@ -262,7 +262,7 @@ impl SimpleMatcher {
 }
 
 #[pymodule]
-fn matcher_py(_py: Python, m: &PyModule) -> PyResult<()> {
+fn matcher_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Matcher>()?;
     m.add_class::<SimpleMatcher>()?;
     Ok(())
