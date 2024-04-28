@@ -1,8 +1,7 @@
 use std::borrow::Cow;
-use std::intrinsics::unlikely;
 
 use fancy_regex::Regex;
-use strsim::normalized_levenshtein;
+use rapidfuzz::distance::levenshtein;
 use zerovec::VarZeroVec;
 
 use super::TextMatcherTrait;
@@ -56,17 +55,16 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     fn is_match(&self, text: &str) -> bool {
         let processed_text = self.remove_special_pattern.replace_all(text, "");
 
-        for sim_table in &self.sim_processed_table_list {
-            if sim_table
-                .wordlist
-                .iter()
-                .any(|text| normalized_levenshtein(text, &processed_text) >= 0.8)
-            {
-                return true;
-            }
-        }
-
-        false
+        self.sim_processed_table_list.iter().any(|sim_table| {
+            sim_table.wordlist.iter().any(|text| {
+                levenshtein::normalized_similarity_with_args(
+                    text.chars(),
+                    processed_text.chars(),
+                    &levenshtein::Args::default().score_cutoff(0.8),
+                )
+                .is_some()
+            })
+        })
     }
 
     fn process(&'a self, text: &str) -> Vec<SimResult<'a>> {
@@ -76,9 +74,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
 
         for sim_table in &self.sim_processed_table_list {
             result_list.extend(sim_table.wordlist.iter().filter_map(|text| {
-                let similarity = normalized_levenshtein(text, &processed_text);
-
-                unlikely(similarity >= 0.8).then(|| SimResult {
+                levenshtein::normalized_similarity_with_args(
+                    text.chars(),
+                    processed_text.chars(),
+                    &levenshtein::Args::default().score_cutoff(0.8),
+                )
+                .map(|similarity| SimResult {
                     word: Cow::Borrowed(text),
                     table_id: sim_table.table_id,
                     match_id: &sim_table.match_id,

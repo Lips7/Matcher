@@ -4,7 +4,7 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{pyclass, pymethods, pymodule, Py, PyModule, PyObject, PyResult, Python};
 use pyo3::types::{
-    PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods, PyString, PyStringMethods,
+    PyAnyMethods, PyBytes, PyBytesMethods, PyDict, PyDictMethods, PyList, PyListMethods, PyString, PyStringMethods
 };
 use pyo3::{intern, Bound, IntoPy, PyAny};
 
@@ -37,10 +37,9 @@ struct Matcher {
 #[pymethods]
 impl Matcher {
     #[new]
-    fn new(py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
-        // 之所以用msgpack而不是json，是因为serde json在做zero copy deserialization时，无法分辨一些特殊字符，eg. "It's /\/\y duty"
+    fn new(_py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
         let match_table_dict: MatchTableDictRs =
-            match rmp_serde::from_slice(match_table_dict_bytes.as_unbound().as_bytes(py)) {
+            match rmp_serde::from_slice(match_table_dict_bytes.as_bytes()) {
                 Ok(match_table_dict) => match_table_dict,
                 Err(e) => {
                     return Err(PyValueError::new_err(format!(
@@ -56,7 +55,6 @@ impl Matcher {
         })
     }
 
-    // __getnewargs__, __getstate__, __setstate__ 3个函数都是为pickle实现的，spark executor在调用这些方法时，需要用pickle序列化反序列化这些实例
     fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
         self.match_table_dict_bytes.clone_ref(py)
     }
@@ -65,12 +63,13 @@ impl Matcher {
         self.match_table_dict_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) {
+    fn __setstate__(&mut self, _py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) {
         self.matcher = MatcherRs::new(
-            &rmp_serde::from_slice(match_table_dict_bytes.as_unbound().as_bytes(py)).unwrap(),
+            &rmp_serde::from_slice(match_table_dict_bytes.as_bytes()).unwrap(),
         );
     }
 
+    #[pyo3(signature=(text))]
     fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.matcher
@@ -78,6 +77,7 @@ impl Matcher {
         })
     }
 
+    #[pyo3(signature=(text))]
     fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<&str, String> {
         text.downcast::<PyString>().map_or(HashMap::new(), |text| {
             self.matcher
@@ -85,6 +85,7 @@ impl Matcher {
         })
     }
 
+    #[pyo3(signature=(text))]
     fn word_match_as_string(&self, py: Python, text: &Bound<'_, PyAny>) -> Py<PyString> {
         text.downcast::<PyString>()
             .map_or(PyString::intern_bound(py, "{}"), |text| {
@@ -98,6 +99,7 @@ impl Matcher {
             .into()
     }
 
+    #[pyo3(signature=(text_array))]
     fn batch_word_match_as_dict(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
 
@@ -108,6 +110,7 @@ impl Matcher {
         result_list.into()
     }
 
+    #[pyo3(signature=(text_array))]
     fn batch_word_match_as_string(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
 
@@ -178,9 +181,9 @@ struct SimpleMatcher {
 #[pymethods]
 impl SimpleMatcher {
     #[new]
-    fn new(py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<SimpleMatcher> {
+    fn new(_py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<SimpleMatcher> {
         let simple_wordlist_dict: SimpleWordlistDictRs =
-            match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_unbound().as_bytes(py)) {
+            match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()) {
                 Ok(simple_wordlist_dict) => simple_wordlist_dict,
                 Err(e) => return Err(PyValueError::new_err(
                     format!("Deserialize simple_wordlist_dict_bytes failed, Please check the input data.\n Err: {}", e.to_string()),
@@ -201,12 +204,13 @@ impl SimpleMatcher {
         self.simple_wordlist_dict_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) {
+    fn __setstate__(&mut self, _py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice(simple_wordlist_dict_bytes.as_unbound().as_bytes(py)).unwrap(),
+            &rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()).unwrap(),
         );
     }
 
+    #[pyo3(signature=(text))]
     fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.simple_matcher
@@ -214,6 +218,7 @@ impl SimpleMatcher {
         })
     }
 
+    #[pyo3(signature=(text))]
     fn simple_process(&self, _py: Python, text: &Bound<'_, PyAny>) -> Vec<SimpleResult> {
         text.downcast::<PyString>().map_or(Vec::new(), |text| {
             self.simple_matcher
@@ -224,6 +229,7 @@ impl SimpleMatcher {
         })
     }
 
+    #[pyo3(signature=(text_array))]
     fn batch_simple_process(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
 

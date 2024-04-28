@@ -32,10 +32,10 @@ fancy-regex = "0.13.0"
 libloading = "0.8.3"
 mimalloc-rust = { version = "0.2.1", features = ["unstable"] }
 nohash-hasher = "0.2.0"
+rapidfuzz = "0.5.0"
 regex = "1.10.4"
 serde = { version = "1.0.198", features = ["derive"] }
 serde_json = "1.0.116"
-strsim = "0.11.1"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 zerovec = { version = "0.10.1", features = ["derive", "serde"] }
 

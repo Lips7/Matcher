@@ -13,10 +13,9 @@ use crate::sim_matcher::{SimMatcher, SimTable};
 use crate::simple_matcher::{SimpleMatchType, SimpleMatcher, SimpleWord};
 
 pub trait TextMatcherTrait<'a, T> {
-    fn is_match(&self, text: &str) -> bool; // 是否命中
-    fn process(&'a self, text: &str) -> Vec<T>; // 处理文本，解析得到命中词
+    fn is_match(&self, text: &str) -> bool;
+    fn process(&'a self, text: &str) -> Vec<T>;
     fn batch_process(&'a self, text_array: &[&str]) -> Vec<Vec<T>> {
-        // 批量处理文本
         text_array.iter().map(|&text| self.process(text)).collect()
     }
 }
@@ -24,54 +23,54 @@ pub trait TextMatcherTrait<'a, T> {
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchTableType {
-    Simple,                 // simple 敏感词，其中 精准 / 繁简 / 归一 / 拼音 / 拼音字符
-    SimilarChar,            // similar_char 邻近字，regex_matcher实现
-    Acrostic,               // acrostic 藏头诗，regex_matcher实现
-    SimilarTextLevenshtein, // similar_text_levenshtein 编辑距离，sim_matcher实现
-    Regex,                  // regex 正则，regex_matcher实现
+    Simple,
+    SimilarChar,
+    Acrostic,
+    SimilarTextLevenshtein,
+    Regex,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MatchTable<'a> {
-    pub table_id: u32,                    // 词表ID
-    pub match_table_type: MatchTableType, // 词表类型
+    pub table_id: u32,
+    pub match_table_type: MatchTableType,
     #[serde(borrow)]
-    pub wordlist: VarZeroVec<'a, str>, // 词表
+    pub wordlist: VarZeroVec<'a, str>,
     #[serde(borrow)]
-    pub exemption_wordlist: VarZeroVec<'a, str>, // 豁免词表，默认 繁简+归一，simple_matcher实现
-    pub simple_match_type: SimpleMatchType, // 匹配类型，6 bit 从左到右分别为 繁简 词删除 文本删除 替换归一 拼音 拼音字符
+    pub exemption_wordlist: VarZeroVec<'a, str>,
+    pub simple_match_type: SimpleMatchType,
 }
 
 #[derive(Debug)]
 struct WordTableConf {
-    match_id: String,   // 匹配ID
-    table_id: u32,      // 词表ID
-    is_exemption: bool, // 是否豁免
+    match_id: String,
+    table_id: u32,
+    is_exemption: bool,
 }
 
 #[derive(Serialize)]
 pub struct MatchResult<'a> {
-    table_id: u32,      // 命中词表ID
-    word: Cow<'a, str>, // 命中词
+    table_id: u32,
+    word: Cow<'a, str>,
 }
 
 struct ResultDict<'a> {
-    result_list: Vec<MatchResult<'a>>, // 匹配结果列表
-    exemption_flag: bool,              // 是否命中过豁免词
+    result_list: Vec<MatchResult<'a>>,
+    exemption_flag: bool,
 }
 
 pub type MatchTableDict<'a> = AHashMap<&'a str, Vec<MatchTable<'a>>>;
 
 pub struct Matcher {
-    word_table_list: Vec<Rc<WordTableConf>>, // 词ID对匹配ID，词表ID，是否豁免的映射关系，利用Rc指针共享数据
-    simple_matcher: Option<SimpleMatcher>, // simple匹配器，精准 / 繁简 / 归一 / 拼音 / 拼音字符 等匹配方式组合的快速实现
-    regex_matcher: Option<RegexMatcher>,   // regex匹配器，邻近字 / 藏头诗 / 正则匹配的实现
-    sim_matcher: Option<SimMatcher>,       // sim匹配器，编辑距离匹配的实现
+    word_table_list: Vec<Rc<WordTableConf>>,
+    simple_matcher: Option<SimpleMatcher>,
+    regex_matcher: Option<RegexMatcher>,
+    sim_matcher: Option<SimMatcher>,
 }
 
 impl Matcher {
     pub fn new(match_table_dict: &MatchTableDict) -> Matcher {
-        let mut word_id: u64 = 0; // 词ID 全局唯一
+        let mut word_id: u64 = 0;
         let mut word_table_list: Vec<Rc<WordTableConf>> = Vec::new();
 
         let mut simple_wordlist_dict: AHashMap<SimpleMatchType, Vec<SimpleWord>> = AHashMap::new();

@@ -111,7 +111,6 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     unsafe { drop(Box::from_raw(simple_matcher)) }
 }
 
-// 为啥要drop，因为别的语言调用的时候是不关心ffi分配的内存的，遵循谁分配谁回收的原则
 #[no_mangle]
 pub extern "C" fn drop_string(ptr: *mut i8) {
     unsafe { drop(CString::from_raw(ptr)) }
