@@ -1,0 +1,17 @@
+[package]
+name = "vectorscan-rs"
+version = "0.0.2"
+edition = "2021"
+
+[features]
+simd_specialization = ["vectorscan-rs-sys/simd_specialization"]
+cpu_native = ["vectorscan-rs-sys/cpu_native"]
+fast_nonportable = ["cpu_native", "simd_specialization"]
+
+[dependencies]
+bitflags = "2.5"
+foreign-types = "0.5"
+thiserror = "1.0"
+vectorscan-rs-sys = { version = "0.0.2", path = "./vectorscan-rs-sys" }
+
+[lib]
