@@ -40,13 +40,7 @@ jobs:
       uses: lukka/get-cmake@latest
 
     - name: Install boost
-      uses: MarkusJx/install-boost@v2.4.5
-      id: install-boost
-      with:
-          boost_version: 1.84.0
-
-    - name: Set boost
-      run: export BOOST_ROOT="${{github.workspace}}/boost/boost"
+      run: sudo apt-get install libboost-all-dev
 
     - name: Build
       run: cargo build --verbose
