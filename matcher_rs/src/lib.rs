@@ -5,7 +5,9 @@
 static GLOBAL: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
 
 mod matcher;
-pub use matcher::{MatchTable, MatchTableDict, MatchTableType, Matcher, TextMatcherTrait};
+pub use matcher::{
+    MatchTable, MatchTableDict, MatchTableType, Matcher, StrConvType, TextMatcherTrait,
+};
 
 mod simple_matcher;
 pub use simple_matcher::{
@@ -17,3 +19,8 @@ pub use regex_matcher::{RegexMatcher, RegexResult, RegexTable};
 
 mod sim_matcher;
 pub use sim_matcher::{SimMatcher, SimResult, SimTable};
+
+mod vector_matcher;
+pub use vector_matcher::{
+    VectorMatchType, VectorMatcher, VectorResult, VectorWord, VectorWordlistDict,
+};

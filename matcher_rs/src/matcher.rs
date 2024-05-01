@@ -1,16 +1,51 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::intrinsics::{likely, unlikely};
 use std::rc::Rc;
 
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
+use bitflags::bitflags;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::to_string;
 use zerovec::VarZeroVec;
 
 use crate::regex_matcher::{RegexMatcher, RegexTable};
 use crate::sim_matcher::{SimMatcher, SimTable};
 use crate::simple_matcher::{SimpleMatchType, SimpleMatcher, SimpleWord};
+
+bitflags! {
+    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+    pub struct StrConvType: u8 {
+        const None = 0b00000000;
+        const Fanjian = 0b00000001;
+        const WordDelete = 0b00000010;
+        const TextDelete = 0b00000100;
+        const Delete = 0b00000110;
+        const Normalize = 0b00001000;
+        const DeleteNormalize = 0b00001110;
+        const FanjianDeleteNormalize = 0b00001111;
+        const PinYin = 0b00010000;
+        const PinYinChar = 0b00100000;
+    }
+}
+
+impl Serialize for StrConvType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.bits().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for StrConvType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bits: u8 = u8::deserialize(deserializer)?;
+        Ok(StrConvType::from_bits_retain(bits))
+    }
+}
 
 pub trait TextMatcherTrait<'a, T> {
     fn is_match(&self, text: &str) -> bool;
@@ -151,7 +186,7 @@ impl Matcher {
     }
 
     fn word_match_raw(&self, text: &str) -> AHashMap<&str, Vec<MatchResult>> {
-        if likely(!text.is_empty()) {
+        if !text.is_empty() {
             let mut match_result_dict: AHashMap<&str, ResultDict> = AHashMap::new();
 
             if let Some(simple_matcher) = &self.simple_matcher {
@@ -168,7 +203,7 @@ impl Matcher {
                             exemption_flag: false,
                         });
 
-                    if unlikely(word_table_conf.is_exemption) {
+                    if word_table_conf.is_exemption {
                         result_dict.exemption_flag = true;
                     }
 
@@ -216,8 +251,7 @@ impl Matcher {
             match_result_dict
                 .into_iter()
                 .filter_map(|(match_id, result_dict)| {
-                    likely(!result_dict.exemption_flag)
-                        .then_some((match_id, result_dict.result_list))
+                    (!result_dict.exemption_flag).then_some((match_id, result_dict.result_list))
                 })
                 .collect()
         } else {

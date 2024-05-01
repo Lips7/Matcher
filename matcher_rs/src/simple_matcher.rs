@@ -3,12 +3,11 @@ use std::intrinsics::{likely, unlikely};
 
 use ahash::{AHashMap, AHashSet};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
-use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tinyvec::{ArrayVec, TinyVec};
 
-use super::TextMatcherTrait;
+use super::{StrConvType, TextMatcherTrait};
 
 const FANJIAN: &str = include_str!("../str_conv_dat/RASEMAT-FANJIAN.txt");
 const CN_SPECIAL: &str = include_str!("../str_conv_dat/RASEMAT-CN-SPECIAL.txt");
@@ -34,42 +33,7 @@ pub struct SimpleWord<'a> {
     pub word: &'a str,
 }
 
-bitflags! {
-    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-    pub struct StrConvType: u8 {
-        const None = 0b00000000;
-        const Fanjian = 0b00000001;
-        const WordDelete = 0b00000010;
-        const TextDelete = 0b00000100;
-        const Delete = 0b00000110;
-        const Normalize = 0b00001000;
-        const DeleteNormalize = 0b00001110;
-        const FanjianDeleteNormalize = 0b00001111;
-        const PinYin = 0b00010000;
-        const PinYinChar = 0b00100000;
-    }
-}
-
 pub type SimpleMatchType = StrConvType;
-
-impl Serialize for StrConvType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.bits().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for StrConvType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let bits: u8 = u8::deserialize(deserializer)?;
-        Ok(StrConvType::from_bits_retain(bits))
-    }
-}
 
 pub type SimpleWordlistDict<'a> = AHashMap<SimpleMatchType, Vec<SimpleWord<'a>>>;
 
@@ -90,7 +54,7 @@ pub struct SimpleResult<'a> {
 }
 
 pub struct SimpleMatcher {
-    str_conv_process_dict: AHashMap<StrConvType, (Vec<&'static str>, AhoCorasick)>,
+    str_conv_process_dict: AHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
     simple_ac_table_dict: AHashMap<SimpleMatchType, SimpleAcTable>,
     simple_word_map: IntMap<u64, WordConf>,
     min_text_len: usize,
@@ -113,13 +77,13 @@ impl SimpleMatcher {
                     .or_insert_with(|| Self::_get_process_matcher(str_conv_type));
             }
 
-            let word_str_conv_list = *simple_match_type - StrConvType::TextDelete;
+            let word_str_conv_list = *simple_match_type - SimpleMatchType::TextDelete;
 
             let simple_ac_table =
                 simple_matcher.build_simple_ac_table(&word_str_conv_list, simple_wordlist);
 
             simple_matcher.simple_ac_table_dict.insert(
-                *simple_match_type - StrConvType::WordDelete,
+                *simple_match_type - SimpleMatchType::WordDelete,
                 simple_ac_table,
             );
         }
@@ -127,11 +91,11 @@ impl SimpleMatcher {
         simple_matcher
     }
 
-    fn _get_process_matcher(str_conv_type: StrConvType) -> (Vec<&'static str>, AhoCorasick) {
+    fn _get_process_matcher(str_conv_type: SimpleMatchType) -> (Vec<&'static str>, AhoCorasick) {
         let mut process_dict = AHashMap::new();
 
         match str_conv_type {
-            StrConvType::Fanjian => {
+            SimpleMatchType::Fanjian => {
                 for str_conv_dat in [FANJIAN, UNICODE] {
                     process_dict.extend(str_conv_dat.trim().split('\n').map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
@@ -142,7 +106,7 @@ impl SimpleMatcher {
                     }));
                 }
             }
-            StrConvType::WordDelete => {
+            SimpleMatchType::WordDelete => {
                 process_dict.extend(
                     PUNCTUATION_SPECIAL
                         .trim()
@@ -152,7 +116,7 @@ impl SimpleMatcher {
 
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
-            StrConvType::TextDelete => {
+            SimpleMatchType::TextDelete => {
                 for str_conv_dat in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
                     process_dict.extend(
                         str_conv_dat
@@ -164,7 +128,7 @@ impl SimpleMatcher {
 
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
-            StrConvType::Normalize => {
+            SimpleMatchType::Normalize => {
                 for str_conv_dat in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
                     process_dict.extend(str_conv_dat.trim().split('\n').map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
@@ -175,7 +139,7 @@ impl SimpleMatcher {
                     }));
                 }
             }
-            StrConvType::PinYin => {
+            SimpleMatchType::PinYin => {
                 process_dict.extend(PINYIN.trim().split('\n').map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
@@ -184,7 +148,7 @@ impl SimpleMatcher {
                     )
                 }));
             }
-            StrConvType::PinYinChar => {
+            SimpleMatchType::PinYinChar => {
                 process_dict.extend(PINYIN_CHAR.trim().split('\n').map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
@@ -216,7 +180,7 @@ impl SimpleMatcher {
 
     fn build_simple_ac_table(
         &mut self,
-        str_conv_type_list: &StrConvType,
+        str_conv_type_list: &SimpleMatchType,
         simple_wordlist: &Vec<SimpleWord>,
     ) -> SimpleAcTable {
         let mut ac_wordlist = Vec::with_capacity(simple_wordlist.len());
@@ -276,7 +240,7 @@ impl SimpleMatcher {
     #[inline]
     fn reduce_text_process<'a>(
         &self,
-        str_conv_type_list: &StrConvType,
+        str_conv_type_list: &SimpleMatchType,
         text_bytes: &'a [u8],
     ) -> ArrayVec<[Cow<'a, [u8]>; 4]> {
         let mut processed_text_bytes_list: ArrayVec<[Cow<'a, [u8]>; 4]> = ArrayVec::new();
@@ -293,31 +257,31 @@ impl SimpleMatcher {
 
             if likely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
                 match str_conv_type {
-                    StrConvType::Fanjian => {
+                    SimpleMatchType::Fanjian => {
                         *tmp_processed_text_bytes = Cow::Owned(
                             process_matcher.replace_all_bytes(text_bytes, process_replace_list),
                         );
                     }
-                    StrConvType::TextDelete | StrConvType::WordDelete => {
-                        let mut processed_text = Vec::with_capacity(tmp_processed_text_bytes.len());
+                    SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
+                        let mut processed_text_bytes = Vec::with_capacity(tmp_processed_text_bytes.len());
                         let mut last_match = 0;
 
                         for mat in process_matcher.find_iter(tmp_processed_text_bytes.as_ref()) {
-                            processed_text.extend(unsafe {
+                            processed_text_bytes.extend(unsafe {
                                 tmp_processed_text_bytes.get_unchecked(last_match..mat.start())
                             });
                             last_match = mat.end();
                         }
-                        processed_text.extend(unsafe {
+                        processed_text_bytes.extend(unsafe {
                             tmp_processed_text_bytes.get_unchecked(last_match..)
                         });
 
-                        processed_text_bytes_list.push(Cow::Owned(processed_text));
+                        processed_text_bytes_list.push(Cow::Owned(processed_text_bytes));
                     }
                     _ => {
-                        let processed_text = process_matcher
+                        let processed_text_bytes = process_matcher
                             .replace_all_bytes(tmp_processed_text_bytes, process_replace_list);
-                        processed_text_bytes_list.push(Cow::Owned(processed_text));
+                        processed_text_bytes_list.push(Cow::Owned(processed_text_bytes));
                     }
                 }
             }
@@ -376,10 +340,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked_mut(index)
                     } >>= 1;
 
-                    if unlikely(
-                        split_bit.iter().all(|bit| bit.iter().any(|&b| b == 0))
-                            && !word_id_set.contains(&word_id),
-                    ) {
+                    if unlikely(split_bit.iter().all(|bit| bit.iter().any(|&b| b == 0))
+                        && !word_id_set.contains(&word_id))
+                    {
                         word_id_set.insert(word_id);
                         result_list.push(SimpleResult {
                             word_id,
