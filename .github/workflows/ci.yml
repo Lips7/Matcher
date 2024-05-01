@@ -43,7 +43,10 @@ jobs:
       uses: MarkusJx/install-boost@v2.4.5
       id: install-boost
       with:
-          boost_version: 1.73.0
+          boost_version: 1.84.0
+
+    - name: Set boost
+      run: export BOOST_ROOT="${{github.workspace}}/boost/boost"
 
     - name: Build
       run: cargo build --verbose
