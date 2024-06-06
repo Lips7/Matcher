@@ -37,7 +37,7 @@ jobs:
       run: python3 -m pip install --user --upgrade pip maturin
 
     - name: Build
-      run: sh ./build.sh
+      run: cargo build --release --verbose
 
     - name: Run tests
-      run: cd matcher_rs && cargo test --verbose
+      run: cargo test --verbose
