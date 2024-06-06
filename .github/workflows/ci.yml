@@ -16,12 +16,12 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4.15
+      uses: actions/checkout@v4
       with:
         submodules: recursive
 
     - name: Install rust
-      uses: actions-rs/toolchain@v1.1
+      uses: actions-rs/toolchain@v1
       with:
           toolchain: nightly
           override: true
@@ -29,7 +29,7 @@ jobs:
           default: true
 
     - name: Install python
-      uses: actions/setup-python@v5.1.0
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
