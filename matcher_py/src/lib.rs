@@ -196,8 +196,8 @@ impl SimpleMatcher {
         })
     }
 
-    fn __getnewargs__(&self, py: Python) -> (Py<PyBytes>,) {
-        (self.simple_wordlist_dict_bytes.clone_ref(py),)
+    fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
+        self.simple_wordlist_dict_bytes.clone_ref(py)
     }
 
     fn __getstate__(&self, py: Python) -> Py<PyBytes> {

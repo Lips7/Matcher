@@ -30,7 +30,7 @@ nohash-hasher = "0.2.0"
 rapidfuzz = "0.5.0"
 regex = "1.10.4"
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.117"
+sonic-rs = "0.3.6"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 zerovec = { version = "0.10.2", features = ["derive", "serde"] }
 

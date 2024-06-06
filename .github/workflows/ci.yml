@@ -43,7 +43,7 @@ jobs:
       run: sudo apt-get install libboost-all-dev
 
     - name: Build
-      run: cargo build --verbose
+      run: RUSTFLAGS="-C target-cpu=native" cargo build --release --verbose
 
     - name: Run tests
       run: cargo test --verbose

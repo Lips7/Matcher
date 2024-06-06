@@ -12,11 +12,11 @@ class MatchTableType(Enum):
 
 
 class SimpleMatchType(IntFlag):
-    MatchNone = 0b00000000
-    MatchFanjian = 0b00000001
-    MatchDeleteNormalize = 0b00001110
-    MatchPinYin = 0b00010000
-    MatchPinYinChar = 0b00100000
+    MatchNone = 0b00000001
+    MatchFanjian = 0b00000010
+    MatchDeleteNormalize = 0b00011100
+    MatchPinYin = 0b00100000
+    MatchPinYinChar = 0b01000000
 
 
 class MatchTable(msgspec.Struct):

@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use gxhash::HashMap as GxHashMap;
 use bitflags::bitflags;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::to_string;
+use serde::{Serializer, Deserializer};
+use sonic_rs::{to_string, Deserialize, Serialize};
 use zerovec::VarZeroVec;
 
 use crate::regex_matcher::{RegexMatcher, RegexTable};
@@ -15,16 +15,16 @@ use crate::simple_matcher::{SimpleMatchType, SimpleMatcher, SimpleWord};
 bitflags! {
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
     pub struct StrConvType: u8 {
-        const None = 0b00000000;
-        const Fanjian = 0b00000001;
-        const WordDelete = 0b00000010;
-        const TextDelete = 0b00000100;
-        const Delete = 0b00000110;
-        const Normalize = 0b00001000;
-        const DeleteNormalize = 0b00001110;
-        const FanjianDeleteNormalize = 0b00001111;
-        const PinYin = 0b00010000;
-        const PinYinChar = 0b00100000;
+        const None = 0b00000001;
+        const Fanjian = 0b00000010;
+        const WordDelete = 0b00000100;
+        const TextDelete = 0b00001000;
+        const Delete = 0b00001100;
+        const Normalize = 0b00010000;
+        const DeleteNormalize = 0b00011100;
+        const FanjianDeleteNormalize = 0b00011110;
+        const PinYin = 0b00100000;
+        const PinYinChar = 0b01000000;
     }
 }
 
