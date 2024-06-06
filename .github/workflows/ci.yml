@@ -16,12 +16,12 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4.15
       with:
         submodules: recursive
 
     - name: Install rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.1
       with:
           toolchain: nightly
           override: true
@@ -29,21 +29,15 @@ jobs:
           default: true
 
     - name: Install python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5.1.0
       with:
-        python-version: '3.10'
+        python-version: '3.12'
 
     - name: Install maturin
       run: python3 -m pip install --user --upgrade pip maturin
 
-    - name: Install cmake
-      uses: lukka/get-cmake@latest
-
-    - name: Install boost
-      run: sudo apt-get install libboost-all-dev
-
     - name: Build
-      run: RUSTFLAGS="-C target-cpu=native" cargo build --release --verbose
+      run: sh ./build.sh
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cd matcher_rs && cargo test --verbose
