@@ -19,8 +19,3 @@ pub use regex_matcher::{RegexMatcher, RegexResult, RegexTable};
 
 mod sim_matcher;
 pub use sim_matcher::{SimMatcher, SimResult, SimTable};
-
-mod vector_matcher;
-pub use vector_matcher::{
-    VectorMatchType, VectorMatcher, VectorResult, VectorWord, VectorWordlistDict,
-};

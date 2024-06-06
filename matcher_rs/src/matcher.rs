@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use ahash::AHashMap;
+use gxhash::HashMap as GxHashMap;
 use bitflags::bitflags;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::to_string;
@@ -94,7 +94,7 @@ struct ResultDict<'a> {
     exemption_flag: bool,
 }
 
-pub type MatchTableDict<'a> = AHashMap<&'a str, Vec<MatchTable<'a>>>;
+pub type MatchTableDict<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
 
 pub struct Matcher {
     word_table_list: Vec<Rc<WordTableConf>>,
@@ -108,7 +108,7 @@ impl Matcher {
         let mut word_id: u64 = 0;
         let mut word_table_list: Vec<Rc<WordTableConf>> = Vec::new();
 
-        let mut simple_wordlist_dict: AHashMap<SimpleMatchType, Vec<SimpleWord>> = AHashMap::new();
+        let mut simple_wordlist_dict: GxHashMap<SimpleMatchType, Vec<SimpleWord>> = GxHashMap::default();
 
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
         let mut sim_table_list: Vec<SimTable> = Vec::new();
@@ -185,9 +185,9 @@ impl Matcher {
         }
     }
 
-    fn word_match_raw(&self, text: &str) -> AHashMap<&str, Vec<MatchResult>> {
+    fn word_match_raw(&self, text: &str) -> GxHashMap<&str, Vec<MatchResult>> {
         if !text.is_empty() {
-            let mut match_result_dict: AHashMap<&str, ResultDict> = AHashMap::new();
+            let mut match_result_dict: GxHashMap<&str, ResultDict> = GxHashMap::default();
 
             if let Some(simple_matcher) = &self.simple_matcher {
                 for simple_result in simple_matcher.process(text) {
@@ -255,7 +255,7 @@ impl Matcher {
                 })
                 .collect()
         } else {
-            AHashMap::new()
+            GxHashMap::default()
         }
     }
 

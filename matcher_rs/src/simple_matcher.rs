@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::intrinsics::{likely, unlikely};
 
-use ahash::{AHashMap, AHashSet};
+use gxhash::{HashMap as GxHashMap, HashSet as GxHashSet};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
 use nohash_hasher::{IntMap, IntSet};
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ pub struct SimpleWord<'a> {
 
 pub type SimpleMatchType = StrConvType;
 
-pub type SimpleWordlistDict<'a> = AHashMap<SimpleMatchType, Vec<SimpleWord<'a>>>;
+pub type SimpleWordlistDict<'a> = GxHashMap<SimpleMatchType, Vec<SimpleWord<'a>>>;
 
 struct WordConf {
     word: String,
@@ -54,8 +54,8 @@ pub struct SimpleResult<'a> {
 }
 
 pub struct SimpleMatcher {
-    str_conv_process_dict: AHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
-    simple_ac_table_dict: AHashMap<SimpleMatchType, SimpleAcTable>,
+    str_conv_process_dict: GxHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
+    simple_ac_table_dict: GxHashMap<SimpleMatchType, SimpleAcTable>,
     simple_word_map: IntMap<u64, WordConf>,
     min_text_len: usize,
 }
@@ -63,8 +63,8 @@ pub struct SimpleMatcher {
 impl SimpleMatcher {
     pub fn new(simple_wordlist_dict: &SimpleWordlistDict) -> SimpleMatcher {
         let mut simple_matcher = SimpleMatcher {
-            str_conv_process_dict: AHashMap::new(),
-            simple_ac_table_dict: AHashMap::new(),
+            str_conv_process_dict: GxHashMap::default(),
+            simple_ac_table_dict: GxHashMap::default(),
             simple_word_map: IntMap::default(),
             min_text_len: 255,
         };
@@ -92,7 +92,7 @@ impl SimpleMatcher {
     }
 
     fn _get_process_matcher(str_conv_type: SimpleMatchType) -> (Vec<&'static str>, AhoCorasick) {
-        let mut process_dict = AHashMap::new();
+        let mut process_dict = GxHashMap::default();
 
         match str_conv_type {
             SimpleMatchType::Fanjian => {
@@ -191,14 +191,14 @@ impl SimpleMatcher {
                 .word
                 .chars()
                 .filter(|&c| c != ',')
-                .collect::<AHashSet<char>>()
+                .collect::<GxHashSet<char>>()
                 .len();
 
             if self.min_text_len > char_unique_cnt {
                 self.min_text_len = char_unique_cnt;
             }
 
-            let mut ac_split_word_counter: AHashMap<&str, u8> = AHashMap::new();
+            let mut ac_split_word_counter: GxHashMap<&str, u8> = GxHashMap::default();
             for ac_split_word in simple_word.word.split(',').filter(|&x| !x.is_empty()) {
                 ac_split_word_counter
                     .entry(ac_split_word)
@@ -341,9 +341,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     } >>= 1;
 
                     if unlikely(split_bit.iter().all(|bit| bit.iter().any(|&b| b == 0))
-                        && !word_id_set.contains(&word_id))
+                        && word_id_set.insert(word_id))
                     {
-                        word_id_set.insert(word_id);
                         result_list.push(SimpleResult {
                             word_id,
                             word: Cow::Borrowed(&word_conf.word),
