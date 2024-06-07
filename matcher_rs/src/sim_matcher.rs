@@ -4,7 +4,7 @@ use fancy_regex::Regex;
 use rapidfuzz::distance::levenshtein;
 use zerovec::VarZeroVec;
 
-use super::TextMatcherTrait;
+use super::{MatchResultTrait, TextMatcherTrait};
 
 pub struct SimTable<'a> {
     pub table_id: u32,
@@ -24,6 +24,15 @@ pub struct SimResult<'a> {
     pub table_id: u32,
     pub match_id: &'a str,
     pub similarity: f64,
+}
+
+impl MatchResultTrait<'_> for SimResult<'_> {
+    fn table_id(&self) -> usize {
+        self.table_id as usize
+    }
+    fn word(&self) -> &str {
+        self.word.as_ref()
+    }
 }
 
 pub struct SimMatcher {

@@ -9,7 +9,7 @@ use nohash_hasher::{IntMap, IntSet};
 use serde::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
-use super::{StrConvType, TextMatcherTrait};
+use super::{MatchResultTrait, StrConvType, TextMatcherTrait};
 
 const FANJIAN: &str = include_str!("../str_conv_dat/RASEMAT-FANJIAN.txt");
 const CN_SPECIAL: &str = include_str!("../str_conv_dat/RASEMAT-CN-SPECIAL.txt");
@@ -56,6 +56,15 @@ struct SimpleAcTable {
 pub struct SimpleResult<'a> {
     pub word_id: u64,
     pub word: Cow<'a, str>,
+}
+
+impl MatchResultTrait<'_> for SimpleResult<'_> {
+    fn word_id(&self) -> usize {
+        self.word_id as usize
+    }
+    fn word(&self) -> &str {
+        self.word.as_ref()
+    }
 }
 
 pub struct SimpleMatcher {

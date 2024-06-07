@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use fancy_regex::{escape, Regex};
 use zerovec::VarZeroVec;
 
-use super::{MatchTableType, TextMatcherTrait};
+use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 
 pub struct RegexTable<'a> {
     pub table_id: u32,
@@ -33,6 +33,15 @@ pub struct RegexResult<'a> {
     pub word: Cow<'a, str>,
     pub table_id: u32,
     pub match_id: &'a str,
+}
+
+impl MatchResultTrait<'_> for RegexResult<'_> {
+    fn table_id(&self) -> usize {
+        self.table_id as usize
+    }
+    fn word(&self) -> &str {
+        self.word.as_ref()
+    }
 }
 
 pub struct RegexMatcher {

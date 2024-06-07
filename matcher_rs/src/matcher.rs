@@ -55,6 +55,16 @@ pub trait TextMatcherTrait<'a, T> {
     }
 }
 
+pub trait MatchResultTrait<'a> {
+    fn word_id(&self) -> usize {
+        0
+    }
+    fn table_id(&self) -> usize {
+        0
+    }
+    fn word(&self) -> &str;
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchTableType {
@@ -87,6 +97,18 @@ struct WordTableConf {
 pub struct MatchResult<'a> {
     table_id: u32,
     word: Cow<'a, str>,
+}
+
+impl MatchResultTrait<'_> for MatchResult<'_> {
+    fn word_id(&self) -> usize {
+        0
+    }
+    fn table_id(&self) -> usize {
+        self.table_id as usize
+    }
+    fn word(&self) -> &str {
+        self.word.as_ref()
+    }
 }
 
 struct ResultDict<'a> {

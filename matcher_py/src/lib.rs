@@ -4,13 +4,15 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::{pyclass, pymethods, pymodule, Py, PyModule, PyObject, PyResult, Python};
 use pyo3::types::{
-    PyAnyMethods, PyBytes, PyBytesMethods, PyDict, PyDictMethods, PyList, PyListMethods, PyString, PyStringMethods
+    PyAnyMethods, PyBytes, PyBytesMethods, PyDict, PyDictMethods, PyList, PyListMethods, PyString,
+    PyStringMethods,
 };
 use pyo3::{intern, Bound, IntoPy, PyAny};
 
 use matcher_rs::{
-    MatchTableDict as MatchTableDictRs, Matcher as MatcherRs, SimpleMatcher as SimpleMatcherRs,
-    SimpleResult as SimpleResultRs, SimpleWordlistDict as SimpleWordlistDictRs, TextMatcherTrait,
+    MatchResultTrait, MatchTableDict as MatchTableDictRs, Matcher as MatcherRs,
+    SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs,
+    SimpleWordlistDict as SimpleWordlistDictRs, TextMatcherTrait,
 };
 
 struct SimpleResult<'a>(SimpleResultRs<'a>);
@@ -25,6 +27,15 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
             .unwrap();
 
         dict.into()
+    }
+}
+
+impl MatchResultTrait<'_> for SimpleResult<'_> {
+    fn word_id(&self) -> usize {
+        self.0.word_id()
+    }
+    fn word(&self) -> &str {
+        self.0.word.as_ref()
     }
 }
 
@@ -64,9 +75,8 @@ impl Matcher {
     }
 
     fn __setstate__(&mut self, _py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) {
-        self.matcher = MatcherRs::new(
-            &rmp_serde::from_slice(match_table_dict_bytes.as_bytes()).unwrap(),
-        );
+        self.matcher =
+            MatcherRs::new(&rmp_serde::from_slice(match_table_dict_bytes.as_bytes()).unwrap());
     }
 
     #[pyo3(signature=(text))]
@@ -181,7 +191,10 @@ struct SimpleMatcher {
 #[pymethods]
 impl SimpleMatcher {
     #[new]
-    fn new(_py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<SimpleMatcher> {
+    fn new(
+        _py: Python,
+        simple_wordlist_dict_bytes: &Bound<'_, PyBytes>,
+    ) -> PyResult<SimpleMatcher> {
         let simple_wordlist_dict: SimpleWordlistDictRs =
             match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()) {
                 Ok(simple_wordlist_dict) => simple_wordlist_dict,

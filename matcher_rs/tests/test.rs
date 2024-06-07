@@ -37,12 +37,10 @@ fn simple_match() {
         ),
         (
             SimpleMatchType::Fanjian,
-            vec![
-                SimpleWord {
-                    word_id: 11,
-                    word: r"xxx,yyy",
-                },
-            ]
+            vec![SimpleWord {
+                word_id: 11,
+                word: r"xxx,yyy",
+            }],
         ),
         (
             SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYin,

@@ -8,7 +8,8 @@ static GLOBAL: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
 
 mod matcher;
 pub use matcher::{
-    MatchTable, MatchTableDict, MatchTableType, Matcher, StrConvType, TextMatcherTrait,
+    MatchResultTrait, MatchTable, MatchTableDict, MatchTableType, Matcher, StrConvType,
+    TextMatcherTrait,
 };
 
 mod simple_matcher;
