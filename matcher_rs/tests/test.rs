@@ -36,6 +36,15 @@ fn simple_match() {
             ],
         ),
         (
+            SimpleMatchType::Fanjian,
+            vec![
+                SimpleWord {
+                    word_id: 11,
+                    word: r"xxx,yyy",
+                },
+            ]
+        ),
+        (
             SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYin,
             vec![SimpleWord {
                 word_id: 4,
@@ -89,6 +98,7 @@ fn simple_match() {
 
     assert!(simple_matcher.is_match("无无法天"));
     assert_eq!(simple_matcher.is_match("无法天"), false);
+    assert_eq!(simple_matcher.is_match("xꓫ,yyy"), false);
 }
 
 #[test]

@@ -1,5 +1,7 @@
 #![allow(internal_features)]
 #![feature(core_intrinsics)]
+#![feature(portable_simd)]
+#![feature(iter_repeat_n)]
 
 #[global_allocator]
 static GLOBAL: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;

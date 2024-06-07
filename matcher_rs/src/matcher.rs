@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use gxhash::HashMap as GxHashMap;
 use bitflags::bitflags;
-use serde::{Serializer, Deserializer};
+use gxhash::HashMap as GxHashMap;
+use serde::{Deserializer, Serializer};
 use sonic_rs::{to_string, Deserialize, Serialize};
 use zerovec::VarZeroVec;
 
@@ -108,7 +108,8 @@ impl Matcher {
         let mut word_id: u64 = 0;
         let mut word_table_list: Vec<Rc<WordTableConf>> = Vec::new();
 
-        let mut simple_wordlist_dict: GxHashMap<SimpleMatchType, Vec<SimpleWord>> = GxHashMap::default();
+        let mut simple_wordlist_dict: GxHashMap<SimpleMatchType, Vec<SimpleWord>> =
+            GxHashMap::default();
 
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
         let mut sim_table_list: Vec<SimTable> = Vec::new();

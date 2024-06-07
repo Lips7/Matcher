@@ -1,5 +1,5 @@
-use gxhash::HashMap as GxHashMap;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use gxhash::HashMap as GxHashMap;
 use zerovec::VarZeroVec;
 
 use matcher_rs::*;
