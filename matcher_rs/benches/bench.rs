@@ -10,9 +10,10 @@ fn bench(c: &mut Criterion) {
         vec![MatchTable {
             table_id: 1,
             match_table_type: MatchTableType::Simple,
-            wordlist: VarZeroVec::from(&["你好,123"]),
-            exemption_wordlist: VarZeroVec::new(),
             simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+            wordlist: VarZeroVec::from(&["你好,123"]),
+            exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+            exemption_wordlist: VarZeroVec::new(),
         }],
     )]);
     let matcher = Matcher::new(&match_table_dict);

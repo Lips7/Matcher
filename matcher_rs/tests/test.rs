@@ -162,17 +162,19 @@ fn word_match() {
             MatchTable {
                 table_id: 1,
                 match_table_type: MatchTableType::Simple,
-                wordlist: VarZeroVec::from(&["无,法,无,天"]),
-                exemption_wordlist: VarZeroVec::new(),
                 simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+                wordlist: VarZeroVec::from(&["无,法,无,天"]),
+                exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+                exemption_wordlist: VarZeroVec::new(),
             },
             MatchTable {
                 table_id: 2,
                 match_table_type: MatchTableType::Simple,
-                wordlist: VarZeroVec::from(&["你好"]),
-                exemption_wordlist: VarZeroVec::new(),
                 simple_match_type: SimpleMatchType::FanjianDeleteNormalize
                     | SimpleMatchType::PinYin,
+                wordlist: VarZeroVec::from(&["你好"]),
+                exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+                exemption_wordlist: VarZeroVec::new(),
             },
         ],
     )]);

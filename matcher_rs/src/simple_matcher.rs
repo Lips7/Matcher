@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::intrinsics::{likely, unlikely};
 use std::iter;
-use std::simd::u8x32;
+use std::simd::Simd;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
 use gxhash::{HashMap as GxHashMap, HashSet as GxHashSet};
@@ -30,7 +30,7 @@ const WHITE_SPACE: &[&str] = &[
 ];
 
 const WORD_COMBINATION_LIMIT: usize = 32;
-const ZEROS: u8x32 = u8x32::from_array([0; WORD_COMBINATION_LIMIT]);
+const ZEROS: Simd<u8, WORD_COMBINATION_LIMIT> = Simd::from_array([0; WORD_COMBINATION_LIMIT]);
 
 #[derive(Serialize, Deserialize)]
 pub struct SimpleWord<'a> {
@@ -44,7 +44,7 @@ pub type SimpleWordlistDict<'a> = GxHashMap<SimpleMatchType, Vec<SimpleWord<'a>>
 
 struct WordConf {
     word: String,
-    split_bit: u8x32,
+    split_bit: Simd<u8, WORD_COMBINATION_LIMIT>,
 }
 
 struct SimpleAcTable {
@@ -68,33 +68,33 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 }
 
 pub struct SimpleMatcher {
-    str_conv_process_dict: GxHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
+    simple_match_process_dict: GxHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
     simple_ac_table_dict: GxHashMap<SimpleMatchType, SimpleAcTable>,
     simple_word_map: IntMap<u64, WordConf>,
-    min_text_len: usize,
+    min_chars_count: usize,
 }
 
 impl SimpleMatcher {
     pub fn new(simple_wordlist_dict: &SimpleWordlistDict) -> SimpleMatcher {
         let mut simple_matcher = SimpleMatcher {
-            str_conv_process_dict: GxHashMap::default(),
+            simple_match_process_dict: GxHashMap::default(),
             simple_ac_table_dict: GxHashMap::default(),
             simple_word_map: IntMap::default(),
-            min_text_len: usize::MAX,
+            min_chars_count: usize::MAX,
         };
 
         for (simple_match_type, simple_wordlist) in simple_wordlist_dict {
-            for str_conv_type in simple_match_type.iter() {
+            for simple_match_type_bit in simple_match_type.iter() {
                 simple_matcher
-                    .str_conv_process_dict
-                    .entry(str_conv_type)
-                    .or_insert_with(|| Self::_get_process_matcher(str_conv_type));
+                    .simple_match_process_dict
+                    .entry(simple_match_type_bit)
+                    .or_insert_with(|| Self::_get_process_matcher(&simple_match_type_bit));
             }
 
-            let word_str_conv_list = *simple_match_type - SimpleMatchType::TextDelete;
-
-            let simple_ac_table =
-                simple_matcher.build_simple_ac_table(&word_str_conv_list, simple_wordlist);
+            let simple_ac_table = simple_matcher.build_simple_ac_table(
+                &(*simple_match_type - SimpleMatchType::TextDelete),
+                simple_wordlist,
+            );
 
             simple_matcher.simple_ac_table_dict.insert(
                 *simple_match_type - SimpleMatchType::WordDelete,
@@ -105,10 +105,13 @@ impl SimpleMatcher {
         simple_matcher
     }
 
-    fn _get_process_matcher(str_conv_type: SimpleMatchType) -> (Vec<&'static str>, AhoCorasick) {
+    fn _get_process_matcher(
+        simple_match_type_bit: &SimpleMatchType,
+    ) -> (Vec<&'static str>, AhoCorasick) {
         let mut process_dict = GxHashMap::default();
 
-        match str_conv_type {
+        match *simple_match_type_bit {
+            SimpleMatchType::None => {}
             SimpleMatchType::Fanjian => {
                 for str_conv_dat in [FANJIAN, UNICODE] {
                     process_dict.extend(str_conv_dat.trim().split('\n').map(|pair_str| {
@@ -194,23 +197,21 @@ impl SimpleMatcher {
 
     fn build_simple_ac_table(
         &mut self,
-        str_conv_type_list: &SimpleMatchType,
+        simple_match_type: &SimpleMatchType,
         simple_wordlist: &Vec<SimpleWord>,
     ) -> SimpleAcTable {
         let mut ac_wordlist = Vec::with_capacity(simple_wordlist.len());
         let mut ac_word_conf_list = Vec::with_capacity(simple_wordlist.len());
 
         for simple_word in simple_wordlist {
-            let char_unique_cnt = simple_word
-                .word
-                .chars()
-                .filter(|&c| c != ',')
-                .collect::<GxHashSet<char>>()
-                .len();
-
-            if self.min_text_len > char_unique_cnt {
-                self.min_text_len = char_unique_cnt;
-            }
+            self.min_chars_count = self.min_chars_count.min(
+                simple_word
+                    .word
+                    .chars()
+                    .filter(|&c| c != ',')
+                    .collect::<GxHashSet<char>>()
+                    .len(),
+            );
 
             let mut ac_split_word_counter = GxHashMap::default();
             for ac_split_word in simple_word.word.split(',').filter(|&x| !x.is_empty()) {
@@ -223,9 +224,9 @@ impl SimpleMatcher {
             let split_bit_vec = ac_split_word_counter
                 .values()
                 .take(WORD_COMBINATION_LIMIT)
-                .map(|&x| if x < 8 { 1 << (x - 1) } else { 1 << 7 })
+                .map(|&x| 1 << (x.min(8) - 1))
                 .collect::<ArrayVec<[u8; 32]>>();
-            let split_bit = u8x32::load_or_default(&split_bit_vec);
+            let split_bit = Simd::load_or_default(&split_bit_vec);
 
             self.simple_word_map.insert(
                 simple_word.word_id,
@@ -240,7 +241,7 @@ impl SimpleMatcher {
                 .take(WORD_COMBINATION_LIMIT)
                 .enumerate()
             {
-                for ac_word in self.reduce_text_process(str_conv_type_list, split_word.as_bytes()) {
+                for ac_word in self.reduce_text_process(simple_match_type, split_word.as_bytes()) {
                     ac_wordlist.push(ac_word);
                     ac_word_conf_list.push((simple_word.word_id, offset));
                 }
@@ -260,29 +261,32 @@ impl SimpleMatcher {
     #[inline]
     fn reduce_text_process<'a>(
         &self,
-        str_conv_type_list: &SimpleMatchType,
+        simple_match_type: &SimpleMatchType,
         text_bytes: &'a [u8],
     ) -> ArrayVec<[Cow<'a, [u8]>; 4]> {
         let mut processed_text_bytes_list: ArrayVec<[Cow<'a, [u8]>; 4]> = ArrayVec::new();
         processed_text_bytes_list.push(Cow::Borrowed(text_bytes));
 
-        for str_conv_type in str_conv_type_list.iter() {
+        for simple_match_type_bit in simple_match_type.iter() {
             let (process_replace_list, process_matcher) = unsafe {
-                self.str_conv_process_dict
-                    .get(&str_conv_type)
+                self.simple_match_process_dict
+                    .get(&simple_match_type_bit)
                     .unwrap_unchecked()
             };
             let tmp_processed_text_bytes =
                 unsafe { processed_text_bytes_list.last_mut().unwrap_unchecked() };
 
-            if likely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
-                match str_conv_type {
-                    SimpleMatchType::Fanjian => {
+            match simple_match_type_bit {
+                SimpleMatchType::None => {}
+                SimpleMatchType::Fanjian => {
+                    if unlikely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
                         *tmp_processed_text_bytes = Cow::Owned(
                             process_matcher.replace_all_bytes(text_bytes, process_replace_list),
                         );
                     }
-                    SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
+                }
+                SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
+                    if likely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
                         let mut processed_text_bytes =
                             Vec::with_capacity(tmp_processed_text_bytes.len());
                         let mut last_match = 0;
@@ -299,7 +303,9 @@ impl SimpleMatcher {
 
                         processed_text_bytes_list.push(Cow::Owned(processed_text_bytes));
                     }
-                    _ => {
+                }
+                _ => {
+                    if process_matcher.is_match(tmp_processed_text_bytes.as_ref()) {
                         let processed_text_bytes = process_matcher
                             .replace_all_bytes(tmp_processed_text_bytes, process_replace_list);
                         processed_text_bytes_list.push(Cow::Owned(processed_text_bytes));
@@ -314,18 +320,12 @@ impl SimpleMatcher {
 
 impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     fn is_match(&self, text: &str) -> bool {
-        !self.process(text).is_empty()
-    }
-
-    fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
         let text_bytes = text.as_bytes();
-        let mut result_list = Vec::new();
 
-        if unlikely(bytecount::num_chars(text_bytes) < self.min_text_len) {
-            return result_list;
+        if unlikely(bytecount::num_chars(text_bytes) < self.min_chars_count) {
+            return false;
         }
 
-        let mut word_id_set = IntSet::default();
         let mut word_id_split_bit_map = IntMap::default();
 
         for (simple_match_type, simple_ac_table) in &self.simple_ac_table_dict {
@@ -340,17 +340,12 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     let ac_word_conf =
                         unsafe { simple_ac_table.ac_word_conf_list.get_unchecked(ac_word_id) };
                     let word_id = ac_word_conf.0;
-
-                    if word_id_set.contains(&word_id) {
-                        continue;
-                    }
-
                     let word_conf =
                         unsafe { self.simple_word_map.get(&word_id).unwrap_unchecked() };
 
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                         iter::repeat_n(word_conf.split_bit, processed_times)
-                            .collect::<ArrayVec<[u8x32; 4]>>()
+                            .collect::<ArrayVec<[_; 4]>>()
                     });
 
                     *unsafe {
@@ -363,7 +358,64 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     if unlikely(
                         split_bit_vec
                             .iter()
-                            .fold(u8x32::splat(1), |acc, &bit| acc & bit)
+                            .fold(Simd::splat(1), |acc, &bit| acc & bit)
+                            == ZEROS,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
+        let text_bytes = text.as_bytes();
+        let mut result_list = Vec::new();
+
+        if unlikely(bytecount::num_chars(text_bytes) < self.min_chars_count) {
+            return result_list;
+        }
+
+        let mut word_id_set = IntSet::default();
+        let mut word_id_split_bit_map = IntMap::default();
+
+        for (simple_match_type, simple_ac_table) in &self.simple_ac_table_dict {
+            let processed_text_bytes_list = self.reduce_text_process(simple_match_type, text_bytes);
+            let processed_times = processed_text_bytes_list.len();
+            for (index, processed_text) in processed_text_bytes_list.iter().enumerate() {
+                for ac_result in simple_ac_table
+                    .ac_matcher
+                    .find_overlapping_iter(processed_text)
+                {
+                    let ac_word_conf =
+                        unsafe { simple_ac_table.ac_word_conf_list.get_unchecked(ac_result.pattern().as_usize()) };
+                    let word_id = ac_word_conf.0;
+
+                    if word_id_set.contains(&word_id) {
+                        continue;
+                    }
+
+                    let word_conf =
+                        unsafe { self.simple_word_map.get(&word_id).unwrap_unchecked() };
+
+                    let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                        iter::repeat_n(word_conf.split_bit, processed_times)
+                            .collect::<ArrayVec<[_; 4]>>()
+                    });
+
+                    *unsafe {
+                        split_bit_vec
+                            .get_unchecked_mut(index)
+                            .as_mut_array()
+                            .get_unchecked_mut(ac_word_conf.1)
+                    } >>= 1;
+
+                    if unlikely(
+                        split_bit_vec
+                            .iter()
+                            .fold(Simd::splat(1), |acc, &bit| acc & bit)
                             == ZEROS,
                     ) {
                         word_id_set.insert(word_id);

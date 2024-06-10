@@ -47,7 +47,7 @@ public class Demo {
     public static void simple_matcher_process_demo() throws IOException {
         MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
         packer.packMapHeader(1);
-        packer.packInt(15);
+        packer.packInt(30);
         packer.packArrayHeader(1);
         packer.packMapHeader(2);
         packer.packString("word_id");
@@ -87,13 +87,15 @@ public class Demo {
         packer.packInt(1);
         packer.packString("match_table_type");
         packer.packString("simple");
+        packer.packString("simple_match_type");
+        packer.packInt(30);
         packer.packString("wordlist");
         packer.packArrayHeader(1);
         packer.packString("你好");
+        packer.packString("exemption_simple_match_type");
+        packer.packInt(30);
         packer.packString("exemption_wordlist");
         packer.packArrayHeader(0);
-        packer.packString("simple_match_type");
-        packer.packInt(15);
         packer.close();
 
         byte[] table_match_dict_bytes = packer.toByteArray();

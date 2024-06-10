@@ -28,7 +28,7 @@ gxhash = "3.4.1"
 mimalloc-rust = { version = "0.2.1", features = ["unstable"] }
 nohash-hasher = "0.2.0"
 rapidfuzz = "0.5.0"
-regex = "1.10.4"
+regex = "1.10.5"
 serde = { version = "1.0.203", features = ["derive"] }
 sonic-rs = "0.3.6"
 tinyvec = { version = "1.6.0", features = ["alloc"] }

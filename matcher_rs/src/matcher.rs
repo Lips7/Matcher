@@ -79,11 +79,12 @@ pub enum MatchTableType {
 pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
+    pub simple_match_type: SimpleMatchType,
     #[serde(borrow)]
     pub wordlist: VarZeroVec<'a, str>,
+    pub exemption_simple_match_type: SimpleMatchType,
     #[serde(borrow)]
     pub exemption_wordlist: VarZeroVec<'a, str>,
-    pub simple_match_type: SimpleMatchType,
 }
 
 #[derive(Debug)]
@@ -183,7 +184,7 @@ impl Matcher {
                     });
 
                     let simple_word_list = simple_wordlist_dict
-                        .entry(SimpleMatchType::FanjianDeleteNormalize)
+                        .entry(table.exemption_simple_match_type)
                         .or_default();
 
                     for exemption_word in exemption_wordlist.iter() {
