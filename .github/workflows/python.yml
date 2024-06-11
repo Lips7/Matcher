@@ -152,16 +152,13 @@ jobs:
         with:
           pattern: wheels_*
           merge-multiple: true
+          path: dist
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pip "maturin>=1,<2"
-      - run: ls -1 .
-      - name: Deploy wheel
-        run: maturin upload --skip-existing --username "$MATURIN_USERNAME" *.whl
+      - run: pip install --upgrade twine
+      - name: Publish to pypi
         env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-      - name: Deploy sdist
-        run: maturin upload --skip-existing --username "$MATURIN_USERNAME" *.tar.gz
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload --skip-existing *
