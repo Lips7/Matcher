@@ -36,8 +36,6 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-latest
-            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,7 +50,6 @@ jobs:
           manylinux: auto
           rust-toolchain: nightly
           working-directory: matcher_py
-          before-script-linux: 'sudo apt-get update'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
