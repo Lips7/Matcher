@@ -8,12 +8,15 @@ name: publish_py
 on:
   push:
     branches:
-      - main
       - master
     tags:
       - '*'
   pull_request:
   workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ./matcher_py
 
 permissions:
   contents: read
@@ -43,7 +46,6 @@ jobs:
           python-version: 3.8
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -51,7 +53,6 @@ jobs:
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
-        working-directory: ./matcher_py
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
@@ -76,7 +77,6 @@ jobs:
           python-version: 3.8
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -84,7 +84,6 @@ jobs:
           manylinux: musllinux_1_2
       - name: Upload wheels
         uses: actions/upload-artifact@v4
-        working-directory: ./matcher_py
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
           path: dist
@@ -106,14 +105,12 @@ jobs:
           architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
-        working-directory: ./matcher_py
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -134,14 +131,12 @@ jobs:
           python-version: 3.8
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
-        working-directory: ./matcher_py
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -152,13 +147,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build sdist
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         with:
           command: sdist
           args: --out dist
       - name: Upload sdist
         uses: actions/upload-artifact@v4
-        working-directory: ./matcher_py
         with:
           name: wheels-sdist
           path: dist
@@ -172,7 +165,6 @@ jobs:
       - uses: actions/download-artifact@v4
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
-        working-directory: ./matcher_py
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
