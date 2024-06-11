@@ -1,4 +1,8 @@
 # Matcher Rust Implement PyO3 binding
+## Installation
+```
+pip install matcher_py
+```
 ## Usage
 Python usage is in the [test.ipynb](matcher_py/test.ipynb) file.
 ### Matcher
@@ -7,7 +11,7 @@ import msgspec
 import numpy as np
 
 from matcher_py import Matcher, SimpleMatcher # type: ignore
-from extension_types import MatchTableType, SimpleMatchType, MatchTable
+from matcher_py.extension_types import MatchTableType, SimpleMatchType, MatchTable
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 
@@ -62,7 +66,7 @@ import msgspec
 import numpy as np
 
 from matcher_py import Matcher, SimpleMatcher # type: ignore
-from extension_types import MatchTableType, SimpleMatchType, MatchTable
+from matcher_py.extension_types import MatchTableType, SimpleMatchType, MatchTable
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 
