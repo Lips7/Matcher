@@ -3,16 +3,16 @@ resolver = "2"
 members = ["matcher_rs", "matcher_py", "matcher_c"]
 
 [workspace.package]
-authors = ["Fuji Guo"]
+authors = ["Fuji Guo <f975793771@gmail.com>"]
 categories = ["text-processing"]
 description = "A high performance multiple functional word matcher"
 edition = "2021"
 homepage = "https://github.com/Lips7/Matcher"
 readme = "README.md"
-keywords = ["String Match"]
-license = "License.md"
+keywords = ["text", "string", "search", "pattern", "multi"]
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/Lips7/Matcher"
-version = "1.7.1"
+version = "0.1.0"
 
 [profile.release]
 strip = true

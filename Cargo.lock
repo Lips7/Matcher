@@ -350,7 +350,7 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "matcher_c"
-version = "1.7.1"
+version = "0.1.0"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "1.7.1"
+version = "0.1.0"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "1.7.1"
+version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bitflags",
