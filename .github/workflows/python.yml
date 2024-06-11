@@ -153,8 +153,6 @@ jobs:
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
-        with:
-          path: $GITHUB_WORKSPACE/matcher_py/dist
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
@@ -163,4 +161,3 @@ jobs:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
           rust-toolchain: nightly
-          working-directory: matcher_py
