@@ -150,7 +150,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels_*
+          pattern: wheels-*
           merge-multiple: true
           path: dist
       - uses: actions/setup-python@v5
