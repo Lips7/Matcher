@@ -25,7 +25,7 @@ bitflags = { version = "2.5.0", features = ["serde"] }
 bytecount = { version = "0.6.8", features = ["generic-simd"] }
 fancy-regex = "0.13.0"
 gxhash = "3.4.1"
-mimalloc-rust = { version = "0.2.1", features = ["unstable"] }
+mimalloc = "0.1.42"
 nohash-hasher = "0.2.0"
 rapidfuzz = "0.5.0"
 regex = "1.10.5"

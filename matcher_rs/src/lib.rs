@@ -4,7 +4,7 @@
 #![feature(iter_repeat_n)]
 
 #[global_allocator]
-static GLOBAL: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod matcher;
 pub use matcher::{
