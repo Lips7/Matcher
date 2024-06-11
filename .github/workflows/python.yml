@@ -153,11 +153,16 @@ jobs:
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
-      - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip "maturin>=1,<2"
+      - run: ls -1 .
+      - name: Deploy wheel
+        run: maturin upload --skip-existing *.whl
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
-          rust-toolchain: nightly
+      - name: Deploy sdist
+        run: maturin upload --skip-existing *.tar.gz
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
