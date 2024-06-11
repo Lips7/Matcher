@@ -43,14 +43,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.8
-    - name: Install rust
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: nightly
-          override: true
-          profile: minimal
-          default: true
-          target: ${{ matrix.platform.target }}
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            override: true
+            profile: minimal
+            default: true
+            target: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
