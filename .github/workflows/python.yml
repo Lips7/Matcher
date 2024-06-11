@@ -48,7 +48,6 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
-          sccache: 'true'
           manylinux: auto
           rust-toolchain: nightly
           working-directory: matcher_py
