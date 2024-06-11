@@ -19,7 +19,7 @@ crate-type = ["cdylib"]
 [dependencies]
 matcher_rs = { path = "../matcher_rs" }
 numpy = "0.21.0"
-pyo3 = { version = "0.21.2", features = ["extension-module", "abi3-py310", "serde"] }
+pyo3 = { version = "0.21.2", features = ["extension-module", "abi3-py38", "serde"] }
 rmp-serde = "1.3.0"
 serde = "1.0.203"
 

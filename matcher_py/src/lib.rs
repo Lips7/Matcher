@@ -83,7 +83,7 @@ impl Matcher {
     fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.matcher
-                .is_match(unsafe { text.to_str().unwrap_unchecked() })
+                .is_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
         })
     }
 
@@ -91,7 +91,7 @@ impl Matcher {
     fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<&str, String> {
         text.downcast::<PyString>().map_or(HashMap::new(), |text| {
             self.matcher
-                .word_match(unsafe { text.to_str().unwrap_unchecked() })
+                .word_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
         })
     }
 
@@ -103,7 +103,7 @@ impl Matcher {
                     py,
                     &self
                         .matcher
-                        .word_match_as_string(unsafe { text.to_str().unwrap_unchecked() }),
+                        .word_match_as_string(unsafe { text.to_cow().as_ref().unwrap_unchecked() }),
                 )
             })
             .into()
@@ -229,7 +229,7 @@ impl SimpleMatcher {
     fn is_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> bool {
         text.downcast::<PyString>().map_or(false, |text| {
             self.simple_matcher
-                .is_match(unsafe { text.to_str().unwrap_unchecked() })
+                .is_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
         })
     }
 
@@ -237,7 +237,7 @@ impl SimpleMatcher {
     fn simple_process(&self, _py: Python, text: &Bound<'_, PyAny>) -> Vec<SimpleResult> {
         text.downcast::<PyString>().map_or(Vec::new(), |text| {
             self.simple_matcher
-                .process(unsafe { text.to_str().unwrap_unchecked() })
+                .process(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
                 .into_iter()
                 .map(|simple_result| SimpleResult(simple_result))
                 .collect::<Vec<_>>()
