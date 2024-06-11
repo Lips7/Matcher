@@ -2,20 +2,19 @@ use std::borrow::Cow;
 
 use fancy_regex::Regex;
 use rapidfuzz::distance::levenshtein;
-use zerovec::VarZeroVec;
 
 use super::{MatchResultTrait, TextMatcherTrait};
 
 pub struct SimTable<'a> {
     pub table_id: u32,
     pub match_id: &'a str,
-    pub wordlist: &'a VarZeroVec<'a, str>,
+    pub word_list: &'a Vec<&'a str>,
 }
 
 struct SimProcessedTable {
     table_id: u32,
     match_id: String,
-    wordlist: Vec<String>,
+    word_list: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -49,10 +48,10 @@ impl SimMatcher {
                 .map(|sim_table| SimProcessedTable {
                     table_id: sim_table.table_id,
                     match_id: sim_table.match_id.to_owned(),
-                    wordlist: sim_table
-                        .wordlist
+                    word_list: sim_table
+                        .word_list
                         .iter()
-                        .map(|word| word.to_owned())
+                        .map(|&word| word.to_owned())
                         .collect::<Vec<String>>(),
                 })
                 .collect(),
@@ -65,7 +64,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let processed_text = self.remove_special_pattern.replace_all(text, "");
 
         self.sim_processed_table_list.iter().any(|sim_table| {
-            sim_table.wordlist.iter().any(|text| {
+            sim_table.word_list.iter().any(|text| {
                 levenshtein::normalized_similarity_with_args(
                     text.chars(),
                     processed_text.chars(),
@@ -82,7 +81,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let mut result_list = Vec::new();
 
         for sim_table in &self.sim_processed_table_list {
-            result_list.extend(sim_table.wordlist.iter().filter_map(|text| {
+            result_list.extend(sim_table.word_list.iter().filter_map(|text| {
                 levenshtein::normalized_similarity_with_args(
                     text.chars(),
                     processed_text.chars(),

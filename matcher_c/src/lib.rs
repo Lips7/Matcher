@@ -3,12 +3,12 @@ use std::{
     str::from_utf8_unchecked,
 };
 
-use matcher_rs::{MatchTableDict, Matcher, SimpleMatcher, SimpleWordlistDict, TextMatcherTrait};
+use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, TextMatcherTrait};
 
 #[no_mangle]
 pub extern "C" fn init_matcher(match_table_dict_bytes: *const i8) -> *mut Matcher {
     unsafe {
-        let match_table_dict: MatchTableDict = match rmp_serde::from_slice(
+        let match_table_dict: MatchTableMap = match rmp_serde::from_slice(
             CStr::from_ptr(match_table_dict_bytes).to_bytes(),
         ) {
             Ok(match_table_dict) => match_table_dict,
@@ -55,20 +55,22 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 }
 
 #[no_mangle]
-pub extern "C" fn init_simple_matcher(simple_wordlist_dict_bytes: *const i8) -> *mut SimpleMatcher {
+pub extern "C" fn init_simple_matcher(
+    simple_match_type_word_map_bytes: *const i8,
+) -> *mut SimpleMatcher {
     unsafe {
-        let simple_wordlist_dict: SimpleWordlistDict = match rmp_serde::from_slice(
-            CStr::from_ptr(simple_wordlist_dict_bytes).to_bytes(),
+        let simple_match_type_word_map: SimpleMatchTypeWordMap = match rmp_serde::from_slice(
+            CStr::from_ptr(simple_match_type_word_map_bytes).to_bytes(),
         ) {
-            Ok(simple_wordlist_dict) => simple_wordlist_dict,
+            Ok(simple_match_type_word_map) => simple_match_type_word_map,
             Err(e) => {
                 panic!(
-                    "Deserialize simple_wordlist_dict_bytes failed, Please check the input data.\nErr: {}", e.to_string(),
+                    "Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\nErr: {}", e.to_string(),
                 )
             }
         };
 
-        Box::into_raw(Box::new(SimpleMatcher::new(&simple_wordlist_dict)))
+        Box::into_raw(Box::new(SimpleMatcher::new(&simple_match_type_word_map)))
     }
 }
 

@@ -10,9 +10,9 @@ use pyo3::types::{
 use pyo3::{intern, Bound, IntoPy, PyAny};
 
 use matcher_rs::{
-    MatchResultTrait, MatchTableDict as MatchTableDictRs, Matcher as MatcherRs,
-    SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs,
-    SimpleWordlistDict as SimpleWordlistDictRs, TextMatcherTrait,
+    MatchResultTrait, MatchTableMap as MatchTableMapRs, Matcher as MatcherRs,
+    SimpleMatchTypeWordMap as SimpleMatchTypeWordMapRs, SimpleMatcher as SimpleMatcherRs,
+    SimpleResult as SimpleResultRs, TextMatcherTrait,
 };
 
 struct SimpleResult<'a>(SimpleResultRs<'a>);
@@ -49,7 +49,7 @@ struct Matcher {
 impl Matcher {
     #[new]
     fn new(_py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
-        let match_table_dict: MatchTableDictRs =
+        let match_table_dict: MatchTableMapRs =
             match rmp_serde::from_slice(match_table_dict_bytes.as_bytes()) {
                 Ok(match_table_dict) => match_table_dict,
                 Err(e) => {
@@ -185,7 +185,7 @@ impl Matcher {
 #[pyclass(module = "matcher_py")]
 struct SimpleMatcher {
     simple_matcher: SimpleMatcherRs,
-    simple_wordlist_dict_bytes: Py<PyBytes>,
+    simple_match_type_word_map_bytes: Py<PyBytes>,
 }
 
 #[pymethods]
@@ -193,33 +193,35 @@ impl SimpleMatcher {
     #[new]
     fn new(
         _py: Python,
-        simple_wordlist_dict_bytes: &Bound<'_, PyBytes>,
+        simple_match_type_word_map_bytes: &Bound<'_, PyBytes>,
     ) -> PyResult<SimpleMatcher> {
-        let simple_wordlist_dict: SimpleWordlistDictRs =
-            match rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()) {
-                Ok(simple_wordlist_dict) => simple_wordlist_dict,
+        let simple_match_type_word_map: SimpleMatchTypeWordMapRs =
+            match rmp_serde::from_slice(simple_match_type_word_map_bytes.as_bytes()) {
+                Ok(simple_match_type_word_map) => simple_match_type_word_map,
                 Err(e) => return Err(PyValueError::new_err(
-                    format!("Deserialize simple_wordlist_dict_bytes failed, Please check the input data.\n Err: {}", e.to_string()),
+                    format!("Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\n Err: {}", e.to_string()),
                 )),
             };
 
         Ok(SimpleMatcher {
-            simple_matcher: SimpleMatcherRs::new(&simple_wordlist_dict),
-            simple_wordlist_dict_bytes: simple_wordlist_dict_bytes.as_unbound().to_owned(),
+            simple_matcher: SimpleMatcherRs::new(&simple_match_type_word_map),
+            simple_match_type_word_map_bytes: simple_match_type_word_map_bytes
+                .as_unbound()
+                .to_owned(),
         })
     }
 
     fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
-        self.simple_wordlist_dict_bytes.clone_ref(py)
+        self.simple_match_type_word_map_bytes.clone_ref(py)
     }
 
     fn __getstate__(&self, py: Python) -> Py<PyBytes> {
-        self.simple_wordlist_dict_bytes.clone_ref(py)
+        self.simple_match_type_word_map_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, _py: Python, simple_wordlist_dict_bytes: &Bound<'_, PyBytes>) {
+    fn __setstate__(&mut self, _py: Python, simple_match_type_word_map_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice(simple_wordlist_dict_bytes.as_bytes()).unwrap(),
+            &rmp_serde::from_slice(simple_match_type_word_map_bytes.as_bytes()).unwrap(),
         );
     }
 

@@ -4,13 +4,13 @@ use std::rc::Rc;
 
 use bitflags::bitflags;
 use gxhash::HashMap as GxHashMap;
+use nohash_hasher::IntMap;
 use serde::{Deserializer, Serializer};
 use sonic_rs::{to_string, Deserialize, Serialize};
-use zerovec::VarZeroVec;
 
 use crate::regex_matcher::{RegexMatcher, RegexTable};
 use crate::sim_matcher::{SimMatcher, SimTable};
-use crate::simple_matcher::{SimpleMatchType, SimpleMatcher, SimpleWord};
+use crate::simple_matcher::{SimpleMatchType, SimpleMatcher};
 
 bitflags! {
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -80,11 +80,9 @@ pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
     pub simple_match_type: SimpleMatchType,
-    #[serde(borrow)]
-    pub wordlist: VarZeroVec<'a, str>,
+    pub word_list: Vec<&'a str>,
     pub exemption_simple_match_type: SimpleMatchType,
-    #[serde(borrow)]
-    pub exemption_wordlist: VarZeroVec<'a, str>,
+    pub exemption_word_list: Vec<&'a str>,
 }
 
 #[derive(Debug)]
@@ -117,7 +115,7 @@ struct ResultDict<'a> {
     exemption_flag: bool,
 }
 
-pub type MatchTableDict<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
+pub type MatchTableMap<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
 
 pub struct Matcher {
     word_table_list: Vec<Rc<WordTableConf>>,
@@ -127,11 +125,11 @@ pub struct Matcher {
 }
 
 impl Matcher {
-    pub fn new(match_table_dict: &MatchTableDict) -> Matcher {
+    pub fn new<'a>(match_table_dict: &'a MatchTableMap) -> Matcher {
         let mut word_id: u64 = 0;
         let mut word_table_list: Vec<Rc<WordTableConf>> = Vec::new();
 
-        let mut simple_wordlist_dict: GxHashMap<SimpleMatchType, Vec<SimpleWord>> =
+        let mut simple_match_type_word_map: GxHashMap<SimpleMatchType, IntMap<u64, &'a str>> =
             GxHashMap::default();
 
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
@@ -141,10 +139,10 @@ impl Matcher {
             for table in table_list {
                 let table_id = table.table_id;
                 let match_table_type = &table.match_table_type;
-                let wordlist = &table.wordlist;
-                let exemption_wordlist = &table.exemption_wordlist;
+                let word_list = &table.word_list;
+                let exemption_word_list = &table.exemption_word_list;
 
-                if !wordlist.is_empty() {
+                if !word_list.is_empty() {
                     match match_table_type {
                         MatchTableType::Simple => {
                             let word_table_conf = Rc::new(WordTableConf {
@@ -152,47 +150,44 @@ impl Matcher {
                                 table_id,
                                 is_exemption: false,
                             });
-                            let simple_word_list = simple_wordlist_dict
+                            let simple_word_map = simple_match_type_word_map
                                 .entry(table.simple_match_type)
                                 .or_default();
 
-                            for word in wordlist.iter() {
+                            for word in word_list.iter() {
                                 word_table_list.push(Rc::clone(&word_table_conf));
-                                simple_word_list.push(SimpleWord { word_id, word });
+                                simple_word_map.insert(word_id, word);
                                 word_id += 1;
                             }
                         }
                         MatchTableType::SimilarTextLevenshtein => sim_table_list.push(SimTable {
                             table_id,
                             match_id,
-                            wordlist,
+                            word_list,
                         }),
                         _ => regex_table_list.push(RegexTable {
                             table_id,
                             match_id,
                             match_table_type,
-                            wordlist,
+                            word_list,
                         }),
                     }
                 }
 
-                if !exemption_wordlist.is_empty() {
+                if !exemption_word_list.is_empty() {
                     let word_table_conf = Rc::new(WordTableConf {
                         match_id: match_id.to_owned(),
                         table_id,
                         is_exemption: true,
                     });
 
-                    let simple_word_list = simple_wordlist_dict
+                    let simple_word_map = simple_match_type_word_map
                         .entry(table.exemption_simple_match_type)
                         .or_default();
 
-                    for exemption_word in exemption_wordlist.iter() {
+                    for exemption_word in exemption_word_list.iter() {
                         word_table_list.push(Rc::clone(&word_table_conf));
-                        simple_word_list.push(SimpleWord {
-                            word_id,
-                            word: exemption_word,
-                        });
+                        simple_word_map.insert(word_id, exemption_word);
                         word_id += 1;
                     }
                 }
@@ -201,8 +196,8 @@ impl Matcher {
 
         Matcher {
             word_table_list,
-            simple_matcher: (!simple_wordlist_dict.is_empty())
-                .then(|| SimpleMatcher::new(&simple_wordlist_dict)),
+            simple_matcher: (!simple_match_type_word_map.is_empty())
+                .then(|| SimpleMatcher::new(&simple_match_type_word_map)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
             sim_matcher: (!sim_table_list.is_empty()).then(|| SimMatcher::new(&sim_table_list)),

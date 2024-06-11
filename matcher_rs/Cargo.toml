@@ -22,9 +22,9 @@ harness = false
 [dependencies]
 aho-corasick = "1.1.3"
 bitflags = { version = "2.5.0", features = ["serde"] }
-bytecount = { version = "0.6.8", features = ["runtime-dispatch-simd"] }
+bytecount = { version = "0.6.8", features = ["generic-simd"] }
 fancy-regex = "0.13.0"
-gxhash = "3.4.1"
+gxhash = { version = "3.4.1", features = ["hybrid"]}
 mimalloc-rust = { version = "0.2.1", features = ["unstable"] }
 nohash-hasher = "0.2.0"
 rapidfuzz = "0.5.0"
@@ -32,7 +32,6 @@ regex = "1.10.5"
 serde = { version = "1.0.203", features = ["derive"] }
 sonic-rs = "0.3.6"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-zerovec = { version = "0.10.2", features = ["derive", "serde"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

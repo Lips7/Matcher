@@ -22,7 +22,7 @@ interface Matcher extends Library {
 
     void drop_matcher(Pointer matcher);
 
-    Pointer init_simple_matcher(byte[] simple_wordlist_dict_bytes);
+    Pointer init_simple_matcher(byte[] simple_match_type_word_map_bytes);
 
     boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
 
@@ -48,19 +48,16 @@ public class Demo {
         MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
         packer.packMapHeader(1);
         packer.packInt(30);
-        packer.packArrayHeader(1);
-        packer.packMapHeader(2);
-        packer.packString("word_id");
+        packer.packMapHeader(1);
         packer.packInt(1);
-        packer.packString("word");
         packer.packString("你好");
         packer.close();
 
-        byte[] simple_wordlist_dict_bytes = packer.toByteArray();
+        byte[] simple_match_type_word_map_bytes = packer.toByteArray();
 
         Matcher instance = Matcher.INSTANCE;
 
-        Pointer simple_matcher = instance.init_simple_matcher(simple_wordlist_dict_bytes);
+        Pointer simple_matcher = instance.init_simple_matcher(simple_match_type_word_map_bytes);
 
         byte[] str_bytes = "你好".getBytes("utf-8");
         byte[] c_str_bytes = new byte[str_bytes.length + 1];

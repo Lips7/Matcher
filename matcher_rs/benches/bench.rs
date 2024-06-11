@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use gxhash::HashMap as GxHashMap;
-use zerovec::VarZeroVec;
+use nohash_hasher::IntMap;
 
 use matcher_rs::*;
 
@@ -11,9 +11,9 @@ fn bench(c: &mut Criterion) {
             table_id: 1,
             match_table_type: MatchTableType::Simple,
             simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
-            wordlist: VarZeroVec::from(&["你好,123"]),
+            word_list: vec!["你好,123"],
             exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
-            exemption_wordlist: VarZeroVec::new(),
+            exemption_word_list: vec![],
         }],
     )]);
     let matcher = Matcher::new(&match_table_dict);
@@ -37,17 +37,14 @@ fn bench(c: &mut Criterion) {
         b.iter(|| matcher.word_match(black_box("")))
     });
 
-    let simple_wordlist_dict = GxHashMap::from_iter([(
+    let simple_word_list_dict = GxHashMap::from_iter([(
         SimpleMatchType::FanjianDeleteNormalize,
-        vec![SimpleWord {
-            word_id: 1,
-            word: "你好,123",
-        }],
+        IntMap::from_iter([(1, "你好，123")]),
     )]);
-    let simple_matcher = SimpleMatcher::new(&simple_wordlist_dict);
+    let simple_matcher = SimpleMatcher::new(&simple_word_list_dict);
 
     c.bench_function("simple_matcher_build", |b| {
-        b.iter(|| SimpleMatcher::new(&simple_wordlist_dict))
+        b.iter(|| SimpleMatcher::new(&simple_word_list_dict))
     });
     c.bench_function("simple_process_super_long_text", |b| {
         b.iter(|| simple_matcher.process(black_box("dsahbdj12pu980-120opo[sad[d]pas;l[;'.,zmc;as'k[aepe所有的沙发博客看后289UI哈哈不可得兼萨马拉州，女把wejlhjp0iidasbwdjksabfadghjaklsekjniwh123powhudbasbasmdsal,d.as,dlasfjsaifjbo39p9eu12p0poaspopofjsapdaksdpsa【】萨达省；c'xzlk.asd，萨。，但马上，队列即可领取王杰饿哦啥屁；但那是没法解开了吗你只需龙祥怎么了华北地区房东啥尽快帮我去IE请问i两节课大赛不好发不出吗你只需把vaf打死就不会发生的旅程啊，sd阿斯顿啥都怕是个大傻大叔的吧到那时  dsabjx· ds····           巴士到家啦vxzmdm")))

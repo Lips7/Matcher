@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use fancy_regex::{escape, Regex};
-use zerovec::VarZeroVec;
 
 use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 
@@ -9,7 +8,7 @@ pub struct RegexTable<'a> {
     pub table_id: u32,
     pub match_id: &'a str,
     pub match_table_type: &'a MatchTableType,
-    pub wordlist: &'a VarZeroVec<'a, str>,
+    pub word_list: &'a Vec<&'a str>,
 }
 
 enum RegexType {
@@ -18,7 +17,7 @@ enum RegexType {
     },
     ListRegex {
         regex_list: Vec<Regex>,
-        wordlist: Vec<String>,
+        word_list: Vec<String>,
     },
 }
 
@@ -53,12 +52,12 @@ impl RegexMatcher {
         let mut regex_pattern_table_list = Vec::with_capacity(regex_table_list.len());
 
         for regex_table in regex_table_list {
-            let size = regex_table.wordlist.len();
+            let size = regex_table.word_list.len();
 
             match regex_table.match_table_type {
                 MatchTableType::SimilarChar => {
                     let pattern = regex_table
-                        .wordlist
+                        .word_list
                         .iter()
                         .map(|charstr| format!("({})", escape(charstr).replace(',', "|")))
                         .collect::<Vec<String>>()
@@ -73,16 +72,16 @@ impl RegexMatcher {
                     });
                 }
                 MatchTableType::Acrostic => {
-                    let mut wordlist = Vec::with_capacity(size);
+                    let mut word_list = Vec::with_capacity(size);
                     let mut regex_list = Vec::with_capacity(size);
 
-                    for word in regex_table.wordlist.iter() {
+                    for &word in regex_table.word_list.iter() {
                         let pattern = format!(
                             r"(?:^|[\s\pP]+?){}",
                             escape(word).replace(',', r".*?[\s\pP]+?")
                         );
 
-                        wordlist.push(word.to_owned());
+                        word_list.push(word.to_owned());
                         regex_list.push(Regex::new(&pattern).unwrap());
                     }
 
@@ -91,26 +90,26 @@ impl RegexMatcher {
                         match_id: regex_table.match_id.to_owned(),
                         table_match_type: RegexType::ListRegex {
                             regex_list,
-                            wordlist,
+                            word_list,
                         },
                     });
                 }
                 MatchTableType::Regex => {
-                    let wordlist = regex_table
-                        .wordlist
+                    let word_list = regex_table
+                        .word_list
                         .iter()
-                        .map(|word| word.to_owned())
+                        .map(|&word| word.to_owned())
                         .collect::<Vec<String>>();
 
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id.to_owned(),
                         table_match_type: RegexType::ListRegex {
-                            regex_list: wordlist
+                            regex_list: word_list
                                 .iter()
                                 .filter_map(|word| Regex::new(&word).ok())
                                 .collect(),
-                            wordlist,
+                            word_list,
                         },
                     });
                 }
@@ -166,12 +165,12 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                 }
                 RegexType::ListRegex {
                     regex_list,
-                    wordlist,
+                    word_list,
                 } => {
                     for (index, regex) in regex_list.iter().enumerate() {
                         if regex.is_match(text).unwrap() {
                             result_list.push(RegexResult {
-                                word: Cow::Borrowed(&wordlist[index]),
+                                word: Cow::Borrowed(&word_list[index]),
                                 table_id: regex_table.table_id,
                                 match_id: &regex_table.match_id,
                             });

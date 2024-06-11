@@ -1,70 +1,40 @@
 use gxhash::HashMap as GxHashMap;
-use zerovec::VarZeroVec;
+use nohash_hasher::IntMap;
 
 use matcher_rs::*;
 
 #[test]
 fn simple_match() {
-    let simple_wordlist_dict = GxHashMap::from_iter([
+    let simple_word_list_dict = GxHashMap::from_iter([
         (
             SimpleMatchType::FanjianDeleteNormalize,
-            vec![
-                SimpleWord {
-                    word_id: 1,
-                    word: "你真好,123",
-                },
-                SimpleWord {
-                    word_id: 2,
-                    word: r"It's /\/\y duty",
-                },
-                SimpleWord {
-                    word_id: 3,
-                    word: "学生",
-                },
-                SimpleWord {
-                    word_id: 6,
-                    word: "无,法,无,天",
-                },
-                SimpleWord {
-                    word_id: 7,
-                    word: "+V,退保",
-                },
-                SimpleWord {
-                    word_id: 10,
-                    word: r"NMN",
-                },
-            ],
+            IntMap::from_iter([
+                (1, "你真好,123"),
+                (2, r"It's /\/\y duty"),
+                (3, "学生"),
+                (6, "无,法,无,天"),
+                (7, "+V,退保"),
+                (10, r"NMN"),
+            ]),
         ),
         (
             SimpleMatchType::Fanjian,
-            vec![SimpleWord {
-                word_id: 11,
-                word: r"xxx,yyy",
-            }],
+            IntMap::from_iter([(11, r"xxx,yyy")]),
         ),
         (
             SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYin,
-            vec![SimpleWord {
-                word_id: 4,
-                word: "你好",
-            }],
+            IntMap::from_iter([(4, r"你好")]),
         ),
         (
             SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYinChar,
-            vec![SimpleWord {
-                word_id: 5,
-                word: "西安",
-            }],
+            IntMap::from_iter([(5, r"西安")]),
         ),
         (
             SimpleMatchType::DeleteNormalize,
-            vec![SimpleWord {
-                word_id: 9,
-                word: "八一",
-            }],
+            IntMap::from_iter([(9, r"八一")]),
         ),
     ]);
-    let simple_matcher = SimpleMatcher::new(&simple_wordlist_dict);
+    let simple_matcher = SimpleMatcher::new(&simple_word_list_dict);
 
     assert_eq!(
         "你真好,123".to_owned(),
@@ -101,28 +71,28 @@ fn simple_match() {
 
 #[test]
 fn regex_match() {
-    let similar_wordlist = VarZeroVec::from(&["你,ni,N", r"好,hao,H,Hao,号", r"吗,ma,M"]);
-    let acrostic_wordlist = VarZeroVec::from(&["你,真,棒"]);
-    let regex_wordlist = VarZeroVec::from(&[r"(?<!\d)1[3-9]\d{9}(?!\d)"]);
+    let similar_word_list = vec!["你,ni,N", r"好,hao,H,Hao,号", r"吗,ma,M"];
+    let acrostic_word_list = vec!["你,真,棒"];
+    let regex_word_list = vec![r"(?<!\d)1[3-9]\d{9}(?!\d)"];
 
     let regex_table_list = vec![
         RegexTable {
             table_id: 1,
             match_id: "1",
             match_table_type: &MatchTableType::SimilarChar,
-            wordlist: &similar_wordlist,
+            word_list: &similar_word_list,
         },
         RegexTable {
             table_id: 2,
             match_id: "2",
             match_table_type: &MatchTableType::Acrostic,
-            wordlist: &acrostic_wordlist,
+            word_list: &acrostic_word_list,
         },
         RegexTable {
             table_id: 3,
             match_id: "3",
             match_table_type: &MatchTableType::Regex,
-            wordlist: &regex_wordlist,
+            word_list: &regex_word_list,
         },
     ];
     let regex_matcher = RegexMatcher::new(&regex_table_list);
@@ -137,12 +107,12 @@ fn regex_match() {
 
 #[test]
 fn sim_match() {
-    let wordlist = VarZeroVec::from(&["你真是太棒了真的太棒了", "你真棒"]);
+    let word_list = vec!["你真是太棒了真的太棒了", "你真棒"];
 
     let sim_table_list = vec![SimTable {
         table_id: 1,
         match_id: "1",
-        wordlist: &wordlist,
+        word_list: &word_list,
     }];
     let sim_matcher = SimMatcher::new(&sim_table_list);
 
@@ -163,18 +133,18 @@ fn word_match() {
                 table_id: 1,
                 match_table_type: MatchTableType::Simple,
                 simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
-                wordlist: VarZeroVec::from(&["无,法,无,天"]),
+                word_list: vec!["无,法,无,天"],
                 exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
-                exemption_wordlist: VarZeroVec::new(),
+                exemption_word_list: vec![],
             },
             MatchTable {
                 table_id: 2,
                 match_table_type: MatchTableType::Simple,
                 simple_match_type: SimpleMatchType::FanjianDeleteNormalize
                     | SimpleMatchType::PinYin,
-                wordlist: VarZeroVec::from(&["你好"]),
+                word_list: vec!["你好"],
                 exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
-                exemption_wordlist: VarZeroVec::new(),
+                exemption_word_list: vec![],
             },
         ],
     )]);
