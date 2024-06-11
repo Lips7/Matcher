@@ -2,17 +2,7 @@ name: rust
 
 on:
   push:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/rust.yml'
-      - 'matcher_rs/**'
-  pull_request:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/rust.yml'
-      - 'matcher_rs/**'
+    tags: 'v*'
 
 env:
   CARGO_TERM_COLOR: always

@@ -7,19 +7,7 @@ name: python
 
 on:
   push:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/python.yml'
-      - 'matcher_rs/**'
-      - 'matcher_py/**'
-  pull_request:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/python.yml'
-      - 'matcher_rs/**'
-      - 'matcher_py/**'
+    tags: 'v*'
 
 defaults:
   run:
