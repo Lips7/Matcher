@@ -9,10 +9,6 @@ on:
   push:
     tags: 'v*'
 
-defaults:
-  run:
-    working-directory: ./matcher_py
-
 permissions:
   contents: read
 
