@@ -3,7 +3,7 @@
 #
 #    maturin generate-ci github
 #
-name: CI
+name: publish_py
 
 on:
   push:
@@ -41,10 +41,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.8
-      - name: cd
-        run: cd matcher_py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -52,6 +51,7 @@ jobs:
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
+        working-directory: ./matcher_py
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
@@ -74,10 +74,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.8
-      - name: cd
-        run: cd matcher_py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -85,6 +84,7 @@ jobs:
           manylinux: musllinux_1_2
       - name: Upload wheels
         uses: actions/upload-artifact@v4
+        working-directory: ./matcher_py
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
           path: dist
@@ -104,16 +104,16 @@ jobs:
         with:
           python-version: 3.8
           architecture: ${{ matrix.platform.target }}
-      - name: cd
-        run: cd matcher_py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
+        working-directory: ./matcher_py
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -132,16 +132,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.8
-      - name: cd
-        run: cd matcher_py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
+        working-directory: ./matcher_py
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -150,15 +150,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: cd
-        run: cd matcher_py
       - name: Build sdist
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         with:
           command: sdist
           args: --out dist
       - name: Upload sdist
         uses: actions/upload-artifact@v4
+        working-directory: ./matcher_py
         with:
           name: wheels-sdist
           path: dist
@@ -172,6 +172,7 @@ jobs:
       - uses: actions/download-artifact@v4
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
+        working-directory: ./matcher_py
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
