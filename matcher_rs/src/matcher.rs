@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use bitflags::bitflags;
 use gxhash::HashMap as GxHashMap;
@@ -80,8 +79,10 @@ pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
     pub simple_match_type: SimpleMatchType,
+    #[serde(borrow)]
     pub word_list: Vec<&'a str>,
     pub exemption_simple_match_type: SimpleMatchType,
+    #[serde(borrow)]
     pub exemption_word_list: Vec<&'a str>,
 }
 
@@ -118,16 +119,19 @@ struct ResultDict<'a> {
 pub type MatchTableMap<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
 
 pub struct Matcher {
-    word_table_list: Vec<Rc<WordTableConf>>,
+    simple_word_table_conf_map: IntMap<u64, WordTableConf>,
+    simple_word_table_conf_id_map: IntMap<u64, u64>,
     simple_matcher: Option<SimpleMatcher>,
     regex_matcher: Option<RegexMatcher>,
     sim_matcher: Option<SimMatcher>,
 }
 
 impl Matcher {
-    pub fn new<'a>(match_table_dict: &'a MatchTableMap) -> Matcher {
+    pub fn new<'a>(match_table_map: &'a MatchTableMap) -> Matcher {
         let mut word_id: u64 = 0;
-        let mut word_table_list: Vec<Rc<WordTableConf>> = Vec::new();
+        let mut word_table_conf_id: u64 = 0;
+        let mut simple_word_table_conf_map = IntMap::default();
+        let mut simple_word_table_conf_id_map = IntMap::default();
 
         let mut simple_match_type_word_map: GxHashMap<SimpleMatchType, IntMap<u64, &'a str>> =
             GxHashMap::default();
@@ -135,7 +139,7 @@ impl Matcher {
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
         let mut sim_table_list: Vec<SimTable> = Vec::new();
 
-        for (&match_id, table_list) in match_table_dict {
+        for (&match_id, table_list) in match_table_map {
             for table in table_list {
                 let table_id = table.table_id;
                 let match_table_type = &table.match_table_type;
@@ -145,20 +149,26 @@ impl Matcher {
                 if !word_list.is_empty() {
                     match match_table_type {
                         MatchTableType::Simple => {
-                            let word_table_conf = Rc::new(WordTableConf {
-                                match_id: match_id.to_owned(),
-                                table_id,
-                                is_exemption: false,
-                            });
+                            simple_word_table_conf_map.insert(
+                                word_table_conf_id,
+                                WordTableConf {
+                                    match_id: match_id.to_owned(),
+                                    table_id,
+                                    is_exemption: false,
+                                },
+                            );
+
                             let simple_word_map = simple_match_type_word_map
                                 .entry(table.simple_match_type)
                                 .or_default();
 
                             for word in word_list.iter() {
-                                word_table_list.push(Rc::clone(&word_table_conf));
+                                simple_word_table_conf_id_map.insert(word_id, word_table_conf_id);
                                 simple_word_map.insert(word_id, word);
                                 word_id += 1;
                             }
+
+                            word_table_conf_id += 1
                         }
                         MatchTableType::SimilarTextLevenshtein => sim_table_list.push(SimTable {
                             table_id,
@@ -175,27 +185,33 @@ impl Matcher {
                 }
 
                 if !exemption_word_list.is_empty() {
-                    let word_table_conf = Rc::new(WordTableConf {
-                        match_id: match_id.to_owned(),
-                        table_id,
-                        is_exemption: true,
-                    });
+                    simple_word_table_conf_map.insert(
+                        word_table_conf_id,
+                        WordTableConf {
+                            match_id: match_id.to_owned(),
+                            table_id,
+                            is_exemption: true,
+                        },
+                    );
 
                     let simple_word_map = simple_match_type_word_map
                         .entry(table.exemption_simple_match_type)
                         .or_default();
 
                     for exemption_word in exemption_word_list.iter() {
-                        word_table_list.push(Rc::clone(&word_table_conf));
+                        simple_word_table_conf_id_map.insert(word_id, word_table_conf_id);
                         simple_word_map.insert(word_id, exemption_word);
                         word_id += 1;
                     }
+
+                    word_table_conf_id += 1
                 }
             }
         }
 
         Matcher {
-            word_table_list,
+            simple_word_table_conf_map,
+            simple_word_table_conf_id_map,
             simple_matcher: (!simple_match_type_word_map.is_empty())
                 .then(|| SimpleMatcher::new(&simple_match_type_word_map)),
             regex_matcher: (!regex_table_list.is_empty())
@@ -211,8 +227,13 @@ impl Matcher {
             if let Some(simple_matcher) = &self.simple_matcher {
                 for simple_result in simple_matcher.process(text) {
                     let word_table_conf = unsafe {
-                        self.word_table_list
-                            .get_unchecked(simple_result.word_id as usize)
+                        self.simple_word_table_conf_map
+                            .get(
+                                self.simple_word_table_conf_id_map
+                                    .get(&simple_result.word_id)
+                                    .unwrap_unchecked(),
+                            )
+                            .unwrap_unchecked()
                     };
 
                     let result_dict = match_result_dict

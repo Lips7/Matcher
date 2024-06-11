@@ -5,7 +5,7 @@ use nohash_hasher::IntMap;
 use matcher_rs::*;
 
 fn bench(c: &mut Criterion) {
-    let match_table_dict = GxHashMap::from_iter([(
+    let match_table_map = GxHashMap::from_iter([(
         "test",
         vec![MatchTable {
             table_id: 1,
@@ -16,10 +16,10 @@ fn bench(c: &mut Criterion) {
             exemption_word_list: vec![],
         }],
     )]);
-    let matcher = Matcher::new(&match_table_dict);
+    let matcher = Matcher::new(&match_table_map);
 
     c.bench_function("matcher_build", |b| {
-        b.iter(|| Matcher::new(&match_table_dict))
+        b.iter(|| Matcher::new(&match_table_map))
     });
     c.bench_function("word_match_super_long_text", |b| {
         b.iter(|| matcher.word_match(black_box("dsahbdj12pu980-120opo[sad[d]pas;l[;'.,zmc;as'k[aepe所有的沙发博客看后289UI哈哈不可得兼萨马拉州，女把wejlhjp0iidasbwdjksabfadghjaklsekjniwh123powhudbasbasmdsal,d.as,dlasfjsaifjbo39p9eu12p0poaspopofjsapdaksdpsa【】萨达省；c'xzlk.asd，萨。，但马上，队列即可领取王杰饿哦啥屁；但那是没法解开了吗你只需龙祥怎么了华北地区房东啥尽快帮我去IE请问i两节课大赛不好发不出吗你只需把vaf打死就不会发生的旅程啊，sd阿斯顿啥都怕是个大傻大叔的吧到那时  dsabjx· ds····           巴士到家啦vxzmdm")))

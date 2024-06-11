@@ -126,7 +126,7 @@ fn sim_match() {
 
 #[test]
 fn word_match() {
-    let match_table_dict = GxHashMap::from_iter([(
+    let match_table_map = GxHashMap::from_iter([(
         "test",
         vec![
             MatchTable {
@@ -149,7 +149,7 @@ fn word_match() {
         ],
     )]);
 
-    let matcher = Matcher::new(&match_table_dict);
+    let matcher = Matcher::new(&match_table_map);
 
     assert_eq!(
         r#"[{"table_id":1,"word":"无,法,无,天"}]"#,

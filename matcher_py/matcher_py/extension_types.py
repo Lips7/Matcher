@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import msgspec
 
+
 class MatchTableType(Enum):
     Simple = "simple"
     SimilarChar = "similar_char"
@@ -23,12 +24,13 @@ class MatchTable(msgspec.Struct):
     table_id: int
     match_table_type: MatchTableType
     simple_match_type: SimpleMatchType
-    wordlist: List[str]
+    word_list: List[str]
     exemption_simple_match_type: SimpleMatchType
-    exemption_wordlist: List[str]
+    exemption_word_list: List[str]
 
 
-MatchTableDict = Dict[str, MatchTable]
+MatchTableMap = Dict[str, MatchTable]
+
 
 class MatchResult(msgspec.Struct):
     table_id: int
@@ -38,13 +40,9 @@ class MatchResult(msgspec.Struct):
 MatcherMatchResult = Dict[str, List[MatchResult]]
 
 
-class SimpleWord(msgspec.Struct):
-    word_id: int
-    word: str
-
-
-SimpleWordlistDict = Dict[str, List[SimpleWord]]
-
 class SimpleResult(msgspec.Struct):
     word_id: int
     word: str
+
+
+SimpleMatchTypeWordMap = Dict[SimpleMatchType, Dict[int, str]]

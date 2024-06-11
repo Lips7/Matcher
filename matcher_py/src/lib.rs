@@ -39,44 +39,44 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
 }
 
-#[pyclass(module = "matcher_py", unsendable)]
+#[pyclass(module = "matcher_py")]
 struct Matcher {
     matcher: MatcherRs,
-    match_table_dict_bytes: Py<PyBytes>,
+    match_table_map_bytes: Py<PyBytes>,
 }
 
 #[pymethods]
 impl Matcher {
     #[new]
-    fn new(_py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
-        let match_table_dict: MatchTableMapRs =
-            match rmp_serde::from_slice(match_table_dict_bytes.as_bytes()) {
-                Ok(match_table_dict) => match_table_dict,
+    fn new(_py: Python, match_table_map_bytes: &Bound<'_, PyBytes>) -> PyResult<Matcher> {
+        let match_table_map: MatchTableMapRs =
+            match rmp_serde::from_slice(match_table_map_bytes.as_bytes()) {
+                Ok(match_table_map) => match_table_map,
                 Err(e) => {
                     return Err(PyValueError::new_err(format!(
-                "Deserialize match_table_dict_bytes failed, Please check the input data.\nErr: {}",
+                "Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}",
                 e.to_string()
             )))
                 }
             };
 
         Ok(Matcher {
-            matcher: MatcherRs::new(&match_table_dict),
-            match_table_dict_bytes: match_table_dict_bytes.as_unbound().to_owned(),
+            matcher: MatcherRs::new(&match_table_map),
+            match_table_map_bytes: match_table_map_bytes.as_unbound().to_owned(),
         })
     }
 
     fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
-        self.match_table_dict_bytes.clone_ref(py)
+        self.match_table_map_bytes.clone_ref(py)
     }
 
     fn __getstate__(&self, py: Python) -> Py<PyBytes> {
-        self.match_table_dict_bytes.clone_ref(py)
+        self.match_table_map_bytes.clone_ref(py)
     }
 
-    fn __setstate__(&mut self, _py: Python, match_table_dict_bytes: &Bound<'_, PyBytes>) {
+    fn __setstate__(&mut self, _py: Python, match_table_map_bytes: &Bound<'_, PyBytes>) {
         self.matcher =
-            MatcherRs::new(&rmp_serde::from_slice(match_table_dict_bytes.as_bytes()).unwrap());
+            MatcherRs::new(&rmp_serde::from_slice(match_table_map_bytes.as_bytes()).unwrap());
     }
 
     #[pyo3(signature=(text))]

@@ -14,7 +14,7 @@ interface Matcher extends Library {
             Matcher.class.getResource("/matcher_c.so").getPath(),
             Matcher.class);
 
-    Pointer init_matcher(byte[] match_table_dict_bytes);
+    Pointer init_matcher(byte[] match_table_map_bytes);
 
     boolean matcher_is_match(Pointer matcher, byte[] text_bytes);
 
@@ -79,19 +79,19 @@ public class Demo {
         packer.packMapHeader(1);
         packer.packString("test");
         packer.packArrayHeader(1);
-        packer.packMapHeader(5);
+        packer.packMapHeader(6);
         packer.packString("table_id");
         packer.packInt(1);
         packer.packString("match_table_type");
         packer.packString("simple");
         packer.packString("simple_match_type");
         packer.packInt(30);
-        packer.packString("wordlist");
+        packer.packString("word_list");
         packer.packArrayHeader(1);
         packer.packString("你好");
         packer.packString("exemption_simple_match_type");
         packer.packInt(30);
-        packer.packString("exemption_wordlist");
+        packer.packString("exemption_word_list");
         packer.packArrayHeader(0);
         packer.close();
 

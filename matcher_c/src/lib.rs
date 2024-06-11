@@ -6,18 +6,18 @@ use std::{
 use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, TextMatcherTrait};
 
 #[no_mangle]
-pub extern "C" fn init_matcher(match_table_dict_bytes: *const i8) -> *mut Matcher {
+pub extern "C" fn init_matcher(match_table_map_bytes: *const i8) -> *mut Matcher {
     unsafe {
-        let match_table_dict: MatchTableMap = match rmp_serde::from_slice(
-            CStr::from_ptr(match_table_dict_bytes).to_bytes(),
+        let match_table_map: MatchTableMap = match rmp_serde::from_slice(
+            CStr::from_ptr(match_table_map_bytes).to_bytes(),
         ) {
-            Ok(match_table_dict) => match_table_dict,
+            Ok(match_table_map) => match_table_map,
             Err(e) => {
-                panic!("Deserialize match_table_dict_bytes failed, Please check the input data.\nErr: {}", e.to_string())
+                panic!("Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}", e.to_string())
             }
         };
 
-        Box::into_raw(Box::new(Matcher::new(&match_table_dict)))
+        Box::into_raw(Box::new(Matcher::new(&match_table_map)))
     }
 }
 
