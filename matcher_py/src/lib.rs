@@ -31,7 +31,7 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
 }
 
 impl MatchResultTrait<'_> for SimpleResult<'_> {
-    fn word_id(&self) -> usize {
+    fn word_id(&self) -> u64 {
         self.0.word_id()
     }
     fn word(&self) -> &str {
