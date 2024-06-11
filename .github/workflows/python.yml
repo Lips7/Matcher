@@ -154,7 +154,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          path: $GITHUB_WORKSPACE/matcher_py
+          path: $GITHUB_WORKSPACE/matcher_py/dist
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
