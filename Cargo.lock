@@ -358,7 +358,7 @@ version = "0.1.3"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
- "serde_json",
+ "sonic-rs",
 ]
 
 [[package]]

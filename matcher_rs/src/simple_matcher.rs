@@ -879,7 +879,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             == ZEROS,
                     ) {
                         word_id_set.insert(word_id); // Add the word ID to the set of matched word IDs
-                        // Add the matched word to the result list
+                                                     // Add the matched word to the result list
                         result_list.push(SimpleResult {
                             word_id,
                             word: Cow::Borrowed(&word_conf.word),
