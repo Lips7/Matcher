@@ -3,12 +3,17 @@
 #![feature(portable_simd)]
 #![feature(iter_repeat_n)]
 
-/// The global allocator for the program is set to use the MiMalloc allocator.
-/// MiMalloc is a general purpose allocator that is designed to be fast and efficient.
-/// It is a drop-in replacement for the system allocator, and can be used in place of it without any changes to the code.
-/// This allows for easy performance optimization without having to modify the existing codebase.
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+use cfg_if;
+
+cfg_if::cfg_if! {
+    if #[cfg(all(target_os = "linux", target_arch = "aarch64"))] {
+        #[global_allocator]
+        static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+    } else {
+        #[global_allocator]
+        static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+    }
+}
 
 mod matcher;
 pub use matcher::{
