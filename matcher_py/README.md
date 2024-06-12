@@ -1,10 +1,16 @@
 # Matcher Rust Implement PyO3 binding
+
 ## Installation
+
 ```
 pip install matcher_py
 ```
+
 ## Usage
-Python usage is in the [test.ipynb](matcher_py/test.ipynb) file.
+
+- Python usage is in the [test.ipynb](./matcher_py/test.ipynb) file.
+- `msgspec` is used to serialize the matcher config, you can use `ormsgpack` or other msgpack serialization library to serialize the matcher config, all the types are defined in [extention_types.py](./matcher_py/extension_types.py). But for performance consideration, I recommend `msgspec`.
+
 ### Matcher
 ```Python
 import msgspec
