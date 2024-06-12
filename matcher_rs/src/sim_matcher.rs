@@ -171,7 +171,7 @@ impl SimMatcher {
     ///
     /// let matcher = SimMatcher::new(&sim_tables);
     /// ```
-    pub fn new(sim_table_list: &Vec<SimTable>) -> SimMatcher {
+    pub fn new(sim_table_list: &[SimTable]) -> SimMatcher {
         SimMatcher {
             // Initialize the regex pattern for removing special characters using a predefined regular expression.
             remove_special_pattern: Regex::new(r"\W+").unwrap(),

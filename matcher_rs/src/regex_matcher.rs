@@ -202,7 +202,7 @@ impl RegexMatcher {
     /// # Arguments
     ///
     /// * `regex_table_list` - A reference to a vector of `RegexTable` instances. Each `RegexTable`
-    /// contains a unique `table_id`, `match_id`, a match table type, and a list of words or patterns.
+    ///   contains a unique `table_id`, `match_id`, a match table type, and a list of words or patterns.
     ///
     /// # Returns
     ///
@@ -315,7 +315,7 @@ impl RegexMatcher {
                         table_match_type: RegexType::ListRegex {
                             regex_list: word_list
                                 .iter()
-                                .filter_map(|word| Regex::new(&word).ok())
+                                .filter_map(|word| Regex::new(word).ok())
                                 .collect(),
                             word_list,
                         },

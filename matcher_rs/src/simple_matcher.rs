@@ -206,7 +206,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     /// # Returns
     ///
     /// * `u64` - A 64-bit unsigned integer representing the unique identifier
-    /// for the matched word.
+    ///   for the matched word.
     ///
     /// # Example
     ///
@@ -239,21 +239,21 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// # Fields
 ///
 /// * `simple_match_type_process_map` - A mapping between `SimpleMatchType` and a tuple
-/// containing a list of replacement strings and an instance of `AhoCorasick`. It is used
-/// for pre-processing input text using specific transformation rules.
+///   containing a list of replacement strings and an instance of `AhoCorasick`. It is used
+///   for pre-processing input text using specific transformation rules.
 ///
 /// * `simple_match_type_ac_table_map` - A mapping between `SimpleMatchType` and `SimpleAcTable`.
-/// This map holds the compiled Aho-Corasick automata (AC tables) and their associated word
-/// configurations that are used for the efficient pattern matching.
+///   This map holds the compiled Aho-Corasick automata (AC tables) and their associated word
+///   configurations that are used for the efficient pattern matching.
 ///
 /// * `simple_wordconf_map` - An `IntMap` that maps unique word IDs (`u64`) to their corresponding
-/// `WordConf` configurations. This helps in storing custom configurations for words,
-/// including SIMD vectors for efficient combination matching.
+///   `WordConf` configurations. This helps in storing custom configurations for words,
+///   including SIMD vectors for efficient combination matching.
 ///
 /// * `min_chars_count` - A `usize` value representing the minimum number of characters
-/// required for a valid match. It is determined based on the words present in the matcher.
-/// This value helps in optimizing the matching process by filtering out text that is too
-/// short to contain any valid matches.
+///   required for a valid match. It is determined based on the words present in the matcher.
+///   This value helps in optimizing the matching process by filtering out text that is too
+///   short to contain any valid matches.
 pub struct SimpleMatcher {
     simple_match_type_process_map: GxHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
     simple_match_type_ac_table_map: GxHashMap<SimpleMatchType, SimpleAcTable>,
@@ -272,9 +272,9 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `simple_match_type_word_map` - A reference to a `SimpleMatchTypeWordMap` which
-    /// contains the mappings between various `SimpleMatchType`s and their corresponding
-    /// word maps (`IntMap<u64, &str>`). This serves as the input for initializing the
-    /// matcher with the required configurations and patterns.
+    ///   contains the mappings between various `SimpleMatchType`s and their corresponding
+    ///   word maps (`IntMap<u64, &str>`). This serves as the input for initializing the
+    ///   matcher with the required configurations and patterns.
     ///
     /// # Returns
     ///
@@ -356,7 +356,7 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `simple_match_type_bit` - A reference to a `SimpleMatchType` indicating the type
-    /// of string transformation to be applied.
+    ///   of string transformation to be applied.
     ///
     /// # Returns
     ///
@@ -508,9 +508,9 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `simple_match_type` - A reference to a `SimpleMatchType` indicating the type of string
-    /// transformation to be applied.
+    ///   transformation to be applied.
     /// * `simple_word_map` - A reference to an `IntMap<u64, &str>` that maps unique word IDs to
-    /// their corresponding string slices.
+    ///   their corresponding string slices.
     ///
     /// # Returns
     ///
@@ -605,14 +605,14 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `simple_match_type` - A reference to a `SimpleMatchType` that indicates the sequence of
-    /// transformations to be applied.
+    ///   transformations to be applied.
     /// * `text_bytes` - A byte slice containing the input text to be processed.
     ///
     /// # Returns
     ///
     /// * An `ArrayVec` containing up to 4 versions of the processed text. Each version represents
-    /// a partial or fully transformed state of the original text according to the rules specified
-    /// in the `SimpleMatchType`.
+    ///   a partial or fully transformed state of the original text according to the rules specified
+    ///   in the `SimpleMatchType`.
     ///
     /// # Processing Logic
     ///

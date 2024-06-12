@@ -182,7 +182,7 @@ impl Matcher {
                 Err(e) => {
                     return Err(PyValueError::new_err(format!(
                 "Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}",
-                e.to_string()
+                e
             )))
                 }
             };
@@ -248,8 +248,9 @@ impl Matcher {
     /// This method will panic if deserialization of the byte array fails.
     /// In practice, this means that the pickled object was corrupted or incompatible.
     fn __setstate__(&mut self, _py: Python, match_table_map_bytes: &Bound<'_, PyBytes>) {
-        self.matcher =
-            MatcherRs::new(rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes.as_bytes()).unwrap());
+        self.matcher = MatcherRs::new(
+            rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes.as_bytes()).unwrap(),
+        );
     }
 
     #[pyo3(signature=(text))]
@@ -494,7 +495,7 @@ impl Matcher {
                     // Unsafe block to read the elements of the numpy array.
                     unsafe { text_array.as_array() }
                         // Map each element to the result of `word_match`, converting it into a Python object.
-                        .map(|text| self.word_match(py, &text.bind(py)).into_py(py)),
+                        .map(|text| self.word_match(py, text.bind(py)).into_py(py)),
                 )
                 .into(),
             )
@@ -549,7 +550,7 @@ impl Matcher {
                 .map_inplace(|text| {
                     // For each element, call `word_match_as_string`, bind it to Python,
                     // convert the result to a Python object and modify the element in-place.
-                    *text = self.word_match_as_string(py, &text.bind(py)).into_py(py);
+                    *text = self.word_match_as_string(py, text.bind(py)).into_py(py);
                 });
             // As we modified the original array in-place, return None.
             None
@@ -562,7 +563,7 @@ impl Matcher {
                     unsafe { text_array.as_array() }
                         // Map each element to the result of `word_match_as_string`,
                         // bind it to Python, and convert it to a Python object.
-                        .map(|text| self.word_match_as_string(py, &text.bind(py)).into_py(py)),
+                        .map(|text| self.word_match_as_string(py, text.bind(py)).into_py(py)),
                 )
                 // Convert the resulting NumPy array to a Python object and return it.
                 .into(),
@@ -653,7 +654,7 @@ impl SimpleMatcher {
 
                 // If deserialization fails, return a `PyValueError` with a detailed error message.
                 Err(e) => return Err(PyValueError::new_err(
-                    format!("Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\n Err: {}", e.to_string()),
+                    format!("Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\n Err: {}", e),
                 )),
             };
 
@@ -721,7 +722,10 @@ impl SimpleMatcher {
     /// that the pickled object was corrupted or is incompatible.
     fn __setstate__(&mut self, _py: Python, simple_match_type_word_map_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(simple_match_type_word_map_bytes.as_bytes()).unwrap(),
+            rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(
+                simple_match_type_word_map_bytes.as_bytes(),
+            )
+            .unwrap(),
         );
     }
 
@@ -801,7 +805,7 @@ impl SimpleMatcher {
                 // Convert the results into an iterator, map each `SimpleResultRs` instance
                 // to a `SimpleResult` instance, and collect the results into a `Vec<SimpleResult>`.
                 .into_iter()
-                .map(|simple_result| SimpleResult(simple_result))
+                .map(SimpleResult)
                 // Collect the mapped results into a vector and return it.
                 .collect::<Vec<_>>()
         })
@@ -895,7 +899,7 @@ impl SimpleMatcher {
             unsafe { text_array.as_array_mut() }.map_inplace(|text| {
                 // For each element in the NumPy array, process the text using simple_process,
                 // bind it to the Python interpreter, and convert the result to a PyObject.
-                *text = self.simple_process(py, &text.bind(py)).into_py(py);
+                *text = self.simple_process(py, text.bind(py)).into_py(py);
             });
             // Since we have modified the original array in-place, return None.
             None
@@ -909,7 +913,7 @@ impl SimpleMatcher {
                     unsafe { text_array.as_array() }
                         // For each element, process the text using simple_process,
                         // bind it to the Python interpreter, and convert the result to a PyObject.
-                        .map(|text| self.simple_process(py, &text.bind(py)).into_py(py)),
+                        .map(|text| self.simple_process(py, text.bind(py)).into_py(py)),
                 )
                 // Convert the resulting NumPy array to a PyObject and return it wrapped in Some.
                 .into(),

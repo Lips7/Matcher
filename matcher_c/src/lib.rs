@@ -1,3 +1,5 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use std::{
     ffi::{CStr, CString},
     str::from_utf8_unchecked,
@@ -35,7 +37,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const i8) -> *mut Matcher
             Ok(match_table_map) => match_table_map,
             // If deserialization fails, panic with an error message containing the deserialization error.
             Err(e) => {
-                panic!("Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}", e.to_string())
+                panic!("Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}", e)
             }
         };
 
@@ -167,7 +169,7 @@ pub extern "C" fn init_simple_matcher(
             // If deserialization fails, panic with an error message containing the deserialization error.
             Err(e) => {
                 panic!(
-                    "Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\nErr: {}", e.to_string(),
+                    "Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\nErr: {}", e,
                 )
             }
         };
