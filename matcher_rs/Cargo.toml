@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "matcher_rs"
 authors.workspace = true
