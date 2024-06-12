@@ -12,6 +12,10 @@ repository.workspace = true
 version.workspace = true
 build = "build.rs"
 
+[package.metadata.docs.rs]
+rustc-args = ["--cfg",  "matcher_rs_docs_rs"]
+rustdoc-args = ["--cfg", "matcher_rs_docs_rs"]
+
 [lib]
 name = "matcher_rs"
 crate-type = ["rlib"]

@@ -19,7 +19,7 @@ use super::{MatchResultTrait, TextMatcherTrait};
 /// # Fields
 /// - `table_id` (u64): The unique identifier for the table.
 /// - `match_id` (String): The match identifier.
-/// - `word_list` (Vec<String>): The list of processed words.
+/// - `word_list` (`Vec<String>`): The list of processed words.
 pub struct SimTable<'a> {
     pub table_id: u64,
     pub match_id: &'a str,
@@ -103,7 +103,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 ///
 /// - `remove_special_pattern` (Regex): A regular expression pattern for removing
 ///   special characters from the text.
-/// - `sim_processed_table_list` (Vec<SimProcessedTable>): A vector of preprocessed
+/// - `sim_processed_table_list` (`Vec<SimProcessedTable>`): A vector of preprocessed
 ///   tables, each containing a unique identifier, match identifier, and list of
 ///   processed words.
 ///
@@ -144,7 +144,7 @@ impl SimMatcher {
     ///
     /// # Parameters
     ///
-    /// - `sim_table_list` (&Vec<SimTable>): A reference to a vector of `SimTable` instances.
+    /// - `sim_table_list` (`&Vec<SimTable>`): A reference to a vector of `SimTable` instances.
     ///   Each `SimTable` contains the original words and identifiers that will be processed
     ///   for similarity matching.
     ///

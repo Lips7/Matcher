@@ -1,2 +1,3 @@
 [build]
 rustflags = ["-C", "target-cpu=native", "-Z", "threads=8"]
+rustdocflags = ["-C", "target-cpu=native"]
