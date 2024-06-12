@@ -17,11 +17,11 @@ A high performance matcher for massive amounts of sensitive words.
 ## Limitations
 
 - Matchers can only handle words containing no more than 32 combined words and no more than 8 repeated words.
-- It's user's resposibility to ensure the correctness of the input data and ensure `match_id`, `table_id`, `word_id` are glabally unique.
+- It's user's responsibility to ensure the correctness of the input data and ensure `match_id`, `table_id`, `word_id` are globally unique.
 
 ## Usage
 
-- For none rust user, you have to use **msgpack** to serialze matcher config to bytes.
+- For none rust user, you have to use **msgpack** to serialize matcher config to bytes.
 - Why msgpack? Why not json? Because json can't handle back slash well, eg. `It's /\/\y duty`, it will be processed incorrectly if using json, and msgpack is faster than json.
 
 ### For Rust User
@@ -46,6 +46,6 @@ See [C Readme](./matcher_c/README.md)
 
 ## Design
 
-Currently most features are besed on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which provides ability to find occurrences of many patterns at once with SIMD acceleration in some cases.
+Currently most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which provides ability to find occurrences of many patterns at once with SIMD acceleration in some cases.
 
 For more implement details, see [Design](./DESIGN.md).

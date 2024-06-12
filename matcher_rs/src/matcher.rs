@@ -35,7 +35,7 @@ bitflags! {
     ///
     /// # Limitation
     ///
-    /// - `PinYin` and `PinYinChar` can not be enabled sametimes.
+    /// - `PinYin` and `PinYinChar` can not be enabled same times.
     ///
     /// # Example
     ///
@@ -275,7 +275,7 @@ pub enum MatchTableType {
 /// When `,` is in a word and match_table_type is simple, or word is in exemption_word_list
 /// this word then become a combined word, which means it will be split into multiple words, and the multiple words will be matched separately.
 ///
-/// For exemple, 'a,b' will match 'aaaabbb', and 'a,a,b,b' will match 'aaaabbbb' but won't match 'abb', this is because the recurrance of a splited word matters.
+/// For example, 'a,b' will match 'aaaabbb', and 'a,a,b,b' will match 'aaaabbbb' but won't match 'abb', this is because the recurrence of a split word matters.
 ///
 /// # Limitation
 /// Currently, matcher can only handle words contains no more than 32 combined words and no more than 8 repeated word.

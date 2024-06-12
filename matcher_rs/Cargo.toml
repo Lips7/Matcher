@@ -15,10 +15,6 @@ version.workspace = true
 rustc-args = ["-C", "target-feature=+aes"]
 rustdoc-args = ["-C", "target-feature=+aes"]
 
-[build]
-rustflags = ["-C", "target-feature=+aes"]
-rustdocflags = ["-C", "target-feature=+aes"]
-
 [lib]
 name = "matcher_rs"
 crate-type = ["rlib"]
