@@ -1,51 +1,69 @@
 # Matcher
 
-A high performance matcher for massive amounts of sensitive words.
+A high-performance matcher for massive amounts of sensitive words.
 
 ## Features
 
-- Supports simple word matching, regex-based matching, and similarity-based matching.
-- Supports different text normalization methods for matching.
-  - `Fanjian`: Simplify traditional Chinese characters to simplified ones. eg. `蟲艸` -> `虫艹`.
-  - `DeleteNormalize`: Delete white spaces, punctuation, and other non-alphanumeric characters. eg. `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `helloworld`.
-  - `PinYin`: Convert Chinese characters to Pinyin, which can be used for fuzzy matching. eg. `西安` -> `/xi//an/`, will match `洗按` -> `/xi//an/`, but won't match `先` -> `/xian/`.
-  - `PinYinChar`: Convert Chinese characters to Pinyin, which can be used for fuzzy matching. eg. `西安` -> `xian`, will match `洗按` -> `xian` and `先` -> `xian`.
-- Supports combination word matching and repeated word matching. eg. `hello,world` will match `hello world` and `world,hello`, `无,法,无,天` will match `无无法天` but won't match `无法天` because `无` repeated two times int the word.
-- Supports customizable exemption lists to exclude certain words from matching.
-- Can handle large amounts of sensitive words efficiently.
+- **Multiple Matching Methods**:
+  - **Simple Word Matching**
+  - **Regex-Based Matching**
+  - **Similarity-Based Matching**
+- **Text Normalization**:
+  - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
+    Example: `蟲艸` -> `虫艹`
+  - **DeleteNormalize**: Remove whitespaces, punctuation, and other non-alphanumeric characters.
+    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `helloworld`
+  - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
+    Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
+  - **PinYinChar**: Convert Chinese characters to Pinyin.
+    Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
+- **Combination and Repeated Word Matching**:
+  - Takes into account the number of repetitions of words.
+  - Example: `hello,world` matches `hello world` and `world,hello`
+  - Example: `无,法,无,天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+- **Customizable Exemption Lists**: Exclude specific words from matching.
+- **Efficient Handling of Large Word Lists**: Optimized for performance.
 
 ## Limitations
 
-- Matchers can only handle words containing no more than 32 combined words and no more than 8 repeated words.
-- It's user's responsibility to ensure the correctness of the input data and ensure `match_id`, `table_id`, `word_id` are globally unique.
+- Can handle words with a maximum of 32 combined words and 8 repeated words.
+- Users must ensure the correctness of input data and the global uniqueness of `match_id`, `table_id`, and `word_id`.
 
 ## Usage
 
-- For none rust user, you have to use **msgpack** to serialize matcher config to bytes.
-- Why msgpack? Why not json? Because json can't handle back slash well, eg. `It's /\/\y duty`, it will be processed incorrectly if using json, and msgpack is faster than json.
+### General Instructions
 
-### For Rust User
+- Non-Rust users must use **msgpack** for serializing matcher configurations to bytes.
+  - **Why msgpack?** It handles backslashes better and is faster than JSON.
+  - Example issue with JSON: `It's /\/\y duty` is processed incorrectly.
 
-See [Rust Readme](./matcher_rs/README.md)
+### Platform-Specific Instructions
 
-### For Python User
+#### Rust Users
+- See the [Rust README](./matcher_rs/README.md)
 
-See [Python Readme](./matcher_py/README.md)
+#### Python Users
+- See the [Python README](./matcher_py/README.md)
 
-### For Java User
+#### Java Users
+- Install Rust.
+- Clone the repository.
+- Run `cargo build --release`.
+- Copy `target/release/libmatcher.so` (or `libmatcher.dylib` for Mac) to `matcher_java/src/resources/matcher_c.so`.
+- See the [Java README](./matcher_java/README.md)
 
-Install rust, git clone this repo, run `cargo build --release`, and copy the `target/release/libmatcher.so` or `target/release/libmatcher.dylib` if you are using mac, to `matcher_java/src/resources/matcher_c.so`.
-
-See [Java Readme](./matcher_java/README.md)
-
-### For C User
-
-Install rust, git clone this repo, run `cargo build --release`, and copy the `target/release/libmatcher.so` or `target/release/libmatcher.dylib` if you are using mac, to `matcher_c/matcher_c.so`.
-
-See [C Readme](./matcher_c/README.md)
+#### C Users
+- Install Rust.
+- Clone the repository.
+- Run `cargo build --release`.
+- Copy `target/release/libmatcher.so` (or `libmatcher.dylib` for Mac) to `matcher_c/matcher_c.so`.
+- See the [C README](./matcher_c/README.md)
 
 ## Design
 
-Currently most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which provides ability to find occurrences of many patterns at once with SIMD acceleration in some cases.
+- Most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which supports finding multiple patterns simultaneously with SIMD acceleration in some cases.
+- For detailed implementation, see the [Design Document](./DESIGN.md).
 
-For more implement details, see [Design](./DESIGN.md).
+---
+
+This revised section emphasizes that the number of repetitions of words is taken into account during matching.

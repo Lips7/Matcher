@@ -5,11 +5,11 @@ categories.workspace = true
 description.workspace = true
 edition.workspace = true
 homepage.workspace = true
-readme.workspace = true
 keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+readme = "README.md"
 
 [lib]
 name = "matcher_c"
