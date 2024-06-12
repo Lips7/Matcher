@@ -52,9 +52,9 @@ let results = matcher.word_match(text);
 
 ```rust
 use std::collections::HashMap;
-use matcher_rs::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher};
+use matcher_rs::{SimpleMatchType, SimpleMatcher};
 
-let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = HashMap::default();
+let mut simple_match_type_word_map = HashMap::default();
 let mut simple_word_map = HashMap::default();
 
 simple_word_map.insert(1, "你好");
