@@ -22,7 +22,7 @@ use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 ///     table_id: 1,
 ///     match_id: "example_match",
 ///     match_table_type: MatchTableType::SimilarChar,
-///     word_list: &vec!["word1", "word2"],
+///     word_list: vec!["word1", "word2"],
 /// };
 /// ```
 ///
