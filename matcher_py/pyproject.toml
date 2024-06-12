@@ -1,6 +1,6 @@
 [project]
 name = "matcher_py"
-version = "0.1.5"
+version = "0.1.6"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = 'Fuji Guo' }, { email = "f975793771@gmail.com" }]
