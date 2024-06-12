@@ -3,17 +3,13 @@
 #![feature(portable_simd)]
 #![feature(iter_repeat_n)]
 
-use cfg_if;
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-cfg_if::cfg_if! {
-    if #[cfg(all(target_os = "linux", target_arch = "aarch64"))] {
-        #[global_allocator]
-        static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-    } else {
-        #[global_allocator]
-        static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-    }
-}
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod matcher;
 pub use matcher::{

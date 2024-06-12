@@ -188,7 +188,7 @@ impl Matcher {
         // Return a new `Matcher` instance initialized with the deserialized `MatchTableMapRs` object.
         Ok(Matcher {
             // Initialize the `matcher` field with a new `MatcherRs` instance.
-            matcher: MatcherRs::new(&match_table_map),
+            matcher: MatcherRs::new(match_table_map),
 
             // Clone the provided byte array reference and assign it to `match_table_map_bytes`.
             match_table_map_bytes: match_table_map_bytes.as_unbound().to_owned(),
@@ -247,7 +247,7 @@ impl Matcher {
     /// In practice, this means that the pickled object was corrupted or incompatible.
     fn __setstate__(&mut self, _py: Python, match_table_map_bytes: &Bound<'_, PyBytes>) {
         self.matcher =
-            MatcherRs::new(&rmp_serde::from_slice(match_table_map_bytes.as_bytes()).unwrap());
+            MatcherRs::new(rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes.as_bytes()).unwrap());
     }
 
     #[pyo3(signature=(text))]
@@ -658,7 +658,7 @@ impl SimpleMatcher {
         // Return a new `SimpleMatcher` instance initialized with the deserialized `SimpleMatchTypeWordMapRs` object.
         Ok(SimpleMatcher {
             // Initialize the `simple_matcher` field with a new `SimpleMatcherRs` instance.
-            simple_matcher: SimpleMatcherRs::new(&simple_match_type_word_map),
+            simple_matcher: SimpleMatcherRs::new(simple_match_type_word_map),
 
             // Clone the provided byte array reference and assign it to `simple_match_type_word_map_bytes`.
             simple_match_type_word_map_bytes: simple_match_type_word_map_bytes
@@ -719,7 +719,7 @@ impl SimpleMatcher {
     /// that the pickled object was corrupted or is incompatible.
     fn __setstate__(&mut self, _py: Python, simple_match_type_word_map_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice(simple_match_type_word_map_bytes.as_bytes()).unwrap(),
+            rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(simple_match_type_word_map_bytes.as_bytes()).unwrap(),
         );
     }
 

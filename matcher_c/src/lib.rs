@@ -41,7 +41,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const i8) -> *mut Matcher
 
         // Create a new `Matcher` instance using the deserialized `MatchTableMap` and wrap it in a Box.
         // Convert the Box into a raw pointer using `Box::into_raw` before returning it.
-        Box::into_raw(Box::new(Matcher::new(&match_table_map)))
+        Box::into_raw(Box::new(Matcher::new(match_table_map)))
     }
 }
 
@@ -174,7 +174,7 @@ pub extern "C" fn init_simple_matcher(
 
         // Create a new `SimpleMatcher` instance using the deserialized `SimpleMatchTypeWordMap` and wrap it in a Box.
         // Convert the Box into a raw pointer using `Box::into_raw` before returning it.
-        Box::into_raw(Box::new(SimpleMatcher::new(&simple_match_type_word_map)))
+        Box::into_raw(Box::new(SimpleMatcher::new(simple_match_type_word_map)))
     }
 }
 

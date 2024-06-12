@@ -16,10 +16,10 @@ fn bench(c: &mut Criterion) {
             exemption_word_list: vec![],
         }],
     )]);
-    let matcher = Matcher::new(&match_table_map);
+    let matcher = Matcher::new(match_table_map.clone());
 
     c.bench_function("matcher_build", |b| {
-        b.iter(|| Matcher::new(&match_table_map))
+        b.iter(|| Matcher::new(match_table_map.clone()))
     });
     c.bench_function("word_match_super_long_text", |b| {
         b.iter(|| matcher.word_match(black_box("Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id. Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id. Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id.")))
@@ -41,10 +41,10 @@ fn bench(c: &mut Criterion) {
         SimpleMatchType::FanjianDeleteNormalize,
         IntMap::from_iter([(1, "你好，123")]),
     )]);
-    let simple_matcher = SimpleMatcher::new(&simple_word_list_dict);
+    let simple_matcher = SimpleMatcher::new(simple_word_list_dict.clone());
 
     c.bench_function("simple_matcher_build", |b| {
-        b.iter(|| SimpleMatcher::new(&simple_word_list_dict))
+        b.iter(|| SimpleMatcher::new(simple_word_list_dict.clone()))
     });
     c.bench_function("simple_process_super_long_text", |b| {
         b.iter(|| simple_matcher.process(black_box("Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id. Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id. Dolore anim aliquip magna adipisicing excepteur adipisicing minim dolor non dolore labore veniam. Ex cillum dolore quis nulla. Laboris officia qui consectetur laboris nulla et Lorem qui anim in eu. Laboris ea tempor qui ullamco irure culpa. Elit duis laborum dolor voluptate duis. Enim exercitation adipisicing esse. Cupidatat do occaecat ullamco adipisicing deserunt sunt Lorem ad veniam ullamco aute anim id.")))

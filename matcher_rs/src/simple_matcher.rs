@@ -296,9 +296,13 @@ impl SimpleMatcher {
     ///
     /// simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
     ///
-    /// let matcher = SimpleMatcher::new(&simple_match_type_word_map);
+    /// let matcher = SimpleMatcher::new(simple_match_type_word_map);
     /// ```
-    pub fn new(simple_match_type_word_map: &SimpleMatchTypeWordMap) -> SimpleMatcher {
+    pub fn new<'a, I, M>(simple_match_type_word_map: I) -> SimpleMatcher
+    where
+        I: IntoIterator<Item = (SimpleMatchType, M)>,
+        M: IntoIterator<Item = (u64, &'a str)>,
+    {
         // Create a new instance of SimpleMatcher with default values
         let mut simple_matcher = SimpleMatcher {
             simple_match_type_process_map: GxHashMap::default(),
@@ -320,14 +324,14 @@ impl SimpleMatcher {
 
             // Build the Aho-Corasick table for the current SimpleMatchType excluding TextDelete
             let simple_ac_table = simple_matcher.build_simple_ac_table(
-                &(*simple_match_type - SimpleMatchType::TextDelete),
+                &(simple_match_type - SimpleMatchType::TextDelete),
                 simple_word_map,
             );
 
             // Insert the built AC table into the AC table map,
             // using SimpleMatchType excluding WordDelete as the key
             simple_matcher.simple_match_type_ac_table_map.insert(
-                *simple_match_type - SimpleMatchType::WordDelete,
+                simple_match_type - SimpleMatchType::WordDelete,
                 simple_ac_table,
             );
         }
@@ -513,17 +517,20 @@ impl SimpleMatcher {
     /// A `SimpleAcTable` instance containing the Aho-Corasick automaton (`ac_matcher`) and a list
     /// of word configurations (`ac_word_conf_list`). The automaton is built from processed split
     /// words, and the configuration list maps word IDs to their respective offsets.
-    fn build_simple_ac_table<'a>(
+    fn build_simple_ac_table<'a, M>(
         &mut self,
         simple_match_type: &SimpleMatchType,
-        simple_word_map: &IntMap<u64, &'a str>,
-    ) -> SimpleAcTable {
+        simple_word_map: M,
+    ) -> SimpleAcTable
+    where
+        M: IntoIterator<Item = (u64, &'a str)>,
+    {
         // Initialize vectors to hold the list of Aho-Corasick words and their configurations.
-        let mut ac_wordlist = Vec::with_capacity(simple_word_map.len());
-        let mut ac_word_conf_list = Vec::with_capacity(simple_word_map.len());
+        let mut ac_wordlist = Vec::new();
+        let mut ac_word_conf_list = Vec::new();
 
         // Iterate over each entry in the simple_word_map.
-        for (&simple_word_id, &simple_word) in simple_word_map {
+        for (simple_word_id, simple_word) in simple_word_map.into_iter() {
             // Update the minimum character count required for matching.
             self.min_chars_count = self.min_chars_count.min(
                 simple_word

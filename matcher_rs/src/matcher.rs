@@ -255,7 +255,7 @@ pub enum MatchTableType {
     Regex,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 /// A structure representing a matching table for text processing.
 ///
 /// This structure holds the information describing a matching table, which includes various
@@ -441,7 +441,7 @@ pub type MatchTableMap<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
 /// use gxhash::HashMap as GxHashMap;
 ///
 /// let match_table_map: MatchTableMap = GxHashMap::default();
-/// let matcher = Matcher::new(&match_table_map);
+/// let matcher = Matcher::new(match_table_map);
 /// ```
 /// The example demonstrates how to initialize a `Matcher` instance using an empty `MatchTableMap`.
 /// The `Matcher` will be configured based on the provided match table map.
@@ -487,7 +487,11 @@ impl Matcher {
     /// # Safety
     ///
     /// Uses unsafe code to access internal maps for performance optimization. The use of `unsafe` is justified
-    pub fn new<'a>(match_table_map: &'a MatchTableMap) -> Matcher {
+    pub fn new<'a, I, M>(match_table_map: I) -> Matcher
+    where
+        I: IntoIterator<Item = (&'a str, M)>,
+        M: IntoIterator<Item = MatchTable<'a>>,
+    {
         // Initialize word ID and word table configuration ID counters.
         let mut word_id: u64 = 0;
         let mut word_table_conf_id: u64 = 0;
@@ -505,11 +509,11 @@ impl Matcher {
         let mut sim_table_list: Vec<SimTable> = Vec::new();
 
         // Iterate over the match table map to parse and organize the data.
-        for (&match_id, table_list) in match_table_map {
-            for table in table_list {
+        for (match_id, table_list) in match_table_map.into_iter() {
+            for table in table_list.into_iter() {
                 let table_id = table.table_id;
-                let match_table_type = &table.match_table_type;
-                let word_list = &table.word_list;
+                let match_table_type = table.match_table_type;
+                let word_list = table.word_list;
                 let exemption_word_list = &table.exemption_word_list;
 
                 // Process non-empty word lists based on their match table type.
@@ -593,7 +597,7 @@ impl Matcher {
             simple_word_table_conf_map,
             simple_word_table_conf_id_map,
             simple_matcher: (!simple_match_type_word_map.is_empty())
-                .then(|| SimpleMatcher::new(&simple_match_type_word_map)),
+                .then(|| SimpleMatcher::new(simple_match_type_word_map)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
             sim_matcher: (!sim_table_list.is_empty()).then(|| SimMatcher::new(&sim_table_list)),

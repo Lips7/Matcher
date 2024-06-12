@@ -21,7 +21,7 @@ use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 /// let regex_table = RegexTable {
 ///     table_id: 1,
 ///     match_id: "example_match",
-///     match_table_type: &MatchTableType::SimilarChar,
+///     match_table_type: MatchTableType::SimilarChar,
 ///     word_list: &vec!["word1", "word2"],
 /// };
 /// ```
@@ -31,8 +31,8 @@ use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 pub struct RegexTable<'a> {
     pub table_id: u64,
     pub match_id: &'a str,
-    pub match_table_type: &'a MatchTableType,
-    pub word_list: &'a Vec<&'a str>,
+    pub match_table_type: MatchTableType,
+    pub word_list: Vec<&'a str>,
 }
 
 /// An enumeration representing different types of regular expressions used for matching.
@@ -178,8 +178,8 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// let regex_table = RegexTable {
 ///     table_id: 1,
 ///     match_id: "example_match",
-///     match_table_type: &MatchTableType::SimilarChar,
-///     word_list: &vec!["1,一", "2,二"],
+///     match_table_type: MatchTableType::SimilarChar,
+///     word_list: vec!["1,一", "2,二"],
 /// };
 ///
 /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
@@ -235,8 +235,8 @@ impl RegexMatcher {
     /// let regex_table = RegexTable {
     ///     table_id: 1,
     ///     match_id: "example_match",
-    ///     match_table_type: &MatchTableType::SimilarChar,
-    ///     word_list: &vec!["1,一", "2,二"],
+    ///     match_table_type: MatchTableType::SimilarChar,
+    ///     word_list: vec!["1,一", "2,二"],
     /// };
     ///
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
@@ -371,8 +371,8 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// let regex_table = RegexTable {
     ///     table_id: 1,
     ///     match_id: "example_match",
-    ///     match_table_type: &MatchTableType::SimilarChar,
-    ///     word_list: &vec!["1,一", "2,二"],
+    ///     match_table_type: MatchTableType::SimilarChar,
+    ///     word_list: vec!["1,一", "2,二"],
     /// };
     ///
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
@@ -443,8 +443,8 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// let regex_table = RegexTable {
     ///     table_id: 1,
     ///     match_id: "example_match",
-    ///     match_table_type: &MatchTableType::SimilarChar,
-    ///     word_list: &vec!["1,一", "2,二"],
+    ///     match_table_type: MatchTableType::SimilarChar,
+    ///     word_list: vec!["1,一", "2,二"],
     /// };
     ///
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);

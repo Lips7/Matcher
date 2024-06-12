@@ -34,7 +34,7 @@ fn simple_match() {
             IntMap::from_iter([(9, r"八一")]),
         ),
     ]);
-    let simple_matcher = SimpleMatcher::new(&simple_word_list_dict);
+    let simple_matcher = SimpleMatcher::new(simple_word_list_dict);
 
     assert_eq!(
         "你真好,123".to_owned(),
@@ -79,20 +79,20 @@ fn regex_match() {
         RegexTable {
             table_id: 1,
             match_id: "1",
-            match_table_type: &MatchTableType::SimilarChar,
-            word_list: &similar_word_list,
+            match_table_type: MatchTableType::SimilarChar,
+            word_list: similar_word_list,
         },
         RegexTable {
             table_id: 2,
             match_id: "2",
-            match_table_type: &MatchTableType::Acrostic,
-            word_list: &acrostic_word_list,
+            match_table_type: MatchTableType::Acrostic,
+            word_list: acrostic_word_list,
         },
         RegexTable {
             table_id: 3,
             match_id: "3",
-            match_table_type: &MatchTableType::Regex,
-            word_list: &regex_word_list,
+            match_table_type: MatchTableType::Regex,
+            word_list: regex_word_list,
         },
     ];
     let regex_matcher = RegexMatcher::new(&regex_table_list);
@@ -112,7 +112,7 @@ fn sim_match() {
     let sim_table_list = vec![SimTable {
         table_id: 1,
         match_id: "1",
-        word_list: &word_list,
+        word_list: word_list,
     }];
     let sim_matcher = SimMatcher::new(&sim_table_list);
 
@@ -149,7 +149,7 @@ fn word_match() {
         ],
     )]);
 
-    let matcher = Matcher::new(&match_table_map);
+    let matcher = Matcher::new(match_table_map);
 
     assert_eq!(
         r#"[{"table_id":1,"word":"无,法,无,天"}]"#,

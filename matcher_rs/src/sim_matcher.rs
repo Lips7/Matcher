@@ -23,7 +23,7 @@ use super::{MatchResultTrait, TextMatcherTrait};
 pub struct SimTable<'a> {
     pub table_id: u64,
     pub match_id: &'a str,
-    pub word_list: &'a Vec<&'a str>,
+    pub word_list: Vec<&'a str>,
 }
 
 /// A struct representing a processed similarity table used for efficient
@@ -122,7 +122,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 ///     SimTable {
 ///         table_id: 1,
 ///         match_id: "match1",
-///         word_list: &word_list,
+///         word_list: word_list,
 ///     },
 ///     // Add more SimTable instances as desired
 /// ];
@@ -164,7 +164,7 @@ impl SimMatcher {
     ///     SimTable {
     ///         table_id: 1,
     ///         match_id: "match1",
-    ///         word_list: &word_list,
+    ///         word_list: word_list,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
@@ -223,7 +223,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///     SimTable {
     ///         table_id: 1,
     ///         match_id: "match1",
-    ///         word_list: &word_list,
+    ///         word_list: word_list,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
@@ -282,7 +282,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///     SimTable {
     ///         table_id: 1,
     ///         match_id: "match1",
-    ///         word_list: &word_list,
+    ///         word_list: word_list,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
