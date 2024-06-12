@@ -8,7 +8,7 @@ To use `matcher_rs` in your Rust project, add the following to your `Cargo.toml`
 
 ```toml
 [dependencies]
-matcher_rs = "0.1.7"
+matcher_rs = "0.1.8"
 ```
 
 You can then use the Matcher struct to perform text matching. Here's a basic example:
