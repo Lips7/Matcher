@@ -35,7 +35,9 @@ jobs:
           toolchain: nightly
           target: ${{ matrix.platform.target }}
           override: true
+      - name: Add target
+        run: rustup target add ${{ matrix.platform.target }}
       - name: test
-        run: cargo test --verbose --target ${{ matrix.platform.target }}
+        run: cargo test --target ${{ matrix.platform.target }}
       - name: Build
-        run: cargo build --release --verbose --target ${{ matrix.platform.target }}
+        run: cargo build --release --target ${{ matrix.platform.target }}
