@@ -31,16 +31,15 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag: ${{ github.ref }}
+          name: Release ${{ github.ref }}
           draft: false
           prerelease: false
+          allowUpdates: true
       - name: Upload Release Asset c
-        uses: actions/upload-release-asset@v1
+        uses: sekwah41/upload-release-assets@v1.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -49,7 +48,7 @@ jobs:
           asset_name: matcher_c-${{ matrix.platform.runner }}-${{ matrix.platform.target }}.${{ matrix.platform.suffix }}
           asset_content_type: application/octet-stream
       - name: Upload Release Asset py
-        uses: actions/upload-release-asset@v1
+        uses: sekwah41/upload-release-assets@v1.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
