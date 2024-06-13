@@ -391,7 +391,7 @@ impl SimpleMatcher {
             SimpleMatchType::Fanjian => {
                 for str_conv_dat in [FANJIAN, UNICODE] {
                     // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_dat.trim().split('\n').map(|pair_str| {
+                    process_dict.extend(str_conv_dat.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
                             // Each line in the conversion data corresponds to a key-value pair.
@@ -407,7 +407,7 @@ impl SimpleMatcher {
                 process_dict.extend(
                     PUNCTUATION_SPECIAL
                         .trim()
-                        .split('\n')
+                        .lines()
                         // Map each punctuation character to an empty string (deletion).
                         .map(|pair_str| (pair_str, "")),
                 );
@@ -422,7 +422,7 @@ impl SimpleMatcher {
                     process_dict.extend(
                         str_conv_dat
                             .trim()
-                            .split('\n')
+                            .lines()
                             // Map each special character to an empty string (deletion).
                             .map(|pair_str| (pair_str, "")),
                     );
@@ -435,7 +435,7 @@ impl SimpleMatcher {
             SimpleMatchType::Normalize => {
                 for str_conv_dat in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
                     // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_dat.trim().split('\n').map(|pair_str| {
+                    process_dict.extend(str_conv_dat.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
                             // Each line in the conversion data corresponds to a key-value pair.
@@ -448,7 +448,7 @@ impl SimpleMatcher {
 
             // For PinYin conversion: process PINYIN data file.
             SimpleMatchType::PinYin => {
-                process_dict.extend(PINYIN.trim().split('\n').map(|pair_str| {
+                process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
                         // Each line in the conversion data corresponds to a key-value pair.
@@ -460,7 +460,7 @@ impl SimpleMatcher {
 
             // For PinYinChar conversion: process PINYIN_CHAR data file.
             SimpleMatchType::PinYinChar => {
-                process_dict.extend(PINYIN_CHAR.trim().split('\n').map(|pair_str| {
+                process_dict.extend(PINYIN_CHAR.trim().lines().map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
                         // Each line in the conversion data corresponds to a key-value pair.
