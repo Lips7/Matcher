@@ -10,7 +10,7 @@ edition = "2021"
 homepage = "https://github.com/Lips7/Matcher"
 readme = "README.md"
 keywords = ["text", "string", "search", "pattern", "multi"]
-license = "MIT"
+license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Lips7/Matcher"
 version = "0.2.2"
 
