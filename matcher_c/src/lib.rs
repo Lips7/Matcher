@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use std::{
-    ffi::{CStr, CString},
+    ffi::{CStr, CString, c_char},
     str::from_utf8_unchecked,
 };
 
@@ -26,7 +26,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 /// It performs deserialization of the byte string into a `MatchTableMap`, and then uses it to create a new `Matcher`.
 /// The newly created `Matcher` instance is then wrapped in a `Box` and converted into a raw pointer before being returned.
 #[no_mangle]
-pub extern "C" fn init_matcher(match_table_map_bytes: *const i8) -> *mut Matcher {
+pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
         // Convert the raw pointer passed as `match_table_map_bytes` to a CStr and then to a byte slice.
         // Deserialize the byte slice into a `MatchTableMap` instance.
@@ -61,7 +61,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const i8) -> *mut Matcher
 /// # Panics
 /// This function will panic if the `matcher` pointer is null.
 #[no_mangle]
-pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const i8) -> bool {
+pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
     unsafe {
         // Dereference the matcher pointer and convert it to a reference.
         // Unwrap the Option to get the underlying Matcher reference.
@@ -83,7 +83,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const i8) -> bo
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns
-/// * A raw pointer to an i8 holding a JSON-encoded string indicating the result of the `word_match` function called on the `Matcher` instance.
+/// * A raw pointer to an c_char holding a JSON-encoded string indicating the result of the `word_match` function called on the `Matcher` instance.
 ///
 /// # Panics
 /// This function will panic if any of the following occur:
@@ -91,7 +91,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const i8) -> bo
 /// * The byte slice pointed to by `text` is not valid UTF-8.
 /// * Creating a `CString` from the JSON string fails.
 #[no_mangle]
-pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const i8) -> *mut i8 {
+pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char) -> *mut c_char {
     // Unsafe block to perform operations requiring manual memory management and direct pointer manipulation.
     let res = unsafe {
         // Create a new CString from a JSON string, ensuring it is null-terminated and safe for C-interoperability.
@@ -156,7 +156,7 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// into a raw pointer before being returned.
 #[no_mangle]
 pub extern "C" fn init_simple_matcher(
-    simple_match_type_word_map_bytes: *const i8,
+    simple_match_type_word_map_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
     unsafe {
         // Convert the raw pointer passed as `simple_match_type_word_map_bytes` to a CStr and then to a byte slice.
@@ -202,7 +202,7 @@ pub extern "C" fn init_simple_matcher(
 #[no_mangle]
 pub extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
-    text: *const i8,
+    text: *const c_char,
 ) -> bool {
     // Unsafe block to perform operations that involve manual memory management and direct pointer manipulation
     unsafe {
@@ -227,7 +227,7 @@ pub extern "C" fn simple_matcher_is_match(
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be processed.
 ///
 /// # Returns
-/// * A raw pointer to an i8 holding a JSON-encoded string indicating the result of the `process` function called on the `SimpleMatcher` instance.
+/// * A raw pointer to an c_char holding a JSON-encoded string indicating the result of the `process` function called on the `SimpleMatcher` instance.
 ///
 /// # Panics
 /// This function will panic if any of the following occur:
@@ -243,8 +243,8 @@ pub extern "C" fn simple_matcher_is_match(
 #[no_mangle]
 pub extern "C" fn simple_matcher_process(
     simple_matcher: *mut SimpleMatcher,
-    text: *const i8,
-) -> *mut i8 {
+    text: *const c_char,
+) -> *mut c_char {
     // Begin unsafe block to allow for manual memory management and pointer manipulation.
     let res = unsafe {
         // Create a new CString, which ensures it is null-terminated and safe for C-interoperability.
@@ -303,6 +303,6 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
 /// This function converts the raw pointer back into a `CString` and then drops it, effectively freeing the memory that the CString instance occupied.
 /// After calling this function, the `ptr` pointer must not be used again.
 #[no_mangle]
-pub extern "C" fn drop_string(ptr: *mut i8) {
+pub extern "C" fn drop_string(ptr: *mut c_char) {
     unsafe { drop(CString::from_raw(ptr)) }
 }
