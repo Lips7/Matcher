@@ -63,7 +63,3 @@ A high-performance matcher for massive amounts of sensitive words.
 
 - Most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which supports finding multiple patterns simultaneously with SIMD acceleration in some cases.
 - For detailed implementation, see the [Design Document](./DESIGN.md).
-
----
-
-This revised section emphasizes that the number of repetitions of words is taken into account during matching.
