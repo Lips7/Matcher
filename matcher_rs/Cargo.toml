@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "matcher_rs"
 authors.workspace = true
@@ -10,7 +12,6 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 readme = "README.md"
-build = "build.rs"
 
 [package.metadata.docs.rs]
 rustc-args = ["-C", "target-feature=+aes"]
@@ -36,6 +37,11 @@ regex = "1.10.5"
 serde = { version = "1.0.203", features = ["derive"] }
 sonic-rs = "0.3.6"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
+
+[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
+tikv-jemallocator = "0.5.4"
+
+[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
 mimalloc = "0.1.42"
 
 [dev-dependencies]
