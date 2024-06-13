@@ -2,12 +2,19 @@
 
 A high-performance matcher for massive amounts of sensitive words.
 
+It's helpful for
+- **Content Filtering**: Detecting and filtering out offensive or sensitive words.
+- **Search Engines**: Improving search results by identifying relevant keywords.
+- **Text Analysis**: Extracting specific information from large volumes of text.
+- **Spam Detection**: Identifying spam content in emails or messages.
+- ···
+
 ## Features
 
 - **Multiple Matching Methods**:
-  - **Simple Word Matching**
-  - **Regex-Based Matching**
-  - **Similarity-Based Matching**
+  - Simple Word Matching
+  - Regex-Based Matching
+  - Similarity-Based Matching
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
