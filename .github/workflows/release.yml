@@ -1,0 +1,62 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: so
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            suffix: so
+          - runner: maxos-12
+            target: x86_64-apple-darwin
+            suffix: dylib
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            suffix: dylib
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          target: ${{ matrix.platform.target }}
+          override: true
+      - name: Build
+        run: cargo build --release --target ${{ matrix.platform.target }}
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset c
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }}
+          asset_name: matcher_c-${{ matrix.platform.runner }}-${{ matrix.platform.target }}.${{ matrix.platform.suffix }}
+          asset_content_type: application/octet-stream
+      - name: Upload Release Asset py
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }}
+          asset_name: matcher_py-${{ matrix.platform.runner }}-${{ matrix.platform.target }}.${{ matrix.platform.suffix }}
+          asset_content_type: application/octet-stream

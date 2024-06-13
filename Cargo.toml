@@ -12,7 +12,7 @@ readme = "README.md"
 keywords = ["text", "string", "search", "pattern", "multi"]
 license = "MIT"
 repository = "https://github.com/Lips7/Matcher"
-version = "0.2.0"
+version = "0.2.1"
 
 [profile.release]
 strip = true
