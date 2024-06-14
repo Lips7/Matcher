@@ -8,6 +8,8 @@ To install the `matcher_py` package, use pip:
 pip install matcher_py
 ```
 
+Or you can download pre-built `matcher_py` in [release](https://github.com/Lips7/Matcher/releases).
+
 ## Usage
 
 ### Python Usage

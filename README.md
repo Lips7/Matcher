@@ -68,15 +68,19 @@ It's helpful for
 - Install Rust.
 - Clone the repository.
 - Run `cargo build --release`.
-- Copy `target/release/libmatcher.so` (or `libmatcher.dylib` for Mac) to `matcher_java/src/resources/matcher_c.so`.
+- Copy `target/release/libmatcher_c.so` (or `libmatcher_c.dylib` for Mac) (or `matcher_c.dll` for Windows) to `matcher_java/src/resources/matcher_c.so`.
 - See the [Java README](./matcher_java/README.md)
+
+Or you can download pre-built `matcher_c` in [release](https://github.com/Lips7/Matcher/releases).
 
 #### C Users
 - Install Rust.
 - Clone the repository.
 - Run `cargo build --release`.
-- Copy `target/release/libmatcher.so` (or `libmatcher.dylib` for Mac) to `matcher_c/matcher_c.so`.
+- Copy `target/release/libmatcher_c.so` (or `libmatcher_c.dylib` for Mac) (or `matcher_c.dll` for Windows) to `matcher_c/matcher_c.so`.
 - See the [C README](./matcher_c/README.md)
+
+Or you can download pre-built `matcher_c` in [release](https://github.com/Lips7/Matcher/releases).
 
 ## Design
 
