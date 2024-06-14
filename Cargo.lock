@@ -354,7 +354,7 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "matcher_c"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -363,7 +363,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aho-corasick",
  "bitflags",
@@ -405,9 +405,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.7.2"
+version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
+checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "memoffset"
@@ -825,9 +825,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "sonic-rs"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "244d3cdf9dd4e2a5c63991a6ed4ecd768959204d5e4a839181ee997e8c149407"
+checksum = "7d16b7974db39ac84e6fb1b2aab10d9ef883e5eca1ed2a1bc71d6869e2c4675f"
 dependencies = [
  "arrayref",
  "bumpalo",

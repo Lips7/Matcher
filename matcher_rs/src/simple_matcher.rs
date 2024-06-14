@@ -554,7 +554,7 @@ impl SimpleMatcher {
                 .values()
                 .take(WORD_COMBINATION_LIMIT)
                 .map(|&x| 1 << (x.min(8) - 1)) // Ensure the bit shift does not exceed 8.
-                .collect::<ArrayVec<[u8; 32]>>();
+                .collect::<ArrayVec<[u8; WORD_COMBINATION_LIMIT]>>();
             let split_bit = Simd::load_or_default(&split_bit_vec); // Load split bits into a SIMD vector.
 
             // Insert the word configuration into the simple_wordconf_map.
@@ -610,7 +610,7 @@ impl SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * An `ArrayVec` containing up to 4 versions of the processed text. Each version represents
+    /// * An `ArrayVec` containing up to 8 versions of the processed text. Each version represents
     ///   a partial or fully transformed state of the original text according to the rules specified
     ///   in the `SimpleMatchType`.
     ///
@@ -629,9 +629,9 @@ impl SimpleMatcher {
         &self,
         simple_match_type: &SimpleMatchType,
         text_bytes: &'a [u8],
-    ) -> ArrayVec<[Cow<'a, [u8]>; 4]> {
+    ) -> ArrayVec<[Cow<'a, [u8]>; 8]> {
         // Initialize an ArrayVec to store processed text byte arrays, starting with the original text bytes.
-        let mut processed_text_bytes_list: ArrayVec<[Cow<'a, [u8]>; 4]> = ArrayVec::new();
+        let mut processed_text_bytes_list: ArrayVec<[Cow<'a, [u8]>; 8]> = ArrayVec::new();
         processed_text_bytes_list.push(Cow::Borrowed(text_bytes));
 
         // Iterate over each bit in the SimpleMatchType.
@@ -765,7 +765,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     // Get or initialize the split bit vector corresponding to the word ID.
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                         iter::repeat_n(word_conf.split_bit, processed_times)
-                            .collect::<ArrayVec<[_; 4]>>()
+                            .collect::<ArrayVec<[_; 8]>>()
                     });
 
                     // Update the split bit vector by shifting the bit to the right.
@@ -867,7 +867,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     // Get or initialize the split bit vector corresponding to the word ID
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                         iter::repeat_n(word_conf.split_bit, processed_times)
-                            .collect::<ArrayVec<[_; 4]>>()
+                            .collect::<ArrayVec<[_; 8]>>()
                     });
 
                     // Update the split bit vector by shifting the bit to the right

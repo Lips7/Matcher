@@ -10,7 +10,8 @@ A high-performance, multi-functional word matcher implemented in Rust.
   - Similarity-based matching
 - **Text Normalization Options**:
   - Fanjian (Simplify traditional Chinese characters to simplified ones)
-  - DeleteNormalize (Remove whitespaces, punctuation, and non-alphanumeric characters)
+  - Delete (Remove whitespaces, punctuation, and non-alphanumeric characters)
+  - Normalize (Normalize special characters to identifiable characters)
   - PinYin (Convert Chinese characters to Pinyin for fuzzy matching)
   - PinYinChar (Convert Chinese characters to Pinyin)
 - **Combination and Repeated Word Matching**:

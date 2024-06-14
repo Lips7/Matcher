@@ -20,4 +20,4 @@ crate-type = ["cdylib"]
 [dependencies]
 matcher_rs = { path = "../matcher_rs" }
 rmp-serde = "1.3.0"
-sonic-rs = "0.3.6"
+sonic-rs = "0.3.7"

@@ -26,8 +26,10 @@ It's helpful for
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
-  - **DeleteNormalize**: Remove whitespaces, punctuation, and other non-alphanumeric characters.
-    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `helloworld`
+  - **Delete**: Remove specific characters.
+    Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
+  - **Normalize**: Normalize special characters to identifiable characters.
+    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `hello world`
   - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
     Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
@@ -40,8 +42,10 @@ It's helpful for
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
 ## Limitations
-
-- Can handle words with a maximum of 32 combined words and 8 repeated words.
+- `SimpleMatchType` has only 6 available flags (`None`, `Fanjian`, `Delete`, `Normalize`, `PinYin`, `PinYinChar`), others are just pre-defined combination of them.
+  - `Delete` is a combination of `WordDelete` and `TextDelete`, perform different delete strategy on word and text.
+  - `PinYin` and `PinYinChar` shouldn't be enabled at same time. 'cause `PinYin` is a more limited version of `PinYinChar`, users'd better choose one of them.
+- Can handle words with a maximum of 32 combined words (more than 32 then effective combined words are not guaranteed) and 8 repeated words (more than 8 repeated words will be limited to 8).
 - Users must ensure the correctness of input data and the global uniqueness of `match_id`, `table_id`, and `word_id`.
 
 ## Usage
