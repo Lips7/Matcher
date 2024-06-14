@@ -51,13 +51,17 @@ jobs:
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: List files
         run: ls ./target/${{ matrix.platform.target }}/release/
+      - name: Rename
+        shell: bash
+        run: |
+          mkdir libmatcher
+          cp ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_c.${{ matrix.platform.suffix }}
+          cp ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_py.${{ matrix.platform.suffix }}
       - name: Upload release
         uses: actions/upload-artifact@v4
         with:
-          name: libmatcher-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
-          path: |
-            ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }}
-            ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }}
+          name: libmatcher-${{ matrix.platform.target }}
+          path: libmatcher
 
   release:
     name: Release
