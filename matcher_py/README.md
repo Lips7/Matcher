@@ -120,6 +120,6 @@ Contributions to `matcher_py` are welcome! If you find a bug or have a feature r
 
 ## License
 
-`matcher_py` is licensed under the MIT OR Apache-2.0 license. See the [LICENSE](../License.md) file for more information.
+`matcher_py` is licensed under the MIT OR Apache-2.0 license.
 
 For more details, visit the [GitHub repository](https://github.com/Lips7/Matcher).

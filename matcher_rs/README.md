@@ -83,7 +83,7 @@ Contributions to `matcher_rs` are welcome! If you find a bug or have a feature r
 
 ## License
 
-`matcher_rs` is licensed under the MIT OR Apache-2.0 license. See the [LICENSE](../License.md) file for more information.
+`matcher_rs` is licensed under the MIT OR Apache-2.0 license.
 
 ## More Information
 
