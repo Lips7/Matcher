@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+    paths:
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -30,29 +35,12 @@ jobs:
           override: true
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
-      - name: Create Release
-        uses: ncipollo/release-action@v1
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag: ${{ github.ref }}
-          name: Release ${{ github.ref }}
           draft: false
           prerelease: false
-          allowUpdates: true
-      - name: Upload Release Asset c
-        uses: sekwah41/upload-release-assets@v1.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }}
-          asset_name: matcher_c-${{ matrix.platform.runner }}-${{ matrix.platform.target }}.${{ matrix.platform.suffix }}
-          asset_content_type: application/octet-stream
-      - name: Upload Release Asset py
-        uses: sekwah41/upload-release-assets@v1.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }}
-          asset_name: matcher_py-${{ matrix.platform.runner }}-${{ matrix.platform.target }}.${{ matrix.platform.suffix }}
-          asset_content_type: application/octet-stream
+          generate_release_notes: true
+          files: |
+            ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }}
+            ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }}

@@ -2,7 +2,11 @@ name: rust
 
 on:
   push:
-    tags: 'v*'
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
