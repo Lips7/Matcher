@@ -14,8 +14,8 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.platform.runner }}
-    fail-fast: false
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-latest
