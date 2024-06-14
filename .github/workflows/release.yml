@@ -2,11 +2,11 @@ name: release
 
 on:
   push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+    files:
+      - 'matcher_py/**'
+      - 'matcher_rs/**'
+      - 'matcher_c/**'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
