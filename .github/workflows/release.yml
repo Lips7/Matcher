@@ -51,7 +51,7 @@ jobs:
       - name: Upload release
         uses: actions/upload-artifact@v4
         with:
-          name: libmatcher
+          name: libmatcher-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
           path: |
             ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }}
             ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }}
@@ -65,7 +65,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: libmatcher
+          pattern: libmatcher-*
           merge-multiple: true
           path: artifact
       - name: Make elease
