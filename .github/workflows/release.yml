@@ -55,8 +55,8 @@ jobs:
         shell: bash
         run: |
           mkdir libmatcher
-          cp ./target/${{ matrix.platform.target }}/release/libmatcher_c.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_c.${{ matrix.platform.suffix }}
-          cp ./target/${{ matrix.platform.target }}/release/libmatcher_py.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_py.${{ matrix.platform.suffix }}
+          mv ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_c.${{ matrix.platform.suffix }}
+          mv ./target/${{ matrix.platform.target }}/release/*matcher_py.${{ matrix.platform.suffix }} libmatcher/${{ matrix.platform.target }}-libmatcher_py.${{ matrix.platform.suffix }}
       - name: Upload release
         uses: actions/upload-artifact@v4
         with:
