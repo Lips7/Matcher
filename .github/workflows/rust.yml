@@ -44,6 +44,9 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+    - name: Run doc
+      run: cargo doc
+
     - name: Publish matcher_rs
       env:
         CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}

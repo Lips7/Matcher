@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    paths:
-      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
@@ -61,4 +59,3 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: artifact/*
-          
