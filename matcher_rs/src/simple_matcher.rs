@@ -3,9 +3,9 @@ use std::intrinsics::{likely, unlikely};
 use std::iter;
 use std::simd::Simd;
 
+use ahash::{AHashMap, AHashSet};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
-use gxhash::{HashMap as GxHashMap, HashSet as GxHashSet};
-use nohash_hasher::{IntMap, IntSet};
+use nohash_hasher::{IntMap, IntSet, IsEnabled};
 use serde::Serialize;
 use tinyvec::ArrayVec;
 
@@ -93,6 +93,8 @@ const ZEROS: Simd<u8, WORD_COMBINATION_LIMIT> = Simd::from_array([0; WORD_COMBIN
 /// normalization, punctuation deletion, and more.
 pub type SimpleMatchType = StrConvType;
 
+impl IsEnabled for SimpleMatchType {}
+
 /// Type alias for a mapping between `SimpleMatchType` and an `IntMap` containing word IDs
 /// and references to associated words.
 ///
@@ -109,10 +111,9 @@ pub type SimpleMatchType = StrConvType;
 ///
 /// ```rust
 /// use matcher_rs::{SimpleMatchType, SimpleMatchTypeWordMap};
-/// use gxhash::HashMap as GxHashMap;
 /// use nohash_hasher::IntMap;
 ///
-/// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = GxHashMap::default();
+/// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = IntMap::default();
 /// let mut simple_word_map = IntMap::default();
 ///
 /// simple_word_map.insert(1, "你好");
@@ -121,7 +122,7 @@ pub type SimpleMatchType = StrConvType;
 /// simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
 /// ```
 ///
-pub type SimpleMatchTypeWordMap<'a> = GxHashMap<SimpleMatchType, IntMap<u64, &'a str>>;
+pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u64, &'a str>>;
 
 /// Configuration for a word used in the `SimpleMatcher`.
 ///
@@ -255,8 +256,8 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///   This value helps in optimizing the matching process by filtering out text that is too
 ///   short to contain any valid matches.
 pub struct SimpleMatcher {
-    simple_match_type_process_map: GxHashMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
-    simple_match_type_ac_table_map: GxHashMap<SimpleMatchType, SimpleAcTable>,
+    simple_match_type_process_map: IntMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
+    simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_wordconf_map: IntMap<u64, WordConf>,
     min_chars_count: usize,
 }
@@ -285,10 +286,9 @@ impl SimpleMatcher {
     ///
     /// ```rust
     /// use matcher_rs::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher};
-    /// use gxhash::HashMap as GxHashMap;
     /// use nohash_hasher::IntMap;
     ///
-    /// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = GxHashMap::default();
+    /// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = IntMap::default();
     /// let mut simple_word_map = IntMap::default();
     ///
     /// simple_word_map.insert(1, "你好");
@@ -305,8 +305,8 @@ impl SimpleMatcher {
     {
         // Create a new instance of SimpleMatcher with default values
         let mut simple_matcher = SimpleMatcher {
-            simple_match_type_process_map: GxHashMap::default(),
-            simple_match_type_ac_table_map: GxHashMap::default(),
+            simple_match_type_process_map: IntMap::default(),
+            simple_match_type_ac_table_map: IntMap::default(),
             simple_wordconf_map: IntMap::default(),
             min_chars_count: usize::MAX,
         };
@@ -380,7 +380,7 @@ impl SimpleMatcher {
         simple_match_type_bit: &SimpleMatchType,
     ) -> (Vec<&'static str>, AhoCorasick) {
         // Create a mutable dictionary (hash map) to store process pairs.
-        let mut process_dict = GxHashMap::default();
+        let mut process_dict = AHashMap::default();
 
         // Match against the specific string conversion type.
         match *simple_match_type_bit {
@@ -536,12 +536,12 @@ impl SimpleMatcher {
                 simple_word
                     .chars()
                     .filter(|&c| c != ',') // Exclude commas from the character count.
-                    .collect::<GxHashSet<char>>()
+                    .collect::<AHashSet<char>>()
                     .len(),
             );
 
             // Create a counter for split words in the current simple_word.
-            let mut ac_split_word_counter = GxHashMap::default();
+            let mut ac_split_word_counter = AHashMap::default();
             for ac_split_word in simple_word.split(',').filter(|&x| !x.is_empty()) {
                 ac_split_word_counter
                     .entry(ac_split_word)

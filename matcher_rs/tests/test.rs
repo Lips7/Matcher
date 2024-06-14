@@ -1,11 +1,11 @@
-use gxhash::HashMap as GxHashMap;
+use ahash::AHashMap;
 use nohash_hasher::IntMap;
 
 use matcher_rs::*;
 
 #[test]
 fn simple_match() {
-    let simple_word_list_dict = GxHashMap::from_iter([
+    let simple_word_list_dict = IntMap::from_iter([
         (
             SimpleMatchType::FanjianDeleteNormalize,
             IntMap::from_iter([
@@ -126,7 +126,7 @@ fn sim_match() {
 
 #[test]
 fn word_match() {
-    let match_table_map = GxHashMap::from_iter([(
+    let match_table_map = AHashMap::from_iter([(
         "test",
         vec![
             MatchTable {

@@ -1,11 +1,11 @@
+use ahash::AHashMap;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use gxhash::HashMap as GxHashMap;
 use nohash_hasher::IntMap;
 
 use matcher_rs::*;
 
 fn bench(c: &mut Criterion) {
-    let match_table_map = GxHashMap::from_iter([(
+    let match_table_map = AHashMap::from_iter([(
         "test",
         vec![MatchTable {
             table_id: 1,
@@ -37,7 +37,7 @@ fn bench(c: &mut Criterion) {
         b.iter(|| matcher.word_match(black_box("")))
     });
 
-    let simple_word_list_dict = GxHashMap::from_iter([(
+    let simple_word_list_dict = IntMap::from_iter([(
         SimpleMatchType::FanjianDeleteNormalize,
         IntMap::from_iter([(1, "你好，123")]),
     )]);

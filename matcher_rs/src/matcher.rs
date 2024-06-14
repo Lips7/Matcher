@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use bitflags::bitflags;
-use gxhash::HashMap as GxHashMap;
 use nohash_hasher::IntMap;
 use serde::{Deserializer, Serializer};
 use sonic_rs::{to_string, Deserialize, Serialize};
@@ -397,9 +397,9 @@ struct ResultDict<'a> {
 ///
 /// ```
 /// use matcher_rs::{MatchTableMap, MatchTable, MatchTableType, SimpleMatchType};
-/// use gxhash::HashMap as GxHashMap;
+/// use ahash::AHashMap;
 ///
-/// let mut match_table_map: MatchTableMap = GxHashMap::default();
+/// let mut match_table_map: MatchTableMap = AHashMap::default();
 /// let example_table = MatchTable {
 ///     table_id: 1,
 ///     match_table_type: MatchTableType::Simple,
@@ -411,7 +411,7 @@ struct ResultDict<'a> {
 ///
 /// match_table_map.insert("example_key", vec![example_table]);
 /// ```
-pub type MatchTableMap<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
+pub type MatchTableMap<'a> = AHashMap<&'a str, Vec<MatchTable<'a>>>;
 
 /// A structure that represents a text matcher with multiple matching strategies.
 ///
@@ -438,9 +438,9 @@ pub type MatchTableMap<'a> = GxHashMap<&'a str, Vec<MatchTable<'a>>>;
 ///
 /// ```
 /// use matcher_rs::{Matcher, MatchTableMap};
-/// use gxhash::HashMap as GxHashMap;
+/// use ahash::AHashMap;
 ///
-/// let match_table_map: MatchTableMap = GxHashMap::default();
+/// let match_table_map: MatchTableMap = AHashMap::default();
 /// let matcher = Matcher::new(match_table_map);
 /// ```
 /// The example demonstrates how to initialize a `Matcher` instance using an empty `MatchTableMap`.
@@ -466,7 +466,7 @@ impl Matcher {
     ///
     /// # Returns
     ///
-    /// A `GxHashMap` where the keys are match identifiers and the values are vectors of `MatchResult`
+    /// A `AHashMap` where the keys are match identifiers and the values are vectors of `MatchResult`
     /// containing the details of each matched result.
     ///
     /// # Behavior
@@ -481,8 +481,8 @@ impl Matcher {
     /// - If a match result corresponds to an exempted word (determined by `is_exemption` flag), an
     ///   `exemption_flag` is set for that match identifier.
     /// - After collecting all the results, the function filters out match identifiers that have exemption flags
-    ///   set and returns the remaining results as a `GxHashMap`.
-    /// - If the input text is empty, the function returns an empty `GxHashMap`.
+    ///   set and returns the remaining results as a `AHashMap`.
+    /// - If the input text is empty, the function returns an empty `AHashMap`.
     ///
     /// # Safety
     ///
@@ -501,8 +501,8 @@ impl Matcher {
         let mut simple_word_table_conf_id_map = IntMap::default();
 
         // Initialize map to associate simple match types with word maps.
-        let mut simple_match_type_word_map: GxHashMap<SimpleMatchType, IntMap<u64, &'a str>> =
-            GxHashMap::default();
+        let mut simple_match_type_word_map: IntMap<SimpleMatchType, IntMap<u64, &'a str>> =
+            IntMap::default();
 
         // Initialize lists to accumulate regex and similarity tables.
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
@@ -616,7 +616,7 @@ impl Matcher {
     ///
     /// # Returns
     ///
-    /// A `GxHashMap` where the keys are match identifiers and the values are vectors of `MatchResult`
+    /// A `AHashMap` where the keys are match identifiers and the values are vectors of `MatchResult`
     /// containing the details of each matched result.
     ///
     /// # Behavior
@@ -626,16 +626,16 @@ impl Matcher {
     /// - For `simple_matcher`, it retrieves the associated `WordTableConf` and stores the results in `match_result_dict`.
     /// - For `regex_matcher` and `sim_matcher`, the results are directly added to `match_result_dict`.
     /// - Results that correspond to exempted words are flagged, and exempted results are filtered out before returning.
-    /// - If the input text is empty, the function returns an empty `GxHashMap`.
+    /// - If the input text is empty, the function returns an empty `AHashMap`.
     ///
     /// # Safety
     ///
     /// Uses unsafe code to access internal maps for performance optimization. The use of `unsafe` is justified
     /// for better performance by avoiding bound checks.
-    fn word_match_raw(&self, text: &str) -> GxHashMap<&str, Vec<MatchResult>> {
+    fn word_match_raw(&self, text: &str) -> AHashMap<&str, Vec<MatchResult>> {
         if !text.is_empty() {
             // Initialize a dictionary to hold match results keyed by match identifier.
-            let mut match_result_dict: GxHashMap<&str, ResultDict> = GxHashMap::default();
+            let mut match_result_dict: AHashMap<&str, ResultDict> = AHashMap::default();
 
             // Check if the simple matcher is available.
             if let Some(simple_matcher) = &self.simple_matcher {
@@ -724,7 +724,7 @@ impl Matcher {
                 .collect()
         } else {
             // Return an empty dictionary if the input text is empty.
-            GxHashMap::default()
+            AHashMap::default()
         }
     }
 
