@@ -6,7 +6,7 @@ use matcher_rs::*;
 
 fn bench(c: &mut Criterion) {
     let match_table_map = AHashMap::from_iter([(
-        "test",
+        1,
         vec![MatchTable {
             table_id: 1,
             match_table_type: MatchTableType::Simple,

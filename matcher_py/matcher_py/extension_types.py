@@ -69,7 +69,7 @@ class MatchTable(msgspec.Struct):
     exemption_word_list: List[str]
 
 
-MatchTableMap = Dict[str, List[MatchTable]]
+MatchTableMap = Dict[int, List[MatchTable]]
 
 
 class MatchResult(msgspec.Struct):

@@ -65,7 +65,7 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
     /// # Panics
     /// Panics if setting a dictionary item fails. Although highly unlikely,
     /// failures might occur due to memory issues or internal Python state inconsistencies.
-    /// ```
+    /// ```text
     fn into_py(self, py: Python<'_>) -> PyObject {
         let dict = PyDict::new_bound(py);
 
@@ -113,7 +113,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// matcher = Matcher(
 ///     msgpack_encoder.encode(
 ///         {
-///             "test": [
+///             1: [
 ///                 MatchTable(
 ///                     table_id=1,
 ///                     match_table_type=MatchTableType.Simple,
@@ -132,11 +132,11 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// assert not matcher.is_match("hello, word")
 ///
 /// # Perform word matching as a dict
-/// assert matcher.word_match(r"hello, world")["test"]
+/// assert matcher.word_match(r"hello, world")[1]
 ///
 /// # Perform word matching as a string
 /// result = matcher.word_match_as_string("hello")
-/// assert result == """{"test":"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}"""
+/// assert result == """{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}"""
 ///
 /// # Perform batch processing as a dict using a list
 /// text_list = ["hello", "world", "hello,word"]
@@ -199,7 +199,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -316,7 +316,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -371,7 +371,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -387,9 +387,9 @@ impl Matcher {
     ///
     /// # Perform word matching as a dict
     /// result = matcher.word_match("hello")
-    /// print(result) Output: {"test":"[{\"table_id\":1,\"word\":\"hello\"}]"}
+    /// print(result) Output: {1:"[{\"table_id\":1,\"word\":\"hello\"}]"}
     /// ```
-    fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<&str, String> {
+    fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<u64, String> {
         text.downcast::<PyString>().map_or(HashMap::new(), |text| {
             self.matcher
                 .word_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
@@ -427,7 +427,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -443,7 +443,7 @@ impl Matcher {
     ///
     /// # Perform word matching as a string
     /// result = matcher.word_match_as_string("hello")
-    /// print(result) Output: '{"test":"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}'
+    /// print(result) Output: '{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}'
     /// ```
     fn word_match_as_string(&self, py: Python, text: &Bound<'_, PyAny>) -> Py<PyString> {
         text.downcast::<PyString>()
@@ -488,7 +488,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -505,7 +505,7 @@ impl Matcher {
     /// # Perform word matching as a dict
     /// text_array = ["hello", "world", "hello word"]
     /// result = matcher.batch_word_match_as_dict(text_array)
-    /// print(result) # Output: [{"test":"[{\"table_id\":1,\"word\":\"hello\"}]"}, ...]
+    /// print(result) # Output: [{1:"[{\"table_id\":1,\"word\":\"hello\"}]"}, ...]
     /// ```
     fn batch_word_match_as_dict(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
@@ -546,7 +546,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -563,7 +563,7 @@ impl Matcher {
     /// # Perform word matching as a string for a batch of texts
     /// text_array = ["hello", "world", "hello word"]
     /// result = matcher.batch_word_match_as_string(text_array)
-    /// print(result)  # Output: ['{"test":"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}', ...]
+    /// print(result)  # Output: ['{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}', ...]
     /// ```
     fn batch_word_match_as_string(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
@@ -612,7 +612,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,
@@ -691,7 +691,7 @@ impl Matcher {
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
-    ///             "test": [
+    ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
     ///                     match_table_type=MatchTableType.Simple,

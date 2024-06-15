@@ -34,7 +34,7 @@ lib = ffi.dlopen("./matcher_c.so")
 # init matcher
 matcher = lib.init_matcher(
     msgspec.msgpack.encode({
-        "test": [
+        1: [
             MatchTable(
                 table_id=1,
                 match_table_type=MatchTableType.Simple,

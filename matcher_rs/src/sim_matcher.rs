@@ -5,86 +5,102 @@ use rapidfuzz::distance::levenshtein;
 
 use super::{MatchResultTrait, TextMatcherTrait};
 
-/// A struct representing a processed similarity table with a unique identifier,
-/// a match identifier, and a list of processed words.
+#[derive(Debug, Clone)]
+/// A struct representing a table for similarity matching.
 ///
-/// The `SimProcessedTable` struct stores the following information:
-/// - `table_id`: A unique identifier for the table.
-/// - `match_id`: A string identifier for matching purposes.
-/// - `word_list`: A vector of strings representing the processed word list.
-///
-/// This struct is utilized within the `SimMatcher` to store processed versions
-/// of the words for similarity matching.
+/// The `SimTable` struct defines a similarity table with a unique identifier, match
+/// identifier, and a list of words. This struct is primarily used to store the
+/// original words and identifiers that will be processed for similarity matching
+/// purposes.
 ///
 /// # Fields
-/// - `table_id` (u64): The unique identifier for the table.
-/// - `match_id` (String): The match identifier.
-/// - `word_list` (`Vec<String>`): The list of processed words.
+///
+/// - `table_id` (u64): The unique identifier for the similarity table.
+/// - `match_id` (u64): An ID that serves as an identifier for the match.
+/// - `word_list` (Vec<&'a str>): A vector of string slices representing the words
+///   to be included in the similarity table.
+///
+/// The lifetimes `'a` ensure that the references in the `SimTable` struct are valid
+/// for as long as the struct instance exists.
+///
+/// # Example
+///
+/// ```
+/// use matcher_rs::SimTable;
+///
+/// let word_list = vec!["example1", "example2"];
+///
+/// let sim_table = SimTable {
+///     table_id: 1,
+///     match_id: 1,
+///     word_list: word_list,
+/// };
+/// ```
 pub struct SimTable<'a> {
     pub table_id: u64,
-    pub match_id: &'a str,
+    pub match_id: u64,
     pub word_list: Vec<&'a str>,
 }
 
-/// A struct representing a processed similarity table used for efficient
-/// similarity matching.
+#[derive(Debug, Clone)]
+/// A struct representing a preprocessed table for similarity matching.
 ///
-/// The `SimProcessedTable` struct stores the following information:
-/// - `table_id`: A unique identifier for the processed table.
-/// - `match_id`: A string identifier for matching purposes.
-/// - `word_list`: A vector of processed words.
-///
-/// This struct is used internally within the `SimMatcher` to store and manage
-/// the words after processing for special pattern removal and normalization.
+/// The `SimProcessedTable` struct is used internally within the `SimMatcher` to store
+/// preprocessed versions of the tables originally defined by the user through the `SimTable` struct.
 ///
 /// # Fields
-/// - `table_id` (u64): The unique identifier for the processed table.
-/// - `match_id` (String): The match identifier.
-/// - `word_list` (Vec<String>): The list of processed words.
+///
+/// - `table_id` (u64): The unique identifier for the similarity table.
+/// - `match_id` (u64): An ID that serves as an identifier for the match.
+/// - `word_list` (`Vec<String>``): A vector of owned strings representing the words
+///   that have been preprocessed for similarity matching.
 struct SimProcessedTable {
     table_id: u64,
-    match_id: String,
+    match_id: u64,
     word_list: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A struct representing the result of a similarity match.
 ///
-/// The `SimResult` struct is used to store the details of a matched word along
-/// with its associated table identifier, match identifier, and similarity score.
-/// It is designed to be used within the `SimMatcher` for retrieving and handling
-/// the results of the similarity matching process.
+/// The `SimResult` struct captures the details of a word that was found to be similar
+/// during the similarity matching process. It includes the matched word, the unique
+/// identifier of the table where the word was found, the match identifier of that table,
+/// and the similarity score computed for the match.
+///
+/// The lifetimes ensure that the references in the `SimResult` struct remain valid
+/// for as long as the struct instance exists.
 ///
 /// # Fields
 ///
-/// - `word` (Cow<'a, str>): A `Cow` (Copy-On-Write) that holds either a borrowed
-///   or owned string slice representing the matched word.
+/// - `word` (Cow<'a, str>): The word that was found to be similar. It is stored as a `Cow`
+///   (clone-on-write) to allow for both owned and borrowed strings.
 /// - `table_id` (u64): The unique identifier of the table where the word was found.
-/// - `match_id` (&'a str): A reference to the match identifier string associated
-///   with the table.
-/// - `similarity` (f64): The similarity score of the match, typically ranging from
-///   0.0 to 1.0, indicating how closely the `word` matches the processed text.
+/// - `match_id` (u64): An ID that serves as an identifier for the match.
+/// - `similarity` (f64): The similarity score computed for the match. This score typically
+///   ranges from 0.0 to 1.0, with higher values indicating greater similarity.
+///
+/// # Example
+///
+/// ```
+/// use matcher_rs::SimResult;
+/// use std::borrow::Cow;
+///
+/// let match_result = SimResult {
+///     word: Cow::Borrowed("example"),
+///     table_id: 1,
+///     match_id: 1,
+///     similarity: 0.9,
+/// };
+/// ```
 pub struct SimResult<'a> {
     pub word: Cow<'a, str>,
     pub table_id: u64,
-    pub match_id: &'a str,
+    pub match_id: u64,
     pub similarity: f64,
 }
 
 impl MatchResultTrait<'_> for SimResult<'_> {
-    /// Provides implementations for the methods defined in the `MatchResultTrait` for the `SimResult` struct.
-    ///
-    /// The `table_id` method returns the unique identifier of the table where the word was found.
-    ///
-    /// The `word` method returns a reference to the word from the processed list that was found to be similar.
-    ///
-    /// These methods allow the `SimResult` struct to fulfill the `MatchResultTrait` and provide the necessary
-    /// functionality for accessing the table identifier and the matched word in a generic way.
-    ///
-    /// # Methods
-    ///
-    /// - `table_id(&self) -> u64`: Returns the unique identifier of the table.
-    /// - `word(&self) -> &str`: Returns a reference to the word from the processed list.
     fn table_id(&self) -> u64 {
         self.table_id
     }
@@ -93,27 +109,26 @@ impl MatchResultTrait<'_> for SimResult<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
 /// A struct representing a similarity matcher.
 ///
-/// The `SimMatcher` struct provides functionality for preprocessing text by
-/// removing special characters and then performing similarity matching against
-/// a list of preprocessed tables.
+/// The `SimMatcher` struct is responsible for managing and processing similarity matching
+/// operations on provided textual data using predefined tables. It includes functionality
+/// to preprocess text by removing special characters and to search for matches within
+/// the preprocessed tables using normalized Levenshtein similarity.
 ///
 /// # Fields
 ///
-/// - `remove_special_pattern` (Regex): A regular expression pattern for removing
-///   special characters from the text.
-/// - `sim_processed_table_list` (`Vec<SimProcessedTable>`): A vector of preprocessed
-///   tables, each containing a unique identifier, match identifier, and list of
-///   processed words.
-///
-/// The `SimMatcher` struct includes methods for creating a new instance from a list
-/// of `SimTable`s, checking if a given text matches any processed word, and processing
-/// a given text to return detailed match results.
+/// - `remove_special_pattern` (Regex): A compiled regular expression used for removing
+///   special characters from the text before processing.
+/// - `sim_processed_table_list` (Vec<SimProcessedTable>): A vector containing preprocessed
+///   tables, where each table consists of a list of words and identifiers ready for
+///   similarity matching.
 ///
 /// # Example
 ///
 /// ```
+/// use fancy_regex::Regex;
 /// use matcher_rs::{SimMatcher, SimTable};
 ///
 /// let word_list = vec!["example1", "example2"];
@@ -121,7 +136,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// let sim_tables = vec![
 ///     SimTable {
 ///         table_id: 1,
-///         match_id: "match1",
+///         match_id: 1,
 ///         word_list: word_list,
 ///     },
 ///     // Add more SimTable instances as desired
@@ -135,23 +150,20 @@ pub struct SimMatcher {
 }
 
 impl SimMatcher {
-    /// Creates a new `SimMatcher` instance from a list of `SimTable` references.
+    /// Creates a new instance of `SimMatcher` by preprocessing the provided list of `SimTable` instances.
     ///
-    /// This function takes a reference to a vector of `SimTable` instances and performs
-    /// the necessary preprocessing to convert each `SimTable` into a `SimProcessedTable`.
-    /// It initializes a regex pattern to remove special characters from the text and
-    /// stores the list of processed tables for similarity matching.
+    /// This function takes a reference to a list of `SimTable` instances provided by the user and
+    /// preprocesses each table to create corresponding `SimProcessedTable` instances. The preprocessing
+    /// involves compiling a regular expression for removing special characters and converting the
+    /// words and match identifiers to owned `String` types.
     ///
     /// # Parameters
     ///
-    /// - `sim_table_list` (`&Vec<SimTable>`): A reference to a vector of `SimTable` instances.
-    ///   Each `SimTable` contains the original words and identifiers that will be processed
-    ///   for similarity matching.
+    /// - `sim_table_list` (&[SimTable]): A reference to a slice of `SimTable` instances to be preprocessed.
     ///
     /// # Returns
     ///
-    /// - `SimMatcher`: A new instance of `SimMatcher` containing the preprocessed tables
-    ///   and the regex pattern for special character removal.
+    /// - `SimMatcher`: A new instance of `SimMatcher` with preprocessed tables ready for similarity matching.
     ///
     /// # Example
     ///
@@ -163,7 +175,7 @@ impl SimMatcher {
     /// let sim_tables = vec![
     ///     SimTable {
     ///         table_id: 1,
-    ///         match_id: "match1",
+    ///         match_id: 1,
     ///         word_list: word_list,
     ///     },
     ///     // Add more SimTable instances as desired
@@ -173,17 +185,12 @@ impl SimMatcher {
     /// ```
     pub fn new(sim_table_list: &[SimTable]) -> SimMatcher {
         SimMatcher {
-            // Initialize the regex pattern for removing special characters using a predefined regular expression.
             remove_special_pattern: Regex::new(r"\W+").unwrap(),
-            // Process the provided sim_table_list to convert each SimTable into a SimProcessedTable.
             sim_processed_table_list: sim_table_list
                 .iter()
                 .map(|sim_table| SimProcessedTable {
-                    // Assign the unique identifier from SimTable to SimProcessedTable.
                     table_id: sim_table.table_id,
-                    // Clone the match_id from the SimTable since SimProcessedTable requires an owned string.
-                    match_id: sim_table.match_id.to_owned(),
-                    // Transform the word_list from SimTable by converting each borrowed string into an owned string.
+                    match_id: sim_table.match_id,
                     word_list: sim_table
                         .word_list
                         .iter()
@@ -196,69 +203,12 @@ impl SimMatcher {
 }
 
 impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
-    /// Checks if a given text matches any word in the preprocessed tables.
-    ///
-    /// This method takes a reference to a text string and processes it by removing special characters.
-    /// It then iterates over all the preprocessed tables and their word lists to check for any match
-    /// using the normalized Levenshtein similarity score. If any word in the tables matches the processed
-    /// text with a similarity score above the cutoff (specified in the Levenshtein arguments), it returns `true`.
-    ///
-    /// # Parameters
-    ///
-    /// - `text` (&str): A reference to the text string to be checked for matches.
-    ///
-    /// # Returns
-    ///
-    /// - `bool`: Returns `true` if any word in the preprocessed tables matches the processed text,
-    ///   otherwise returns `false`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait};
-    ///
-    /// let word_list = vec!["example1", "example2"];
-    ///
-    /// let sim_tables = vec![
-    ///     SimTable {
-    ///         table_id: 1,
-    ///         match_id: "match1",
-    ///         word_list: word_list,
-    ///     },
-    ///     // Add more SimTable instances as desired
-    /// ];
-    ///
-    /// let matcher = SimMatcher::new(&sim_tables);
-    ///
-    /// assert!(matcher.is_match("example3"));
-    /// ```
-    fn is_match(&self, text: &str) -> bool {
-        // Process the provided text by removing special characters based on the regex pattern.
-        let processed_text = self.remove_special_pattern.replace_all(text, "");
-
-        // Iterate over all the preprocessed tables to check if any word matches the processed text.
-        self.sim_processed_table_list.iter().any(|sim_table| {
-            // For each table, iterate over its word list to find a matching word.
-            sim_table.word_list.iter().any(|text| {
-                // Calculate the normalized Levenshtein similarity score between the processed text and each word.
-                // If the similarity score is above the cutoff (0.8), return true indicating a match was found.
-                levenshtein::normalized_similarity_with_args(
-                    text.chars(),
-                    processed_text.chars(),
-                    &levenshtein::Args::default().score_cutoff(0.8),
-                )
-                .is_some() // Check if a similarity score was computed (indicating a match).
-            })
-        })
-    }
-
-    /// Processes a given text string and returns a list of similarity match results.
+    /// Checks if the given text has a similarity match in any of the preprocessed tables.
     ///
     /// This function takes a reference to a text string, processes it by removing
-    /// special characters, and then computes similarity scores for each word in the
-    /// preprocessed tables using normalized Levenshtein similarity. It collects and
-    /// returns the matching results with their respective similarity scores, table
-    /// identifiers, and match identifiers.
+    /// special characters, and then checks for similarity matches within the preprocessed
+    /// tables using normalized Levenshtein similarity. It returns `true` if any similarity
+    /// match with a score above the specified cutoff (0.8) is found, and `false` otherwise.
     ///
     /// # Parameters
     ///
@@ -267,9 +217,8 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Returns
     ///
-    /// - `Vec<SimResult>`: A vector of `SimResult` instances containing details of
-    ///   the matched words, including their similarity scores, table identifiers,
-    ///   and match identifiers.
+    /// - `bool`: A boolean value indicating whether a similarity match was found (`true`)
+    ///   or not (`false`).
     ///
     /// # Example
     ///
@@ -281,7 +230,61 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// let sim_tables = vec![
     ///     SimTable {
     ///         table_id: 1,
-    ///         match_id: "match1",
+    ///         match_id: 1,
+    ///         word_list: word_list,
+    ///     },
+    ///     // Add more SimTable instances as desired
+    /// ];
+    ///
+    /// let matcher = SimMatcher::new(&sim_tables);
+    ///
+    /// let is_match_found = matcher.is_match("example3");
+    /// println!("Is a similarity match found? {}", is_match_found);
+    /// ```
+    fn is_match(&self, text: &str) -> bool {
+        let processed_text = self.remove_special_pattern.replace_all(text, "");
+
+        self.sim_processed_table_list.iter().any(|sim_table| {
+            sim_table.word_list.iter().any(|text| {
+                levenshtein::normalized_similarity_with_args(
+                    text.chars(),
+                    processed_text.chars(),
+                    &levenshtein::Args::default().score_cutoff(0.8),
+                )
+                .is_some()
+            })
+        })
+    }
+
+    /// Processes the given text and finds all similarity matches in the preprocessed tables.
+    ///
+    /// This function takes a reference to a text string, processes it by removing
+    /// special characters, and then searches for similarity matches within the preprocessed
+    /// tables using normalized Levenshtein similarity. It returns a vector of `SimResult`
+    /// instances, capturing details of each word found to be similar along with its similarity
+    /// score and associated identifiers.
+    ///
+    /// # Parameters
+    ///
+    /// - `text` (&str): A reference to the text string to be processed and checked
+    ///   against the preprocessed tables for similarity matches.
+    ///
+    /// # Returns
+    ///
+    /// - `Vec<SimResult>`: A vector of `SimResult` instances, each representing a
+    ///   word that was found to be similar, along with its similarity score and associated identifiers.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait};
+    ///
+    /// let word_list = vec!["example1", "example2"];
+    ///
+    /// let sim_tables = vec![
+    ///     SimTable {
+    ///         table_id: 1,
+    ///         match_id: 1,
     ///         word_list: word_list,
     ///     },
     ///     // Add more SimTable instances as desired
@@ -290,38 +293,35 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// let matcher = SimMatcher::new(&sim_tables);
     ///
     /// let results = matcher.process("example3");
+    ///
     /// for result in results {
-    ///     println!("{:?}", result);
+    ///     println!(
+    ///         "Matched word: {}, Table ID: {}, Match ID: {}, Similarity: {}",
+    ///         result.word, result.table_id, result.match_id, result.similarity
+    ///     );
     /// }
     /// ```
     fn process(&'a self, text: &str) -> Vec<SimResult<'a>> {
-        // Process the provided text by removing special characters based on the regex pattern.
         let processed_text = self.remove_special_pattern.replace_all(text, "");
 
-        // Create a mutable vector to store the resulting similarity match results.
         let mut result_list = Vec::new();
 
-        // Iterate over all the preprocessed tables to compute similarity matches.
         for sim_table in &self.sim_processed_table_list {
-            // For each table, iterate over its word list and find matches using Levenshtein similarity.
             result_list.extend(sim_table.word_list.iter().filter_map(|text| {
-                // Calculate the normalized Levenshtein similarity score between the processed text and each word.
                 levenshtein::normalized_similarity_with_args(
                     text.chars(),
                     processed_text.chars(),
-                    &levenshtein::Args::default().score_cutoff(0.8), // Use a similarity cutoff score of 0.8.
+                    &levenshtein::Args::default().score_cutoff(0.8),
                 )
                 .map(|similarity| SimResult {
-                    // If similarity score is found, create a SimResult instance with the matched word details.
                     word: Cow::Borrowed(text),
                     table_id: sim_table.table_id,
-                    match_id: &sim_table.match_id,
-                    similarity, // Assign the calculated similarity score.
+                    match_id: sim_table.match_id,
+                    similarity,
                 })
             }));
         }
 
-        // Return the list of collected similarity match results.
         result_list
     }
 }

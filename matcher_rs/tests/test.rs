@@ -79,19 +79,19 @@ fn regex_match() {
     let regex_table_list = vec![
         RegexTable {
             table_id: 1,
-            match_id: "1",
+            match_id: 1,
             match_table_type: MatchTableType::SimilarChar,
             word_list: similar_word_list,
         },
         RegexTable {
             table_id: 2,
-            match_id: "2",
+            match_id: 1,
             match_table_type: MatchTableType::Acrostic,
             word_list: acrostic_word_list,
         },
         RegexTable {
             table_id: 3,
-            match_id: "3",
+            match_id: 1,
             match_table_type: MatchTableType::Regex,
             word_list: regex_word_list,
         },
@@ -112,7 +112,7 @@ fn sim_match() {
 
     let sim_table_list = vec![SimTable {
         table_id: 1,
-        match_id: "1",
+        match_id: 1,
         word_list: word_list,
     }];
     let sim_matcher = SimMatcher::new(&sim_table_list);
@@ -128,7 +128,7 @@ fn sim_match() {
 #[test]
 fn word_match() {
     let match_table_map = AHashMap::from_iter([(
-        "test",
+        1,
         vec![
             MatchTable {
                 table_id: 1,
@@ -154,7 +154,7 @@ fn word_match() {
 
     assert_eq!(
         r#"[{"table_id":1,"word":"无,法,无,天"}]"#,
-        matcher.word_match("无法无天").get("test").unwrap()
+        matcher.word_match("无法无天").get(&1).unwrap()
     );
     assert!(matcher.word_match("无法天").is_empty());
     assert!(!matcher.word_match("你豪").is_empty());

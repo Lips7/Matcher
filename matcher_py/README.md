@@ -17,7 +17,7 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 
 ### Explaination of the configuration
 
-1. `Matcher`'s configuration is defined by the `MatchTableMap = Dict[str, MatchTable]` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
+1. `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
 2. `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = Dict[SimpleMatchType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
@@ -81,7 +81,7 @@ from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchTy
 msgpack_encoder = msgspec.msgpack.Encoder()
 matcher = Matcher(
     msgpack_encoder.encode({
-        "test": [
+        1: [
             MatchTable(
                 table_id=1,
                 match_table_type=MatchTableType.Simple,
@@ -97,10 +97,10 @@ matcher = Matcher(
 assert matcher.is_match("hello")
 assert not matcher.is_match("hello, word")
 # Perform word matching as a dict
-assert matcher.word_match(r"hello, world")["test"]
+assert matcher.word_match(r"hello, world")[1]
 # Perform word matching as a string
 result = matcher.word_match_as_string("hello")
-assert result == """{"test":"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}"""
+assert result == """{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}"""
 # Perform batch processing as a dict using a list
 text_list = ["hello", "world", "hello,word"]
 batch_results = matcher.batch_word_match_as_dict(text_list)

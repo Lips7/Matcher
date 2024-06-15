@@ -37,7 +37,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 ///
 /// let mut match_table_map = HashMap::new();
 /// match_table_map.insert(
-///     "test",
+///     1,
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
@@ -101,7 +101,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Mat
 ///
 /// let mut match_table_map = HashMap::new();
 /// match_table_map.insert(
-///     "test",
+///     1,
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
@@ -168,7 +168,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 ///
 /// let mut match_table_map = HashMap::new();
 /// match_table_map.insert(
-///     "test",
+///     1,
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
@@ -257,7 +257,7 @@ pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char)
 ///
 /// let mut match_table_map = HashMap::new();
 /// match_table_map.insert(
-///     "test",
+///     1,
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
@@ -305,11 +305,11 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// use std::ffi::CString;
 ///
 /// use matcher_c::*;
-/// use matcher_rs::{SimpleMatcher,, SimpleMatchType};
+/// use matcher_rs::{SimpleMatcher, SimpleMatchType};
 ///
 /// let mut simple_match_type_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
-/// word_map.insert(1, "hello,world")
+/// word_map.insert(1, "hello,world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
 /// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
 ///
@@ -543,6 +543,8 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
 ///
 /// ```no_run
 /// use std::ffi::CString;
+///
+/// use matcher_c::*;
 ///
 /// let c_string = CString::new("hello world!").unwrap();
 /// let c_string_ptr = c_string.into_raw();

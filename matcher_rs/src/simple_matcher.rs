@@ -13,26 +13,28 @@ use tinyvec::ArrayVec;
 
 use super::{MatchResultTrait, TextMatcherTrait};
 
-/// This section includes constant string references to various conversion maps.
+/// A collection of constant string slices that include various string conversion mappings.
 ///
-/// Each constant is assigned the contents of a corresponding text file using
-/// `include_str!`. This macro inserts the contents of the given file into the binary as
-/// a `&'static str`. These files contain mappings for string transformations used in the
-/// text processing implemented by the `SimpleMatcher` struct. These mappings are expected to be found
-/// at the relative paths provided in the macro argument.
+/// Each constant below is loaded from a corresponding text file using the `include_str!` macro.
+/// These files contain mappings used for different conversion and normalization processes,
+/// such as simplifying characters, handling punctuation, and converting between upper and lower case.
 ///
-/// Included conversion maps:
+/// These mappings are utilized in text processing to apply transformations based on different
+/// `SimpleMatchType` values. They facilitate efficient text matching and replacement operations
+/// by providing a predefined set of conversion rules.
 ///
-/// - `FANJIAN`: Maps simplified Chinese characters to traditional Chinese characters.
-/// - `CN_SPECIAL`: Maps Chinese special characters to their normalized forms.
-/// - `EN_SPECIAL`: Maps English special characters to their normalized forms.
-/// - `PUNCTUATION_SPECIAL`: Maps various punctuation marks to an empty string (effectively deleting them).
-/// - `EN_VARIATION`: Maps English characters in different variations to their standard forms.
-/// - `UNICODE`: Maps various Unicode characters to their equivalent forms.
-/// - `NUM_NORM`: Maps numeric characters to their normalized forms.
-/// - `UPPER_LOWER`: Maps uppercase English characters to their lowercase equivalents.
-/// - `PINYIN`: Maps Chinese characters to Pinyin representations.
-/// - `PINYIN_CHAR`: Maps individual Chinese characters to their Pinyin equivalents.
+/// # Constants
+///
+/// * `FANJIAN` - Simplifies traditional Chinese characters to simplified ones.
+/// * `CN_SPECIAL` - Contains special Chinese characters.
+/// * `EN_SPECIAL` - Contains special English characters.
+/// * `PUNCTUATION_SPECIAL` - Contains special punctuation characters.
+/// * `EN_VARIATION` - Contains variations of English characters.
+/// * `UNICODE` - Contains unicode specific mappings.
+/// * `NUM_NORM` - Normalizes numeric characters.
+/// * `UPPER_LOWER` - Maps between upper and lower case characters.
+/// * `PINYIN` - Converts Chinese characters to Pinyin.
+/// * `PINYIN_CHAR` - Converts individual Chinese characters to Pinyin.
 const FANJIAN: &str = include_str!("../str_conv_map/FANJIAN.txt");
 const CN_SPECIAL: &str = include_str!("../str_conv_map/CN-SPECIAL.txt");
 const EN_SPECIAL: &str = include_str!("../str_conv_map/EN-SPECIAL.txt");
@@ -86,38 +88,24 @@ const WORD_COMBINATION_LIMIT: usize = 32;
 const ZEROS: Simd<u8, WORD_COMBINATION_LIMIT> = Simd::from_array([0; WORD_COMBINATION_LIMIT]);
 
 bitflags! {
+    /// `SimpleMatchType` is a set of flags used to specify various text transformation rules.
+    ///
+    /// Each flag represents a specific type of string conversion or deletion operation.
+    /// The flags can be combined using bitwise operations to create complex transformation rules.
+    ///
+    /// # Flags
+    ///
+    /// * `None` (0b00000001) - No transformation is applied.
+    /// * `Fanjian` (0b00000010) - Simplifies traditional Chinese characters to simplified ones.
+    /// * `WordDelete` (0b00000100) - Deletes word-level components based on predefined rules.
+    /// * `TextDelete` (0b00001000) - Deletes text-level components, including special characters and whitespace.
+    /// * `Delete` (0b00001100) - Combines `WordDelete` and `TextDelete` transformations.
+    /// * `Normalize` (0b00010000) - Normalizes the text, including case normalization and removing variations.
+    /// * `DeleteNormalize` (0b00011100) - Combines `Delete` and `Normalize` transformations.
+    /// * `FanjianDeleteNormalize` (0b00011110) - Combines `Fanjian`, `Delete`, and `Normalize` transformations.
+    /// * `PinYin` (0b00100000) - Converts Chinese characters to their Pinyin representation.
+    /// * `PinYinChar` (0b01000000) - Converts individual Chinese characters to their Pinyin representation.
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-    /// A bitflag representation of various string conversion types that can be applied.
-    ///
-    /// Each flag represents a specific type of transformation that can be performed on a string.
-    /// These transformations include changes like simplifying characters, deleting words, or
-    /// normalizing text, among others. These flags can be combined using bitwise operations to
-    /// indicate multiple transformations at once.
-    ///
-    /// # Constants
-    ///
-    /// - `None`: No conversion (0b00000001).
-    /// - `Fanjian`: Simplify traditional Chinese characters to simplified ones (0b00000010).
-    /// - `WordDelete`: Delete specific words from the text (0b00000100).
-    /// - `TextDelete`: Delete specific parts of the text (0b00001000).
-    /// - `Delete`: A combination of `WordDelete` and `TextDelete` (0b00001100).
-    /// - `Normalize`: Normalize the text to a standard form (0b00010000).
-    /// - `DeleteNormalize`: A combination of `Delete` and `Normalize` (0b00011100).
-    /// - `FanjianDeleteNormalize`: A combination of `Fanjian`, `Delete`, and `Normalize` (0b00011110).
-    /// - `PinYin`: Convert Chinese characters to Pinyin (0b00100000).
-    /// - `PinYinChar`: Convert individual Chinese characters to Pinyin (0b01000000).
-    ///
-    /// # Limitation
-    ///
-    /// - `PinYin` and `PinYinChar` can not be enabled same times.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::SimpleMatchType;
-    ///
-    /// let flags = SimpleMatchType::Fanjian | SimpleMatchType::Normalize;
-    /// ```
     pub struct SimpleMatchType: u8 {
         const None = 0b00000001;
         const Fanjian = 0b00000010;
@@ -133,19 +121,6 @@ bitflags! {
 }
 
 impl Serialize for SimpleMatchType {
-    /// Serializes the `SimpleMatchType` bitflags into its underlying `u8` representation.
-    ///
-    /// # Arguments
-    ///
-    /// * `serializer` - The serializer to use for serialization.
-    ///
-    /// # Returns
-    ///
-    /// Returns a serialized representation of the `SimpleMatchType` bitflags.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the serialization process fails.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -155,33 +130,6 @@ impl Serialize for SimpleMatchType {
 }
 
 impl<'de> Deserialize<'de> for SimpleMatchType {
-    /// Deserializes a `SimpleMatchType` instance from its underlying `u8` representation.
-    ///
-    /// # Arguments
-    ///
-    /// * `deserializer` - The deserializer to use for deserialization.
-    ///
-    /// # Returns
-    ///
-    /// Returns a deserialized `SimpleMatchType` instance based on the `u8` bits.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the deserialization process fails or if the bits do not correspond
-    /// to a valid `SimpleMatchType` flag combination.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::SimpleMatchType;
-    /// use sonic_rs;
-    ///
-    /// let json = "6"; // where 3 represents a combination of the flags
-    /// let simple_match_type: SimpleMatchType = sonic_rs::from_str(json).unwrap();
-    ///
-    /// assert_eq!(simple_match_type.contains(SimpleMatchType::Fanjian), true);
-    /// assert_eq!(simple_match_type.contains(SimpleMatchType::WordDelete), true);
-    /// ```
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -193,102 +141,206 @@ impl<'de> Deserialize<'de> for SimpleMatchType {
 
 impl IsEnabled for SimpleMatchType {}
 
-/// Type alias for a mapping between `SimpleMatchType` and an `IntMap` containing word IDs
-/// and references to associated words.
+pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u64, &'a str>>;
+
+/// Constructs a process matcher for the given SimpleMatchType bit.
 ///
-/// This alias is used within the `SimpleMatcher` struct to define and organize the
-/// different word maps associated with each `SimpleMatchType`. The key is a `SimpleMatchType`
-/// which indicates the type of string conversion to be applied, and the value is an
-/// `IntMap` where the key is a `u64` representing a unique word ID, and the value is
-/// a reference to a string slice representing the word.
+/// This function generates a tuple containing:
+/// 1. A vector of replacement strings (&'static str).
+/// 2. An `AhoCorasick` automaton used for pattern matching and replacement based on the specific `SimpleMatchType`.
 ///
-/// The lifetime parameter `'a` ensures that the string slices referenced in the map
-/// live at least as long as the map itself.
+/// The function handles different types of `SimpleMatchType` bits and applies various string conversion or deletion operations:
+///
+/// # Arguments
+///
+/// * `simple_match_type_bit` - A reference to a `SimpleMatchType` bit that indicates the type of transformation to create a matcher for.
+///
+/// # Returns
+///
+/// * `(Vec<&'static str>, AhoCorasick)` - A tuple containing the list of replacement strings and the configured `AhoCorasick` matcher.
+///
+/// # Matching and Replacement Logic
+///
+/// * `SimpleMatchType::None` - No transformation is applied.
+/// * `SimpleMatchType::Fanjian` - Simplifies traditional Chinese characters to simplified ones based on `FANJIAN` and `UNICODE` conversion mappings.
+/// * `SimpleMatchType::WordDelete` - Deletes word-level components including punctuation and whitespace based on `PUNCTUATION_SPECIAL` and `WHITE_SPACE` mappings.
+/// * `SimpleMatchType::TextDelete` - Deletes text-level components including special characters and whitespace from `PUNCTUATION_SPECIAL`, `CN_SPECIAL`, `EN_SPECIAL`, and `WHITE_SPACE`.
+/// * `SimpleMatchType::Normalize` - Normalizes text using case and variation normalization based on `UPPER_LOWER`, `EN_VARIATION`, and `NUM_NORM` mappings.
+/// * `SimpleMatchType::PinYin` - Converts Chinese characters to Pinyin based on the `PINYIN` mapping.
+/// * `SimpleMatchType::PinYinChar` - Converts individual Chinese characters to Pinyin based on the `PINYIN_CHAR` mapping.
+///
+/// After preparing the process dictionary, the function retains only the relevant entries and constructs an `AhoCorasick` matcher with leftmost-longest match kind.
+/// The list of replacement strings is also generated from the process dictionary.
 ///
 /// # Example
 ///
-/// ```rust
-/// use matcher_rs::{SimpleMatchType, SimpleMatchTypeWordMap};
-/// use nohash_hasher::IntMap;
-///
-/// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = IntMap::default();
-/// let mut simple_word_map = IntMap::default();
-///
-/// simple_word_map.insert(1, "你好");
-/// simple_word_map.insert(2, "123");
-///
-/// simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
 /// ```
+/// use matcher_rs::{get_process_matcher, SimpleMatchType};
 ///
-pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u64, &'a str>>;
+/// let (process_replace_list, process_matcher) = get_process_matcher(SimpleMatchType::TextDelete);
+/// ```
+pub fn get_process_matcher(
+    simple_match_type_bit: SimpleMatchType,
+) -> (Vec<&'static str>, AhoCorasick) {
+    let mut process_dict = AHashMap::default();
 
-/// Configuration for a word used in the `SimpleMatcher`.
+    match simple_match_type_bit {
+        SimpleMatchType::None => {}
+
+        SimpleMatchType::Fanjian => {
+            for str_conv_map in [FANJIAN, UNICODE] {
+                process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
+                    let mut pair_str_split = pair_str.split('\t');
+                    (
+                        pair_str_split.next().unwrap(),
+                        pair_str_split.next().unwrap(),
+                    )
+                }));
+            }
+        }
+
+        SimpleMatchType::WordDelete => {
+            process_dict.extend(
+                PUNCTUATION_SPECIAL
+                    .trim()
+                    .lines()
+                    .map(|pair_str| (pair_str, "")),
+            );
+
+            process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+        }
+
+        SimpleMatchType::TextDelete => {
+            for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
+                process_dict.extend(str_conv_map.trim().lines().map(|pair_str| (pair_str, "")));
+            }
+
+            process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+        }
+        SimpleMatchType::Normalize => {
+            for str_conv_map in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
+                process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
+                    let mut pair_str_split = pair_str.split('\t');
+                    (
+                        pair_str_split.next().unwrap(),
+                        pair_str_split.next().unwrap(),
+                    )
+                }));
+            }
+        }
+
+        SimpleMatchType::PinYin => {
+            process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
+                let mut pair_str_split = pair_str.split('\t');
+                (
+                    pair_str_split.next().unwrap(),
+                    pair_str_split.next().unwrap(),
+                )
+            }));
+        }
+
+        SimpleMatchType::PinYinChar => {
+            process_dict.extend(PINYIN_CHAR.trim().lines().map(|pair_str| {
+                let mut pair_str_split = pair_str.split('\t');
+                (
+                    // Each line in the conversion data corresponds to a key-value pair.
+                    pair_str_split.next().unwrap(),
+                    pair_str_split.next().unwrap(),
+                )
+            }));
+        }
+        _ => {}
+    }
+
+    process_dict.retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
+
+    let process_matcher = AhoCorasickBuilder::new()
+        .kind(Some(DFA))
+        .match_kind(MatchKind::LeftmostLongest)
+        .build(
+            process_dict
+                .iter()
+                .map(|(&key, _)| key)
+                .collect::<Vec<&str>>(),
+        )
+        .unwrap();
+
+    let process_replace_list = process_dict.iter().map(|(_, &val)| val).collect();
+
+    (process_replace_list, process_matcher)
+}
+
+#[derive(Debug, Clone)]
+/// `WordConf` is a structure that holds configuration details for a word used
+/// within the `SimpleMatcher`.
 ///
-/// `WordConf` structure stores the configuration associated with a word. This includes the word itself
-/// as a `String` and a SIMD vector `split_bit` that helps with efficient matching and processing of
-/// word combinations.
+/// This structure is designed to store both the textual representation of a word
+/// and a SIMD (Single Instruction, Multiple Data) vector that represents the split
+/// bits for efficient text matching and transformation operations.
 ///
-/// Fields:
+/// The `split_bit` vector is used to keep track of the various segments or parts
+/// of the word that may be transformed or matched against. It allows for efficient
+/// bitwise operations to quickly identify matching patterns based on pre-defined rules.
 ///
-/// * `word` - A `String` representing the word.
-/// * `split_bit` - A `Simd` vector of `u8` with a size of `WORD_COMBINATION_LIMIT`.
-///   This vector is used to store bitwise information for word combination matching,
-///   allowing optimized and efficient comparisons.
+/// # Fields
+///
+/// * `word` - A `String` representing the word that is to be configured for matching.
+/// * `split_bit` - A SIMD vector (`Simd<u8, WORD_COMBINATION_LIMIT>`) representing the
+///   split bits for the word. This vector aids in performing efficient combination
+///   matching by storing bitwise information about the word's segments.
+///
+/// This structure plays a critical role in facilitating efficient text processing
+/// and matching within the `SimpleMatcher` by combining textual and SIMD vector data.
 struct WordConf {
     word: String,
     split_bit: Simd<u8, WORD_COMBINATION_LIMIT>,
 }
 
-/// A structure used within the `SimpleMatcher` to associate the text processing
-/// table (`ac_matcher`) with its corresponding word configurations (`ac_word_conf_list`).
+#[derive(Debug, Clone)]
+/// `SimpleAcTable` is a structure that encapsulates the Aho-Corasick matcher and a list of word configurations.
 ///
-/// The `SimpleAcTable` struct is essential for the functioning of the Aho-Corasick
-/// automaton, enabling efficient text search and match operations.
+/// This structure is used within the `SimpleMatcher` to hold the compiled Aho-Corasick automaton (`ac_matcher`)
+/// and the corresponding configurations for words (`ac_word_conf_list`). The configurations assist in efficient
+/// pattern matching and transformation operations by mapping each pattern to its unique word identifier and offset.
 ///
 /// # Fields
 ///
-/// * `ac_matcher` - An instance of the `AhoCorasick` Aho-Corasick automaton for
-///   efficiently finding patterns in text. Built from a list of patterns that require
-///   processing.
-///
-/// * `ac_word_conf_list` - A vector containing tuples of word IDs and corresponding
-///   offsets. It serves as a map between the patterns used by `ac_matcher` and
-///   their respective configurations, indicated by the word ID and its specific offset.
-///
-/// This structure works by holding the compiled automaton (`ac_matcher`) which
-/// quickly searches through text for various patterns. The patterns correspond to
-/// word configurations stored in `ac_word_conf_list`, linking matched positions in the
-/// text to predefined transformations or actions.
+/// * `ac_matcher` - An instance of the `AhoCorasick` matcher, which is used to perform efficient pattern matching.
+/// * `ac_word_conf_list` - A vector of tuples, where each tuple contains:
+///     * `u64` - A unique identifier for the word.
+///     * `usize` - An offset representing the position or segment of the word within the matcher.
 struct SimpleAcTable {
     ac_matcher: AhoCorasick,
     ac_word_conf_list: Vec<(u64, usize)>,
 }
 
 #[derive(Debug, Serialize)]
-/// A struct representing a result for a matched word in the `SimpleMatcher`.
+/// `SimpleResult` represents the result of a matching operation.
 ///
-/// `SimpleResult` is used to encapsulate information about a word that has been
-/// matched by the `SimpleMatcher` during text processing. It includes the word's
-/// unique identifier and the corresponding word itself.
+/// This structure is used to store the outcome of a text matching operation performed
+/// by the `SimpleMatcher`. It holds details about the matched word, including its
+/// unique identifier (`word_id`) and the matched text (`word`). The `SimpleResult`
+/// structure is designed to provide a consistent and accessible interface for retrieving
+/// the results of text matching operations.
 ///
 /// # Fields
 ///
-/// * `word_id` - A `u64` representing a unique identifier for the matched word.
-/// * `word` - A `Cow` (Clone on Write) representing the matched word. Using `Cow`
-///   allows the struct to efficiently manage borrowed or owned data.
+/// * `word_id` - A `u64` value representing the unique identifier of the matched word.
+/// * `word` - A `Cow<'a, str>` representing the matched text. This allows the text to be
+///   either borrowed or owned, providing flexibility in handling the string data.
 ///
 /// # Example
 ///
 /// ```
+/// use matcher_rs::{SimpleResult, MatchResultTrait};
 /// use std::borrow::Cow;
-/// use matcher_rs::SimpleResult;
 ///
 /// let result = SimpleResult {
 ///     word_id: 42,
 ///     word: Cow::Borrowed("example"),
 /// };
 ///
-/// println!("Matched word: ID = {}, word = {}", result.word_id, result.word);
+/// assert_eq!(result.word_id(), 42);
 /// ```
 pub struct SimpleResult<'a> {
     pub word_id: u64,
@@ -296,30 +348,6 @@ pub struct SimpleResult<'a> {
 }
 
 impl MatchResultTrait<'_> for SimpleResult<'_> {
-    /// Returns the unique identifier of the matched word.
-    ///
-    /// This method provides the ID associated with a word that has been
-    /// matched by the `SimpleMatcher`. The ID is useful for identifying and
-    /// differentiating between multiple matched words.
-    ///
-    /// # Returns
-    ///
-    /// * `u64` - A 64-bit unsigned integer representing the unique identifier
-    ///   for the matched word.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::{SimpleResult, MatchResultTrait};
-    /// use std::borrow::Cow;
-    ///
-    /// let result = SimpleResult {
-    ///     word_id: 42,
-    ///     word: Cow::Borrowed("example"),
-    /// };
-    ///
-    /// assert_eq!(result.word_id(), 42);
-    /// ```
     fn word_id(&self) -> u64 {
         self.word_id
     }
@@ -328,31 +356,45 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
 }
 
-/// `SimpleMatcher` is a main structure for performing text matching operations
-/// using various pre-defined string transformation rules.
+/// `SimpleMatcher` is a structure that encapsulates the logic for text matching and transformation
+/// based on various `SimpleMatchType` rules.
 ///
-/// This structure holds several maps and configurations that facilitate efficient
-/// text processing and matching using the Aho-Corasick algorithm. The primary aim is
-/// to transform and match input text against a set of rules and patterns efficiently.
+/// This structure holds mappings and configurations for text processing, enabling efficient
+/// pattern matching and transformation operations. It includes a mapping of `SimpleMatchType`
+/// to process mappings, a mapping of `SimpleMatchType` to Aho-Corasick tables, and a mapping
+/// of word IDs to word configurations.
 ///
 /// # Fields
 ///
-/// * `simple_match_type_process_map` - A mapping between `SimpleMatchType` and a tuple
-///   containing a list of replacement strings and an instance of `AhoCorasick`. It is used
-///   for pre-processing input text using specific transformation rules.
+/// * `simple_match_type_process_map` - A mapping of `SimpleMatchType` to process mappings, where each
+///   process mapping consists of a list of replacement strings and an `AhoCorasick` matcher.
+/// * `simple_match_type_ac_table_map` - A mapping of `SimpleMatchType` to `SimpleAcTable`, which contains
+///   the Aho-Corasick matcher and word configurations for efficient text matching.
+/// * `simple_wordconf_map` - A mapping of word IDs to `WordConf` structures, which hold the textual
+///   representation of a word and a SIMD vector representing the split bits for the word.
 ///
-/// * `simple_match_type_ac_table_map` - A mapping between `SimpleMatchType` and `SimpleAcTable`.
-///   This map holds the compiled Aho-Corasick automata (AC tables) and their associated word
-///   configurations that are used for the efficient pattern matching.
+/// # Example
 ///
-/// * `simple_wordconf_map` - An `IntMap` that maps unique word IDs (`u64`) to their corresponding
-///   `WordConf` configurations. This helps in storing custom configurations for words,
-///   including SIMD vectors for efficient combination matching.
+/// ```
+/// use matcher_rs::{SimpleMatcher, SimpleMatchType, TextMatcherTrait};
 ///
-/// * `min_chars_count` - A `usize` value representing the minimum number of characters
-///   required for a valid match. It is determined based on the words present in the matcher.
-///   This value helps in optimizing the matching process by filtering out text that is too
-///   short to contain any valid matches.
+/// // Initialize word maps and SimpleMatchType instances.
+/// let word_maps = vec![
+///     (SimpleMatchType::Fanjian, vec![(1, "ChineseWord1"), (2, "ChineseWord2")]),
+///     (SimpleMatchType::Normalize, vec![(3, "NormalizationExample1"), (4, "NormalizationExample2")])
+/// ];
+///
+/// // Create a SimpleMatcher instance using the provided word maps.
+/// let simple_matcher = SimpleMatcher::new(word_maps);
+///
+/// // Check if a text matches any patterns based on the configured SimpleMatcher.
+/// let text = "ExampleText";
+/// let is_match = simple_matcher.is_match(text);
+///
+/// // Process the input text and return a list of matching results.
+/// let results = simple_matcher.process(text);
+/// ```
+#[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     simple_match_type_process_map: IntMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
@@ -360,72 +402,62 @@ pub struct SimpleMatcher {
 }
 
 impl SimpleMatcher {
-    /// Creates a new instance of `SimpleMatcher` using the provided `SimpleMatchTypeWordMap`.
+    /// Constructs a new `SimpleMatcher` from the provided mapping of `SimpleMatchType` to word maps.
     ///
-    /// This constructor initializes the `SimpleMatcher` by setting up process maps and
-    /// Aho-Corasick (AC) tables for efficient text matching. The mappings and configurations
-    /// for each `SimpleMatchType` are extracted from the provided word map and stored
-    /// within the matcher for later use.
+    /// This function initializes a `SimpleMatcher` instance by populating its internal mappings
+    /// and configurations based on the provided word maps. Each map entry consists of a pair where:
+    ///
+    /// - The key is a `SimpleMatchType`, denoting the types of text transformations.
+    /// - The value is a word map, where each key-value pair represents a word identifier and its corresponding text.
     ///
     /// # Arguments
     ///
-    /// * `simple_match_type_word_map` - A reference to a `SimpleMatchTypeWordMap` which
-    ///   contains the mappings between various `SimpleMatchType`s and their corresponding
-    ///   word maps (`IntMap<u64, &str>`). This serves as the input for initializing the
-    ///   matcher with the required configurations and patterns.
+    /// * `simple_match_type_word_map` - An iterator over pairs where each pair contains:
+    ///     * `SimpleMatchType` - The bitflags defining specific text transformation rules.
+    ///     * An iterable of `(u64, &'a str)` - A word map consisting of unique word identifiers and their corresponding words.
     ///
     /// # Returns
     ///
-    /// A new instance of `SimpleMatcher` with all the necessary mappings and configurations
-    /// set up for text matching.
+    /// * `SimpleMatcher` - A configured `SimpleMatcher` instance ready for text matching operations.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher};
-    /// use nohash_hasher::IntMap;
+    /// ```
+    /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
     ///
-    /// let mut simple_match_type_word_map: SimpleMatchTypeWordMap<'_> = IntMap::default();
-    /// let mut simple_word_map = IntMap::default();
+    /// // Initialize word maps and SimpleMatchType instances.
+    /// let word_maps = vec![
+    ///     (SimpleMatchType::Fanjian, vec![(1, "ChineseWord1"), (2, "ChineseWord2")]),
+    ///     (SimpleMatchType::Normalize, vec![(3, "NormalizationExample1"), (4, "NormalizationExample2")])
+    /// ];
     ///
-    /// simple_word_map.insert(1, "你好");
-    /// simple_word_map.insert(2, "123");
-    ///
-    /// simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
-    ///
-    /// let matcher = SimpleMatcher::new(simple_match_type_word_map);
+    /// // Create a SimpleMatcher instance using the provided word maps.
+    /// let simple_matcher = SimpleMatcher::new(word_maps);
     /// ```
     pub fn new<'a, I, M>(simple_match_type_word_map: I) -> SimpleMatcher
     where
         I: IntoIterator<Item = (SimpleMatchType, M)>,
         M: IntoIterator<Item = (u64, &'a str)>,
     {
-        // Create a new instance of SimpleMatcher with default values
         let mut simple_matcher = SimpleMatcher {
             simple_match_type_process_map: IntMap::default(),
             simple_match_type_ac_table_map: IntMap::default(),
             simple_wordconf_map: IntMap::default(),
         };
 
-        // Iterate over each entry in the provided SimpleMatchTypeWordMap
         for (simple_match_type, simple_word_map) in simple_match_type_word_map {
-            // Iterate over each bit set in the SimpleMatchType
             for simple_match_type_bit in simple_match_type.iter() {
-                // Insert a new process matcher into the process map if it doesn't exist already
                 simple_matcher
                     .simple_match_type_process_map
                     .entry(simple_match_type_bit)
-                    .or_insert_with(|| Self::_get_process_matcher(&simple_match_type_bit));
+                    .or_insert_with(|| get_process_matcher(simple_match_type_bit));
             }
 
-            // Build the Aho-Corasick table for the current SimpleMatchType excluding TextDelete
             let simple_ac_table = simple_matcher.build_simple_ac_table(
-                &(simple_match_type - SimpleMatchType::TextDelete),
+                simple_match_type - SimpleMatchType::TextDelete,
                 simple_word_map,
             );
 
-            // Insert the built AC table into the AC table map,
-            // using SimpleMatchType excluding WordDelete as the key
             simple_matcher.simple_match_type_ac_table_map.insert(
                 simple_match_type - SimpleMatchType::WordDelete,
                 simple_ac_table,
@@ -436,224 +468,68 @@ impl SimpleMatcher {
         simple_matcher
     }
 
-    /// Generates the process matcher for a given `SimpleMatchType`.
+    /// Builds a `SimpleAcTable` for the provided `SimpleMatchType` and word map.
     ///
-    /// This function constructs a mapping between input patterns and their corresponding
-    /// replacement strings based on the provided `SimpleMatchType`. The patterns and their
-    /// replacements are used to build an Aho-Corasick (AC) automaton, which efficiently
-    /// matches and replaces text during the preprocessing phase.
-    ///
-    /// The function considers various string transformation rules, which are classified
-    /// under different `SimpleMatchType` values such as `Fanjian`, `WordDelete`, `TextDelete`,
-    /// `Normalize`, `PinYin`, and `PinYinChar`. Depending on the type, it loads the
-    /// corresponding conversion data, creates a dictionary of patterns and their replacements,
-    /// and then builds the AC automaton.
+    /// This method constructs a `SimpleAcTable` by taking a `SimpleMatchType` and a word map,
+    /// where each entry in the map consists of a word identifier (u64) and its corresponding
+    /// text (&'a str). The resulting table includes configurations for Aho-Corasick pattern matching
+    /// and word transformations.
     ///
     /// # Arguments
     ///
-    /// * `simple_match_type_bit` - A reference to a `SimpleMatchType` indicating the type
-    ///   of string transformation to be applied.
+    /// * `simple_match_type` - A `SimpleMatchType` bit flags that define specific text transformation rules.
+    /// * `simple_word_map` - An iterable of `(u64, &'a str)` representing a map of word IDs to their corresponding words.
     ///
     /// # Returns
     ///
-    /// A tuple containing:
-    /// * `process_replace_list` - A vector of replacement strings (&'static str) used for
-    ///   transforming the input patterns.
-    /// * `process_matcher` - An `AhoCorasick` automaton built using the input patterns,
-    ///   which facilitates efficient matching and replacement operations.
+    /// * `SimpleAcTable` - A table containing the Aho-Corasick matcher and word configurations for efficient text matching.
     ///
-    /// # Example
+    /// # Detailed Processing:
     ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatchType, SimpleMatcher};
+    /// 1. Initialize vectors `ac_wordlist` and `ac_word_conf_list` to store words and their configurations.
+    /// 2. For each entry in `simple_word_map`:
+    ///     - Split the word string by commas and count occurrences of each non-empty segment.
+    ///     - Create a vector (`split_bit_vec`) to hold split bit information for up to `WORD_COMBINATION_LIMIT` segments.
+    ///     - Calculate the `split_bit` for the word using SIMD and store the word configuration in `simple_wordconf_map`.
+    ///     - For each segment in the word, process it through text transformations and add results to `ac_wordlist` and configurations to `ac_word_conf_list`.
+    /// 3. Construct the Aho-Corasick matcher using the accumulated word list with ASCII case-insensitivity.
     ///
-    /// let simple_match_type = SimpleMatchType::Fanjian;
-    /// let (process_replace_list, process_matcher) = SimpleMatcher::_get_process_matcher(&simple_match_type);
-    ///
-    /// // Use the returned process_replace_list and process_matcher for further text processing
-    /// ```
-    pub fn _get_process_matcher(
-        simple_match_type_bit: &SimpleMatchType,
-    ) -> (Vec<&'static str>, AhoCorasick) {
-        // Create a mutable dictionary (hash map) to store process pairs.
-        let mut process_dict = AHashMap::default();
-
-        // Match against the specific string conversion type.
-        match *simple_match_type_bit {
-            // If no conversion type specified, do nothing.
-            SimpleMatchType::None => {}
-
-            // For Fanjian conversion: process FANJIAN and UNICODE data files.
-            SimpleMatchType::Fanjian => {
-                for str_conv_map in [FANJIAN, UNICODE] {
-                    // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
-                        let mut pair_str_split = pair_str.split('\t');
-                        (
-                            // Each line in the conversion data corresponds to a key-value pair.
-                            pair_str_split.next().unwrap(),
-                            pair_str_split.next().unwrap(),
-                        )
-                    }));
-                }
-            }
-
-            // For WordDelete conversion: process punctuation and whitespace characters.
-            SimpleMatchType::WordDelete => {
-                process_dict.extend(
-                    PUNCTUATION_SPECIAL
-                        .trim()
-                        .lines()
-                        // Map each punctuation character to an empty string (deletion).
-                        .map(|pair_str| (pair_str, "")),
-                );
-
-                // Map each whitespace character to an empty string (deletion).
-                process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-            }
-
-            // For TextDelete conversion: process punctuation, Chinese special, and English special characters.
-            SimpleMatchType::TextDelete => {
-                for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
-                    process_dict.extend(
-                        str_conv_map
-                            .trim()
-                            .lines()
-                            // Map each special character to an empty string (deletion).
-                            .map(|pair_str| (pair_str, "")),
-                    );
-                }
-
-                // Map each whitespace character to an empty string (deletion).
-                process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-            }
-            // For Normalize conversion: process UPPER_LOWER, EN_VARIATION, and NUM_NORM data files.
-            SimpleMatchType::Normalize => {
-                for str_conv_map in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
-                    // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
-                        let mut pair_str_split = pair_str.split('\t');
-                        (
-                            // Each line in the conversion data corresponds to a key-value pair.
-                            pair_str_split.next().unwrap(),
-                            pair_str_split.next().unwrap(),
-                        )
-                    }));
-                }
-            }
-
-            // For PinYin conversion: process PINYIN data file.
-            SimpleMatchType::PinYin => {
-                process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        // Each line in the conversion data corresponds to a key-value pair.
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
-                    )
-                }));
-            }
-
-            // For PinYinChar conversion: process PINYIN_CHAR data file.
-            SimpleMatchType::PinYinChar => {
-                process_dict.extend(PINYIN_CHAR.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        // Each line in the conversion data corresponds to a key-value pair.
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
-                    )
-                }));
-            }
-
-            // Ignore unknown or unsupported conversion types.
-            _ => {}
-        }
-
-        // Remove entries where the key starts with '#' (except key "#")
-        // or where the key and value are identical.
-        process_dict
-            .retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
-
-        // Build an Aho-Corasick automaton (process_matcher) for efficient matching.
-        let process_matcher = AhoCorasickBuilder::new()
-            .kind(Some(DFA))
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(
-                // Collect all keys (patterns) to be matched.
-                process_dict
-                    .iter()
-                    .map(|(&key, _)| key)
-                    .collect::<Vec<&str>>(),
-            )
-            .unwrap();
-
-        // Collect the corresponding replacement values.
-        let process_replace_list = process_dict.iter().map(|(_, &val)| val).collect();
-
-        // Return the tuple containing the replacement list and the process matcher.
-        (process_replace_list, process_matcher)
-    }
-
-    /// Constructs a SimpleAcTable for a given SimpleMatchType and word map.
-    ///
-    /// This method creates an Aho-Corasick automaton and its corresponding word configurations
-    /// based on the provided SimpleMatchType and word map. It processes the word map to generate
-    /// split words and their corresponding configuration for efficient matching.
-    ///
-    /// # Arguments
-    ///
-    /// * `simple_match_type` - A reference to a `SimpleMatchType` indicating the type of string
-    ///   transformation to be applied.
-    /// * `simple_word_map` - A reference to an `IntMap<u64, &str>` that maps unique word IDs to
-    ///   their corresponding string slices.
-    ///
-    /// # Returns
-    ///
-    /// A `SimpleAcTable` instance containing the Aho-Corasick automaton (`ac_matcher`) and a list
-    /// of word configurations (`ac_word_conf_list`). The automaton is built from processed split
-    /// words, and the configuration list maps word IDs to their respective offsets.
+    /// This method facilitates efficient text processing by building necessary mappings and configurations into the `SimpleAcTable`, which is then used for pattern matching and transformations.
     fn build_simple_ac_table<'a, M>(
         &mut self,
-        simple_match_type: &SimpleMatchType,
+        simple_match_type: SimpleMatchType,
         simple_word_map: M,
     ) -> SimpleAcTable
     where
         M: IntoIterator<Item = (u64, &'a str)>,
     {
-        // Initialize vectors to hold the list of Aho-Corasick words and their configurations.
         let mut ac_wordlist = Vec::new();
         let mut ac_word_conf_list = Vec::new();
 
-        // Iterate over each entry in the simple_word_map.
         for (simple_word_id, simple_word) in simple_word_map.into_iter() {
-            // Create a counter for split words in the current simple_word.
             let mut ac_split_word_counter = AHashMap::default();
             for ac_split_word in simple_word.split(',').filter(|&x| !x.is_empty()) {
                 ac_split_word_counter
                     .entry(ac_split_word)
-                    .and_modify(|cnt| *cnt += 1) // Increment the count if the split word already exists.
-                    .or_insert(1); // Initialize the count to 1 if it's a new split word.
+                    .and_modify(|cnt| *cnt += 1)
+                    .or_insert(1);
             }
 
-            // Create a vector of split bits based on the split word counts, up to the WORD_COMBINATION_LIMIT.
             let split_bit_vec = ac_split_word_counter
                 .values()
                 .take(WORD_COMBINATION_LIMIT)
-                .map(|&x| 1 << (x.min(8) - 1)) // Ensure the bit shift does not exceed 8.
+                .map(|&x| 1 << (x.min(8) - 1))
                 .collect::<ArrayVec<[u8; WORD_COMBINATION_LIMIT]>>();
-            let split_bit = Simd::load_or_default(&split_bit_vec); // Load split bits into a SIMD vector.
+            let split_bit = Simd::load_or_default(&split_bit_vec);
 
-            // Insert the word configuration into the simple_wordconf_map.
             self.simple_wordconf_map.insert(
                 simple_word_id,
                 WordConf {
-                    word: simple_word.to_owned(), // Convert the borrowed string slice to an owned String.
+                    word: simple_word.to_owned(),
                     split_bit,
                 },
             );
 
-            // Process each split word and add it to the Aho-Corasick word list and configuration list.
             for (offset, split_word) in ac_split_word_counter
                 .keys()
                 .take(WORD_COMBINATION_LIMIT)
@@ -661,119 +537,102 @@ impl SimpleMatcher {
             {
                 for ac_word in self.reduce_text_process(simple_match_type, split_word.as_bytes()) {
                     ac_wordlist.push(ac_word);
-                    ac_word_conf_list.push((simple_word_id, offset)); // Track the word ID and its offset.
+                    ac_word_conf_list.push((simple_word_id, offset));
                 }
             }
         }
 
-        // Return a SimpleAcTable instance with the built Aho-Corasick matcher and word configurations.
         SimpleAcTable {
             ac_matcher: AhoCorasickBuilder::new()
                 .kind(Some(DFA))
-                .ascii_case_insensitive(true) // Enable case-insensitive matching.
+                .ascii_case_insensitive(true)
                 .build(&ac_wordlist)
-                .unwrap(), // Build the Aho-Corasick matcher and handle any errors.
+                .unwrap(),
             ac_word_conf_list,
         }
     }
 
     #[inline]
-    /// Processes the text through a sequence of transformations based on the `SimpleMatchType`.
+    /// Processes the input text according to the specified `SimpleMatchType` transformations.
     ///
-    /// This method applies various string transformations to the input text bytes, producing
-    /// multiple versions of the text according to the rules specified in the `SimpleMatchType`.
-    /// Each transformation step is performed using pre-built Aho-Corasick matchers and their
-    /// replacement rules, and the processed results are stored in a vector.
-    ///
-    /// The processing is done by iterating over each bit of the `SimpleMatchType`, fetching
-    /// the corresponding processor from the map, and applying the transformations. Depending on the
-    /// match type, transformations could involve substitutions, deletions, or other modifications.
+    /// This method takes the input text as a byte slice and applies a sequence of transformations
+    /// defined by the `SimpleMatchType`. Each transformation step utilizes a specific Aho-Corasick
+    /// matcher and replacement rules to alter the text. The result is a list of processed text
+    /// byte sequences, each corresponding to a stage in the transformation pipeline.
     ///
     /// # Arguments
     ///
-    /// * `simple_match_type` - A reference to a `SimpleMatchType` that indicates the sequence of
-    ///   transformations to be applied.
-    /// * `text_bytes` - A byte slice containing the input text to be processed.
+    /// * `simple_match_type` - A `SimpleMatchType` bit flags that define specific text transformation rules.
+    /// * `text_bytes` - A byte slice representing the input text to be processed.
     ///
     /// # Returns
     ///
-    /// * An `ArrayVec` containing up to 8 versions of the processed text. Each version represents
-    ///   a partial or fully transformed state of the original text according to the rules specified
-    ///   in the `SimpleMatchType`.
+    /// * `ArrayVec<[Cow<'a, [u8]>; 8]>` - A vector containing the processed text byte slices at various stages of the transformation.
     ///
-    /// # Processing Logic
+    /// # Detailed Processing:
     ///
-    /// * For each bit in the `SimpleMatchType`, fetch the corresponding replacement list
-    ///   and matcher.
-    /// * Check if the current text bytes match any patterns in the matcher.
-    /// * Perform the specified transformation if a match is found:
-    ///   * For `None`, do nothing.
-    ///   * For `Fanjian`, replace all occurrences of patterns.
-    ///   * For `TextDelete` and `WordDelete`, delete matched patterns and concatenate
-    ///     the remaining text.
-    ///   * For other types, replace matched patterns with their corresponding replacements.
+    /// 1. Initialize an `ArrayVec` to hold the processed text byte slices.
+    /// 2. Push the original text bytes (borrowed) as the first element in the vector.
+    /// 3. Iterate through each bit in the `SimpleMatchType` to apply corresponding transformation rules.
+    /// 4. For each `SimpleMatchType` bit:
+    ///     a. Retrieve the relevant `process_replace_list` and `process_matcher` from the `simple_match_type_process_map`.
+    ///     b. Get the last processed text bytes from the vector for transformation.
+    ///     c. Apply transformation rules based on the `SimpleMatchType` bit:
+    ///         - `None`: No transformation.
+    ///         - `Fanjian`: Replace bytes using the Aho-Corasick matcher if a match is found.
+    ///         - `TextDelete` or `WordDelete`: Delete matching segments from the text.
+    ///         - Otherwise, replace bytes using the Aho-Corasick matcher.
+    /// 5. Append each transformed text bytes sequence to the vector if a modification occurred.
+    ///
+    /// This method ensures that each text byte sequence goes through the specified transformations
+    /// efficiently, using SIMD and Aho-Corasick automata.
+    ///
     fn reduce_text_process<'a>(
         &self,
-        simple_match_type: &SimpleMatchType,
+        simple_match_type: SimpleMatchType,
         text_bytes: &'a [u8],
     ) -> ArrayVec<[Cow<'a, [u8]>; 8]> {
-        // Initialize an ArrayVec to store processed text byte arrays, starting with the original text bytes.
         let mut processed_text_bytes_list: ArrayVec<[Cow<'a, [u8]>; 8]> = ArrayVec::new();
         processed_text_bytes_list.push(Cow::Borrowed(text_bytes));
 
-        // Iterate over each bit in the SimpleMatchType.
         for simple_match_type_bit in simple_match_type.iter() {
-            // Fetch the corresponding replacement list and matcher for the current SimpleMatchType bit.
             let (process_replace_list, process_matcher) = unsafe {
                 self.simple_match_type_process_map
                     .get(&simple_match_type_bit)
                     .unwrap_unchecked()
             };
-            // Get the last processed text bytes from the list.
             let tmp_processed_text_bytes =
                 unsafe { processed_text_bytes_list.last_mut().unwrap_unchecked() };
 
-            // Match against the specific SimpleMatchType bit and perform appropriate transformations.
             match simple_match_type_bit {
-                // None type requires no processing.
                 SimpleMatchType::None => {}
-                // Fanjian type performs replacement for all pattern matches.
                 SimpleMatchType::Fanjian => {
-                    // If a match is found, replace all occurrences of patterns in the text.
                     if unlikely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
                         *tmp_processed_text_bytes = Cow::Owned(
                             process_matcher.replace_all_bytes(text_bytes, process_replace_list),
                         );
                     }
                 }
-                // TextDelete and WordDelete types perform deletion of matched patterns.
                 SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
-                    // If a match is likely, proceed with the deletion process.
                     if likely(process_matcher.is_match(tmp_processed_text_bytes.as_ref())) {
-                        // Create a vector to store the bytes of the processed text.
                         let mut processed_text_bytes =
                             Vec::with_capacity(tmp_processed_text_bytes.len());
                         let mut last_match = 0;
 
-                        // Iterate over all matches and build the processed text by excluding matched patterns.
                         for mat in process_matcher.find_iter(tmp_processed_text_bytes.as_ref()) {
                             processed_text_bytes.extend(unsafe {
                                 tmp_processed_text_bytes.get_unchecked(last_match..mat.start())
                             });
                             last_match = mat.end();
                         }
-                        // Add the remaining part of the text after the last match.
                         processed_text_bytes.extend(unsafe {
                             tmp_processed_text_bytes.get_unchecked(last_match..)
                         });
 
-                        // Add the processed text to the list.
                         processed_text_bytes_list.push(Cow::Owned(processed_text_bytes));
                     }
                 }
-                // For other types, replace occurrences of patterns with corresponding replacements.
                 _ => {
-                    // If a match is found, replace occurrences of patterns and add the processed text to the list.
                     if process_matcher.is_match(tmp_processed_text_bytes.as_ref()) {
                         let processed_text_bytes = process_matcher
                             .replace_all_bytes(tmp_processed_text_bytes, process_replace_list);
@@ -783,60 +642,55 @@ impl SimpleMatcher {
             }
         }
 
-        // Return the list of processed text byte arrays.
         processed_text_bytes_list
     }
 }
 
 impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
-    /// Determines if there is a match for the input text.
+    /// Checks if the input text matches any patterns based on the configured `SimpleMatcher`.
     ///
-    /// This method processes the given text through various transformation rules defined
-    /// by the `SimpleMatchType`. It uses the Aho-Corasick algorithm to search for overlapping
-    /// patterns within the processed text. If any sequence of transformations leads to a
-    /// complete match (as indicated by the `split_bit_vec`), the method returns `true`.
+    /// This method processes the input text according to the transformation rules defined by the
+    /// `SimpleMatchType`, using Aho-Corasick pattern matching to search for overlapping matches.
+    /// The method returns `true` if any pattern matches the text, otherwise it returns `false`.
     ///
     /// # Arguments
     ///
-    /// * `text` - A string slice representing the input text to be matched.
+    /// * `text` - A string slice representing the input text to be checked for matches.
     ///
     /// # Returns
     ///
-    /// * `bool` - Returns `true` if a match is found; otherwise, returns `false`.
+    /// * `bool` - Returns `true` if a match is found, otherwise returns `false`.
     ///
-    /// This method follows these steps:
+    /// # Detailed Processing:
     ///
-    /// 1. Convert the input text to a byte slice.
-    /// 2. If the number of characters in the byte slice is fewer than the minimum required character count (`min_chars_count`), return `false`.
-    /// 3. Initialize a map (`word_id_split_bit_map`) to keep track of the split bit vectors for each word ID.
-    /// 4. For each `SimpleMatchType` and its associated `SimpleAcTable` in the `simple_match_type_ac_table_map`:
+    /// 1. Convert the input text to a byte slice (`text_bytes`).
+    /// 2. If the byte slice is empty, return `false`.
+    /// 3. Initialize a map (`word_id_split_bit_map`) to track split bit vectors for each word ID.
+    /// 4. Iterate over each `SimpleMatchType` and its associated `SimpleAcTable`:
     ///     a. Process the text according to the transformation rules defined by the `SimpleMatchType`.
     ///     b. Iterate over each processed version of the text.
-    ///     c. For each processed text, find overlapping patterns using the Aho-Corasick matcher.
-    ///     d. For each pattern found, update the split bit vector corresponding to the word ID.
-    ///     e. If any word ID has its split bit vector reduced to all zeros, return `true`.
-    /// 5. If no match is found after processing all transformations and patterns, return `false`.
+    ///     c. Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
+    ///     d. Retrieve the word configuration based on the pattern found.
+    ///     e. Initialize or update the split bit vector corresponding to the word ID.
+    ///     f. Update the split bit vector by shifting the bit to the right.
+    ///     g. Check if all shifts have reduced the split bit vector to all zeros.
+    ///     h. If so, return `true` indicating a match is found.
+    ///
+    /// This method efficiently checks for text matches using SIMD and Aho-Corasick algorithms.
     fn is_match(&self, text: &str) -> bool {
-        // Convert the input text to a byte slice.
         let text_bytes = text.as_bytes();
 
-        // Check if the number of characters in the byte slice is fewer than the minimum required character count.
         if unlikely(text_bytes.is_empty()) {
-            return false; // Return false if the character count is too low.
+            return false;
         }
 
-        // Initialize a map to keep track of the split bit vectors for each word ID.
         let mut word_id_split_bit_map = IntMap::default();
 
-        // Iterate over each SimpleMatchType and its associated SimpleAcTable.
-        for (simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            // Process the text according to the transformation rules defined by SimpleMatchType.
+        for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
             let processed_text_bytes_list = self.reduce_text_process(simple_match_type, text_bytes);
             let processed_times = processed_text_bytes_list.len();
 
-            // Iterate over each processed version of the text.
             for (index, processed_text) in processed_text_bytes_list.iter().enumerate() {
-                // Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
                 for ac_result in simple_ac_table
                     .ac_matcher
                     .find_overlapping_iter(processed_text)
@@ -849,13 +703,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     let word_conf =
                         unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
 
-                    // Get or initialize the split bit vector corresponding to the word ID.
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                         iter::repeat_n(word_conf.split_bit, processed_times)
                             .collect::<ArrayVec<[_; 8]>>()
                     });
 
-                    // Update the split bit vector by shifting the bit to the right.
                     *unsafe {
                         split_bit_vec
                             .get_unchecked_mut(index)
@@ -863,28 +715,27 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked_mut(ac_word_conf.1)
                     } >>= 1;
 
-                    // Check if all shifts have reduced the split bit vector to all zeros.
                     if unlikely(
                         split_bit_vec
                             .iter()
                             .fold(Simd::splat(1), |acc, &bit| acc & bit)
                             == ZEROS,
                     ) {
-                        return true; // Return true if a complete match is found.
+                        return true;
                     }
                 }
             }
         }
 
-        // Return false if no match is found after processing all transformations and patterns.
         false
     }
 
-    /// Processes the input text and returns a list of `SimpleResult` instances representing matched words.
+    /// Processes the input text and returns a list of matching results.
     ///
-    /// This method processes the input text according to various transformation rules defined by the
-    /// `SimpleMatchType`. It uses the Aho-Corasick algorithm to search for overlapping patterns within the
-    /// processed text. The matched words are then collected and returned as a vector of `SimpleResult` instances.
+    /// This function performs text matching by applying various `SimpleMatchType` transformations
+    /// to the input text and using Aho-Corasick pattern matching to find overlapping matches. It
+    /// maintains a set of identified word IDs to ensure each word is only added once to the result
+    /// list, regardless of how many transformations or pattern matches occur.
     ///
     /// # Arguments
     ///
@@ -892,72 +743,66 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * `Vec<SimpleResult<'a>>` - A vector of `SimpleResult` instances representing matched words, each containing
-    ///   the word's unique identifier and the matched word itself.
+    /// * `Vec<SimpleResult<'a>>` - A vector containing the matching results as `SimpleResult` instances.
     ///
-    /// # Processing Logic
+    /// # Detailed Processing:
     ///
-    /// * Convert the input text to a byte slice.
-    /// * If the number of characters in the byte slice is fewer than the minimum required character count, return an empty result list.
-    /// * Initialize a set (`word_id_set`) to keep track of word IDs that have been matched, and a map (`word_id_split_bit_map`)
-    ///   to track split bit vectors for each word ID.
-    /// * For each `SimpleMatchType` and its associated `SimpleAcTable` in the `simple_match_type_ac_table_map`:
+    /// 1. Convert the input text to a byte slice (`text_bytes`).
+    /// 2. Initialize an empty vector (`result_list`) to store the matching results.
+    /// 3. Return an empty result list if the input text is empty.
+    /// 4. Initialize sets and maps to track word IDs and their split bit vectors during processing.
+    /// 5. Iterate over each `SimpleMatchType` and its associated `SimpleAcTable`:
     ///     a. Process the text according to the transformation rules defined by the `SimpleMatchType`.
     ///     b. Iterate over each processed version of the text.
-    ///     c. For each processed text, find overlapping patterns using the Aho-Corasick matcher.
-    ///     d. For each pattern found, update the split bit vector corresponding to the word ID.
-    ///     e. If any word ID has its split bit vector reduced to all zeros, add the word to the result list.
+    ///     c. Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
+    ///     d. Retrieve the word configuration based on the pattern found.
+    ///     e. Skip further processing if the word ID is already in the result set.
+    ///     f. Initialize or update the split bit vector corresponding to the word ID.
+    ///     g. Update the split bit vector by shifting the bit to the right.
+    ///     h. Check if all shifts have reduced the split bit vector to all zeros.
+    ///     i. If so, add the word ID to the result set and append the matching word to the result list.
     ///
-    /// This method ensures that each matched word is processed efficiently using SIMD vectors and Aho-Corasick automata.
+    /// This function ensures that text matching and transformation are performed efficiently
+    /// using SIMD and Aho-Corasick algorithms, and it returns a list of unique matching results.
     fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
-        let text_bytes = text.as_bytes(); // Convert the input text to a byte slice
-        let mut result_list = Vec::new(); // Initialize an empty vector to store the results
+        let text_bytes = text.as_bytes();
+        let mut result_list = Vec::new();
 
-        // Check if the number of characters in the byte slice is fewer than the minimum required character count
         if unlikely(text_bytes.is_empty()) {
-            return result_list; // Return an empty result list if the character count is too low
+            return result_list;
         }
 
-        let mut word_id_set = IntSet::default(); // Initialize a set to keep track of matched word IDs
-        let mut word_id_split_bit_map = IntMap::default(); // Initialize a map to track split bit vectors for each word ID
+        let mut word_id_set = IntSet::default();
+        let mut word_id_split_bit_map = IntMap::default();
 
-        // Iterate over each SimpleMatchType and its associated SimpleAcTable
-        for (simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            // Process the text according to the transformation rules defined by SimpleMatchType
+        for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
             let processed_text_bytes_list = self.reduce_text_process(simple_match_type, text_bytes);
             let processed_times = processed_text_bytes_list.len(); // Get the number of processed versions of the text
 
-            // Iterate over each processed version of the text
             for (index, processed_text) in processed_text_bytes_list.iter().enumerate() {
-                // Use the Aho-Corasick matcher to find overlapping patterns in the processed text
                 for ac_result in simple_ac_table
                     .ac_matcher
                     .find_overlapping_iter(processed_text)
                 {
-                    // Retrieve the word configuration based on the pattern found
                     let ac_word_conf = unsafe {
                         simple_ac_table
                             .ac_word_conf_list
                             .get_unchecked(ac_result.pattern().as_usize())
                     };
-                    let word_id = ac_word_conf.0; // Extract the word ID from the word configuration
+                    let word_id = ac_word_conf.0;
 
-                    // If the word ID is already in the set, skip further processing
                     if word_id_set.contains(&word_id) {
                         continue;
                     }
 
-                    // Get the word configuration from the simple_wordconf_map
                     let word_conf =
                         unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
 
-                    // Get or initialize the split bit vector corresponding to the word ID
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                         iter::repeat_n(word_conf.split_bit, processed_times)
                             .collect::<ArrayVec<[_; 8]>>()
                     });
 
-                    // Update the split bit vector by shifting the bit to the right
                     *unsafe {
                         split_bit_vec
                             .get_unchecked_mut(index)
@@ -965,15 +810,13 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked_mut(ac_word_conf.1)
                     } >>= 1;
 
-                    // Check if all shifts have reduced the split bit vector to all zeros
                     if unlikely(
                         split_bit_vec
                             .iter()
                             .fold(Simd::splat(1), |acc, &bit| acc & bit)
                             == ZEROS,
                     ) {
-                        word_id_set.insert(word_id); // Add the word ID to the set of matched word IDs
-                                                     // Add the matched word to the result list
+                        word_id_set.insert(word_id);
                         result_list.push(SimpleResult {
                             word_id,
                             word: Cow::Borrowed(&word_conf.word),
@@ -983,6 +826,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             }
         }
 
-        result_list // Return the list of matched words
+        result_list
     }
 }

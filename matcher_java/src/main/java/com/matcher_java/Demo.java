@@ -78,7 +78,7 @@ public class Demo {
         MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
 
         packer.packMapHeader(1);
-        packer.packString("test");
+        packer.packInt(1);
         packer.packArrayHeader(1);
         packer.packMapHeader(6);
         packer.packString("table_id");

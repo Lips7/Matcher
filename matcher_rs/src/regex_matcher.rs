@@ -4,14 +4,34 @@ use fancy_regex::{escape, Regex};
 
 use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 
-/// A structure representing a table of regex patterns used for matching text.
+#[derive(Debug, Clone)]
+/// A structure representing a regex table used for text matching.
+///
+/// The `RegexTable` structure is designed to hold a collection of words or patterns along
+/// with metadata for identifying and categorizing the table.
 ///
 /// # Fields
 ///
-/// * `table_id` - A unique identifier for the table.
-/// * `match_id` - A string identifier for the match.
-/// * `match_table_type` - The type of match table, which determines how the patterns are interpreted.
-/// * `word_list` - A list of words or patterns associated with this table.
+/// * `table_id` - A unique identifier for the regex table. This identifier distinguishes
+///   the table from other regex tables.
+///
+/// * `match_id` - An ID that serves as an identifier for the match. This identifier
+///   is used to differentiate match results originating from different regex tables.
+///
+/// * `match_table_type` - The type of match table, represented by the `MatchTableType` enumeration.
+///   This field determines how the words or patterns in the table will be processed and matched
+///   against the target text. Possible values include:
+///   - `MatchTableType::SimilarChar`: Treats the word list as containing characters or patterns
+///     that should be matched similarly within the text.
+///   - `MatchTableType::Acrostic`: Treats the word list as containing acrostic patterns for matching.
+///   - `MatchTableType::Regex`: Treats the word list as containing full regex patterns.
+///
+/// * `word_list` - A vector of string slices (`&'a str`) representing the words or patterns to be
+///   matched. Each entry in the vector corresponds to a word or pattern that will be used in the
+///   regex matching process.
+///
+/// This structure is used by the `RegexMatcher` to organize and manage different sets of patterns
+/// along with their associated metadata, enabling efficient and flexible text matching operations.
 ///
 /// # Examples
 ///
@@ -20,38 +40,43 @@ use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 ///
 /// let regex_table = RegexTable {
 ///     table_id: 1,
-///     match_id: "example_match",
+///     match_id: 1,
 ///     match_table_type: MatchTableType::SimilarChar,
-///     word_list: vec!["word1", "word2"],
+///     word_list: vec!["1,一", "2,二"],
 /// };
-/// ```
 ///
-/// This structure is used in the `RegexMatcher` to organize and categorize different sets
-/// of regex patterns for efficient text matching.
+/// println!("Regex Table ID: {}", regex_table.table_id);
+/// println!("Match ID: {}", regex_table.match_id);
+/// println!("Match Table Type: {:?}", regex_table.match_table_type);
+/// println!("Word List: {:?}", regex_table.word_list);
+/// ```
 pub struct RegexTable<'a> {
     pub table_id: u64,
-    pub match_id: &'a str,
+    pub match_id: u64,
     pub match_table_type: MatchTableType,
     pub word_list: Vec<&'a str>,
 }
 
-/// An enumeration representing different types of regular expressions used for matching.
+#[derive(Debug, Clone)]
+/// Enum representing different types of regex pattern tables used in the `RegexMatcher`.
+///
+/// The `RegexType` enum is utilized within `RegexPatternTable` to define the structure and behavior of the regex
+/// patterns stored in each table. It supports two types of regex patterns: `StandardRegex` and `ListRegex`.
 ///
 /// # Variants
 ///
-/// * `StandardRegex` - This variant holds a single `regex` field of type `Regex`,
-///   which is used to match text based on a single regular expression pattern.
-///   - `regex`: A compiled regular expression pattern used for text matching.
+/// * `StandardRegex` - Represents a table that holds a single compiled regex pattern.
+///   - `regex` (`Regex`): The compiled regex pattern used for matching text.
 ///
-/// * `ListRegex` - This variant holds two fields: `regex_list` and `word_list`.
-///   `regex_list` is a vector of compiled regular expressions, and `word_list`
-///   is a vector of corresponding string patterns.
-///   - `regex_list`: A vector of compiled regular expression patterns for text matching.
-///   - `word_list`: A vector of string patterns associated with the regular expressions.
+/// * `ListRegex` - Represents a table that holds a list of compiled regex patterns and their corresponding words.
+///   - `regex_list` (`Vec<Regex>`): A list of compiled regex patterns used for matching text.
+///   - `word_list` (`Vec<String>`): A list of words corresponding to each regex pattern in `regex_list`.
 ///
-/// This enumeration helps categorize the regex matching strategies supported by the `RegexMatcher`:
-/// - `StandardRegex` for single pattern matching.
-/// - `ListRegex` for matching against a list of patterns.
+/// # Usage
+///
+/// This enum enables the `RegexMatcher` to distinguish between tables that use a singular regex pattern and those
+/// that use multiple patterns stored in a list. The associated data for each variant ensures that the `RegexMatcher`
+/// can accurately process match operations and return results based on the specific table type.
 enum RegexType {
     StandardRegex {
         regex: Regex,
@@ -62,88 +87,75 @@ enum RegexType {
     },
 }
 
-/// A structure representing a table that holds regex patterns for matching.
+#[derive(Debug, Clone)]
+/// A structure representing a table of regex patterns used for text matching.
+///
+/// The `RegexPatternTable` struct is designed to hold compiled regex patterns and associated metadata,
+/// allowing the `RegexMatcher` to efficiently organize and manage different sets of patterns for matching
+/// text. Each `RegexPatternTable` instance corresponds to a specific regex table and contains details
+/// such as a unique identifier, match identifier, and the type of regex patterns stored.
 ///
 /// # Fields
 ///
-/// * `table_id` - A unique identifier for the table.
-/// * `match_id` - A string identifier for the match.
-/// * `table_match_type` - The type of regex pattern matching used in the table, which can be either `StandardRegex` with a single regex or `ListRegex` with a list of regex patterns.
+/// * `table_id` - A unique identifier for the regex pattern table. This identifier distinguishes the table from other regex tables.
+/// * `match_id` - A unique identifier for the match, which corresponds to the `match_id` of the `RegexTable` that contains the regex pattern.
+/// * `table_match_type` - The type of regex pattern table, represented by the `RegexType` enum. This field determines the structure and behavior of the regex patterns stored in the table.
 ///
-/// This structure is used in the `RegexMatcher` to store different sets of regex patterns along with their identifiers.
+/// The `RegexPatternTable` struct is utilized internally by the `RegexMatcher` to categorize and execute regex-based text matching operations.
 struct RegexPatternTable {
     table_id: u64,
-    match_id: String,
+    match_id: u64,
     table_match_type: RegexType,
 }
 
-/// A structure representing the result of a regex match.
+/// Represents a result from a regex matching operation, containing metadata about the match.
+///
+/// The `RegexResult` structure is designed to encapsulate information about a particular regex match,
+/// including the matched word or pattern, the table identifier from which the match originated, and
+/// the match identifier associated with the match.
 ///
 /// # Fields
 ///
-/// * `word` - The matched word or pattern, which can be either an owned `String`
-///            or a borrowed string slice (`&str`). It uses `Cow` (Clone on Write)
-///            to efficiently handle both owned and borrowed data.
-/// * `table_id` - A unique identifier for the regex table that produced this match result.
-/// * `match_id` - A string identifier for the match, which corresponds to the `match_id`
-///                of the `RegexTable` that contains the regex pattern.
+/// * `word` - A `Cow<'a, str>` that holds the matched word or pattern. This field can either be a
+///   borrowed string slice or an owned `String`, offering flexibility in how the match result is stored.
 ///
-/// # Debug
-/// The structure derives `Debug` for easier debugging and logging of match results.
+/// * `table_id` - A `u64` representing the unique identifier of the regex table that produced the match result.
+///   This helps in distinguishing which regex table contributed to the result, facilitating organized processing
+///   and categorization of matches.
 ///
-/// This structure is returned by the `RegexMatcher` when processing text, and it contains
-/// all the necessary information to identify which regex table and pattern matched a
-/// particular piece of text.
+/// * `match_id` - A `u64` that serves as an identifier for the match. This identifier
+///   is used to differentiate between match results originating from different regex tables, allowing
+///   for more detailed and organized match results.
 ///
-/// # Examples
+/// # Example
 ///
 /// ```
-/// use std::borrow::Cow;
 /// use matcher_rs::RegexResult;
+/// use std::borrow::Cow;
 ///
 /// let result = RegexResult {
 ///     word: Cow::Borrowed("example"),
 ///     table_id: 1,
-///     match_id: "example_match",
+///     match_id: 1,
 /// };
 ///
 /// println!("{:?}", result);
 /// ```
 ///
-#[derive(Debug)]
+/// The example above demonstrates how to create a `RegexResult` instance and print its fields for
+/// debugging or logging purposes.
+///
+/// This structure is primarily utilized in text matching applications where regex patterns are used
+/// to identify specific words or patterns within the target text, and the results need to be tracked
+/// and processed accordingly.
+#[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
     pub word: Cow<'a, str>,
     pub table_id: u64,
-    pub match_id: &'a str,
+    pub match_id: u64,
 }
 
 impl MatchResultTrait<'_> for RegexResult<'_> {
-    /// Provides the implementation for the `MatchResultTrait` trait for the `RegexResult` struct.
-    ///
-    /// This implementation allows `RegexResult` to expose methods defined by the `MatchResultTrait` trait.
-    ///
-    /// # Methods
-    ///
-    /// * `table_id(&self) -> u64` - Returns the unique identifier for the regex table that produced this match result.
-    /// * `word(&self) -> &str` - Returns the matched word or pattern as a string slice.
-    ///
-    /// # Examples
-    ///
-    /// Suppose we have a `RegexResult` instance and we want to get its `table_id` and matched `word`:
-    ///
-    /// ```
-    /// use matcher_rs::{RegexResult, MatchResultTrait};
-    /// use std::borrow::Cow;
-    ///
-    /// let result = RegexResult {
-    ///     word: Cow::Borrowed("example"),
-    ///     table_id: 1,
-    ///     match_id: "example_match",
-    /// };
-    ///
-    /// assert_eq!(result.table_id(), 1);
-    /// assert_eq!(result.word(), "example");
-    /// ```
     fn table_id(&self) -> u64 {
         self.table_id
     }
@@ -152,6 +164,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
 /// A structure responsible for managing and handling regex pattern tables for text matching.
 ///
 /// The `RegexMatcher` stores a list of `RegexPatternTable` structures, each of which contains
@@ -177,7 +190,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 ///
 /// let regex_table = RegexTable {
 ///     table_id: 1,
-///     match_id: "example_match",
+///     match_id: 1,
 ///     match_table_type: MatchTableType::SimilarChar,
 ///     word_list: vec!["1,一", "2,二"],
 /// };
@@ -187,72 +200,75 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// assert!(regex_matcher.is_match("一2"));
 /// assert!(regex_matcher.is_match("1二"));
 /// ```
-///
 pub struct RegexMatcher {
     regex_pattern_table_list: Vec<RegexPatternTable>,
 }
 
 impl RegexMatcher {
-    /// Creates a new `RegexMatcher` instance from a list of `RegexTable` structures.
+    /// Constructs a new `RegexMatcher` instance from a list of `RegexTable` structures.
     ///
-    /// This function takes a reference to a vector of `RegexTable` and converts it into a `RegexMatcher`
-    /// instance. It processes each `RegexTable` in the provided list and constructs corresponding
-    /// `RegexPatternTable` structures based on the `match_table_type`.
+    /// This function initializes a `RegexMatcher` by processing the provided `regex_table_list` and
+    /// compiling the necessary regex patterns based on the `MatchTableType` for each table. The resulting
+    /// `RegexMatcher` contains a list of `RegexPatternTable` structures that store compiled regex patterns
+    /// and related metadata for efficient text matching operations.
     ///
     /// # Arguments
     ///
-    /// * `regex_table_list` - A reference to a vector of `RegexTable` instances. Each `RegexTable`
-    ///   contains a unique `table_id`, `match_id`, a match table type, and a list of words or patterns.
+    /// * `regex_table_list` - A reference to a vector of `RegexTable` structures, each representing a table
+    ///   of words or patterns along with associated metadata and match table type.
     ///
     /// # Returns
     ///
-    /// A `RegexMatcher` instance containing the converted list of `RegexPatternTable` structures,
-    /// ready to be used for text matching operations.
+    /// A `RegexMatcher` instance containing compiled regex patterns and metadata for performing text matching
+    /// based on the provided `RegexTable` structures.
     ///
     /// # Match Table Types
     ///
-    /// The function handles different types of match tables (`MatchTableType`):
+    /// The function handles different `MatchTableType` variants within the `RegexTable`:
     ///
-    /// * `SimilarChar` - Converts the words list into a single regex pattern, where each word is
-    ///   escaped and separated by `|`. The combined pattern is joined using `.?.`.
+    /// * `SimilarChar` - Creates a combined regex pattern by escaping each word in the word list and joining
+    ///   them with a `.?` separator. The resulting pattern is stored as a `StandardRegex` type in a new
+    ///   `RegexPatternTable` entry.
     ///
-    /// * `Acrostic` - Creates individual regex patterns for each word, where words are separated by
-    ///   `".*?[\s\pP]+?"`. The patterns are constructed to match acrostic patterns in the text.
+    /// * `Acrostic` - Iterates through each word in the word list, creating corresponding regex patterns to
+    ///   match acrostic patterns in the text. Each pattern is prefixed with `(?:^|[\s\pP]+?)` to support
+    ///   case-insensitive matching at the start of words or after punctuation. The resulting patterns and
+    ///   words are stored as a `ListRegex` type in a new `RegexPatternTable` entry.
     ///
-    /// * `Regex` - Treats each word in the list as a full regex pattern. It creates a list of regex
-    ///   patterns corresponding to the words.
+    /// * `Regex` - Treats each word in the word list as a full regex pattern and compiles it accordingly.
+    ///   The compiled regex patterns and corresponding words are stored as a `ListRegex` type in a new
+    ///   `RegexPatternTable` entry.
     ///
     /// # Panics
     ///
-    /// The function uses `unwrap()` to handle the result of regex creation, which may panic if
-    /// any of the provided patterns are invalid regular expressions.
+    /// This function may panic if the regex compilation fails for any of the provided patterns. Such cases
+    /// should be rare, as the input is typically prevalidated to ensure proper regex syntax.
     ///
     /// # Examples
     ///
     /// ```
-    /// use matcher_rs::{RegexMatcher, RegexTable, MatchTableType};
+    /// use matcher_rs::{RegexMatcher, RegexTable, MatchTableType, TextMatcherTrait};
     ///
     /// let regex_table = RegexTable {
     ///     table_id: 1,
-    ///     match_id: "example_match",
+    ///     match_id: 1,
     ///     match_table_type: MatchTableType::SimilarChar,
     ///     word_list: vec!["1,一", "2,二"],
     /// };
     ///
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
+    ///
+    /// assert!(regex_matcher.is_match("12"));
+    /// assert!(regex_matcher.is_match("一2"));
+    /// assert!(regex_matcher.is_match("1二"));
     /// ```
-    pub fn new(regex_table_list: &Vec<RegexTable>) -> RegexMatcher {
-        // Create an empty vector with pre-allocated capacity to hold regex pattern tables
+    pub fn new(regex_table_list: &[RegexTable]) -> RegexMatcher {
         let mut regex_pattern_table_list = Vec::with_capacity(regex_table_list.len());
 
-        // Iterate through each regex table provided in the input list
         for regex_table in regex_table_list {
-            // Get the number of words/patterns in the current regex table
             let size = regex_table.word_list.len();
 
-            // Match on the type of match table to determine how to process its patterns
             match regex_table.match_table_type {
-                // Handle the SimilarChar match table type
                 MatchTableType::SimilarChar => {
                     // Create a combined regex pattern by escaping each word and joining them with .? separator
                     let pattern = regex_table
@@ -262,18 +278,15 @@ impl RegexMatcher {
                         .collect::<Vec<String>>()
                         .join(".?");
 
-                    // Add a new RegexPatternTable entry for StandardRegex type with the compiled regex pattern
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
-                        match_id: regex_table.match_id.to_owned(),
+                        match_id: regex_table.match_id,
                         table_match_type: RegexType::StandardRegex {
                             regex: Regex::new(&pattern).unwrap(),
                         },
                     });
                 }
-                // Handle the Acrostic match table type
                 MatchTableType::Acrostic => {
-                    // Create vectors to hold word list and regex list with pre-allocated capacity
                     let mut word_list = Vec::with_capacity(size);
                     let mut regex_list = Vec::with_capacity(size);
 
@@ -284,34 +297,29 @@ impl RegexMatcher {
                             escape(word).replace(',', r".*?[\s\pP]+?")
                         );
 
-                        // Add the current word and its corresponding regex pattern to the lists
                         word_list.push(word.to_owned());
                         regex_list.push(Regex::new(&pattern).unwrap());
                     }
 
-                    // Add a new RegexPatternTable entry for ListRegex type with the compiled regex list and word list
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
-                        match_id: regex_table.match_id.to_owned(),
+                        match_id: regex_table.match_id,
                         table_match_type: RegexType::ListRegex {
                             regex_list,
                             word_list,
                         },
                     });
                 }
-                // Handle the Regex match table type
                 MatchTableType::Regex => {
-                    // Create a word list by cloning each word in the regex table's word list
                     let word_list = regex_table
                         .word_list
                         .iter()
                         .map(|&word| word.to_owned())
                         .collect::<Vec<String>>();
 
-                    // Add a new RegexPatternTable entry for ListRegex type with compiled regex list and original word list
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
-                        match_id: regex_table.match_id.to_owned(),
+                        match_id: regex_table.match_id,
                         table_match_type: RegexType::ListRegex {
                             regex_list: word_list
                                 .iter()
@@ -321,12 +329,10 @@ impl RegexMatcher {
                         },
                     });
                 }
-                // Handle unexpected match table types (unreachable code)
                 _ => unreachable!(),
             };
         }
 
-        // Return the constructed RegexMatcher instance containing the list of RegexPatternTables
         RegexMatcher {
             regex_pattern_table_list,
         }
@@ -334,43 +340,40 @@ impl RegexMatcher {
 }
 
 impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
-    /// Checks if the given text matches any of the regex patterns in the `RegexPatternTable`.
+    /// Determines if the provided text matches any of the regex patterns stored in the match tables.
     ///
-    /// This function iterates through all the regex tables stored in `regex_pattern_table_list` and
-    /// checks if the provided text matches any of the patterns based on the `RegexType`. If any match
-    /// is found, the function returns `true`; otherwise, it returns `false`.
+    /// This function iterates through all the `RegexPatternTable` instances in `regex_pattern_table_list`
+    /// and checks if the provided text matches any of the regex patterns based on the `RegexType` of each table.
     ///
     /// # Arguments
     ///
-    /// * `text` - A string slice (`&str`) containing the text to be checked against the stored regex patterns.
+    /// * `self` - A reference to the `RegexMatcher` instance.
+    /// * `text` - A string slice (`&str`) containing the text to be checked for matches against the regex patterns.
     ///
     /// # Returns
     ///
-    /// * `bool` - `true` if the text matches any of the regex patterns, `false` otherwise.
+    /// * `bool` - Returns `true` if the text matches any of the regex patterns, otherwise returns `false`.
     ///
-    /// # Match Types
+    /// # Match Checking
     ///
     /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * `StandardRegex` - Checks if the text matches a single compiled regex pattern.
-    /// * `ListRegex` - Checks if the text matches any of the compiled regex patterns in the list.
+    /// * `StandardRegex` - Checks if the text matches the single compiled regex pattern stored in the table.
+    ///   If a match is found, the function returns `true`.
     ///
-    /// # Panics
+    /// * `ListRegex` - Iterates through the list of compiled regex patterns and checks if the text matches
+    ///   any of them. If a match is found, the function returns `true`.
     ///
-    /// This function may panic if the regex matching fails unexpectedly, although this should be rare
-    /// as it relies on precompiled and presumably valid regex patterns.
+    /// If no matches are found after checking all regex patterns in all tables, the function returns `false`.
     ///
     /// # Examples
-    ///
-    /// Suppose you have a `RegexMatcher` instance configured with regex patterns and you want to check
-    /// if a given text matches any of those patterns:
     ///
     /// ```
     /// use matcher_rs::{RegexMatcher, RegexTable, MatchTableType, TextMatcherTrait};
     ///
     /// let regex_table = RegexTable {
     ///     table_id: 1,
-    ///     match_id: "example_match",
+    ///     match_id: 1,
     ///     match_table_type: MatchTableType::SimilarChar,
     ///     word_list: vec!["1,一", "2,二"],
     /// };
@@ -378,25 +381,18 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
     ///
     /// assert!(regex_matcher.is_match("12"));
-    /// assert!(!regex_matcher.is_match("abc"));
+    /// assert!(regex_matcher.is_match("一2"));
+    /// assert!(regex_matcher.is_match("1二"));
     /// ```
     fn is_match(&self, text: &str) -> bool {
-        // Iterate through each regex table in the list of regex pattern tables
         for regex_table in &self.regex_pattern_table_list {
-            // Match based on the type of regex pattern table (StandardRegex or ListRegex)
             match &regex_table.table_match_type {
-                // Handle the StandardRegex type
                 RegexType::StandardRegex { regex } => {
-                    // Check if the text matches the single regex pattern
-                    // If a match is found, return true immediately
                     if regex.is_match(text).unwrap() {
                         return true;
                     }
                 }
-                // Handle the ListRegex type
                 RegexType::ListRegex { regex_list, .. } => {
-                    // Check if the text matches any regex pattern in the list
-                    // If a match is found, return true immediately
                     if regex_list.iter().any(|regex| regex.is_match(text).unwrap()) {
                         return true;
                     }
@@ -404,72 +400,64 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
             }
         }
 
-        // Return false if no match is found in any of the regex patterns
         false
     }
 
-    /// Processes the given text to find and return a list of regex match results.
+    /// Processes the given text and returns a list of `RegexResult` instances for matches found.
     ///
-    /// This function iterates through all regex tables in `regex_pattern_table_list` and attempts to find matches
-    /// in the provided text. It constructs a `Vec` of `RegexResult` instances, each representing a matched pattern
-    /// along with metadata identifying the table and match.
+    /// This function iterates through all the regex tables stored in `regex_pattern_table_list` and checks
+    /// the provided text against the regex patterns based on the `RegexType` of each table. If a match is found,
+    /// a corresponding `RegexResult` instance is created and added to the result list.
     ///
     /// # Arguments
     ///
-    /// * `text` - A string slice that contains the text to search for regex matches.
+    /// * `self` - A reference to the `RegexMatcher` instance.
+    /// * `text` - A string slice (`&str`) containing the text to be processed and searched for matches.
     ///
     /// # Returns
     ///
-    /// A `Vec` of `RegexResult` instances where each result corresponds to a pattern match found in the provided text.
+    /// * `Vec<RegexResult<'a>>` - A vector of `RegexResult` instances, each representing a match found in the text.
     ///
-    /// # Regex Types
+    /// # Match Processing
     ///
     /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * `StandardRegex` - For each capture group match found, collects all non-empty matches and joins them into a
-    ///   single string. Each match is added to the result list as an owned `String`.
+    /// * `StandardRegex` - For each match found, the captured groups (except the full match) are concatenated
+    ///   to form the matched word, which is stored in a `RegexResult` instance.
     ///
-    /// * `ListRegex` - For each regex in the list, if a match is found, adds the corresponding word from `word_list`
-    ///   as a borrowed `&str` to the result list.
+    /// * `ListRegex` - If the text matches any regex pattern in the list, the corresponding word from `word_list`
+    ///   is stored in a `RegexResult` instance.
     ///
     /// # Examples
     ///
-    /// Suppose you have a `RegexMatcher` instance configured with regex patterns and you want to process a given text
-    /// to extract all matching patterns:
-    ///
     /// ```
-    /// use matcher_rs::{RegexMatcher, RegexTable, MatchTableType, TextMatcherTrait};
+    /// use matcher_rs::{RegexMatcher, RegexTable, MatchTableType, TextMatcherTrait, RegexResult};
+    /// use std::borrow::Cow;
     ///
     /// let regex_table = RegexTable {
     ///     table_id: 1,
-    ///     match_id: "example_match",
+    ///     match_id: 1,
     ///     match_table_type: MatchTableType::SimilarChar,
     ///     word_list: vec!["1,一", "2,二"],
     /// };
     ///
     /// let regex_matcher = RegexMatcher::new(&vec![regex_table]);
     ///
-    /// let results = regex_matcher.process("1二");
-    ///
+    /// let results = regex_matcher.process("12");
     /// for result in results {
-    ///     println!("{:?}", result);
+    ///     println!("Matched word: {}", result.word);
+    ///     println!("Table ID: {}", result.table_id);
+    ///     println!("Match ID: {}", result.match_id);
     /// }
     /// ```
     fn process(&'a self, text: &str) -> Vec<RegexResult<'a>> {
-        // Initialize an empty vector to hold the results of the regex matches
         let mut result_list = Vec::new();
 
-        // Iterate through each regex pattern table stored in the RegexMatcher
         for regex_table in &self.regex_pattern_table_list {
-            // Match based on the type of regex pattern table
             match &regex_table.table_match_type {
-                // Handle the StandardRegex type
                 RegexType::StandardRegex { regex } => {
-                    // Iterate through all captures found by the regex in the provided text
                     for caps in regex.captures_iter(text).map(|caps| caps.unwrap()) {
-                        // Create a new RegexResult and add it to the result list
                         result_list.push(RegexResult {
-                            // Combine all non-empty capture groups into one string
                             word: Cow::Owned(
                                 caps.iter()
                                     .skip(1)
@@ -477,28 +465,21 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                                     .collect::<Vec<&str>>()
                                     .join(""),
                             ),
-                            // Set the table_id and match_id fields in the result
                             table_id: regex_table.table_id,
-                            match_id: &regex_table.match_id,
+                            match_id: regex_table.match_id,
                         });
                     }
                 }
-                // Handle the ListRegex type
                 RegexType::ListRegex {
                     regex_list,
                     word_list,
                 } => {
-                    // Iterate through each regex in the list
                     for (index, regex) in regex_list.iter().enumerate() {
-                        // If the text matches the current regex
                         if regex.is_match(text).unwrap() {
-                            // Create a new RegexResult and add it to the result list
                             result_list.push(RegexResult {
-                                // Use the corresponding word from the word list as the result
                                 word: Cow::Borrowed(&word_list[index]),
-                                // Set the table_id and match_id fields in the result
                                 table_id: regex_table.table_id,
-                                match_id: &regex_table.match_id,
+                                match_id: regex_table.match_id,
                             });
                         }
                     }
@@ -506,7 +487,6 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
             }
         }
 
-        // Return the list of regex match results
         result_list
     }
 }

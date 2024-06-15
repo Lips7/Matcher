@@ -29,11 +29,11 @@ def test_init_with_invalid_bytes():
 
 def test_init_with_empty_map():
     Matcher(msgpack_encoder.encode({}))
-    Matcher(msgpack_encoder.encode({"test": []}))
+    Matcher(msgpack_encoder.encode({1: []}))
     Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple,
@@ -52,14 +52,14 @@ def test_init_with_invalid_map():
     with pytest.raises(ValueError):
         Matcher(msgpack_encoder.encode({"a": 1}))
         Matcher(msgpack_encoder.encode({"a": {"b": 1}}))
-        Matcher(msgpack_encoder.encode({"test": []}))
+        Matcher(msgpack_encoder.encode({"c": {}}))
 
 
 def test_regex():
     matcher = Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Regex,
@@ -74,10 +74,9 @@ def test_regex():
     )
     assert matcher.is_match("hallo")
     assert matcher.is_match("ward")
-    assert json_decoder.decode(matcher.word_match("hallo")["test"])[0]["table_id"] == 1
+    assert json_decoder.decode(matcher.word_match("hallo")[1])[0]["table_id"] == 1
     assert (
-        json_decoder.decode(matcher.word_match("hallo")["test"])[0]["word"]
-        == "h[aeiou]llo"
+        json_decoder.decode(matcher.word_match("hallo")[1])[0]["word"] == "h[aeiou]llo"
     )
 
 
@@ -85,7 +84,7 @@ def test_similar_text_levenshtein():
     matcher = Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.SimilarTextLevenshtein,
@@ -102,11 +101,9 @@ def test_similar_text_levenshtein():
     assert matcher.is_match("halloworld")
     assert matcher.is_match("ha1loworld")
     assert not matcher.is_match("ha1loworld1")
+    assert json_decoder.decode(matcher.word_match("helloworl")[1])[0]["table_id"] == 1
     assert (
-        json_decoder.decode(matcher.word_match("helloworl")["test"])[0]["table_id"] == 1
-    )
-    assert (
-        json_decoder.decode(matcher.word_match("helloworl")["test"])[0]["word"]
+        json_decoder.decode(matcher.word_match("helloworl")[1])[0]["word"]
         == "helloworld"
     )
 
@@ -115,7 +112,7 @@ def test_acrostic():
     matcher = Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Acrostic,
@@ -129,21 +126,21 @@ def test_acrostic():
         )
     )
     assert matcher.is_match("hope, endures, love, lasts, onward.")
-    assert not matcher.is_match(
+    assert matcher.is_match(
         "Happy moments shared, Every smile and laugh, Love in every word, Lighting up our paths, Open hearts we show."
     )
     assert matcher.is_match("你的笑容温暖, 好心情常伴。")
     assert not matcher.is_match("你好")
     assert (
         json_decoder.decode(
-            matcher.word_match("hope, endures, love, lasts, onward.")["test"]
+            matcher.word_match("hope, endures, love, lasts, onward.")[1]
         )[0]["word"]
         == "h,e,l,l,o"
     )
     assert (
-        json_decoder.decode(matcher.word_match("你的笑容温暖, 好心情常伴。")["test"])[
-            0
-        ]["word"]
+        json_decoder.decode(matcher.word_match("你的笑容温暖, 好心情常伴。")[1])[0][
+            "word"
+        ]
         == "你,好"
     )
 
@@ -152,7 +149,7 @@ def test_exemption():
     matcher = Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple,
@@ -174,7 +171,7 @@ def matcher():
     return Matcher(
         msgpack_encoder.encode(
             {
-                "test": [
+                1: [
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple,

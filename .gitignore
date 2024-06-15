@@ -149,3 +149,4 @@ cython_debug/
 /target
 
 .ruff_cache
+test.ipynb
