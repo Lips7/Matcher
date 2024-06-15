@@ -20,29 +20,26 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            suffix: so
           # - runner: ubuntu-latest
           #   target: aarch64-unknown-linux-gnu
           - runner: macos-12
             target: x86_64-apple-darwin
+            uffix: dylib
           - runner: macos-14
             target: aarch64-apple-darwin
+            uffix: dylib
           - runner: windows-latest
             target: x86_64-pc-windows-gnu
+            suffix: dll
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
+            suffix: dll
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
         if: matrix.platform.runner == 'ubuntu-latest' && matrix.platform.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get install gcc-aarch64-linux-gnu
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.8
-      - name: Install pytest
-        run: pip install -U pytest
-      - name: Python Test
-        run: pytest matcher_py/test
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -53,3 +50,16 @@ jobs:
         run: cargo test --target ${{ matrix.platform.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
+      - name: Rename & move
+        shell: bash
+        run: |
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/matcher_c.so
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_py.${{ matrix.platform.suffix }} matcher_py/matcher_py/matcher_py.so
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+      - name: Install pytest
+        run: pip install -U pytest msgspec numpy type typing_extensions
+      - name: Python Test
+        run: pytest matcher_py/test
