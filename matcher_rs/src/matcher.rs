@@ -709,32 +709,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// - If the `sim_matcher` finds a match, it returns `true`.
     /// - If none of the matchers find a match, the function returns `false`.
     fn is_match(&self, text: &str) -> bool {
-        // Check if the simple_matcher is available and if it matches the text.
-        if let Some(simple_matcher) = &self.simple_matcher {
-            if simple_matcher.is_match(text) {
-                // Return true if there is a match in the simple_matcher.
-                return true;
-            }
-        }
-
-        // Check if the regex_matcher is available and if it matches the text.
-        if let Some(regex_matcher) = &self.regex_matcher {
-            if regex_matcher.is_match(text) {
-                // Return true if there is a match in the regex_matcher.
-                return true;
-            }
-        }
-
-        // Check if the sim_matcher is available and if it matches the text.
-        if let Some(sim_matcher) = &self.sim_matcher {
-            if sim_matcher.is_match(text) {
-                // Return true if there is a match in the sim_matcher.
-                return true;
-            }
-        }
-
-        // Return false if none of the matchers find a match.
-        false
+        !self.word_match_raw(text).is_empty()
     }
 
     /// Processes the given text and returns a vector of match results.

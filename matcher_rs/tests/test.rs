@@ -60,6 +60,7 @@ fn simple_match() {
     assert!(simple_matcher.is_match("你好,123"));
     assert!(simple_matcher.is_match("你号"));
     assert!(simple_matcher.is_match("xian"));
+    assert!(simple_matcher.is_match("现"));
     assert!(simple_matcher.is_match("Mac+vlan 退，保"));
     assert!(simple_matcher.is_match("八○一社区"));
     assert!(simple_matcher.is_match("ЛmЛmXoXo"));

@@ -3,7 +3,7 @@ use std::intrinsics::{likely, unlikely};
 use std::iter;
 use std::simd::Simd;
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
 use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
@@ -357,7 +357,6 @@ pub struct SimpleMatcher {
     simple_match_type_process_map: IntMap<SimpleMatchType, (Vec<&'static str>, AhoCorasick)>,
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_wordconf_map: IntMap<u64, WordConf>,
-    min_chars_count: usize,
 }
 
 impl SimpleMatcher {
@@ -406,7 +405,6 @@ impl SimpleMatcher {
             simple_match_type_process_map: IntMap::default(),
             simple_match_type_ac_table_map: IntMap::default(),
             simple_wordconf_map: IntMap::default(),
-            min_chars_count: usize::MAX,
         };
 
         // Iterate over each entry in the provided SimpleMatchTypeWordMap
@@ -629,15 +627,6 @@ impl SimpleMatcher {
 
         // Iterate over each entry in the simple_word_map.
         for (simple_word_id, simple_word) in simple_word_map.into_iter() {
-            // Update the minimum character count required for matching.
-            self.min_chars_count = self.min_chars_count.min(
-                simple_word
-                    .chars()
-                    .filter(|&c| c != ',') // Exclude commas from the character count.
-                    .collect::<AHashSet<char>>()
-                    .len(),
-            );
-
             // Create a counter for split words in the current simple_word.
             let mut ac_split_word_counter = AHashMap::default();
             for ac_split_word in simple_word.split(',').filter(|&x| !x.is_empty()) {
@@ -832,7 +821,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let text_bytes = text.as_bytes();
 
         // Check if the number of characters in the byte slice is fewer than the minimum required character count.
-        if unlikely(bytecount::num_chars(text_bytes) < self.min_chars_count) {
+        if unlikely(text_bytes.is_empty()) {
             return false; // Return false if the character count is too low.
         }
 
@@ -925,7 +914,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut result_list = Vec::new(); // Initialize an empty vector to store the results
 
         // Check if the number of characters in the byte slice is fewer than the minimum required character count
-        if unlikely(bytecount::num_chars(text_bytes) < self.min_chars_count) {
+        if unlikely(text_bytes.is_empty()) {
             return result_list; // Return an empty result list if the character count is too low
         }
 

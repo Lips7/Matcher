@@ -280,7 +280,7 @@ impl RegexMatcher {
                     // Iterate through each word in the word list and create corresponding regex patterns
                     for &word in regex_table.word_list.iter() {
                         let pattern = format!(
-                            r"(?:^|[\s\pP]+?){}",
+                            r"(?i)(?:^|[\s\pP]+?){}",
                             escape(word).replace(',', r".*?[\s\pP]+?")
                         );
 

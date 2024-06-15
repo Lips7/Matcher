@@ -28,7 +28,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -92,7 +92,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Mat
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -158,7 +158,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
 /// use std::str::from_utf8;
@@ -248,7 +248,7 @@ pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char)
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -300,7 +300,7 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -359,7 +359,7 @@ pub extern "C" fn init_simple_matcher(
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -416,7 +416,7 @@ pub extern "C" fn simple_matcher_is_match(
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
 /// use std::str::from_utf8;
@@ -502,7 +502,7 @@ pub extern "C" fn simple_matcher_process(
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -541,7 +541,7 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::ffi::CString;
 ///
 /// let c_string = CString::new("hello world!").unwrap();

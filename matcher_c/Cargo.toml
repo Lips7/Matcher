@@ -13,7 +13,7 @@ readme = "README.md"
 
 [lib]
 name = "matcher_c"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 matcher_rs = { path = "../matcher_rs" }
