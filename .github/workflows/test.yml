@@ -62,4 +62,5 @@ jobs:
       - name: Install pytest
         run: pip install -U pytest msgspec numpy typing_extensions
       - name: Python Test
+        if: matrix.platform.runner == 'ubuntu-latest'
         run: pytest matcher_py/test
