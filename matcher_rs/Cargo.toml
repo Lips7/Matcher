@@ -10,6 +10,7 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 readme = "README.md"
+documentation = "https://docs.rs/crate/matcher_rs/latest"
 
 [package.metadata.docs.rs]
 rustc-args = ["-C", "target-feature=+aes"]
