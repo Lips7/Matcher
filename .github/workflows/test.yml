@@ -58,8 +58,8 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: 3.12
       - name: Install pytest
-        run: pip install -U pytest msgspec numpy type typing_extensions
+        run: pip install -U pytest msgspec numpy typing_extensions
       - name: Python Test
         run: pytest matcher_py/test
