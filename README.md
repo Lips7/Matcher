@@ -52,12 +52,15 @@ It's helpful for
 ### Platform-Specific Instructions
 
 #### Rust Users
-- See the [Rust README](./matcher_rs/README.md)
+
+See the [Rust README](./matcher_rs/README.md).
 
 #### Python Users
-- See the [Python README](./matcher_py/README.md)
+
+See the [Python README](./matcher_py/README.md).
 
 #### Java Users
+
 ```shell
 git clone https://github.com/Lips7/Matcher.git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
@@ -68,9 +71,10 @@ Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` 
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
-See [Java Readme](./matcher_java/README.md).
+See the [Java README](./matcher_java/README.md).
 
 #### C Users
+
 ```shell
 git clone https://github.com/Lips7/Matcher.git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
@@ -81,7 +85,7 @@ Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` 
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
-See [C Readme](./matcher_c/README.md).
+See the [C README](./matcher_c/README.md).
 
 ## Design
 
