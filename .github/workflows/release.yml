@@ -2,10 +2,10 @@ name: release
 
 on:
   push:
-    files:
-      - 'matcher_py/**'
-      - 'matcher_rs/**'
-      - 'matcher_c/**'
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - 'matcher_c/src/**'
       - '.github/workflows/release.yml'
 
 permissions:
@@ -66,7 +66,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [build]
     steps:
       - name: Download artifact

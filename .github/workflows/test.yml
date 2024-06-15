@@ -35,13 +35,21 @@ jobs:
       - name: Install dependencies
         if: matrix.platform.runner == 'ubuntu-latest' && matrix.platform.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get install gcc-aarch64-linux-gnu
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+      - name: Install pytest
+        run: pip install -U pytest
+      - name: Python Test
+        run: pytest matcher_py/test
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           target: ${{ matrix.platform.target }}
           override: true
-      - name: test
+      - name: Test
         run: cargo test --target ${{ matrix.platform.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}

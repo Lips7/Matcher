@@ -2,9 +2,9 @@ name: python
 
 on:
   push:
-    files:
-      - 'matcher_py/**'
-      - 'matcher_rs/**'
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
       - '.github/workflows/python.yml'
 
 permissions:
@@ -23,7 +23,8 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
           python-version: 3.8
       - name: Build wheels
@@ -153,7 +154,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [linux, musllinux, windows, macos, sdist]
     steps:
       - name: Download artifact
