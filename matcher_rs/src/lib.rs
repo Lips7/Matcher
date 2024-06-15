@@ -13,7 +13,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod matcher;
 pub use matcher::{
-    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableType, Matcher, StrConvType,
+    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableType, Matcher,
     TextMatcherTrait,
 };
 

@@ -2,120 +2,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use bitflags::bitflags;
 use nohash_hasher::IntMap;
-use serde::{Deserializer, Serializer};
 use sonic_rs::{to_string, Deserialize, Serialize};
 
 use crate::regex_matcher::{RegexMatcher, RegexTable};
 use crate::sim_matcher::{SimMatcher, SimTable};
 use crate::simple_matcher::{SimpleMatchType, SimpleMatcher};
-
-bitflags! {
-    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-    /// A bitflag representation of various string conversion types that can be applied.
-    ///
-    /// Each flag represents a specific type of transformation that can be performed on a string.
-    /// These transformations include changes like simplifying characters, deleting words, or
-    /// normalizing text, among others. These flags can be combined using bitwise operations to
-    /// indicate multiple transformations at once.
-    ///
-    /// # Constants
-    ///
-    /// - `None`: No conversion (0b00000001).
-    /// - `Fanjian`: Simplify traditional Chinese characters to simplified ones (0b00000010).
-    /// - `WordDelete`: Delete specific words from the text (0b00000100).
-    /// - `TextDelete`: Delete specific parts of the text (0b00001000).
-    /// - `Delete`: A combination of `WordDelete` and `TextDelete` (0b00001100).
-    /// - `Normalize`: Normalize the text to a standard form (0b00010000).
-    /// - `DeleteNormalize`: A combination of `Delete` and `Normalize` (0b00011100).
-    /// - `FanjianDeleteNormalize`: A combination of `Fanjian`, `Delete`, and `Normalize` (0b00011110).
-    /// - `PinYin`: Convert Chinese characters to Pinyin (0b00100000).
-    /// - `PinYinChar`: Convert individual Chinese characters to Pinyin (0b01000000).
-    ///
-    /// # Limitation
-    ///
-    /// - `PinYin` and `PinYinChar` can not be enabled same times.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::StrConvType;
-    ///
-    /// let flags = StrConvType::Fanjian | StrConvType::Normalize;
-    /// ```
-    pub struct StrConvType: u8 {
-        const None = 0b00000001;
-        const Fanjian = 0b00000010;
-        const WordDelete = 0b00000100;
-        const TextDelete = 0b00001000;
-        const Delete = 0b00001100;
-        const Normalize = 0b00010000;
-        const DeleteNormalize = 0b00011100;
-        const FanjianDeleteNormalize = 0b00011110;
-        const PinYin = 0b00100000;
-        const PinYinChar = 0b01000000;
-    }
-}
-
-impl Serialize for StrConvType {
-    /// Serializes the `StrConvType` bitflags into its underlying `u8` representation.
-    ///
-    /// # Arguments
-    ///
-    /// * `serializer` - The serializer to use for serialization.
-    ///
-    /// # Returns
-    ///
-    /// Returns a serialized representation of the `StrConvType` bitflags.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the serialization process fails.
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.bits().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for StrConvType {
-    /// Deserializes a `StrConvType` instance from its underlying `u8` representation.
-    ///
-    /// # Arguments
-    ///
-    /// * `deserializer` - The deserializer to use for deserialization.
-    ///
-    /// # Returns
-    ///
-    /// Returns a deserialized `StrConvType` instance based on the `u8` bits.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the deserialization process fails or if the bits do not correspond
-    /// to a valid `StrConvType` flag combination.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::StrConvType;
-    /// use sonic_rs;
-    ///
-    /// let json = "6"; // where 3 represents a combination of the flags
-    /// let str_conv_type: StrConvType = sonic_rs::from_str(json).unwrap();
-    ///
-    /// assert_eq!(str_conv_type.contains(StrConvType::Fanjian), true);
-    /// assert_eq!(str_conv_type.contains(StrConvType::WordDelete), true);
-    /// ```
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let bits: u8 = u8::deserialize(deserializer)?;
-        Ok(StrConvType::from_bits_retain(bits))
-    }
-}
 
 /// A trait that defines the behavior of a text matcher.
 ///

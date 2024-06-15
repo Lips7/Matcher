@@ -5,11 +5,13 @@ use std::simd::Simd;
 
 use ahash::{AHashMap, AHashSet};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind};
+use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
-use serde::Serialize;
+use serde::{Deserializer, Serializer};
+use sonic_rs::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
-use super::{MatchResultTrait, StrConvType, TextMatcherTrait};
+use super::{MatchResultTrait, TextMatcherTrait};
 
 /// This section includes constant string references to various conversion maps.
 ///
@@ -83,15 +85,111 @@ const WHITE_SPACE: &[&str] = &[
 const WORD_COMBINATION_LIMIT: usize = 32;
 const ZEROS: Simd<u8, WORD_COMBINATION_LIMIT> = Simd::from_array([0; WORD_COMBINATION_LIMIT]);
 
-/// Type alias for `StrConvType` which is used to represent various string
-/// conversion modes in the text matcher. This alias simplifies the
-/// representation and usage of `StrConvType` throughout the `SimpleMatcher`
-/// implementation.
-///
-/// `StrConvType` includes different conversion types which determine the
-/// preprocessing steps applied to the text before matching, such as
-/// normalization, punctuation deletion, and more.
-pub type SimpleMatchType = StrConvType;
+bitflags! {
+    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+    /// A bitflag representation of various string conversion types that can be applied.
+    ///
+    /// Each flag represents a specific type of transformation that can be performed on a string.
+    /// These transformations include changes like simplifying characters, deleting words, or
+    /// normalizing text, among others. These flags can be combined using bitwise operations to
+    /// indicate multiple transformations at once.
+    ///
+    /// # Constants
+    ///
+    /// - `None`: No conversion (0b00000001).
+    /// - `Fanjian`: Simplify traditional Chinese characters to simplified ones (0b00000010).
+    /// - `WordDelete`: Delete specific words from the text (0b00000100).
+    /// - `TextDelete`: Delete specific parts of the text (0b00001000).
+    /// - `Delete`: A combination of `WordDelete` and `TextDelete` (0b00001100).
+    /// - `Normalize`: Normalize the text to a standard form (0b00010000).
+    /// - `DeleteNormalize`: A combination of `Delete` and `Normalize` (0b00011100).
+    /// - `FanjianDeleteNormalize`: A combination of `Fanjian`, `Delete`, and `Normalize` (0b00011110).
+    /// - `PinYin`: Convert Chinese characters to Pinyin (0b00100000).
+    /// - `PinYinChar`: Convert individual Chinese characters to Pinyin (0b01000000).
+    ///
+    /// # Limitation
+    ///
+    /// - `PinYin` and `PinYinChar` can not be enabled same times.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use matcher_rs::SimpleMatchType;
+    ///
+    /// let flags = SimpleMatchType::Fanjian | SimpleMatchType::Normalize;
+    /// ```
+    pub struct SimpleMatchType: u8 {
+        const None = 0b00000001;
+        const Fanjian = 0b00000010;
+        const WordDelete = 0b00000100;
+        const TextDelete = 0b00001000;
+        const Delete = 0b00001100;
+        const Normalize = 0b00010000;
+        const DeleteNormalize = 0b00011100;
+        const FanjianDeleteNormalize = 0b00011110;
+        const PinYin = 0b00100000;
+        const PinYinChar = 0b01000000;
+    }
+}
+
+impl Serialize for SimpleMatchType {
+    /// Serializes the `SimpleMatchType` bitflags into its underlying `u8` representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `serializer` - The serializer to use for serialization.
+    ///
+    /// # Returns
+    ///
+    /// Returns a serialized representation of the `SimpleMatchType` bitflags.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serialization process fails.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.bits().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SimpleMatchType {
+    /// Deserializes a `SimpleMatchType` instance from its underlying `u8` representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `deserializer` - The deserializer to use for deserialization.
+    ///
+    /// # Returns
+    ///
+    /// Returns a deserialized `SimpleMatchType` instance based on the `u8` bits.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the deserialization process fails or if the bits do not correspond
+    /// to a valid `SimpleMatchType` flag combination.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use matcher_rs::SimpleMatchType;
+    /// use sonic_rs;
+    ///
+    /// let json = "6"; // where 3 represents a combination of the flags
+    /// let simple_match_type: SimpleMatchType = sonic_rs::from_str(json).unwrap();
+    ///
+    /// assert_eq!(simple_match_type.contains(SimpleMatchType::Fanjian), true);
+    /// assert_eq!(simple_match_type.contains(SimpleMatchType::WordDelete), true);
+    /// ```
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bits: u8 = u8::deserialize(deserializer)?;
+        Ok(SimpleMatchType::from_bits_retain(bits))
+    }
+}
 
 impl IsEnabled for SimpleMatchType {}
 
@@ -389,9 +487,9 @@ impl SimpleMatcher {
 
             // For Fanjian conversion: process FANJIAN and UNICODE data files.
             SimpleMatchType::Fanjian => {
-                for str_conv_dat in [FANJIAN, UNICODE] {
+                for str_conv_map in [FANJIAN, UNICODE] {
                     // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_dat.trim().lines().map(|pair_str| {
+                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
                             // Each line in the conversion data corresponds to a key-value pair.
@@ -418,9 +516,9 @@ impl SimpleMatcher {
 
             // For TextDelete conversion: process punctuation, Chinese special, and English special characters.
             SimpleMatchType::TextDelete => {
-                for str_conv_dat in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
+                for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
                     process_dict.extend(
-                        str_conv_dat
+                        str_conv_map
                             .trim()
                             .lines()
                             // Map each special character to an empty string (deletion).
@@ -433,9 +531,9 @@ impl SimpleMatcher {
             }
             // For Normalize conversion: process UPPER_LOWER, EN_VARIATION, and NUM_NORM data files.
             SimpleMatchType::Normalize => {
-                for str_conv_dat in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
+                for str_conv_map in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
                     // Extend the process dictionary with mappings from the conversion data.
-                    process_dict.extend(str_conv_dat.trim().lines().map(|pair_str| {
+                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
                             // Each line in the conversion data corresponds to a key-value pair.
