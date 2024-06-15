@@ -2,7 +2,7 @@
 
 use std::{
     ffi::{c_char, CStr, CString},
-    str::from_utf8_unchecked,
+    str::from_utf8,
 };
 
 use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, TextMatcherTrait};
@@ -12,8 +12,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 /// byte string that can be deserialized into a `MatchTableMap`.
 ///
 /// # Arguments
-/// * `match_table_map_bytes` - A pointer to a null-terminated byte string that represents a serialized
-///   `MatchTableMap`.
+/// * `match_table_map_bytes` - A pointer to a null-terminated byte string that represents a serialized `MatchTableMap`.
 ///
 /// # Returns
 /// * A raw pointer to a new `Matcher` instance that is created using the deserialized `MatchTableMap`.
@@ -23,26 +22,50 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 ///
 /// # Description
 /// This function initializes a `Matcher` instance from the provided serialized `MatchTableMap` byte string.
-/// It performs deserialization of the byte string into a `MatchTableMap`, and then uses it to create a new `Matcher`.
-/// The newly created `Matcher` instance is then wrapped in a `Box` and converted into a raw pointer before being returned.
+/// It performs deserialization of the byte string, transforms it into a `MatchTableMap`, and then uses it to
+/// create a new `Matcher`. The newly created `Matcher` instance is then wrapped in a `Box` and converted
+/// into a raw pointer before being returned.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
+///
+/// let mut match_table_map = HashMap::new();
+/// match_table_map.insert(
+///     "test",
+///     vec![
+///         MatchTable {
+///             table_id: 1,
+///             match_table_type: MatchTableType::Simple,
+///             simple_match_type: SimpleMatchType::None,
+///             word_list: vec!["hello", "world"],
+///             exemption_simple_match_type: SimpleMatchType::None,
+///             exemption_word_list: vec![],
+///         }
+///     ]
+/// );
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+///
+/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+/// drop_matcher(matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
-        // Convert the raw pointer passed as `match_table_map_bytes` to a CStr and then to a byte slice.
-        // Deserialize the byte slice into a `MatchTableMap` instance.
         let match_table_map: MatchTableMap = match rmp_serde::from_slice(
             CStr::from_ptr(match_table_map_bytes).to_bytes(),
         ) {
-            // If deserialization is successful, assign the `MatchTableMap` to `match_table_map`.
             Ok(match_table_map) => match_table_map,
-            // If deserialization fails, panic with an error message containing the deserialization error.
             Err(e) => {
                 panic!("Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}", e)
             }
         };
 
-        // Create a new `Matcher` instance using the deserialized `MatchTableMap` and wrap it in a Box.
-        // Convert the Box into a raw pointer using `Box::into_raw` before returning it.
         Box::into_raw(Box::new(Matcher::new(match_table_map)))
     }
 }
@@ -60,59 +83,151 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Mat
 ///
 /// # Panics
 /// This function will panic if the `matcher` pointer is null.
+///
+/// # Description
+/// This function calls the `is_match` method on a `Matcher` instance. It converts the raw pointers to their
+/// respective Rust types, performs the `is_match` operation, and returns a boolean indicating the match result.
+/// The conversion assumes that the `text` pointer points to a valid UTF-8 encoded, null-terminated C string, and
+/// that the `matcher` pointer is valid and non-null.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
+///
+/// let mut match_table_map = HashMap::new();
+/// match_table_map.insert(
+///     "test",
+///     vec![
+///         MatchTable {
+///             table_id: 1,
+///             match_table_type: MatchTableType::Simple,
+///             simple_match_type: SimpleMatchType::None,
+///             word_list: vec!["hello", "world"],
+///             exemption_simple_match_type: SimpleMatchType::None,
+///             exemption_word_list: vec![],
+///         }
+///     ]
+/// );
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+///
+/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+///
+/// let match_text_bytes = CString::new("hello world!").unwrap();
+/// let not_match_text_bytes = CString::new("test").unwrap();
+///
+/// assert!(matcher_is_match(matcher_ptr, match_text_bytes.as_ptr()));
+/// assert!(!matcher_is_match(matcher_ptr, not_match_text_bytes.as_ptr()));
+///
+/// drop_matcher(matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
     unsafe {
-        // Dereference the matcher pointer and convert it to a reference.
-        // Unwrap the Option to get the underlying Matcher reference.
         matcher
             .as_ref()
             .unwrap()
-            // Call the is_match method on the Matcher reference.
-            // Convert the text pointer from a C string to a byte slice, and then to a UTF-8 string.
-            .is_match(from_utf8_unchecked(CStr::from_ptr(text).to_bytes()))
+            .is_match(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or(""))
     }
 }
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `matcher` and `text` pointers are valid.
-/// The `matcher` pointer should point to a valid `Matcher` instance, and the `text` pointer should point to a null-terminated byte string.
+/// The `matcher` pointer should point to a valid `Matcher` instance, and the `text` pointer should point to a
+/// null-terminated byte string.
 ///
 /// # Arguments
 /// * `matcher` - A raw pointer to a `Matcher` instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns
-/// * A raw pointer to an c_char holding a JSON-encoded string indicating the result of the `word_match` function called on the `Matcher` instance.
+/// * A raw pointer to an `c_char` holding the result of the `word_match` function called on the `Matcher` instance.
 ///
 /// # Panics
-/// This function will panic if any of the following occur:
-/// * The `matcher` pointer is null.
-/// * The byte slice pointed to by `text` is not valid UTF-8.
-/// * Creating a `CString` from the JSON string fails.
+/// This function will panic if the `matcher` pointer is null.
+///
+/// # Description
+/// This function calls the `word_match` method on a `Matcher` instance, converting the result to a JSON string.
+/// It converts the raw pointers to their respective Rust types, performs the `word_match` operation,
+/// serializes the result as a JSON string, and then converts this string to a C-compatible CString.
+/// The resulting CString is then returned as a raw pointer before being returned.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::{CStr, CString};
+/// use std::str::from_utf8;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
+///
+/// let mut match_table_map = HashMap::new();
+/// match_table_map.insert(
+///     "test",
+///     vec![
+///         MatchTable {
+///             table_id: 1,
+///             match_table_type: MatchTableType::Simple,
+///             simple_match_type: SimpleMatchType::None,
+///             word_list: vec!["hello", "world"],
+///             exemption_simple_match_type: SimpleMatchType::None,
+///             exemption_word_list: vec![],
+///         }
+///     ]
+/// );
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+///
+/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+///
+/// let match_text_bytes = CString::new("hello world!").unwrap();
+/// let not_match_text_bytes = CString::new("test").unwrap();
+///
+/// assert_eq!(
+///     from_utf8(
+///         unsafe {
+///             CStr::from_ptr(
+///                 matcher_word_match(
+///                     matcher_ptr,
+///                     match_text_bytes.as_ptr()
+///                 )
+///             ).to_bytes()
+///         }
+///     ).unwrap_or(""),
+///     r#"{"test":"[{\"table_id\":1,\"word\":\"hello\"},{\"table_id\":1,\"word\":\"world\"}]"}"#
+/// );
+/// assert_eq!(
+///     from_utf8(
+///         unsafe {
+///             CStr::from_ptr(
+///                 matcher_word_match(
+///                     matcher_ptr,
+///                     not_match_text_bytes.as_ptr()
+///                 )
+///             ).to_bytes()
+///         }
+///     ).unwrap_or(""),
+///     r#"{}"#
+/// );
+///
+/// drop_matcher(matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char) -> *mut c_char {
-    // Unsafe block to perform operations requiring manual memory management and direct pointer manipulation.
     let res = unsafe {
-        // Create a new CString from a JSON string, ensuring it is null-terminated and safe for C-interoperability.
         CString::new(
-            // Serialize the result of the word_match function to a JSON string.
-            sonic_rs::to_string(
-                &matcher
-                    // Convert the raw matcher pointer to a reference. If null, unwrap will cause a panic.
-                    .as_ref()
-                    .unwrap()
-                    // Perform the word_match operation, converting the text pointer from C string to byte slice, and then to UTF-8 string.
-                    .word_match(from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
-            )
-            // Unwrap the Result to obtain the JSON string. Panics if serialization fails.
-            .unwrap(),
+            matcher
+                .as_ref()
+                .unwrap()
+                .word_match_as_string(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or("")),
         )
-        // Unwrap the Result to obtain the CString. Panics if the string contains an interior null byte.
         .unwrap()
     };
 
-    // Convert the CString into a raw pointer and return it.
     res.into_raw()
 }
 
@@ -130,6 +245,35 @@ pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char)
 /// # Description
 /// This function converts the raw pointer back into a `Box` and then drops it, effectively freeing the memory that the `Matcher` instance occupied.
 /// After calling this function, the `matcher` pointer must not be used again.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
+///
+/// let mut match_table_map = HashMap::new();
+/// match_table_map.insert(
+///     "test",
+///     vec![
+///         MatchTable {
+///             table_id: 1,
+///             match_table_type: MatchTableType::Simple,
+///             simple_match_type: SimpleMatchType::None,
+///             word_list: vec!["hello", "world"],
+///             exemption_simple_match_type: SimpleMatchType::None,
+///             exemption_word_list: vec![],
+///         }
+///     ]
+/// );
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+///
+/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+/// drop_matcher(matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
     unsafe { drop(Box::from_raw(matcher)) }
@@ -140,8 +284,7 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// byte string that can be deserialized into a `SimpleMatchTypeWordMap`.
 ///
 /// # Arguments
-/// * `simple_match_type_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized
-///   `SimpleMatchTypeWordMap`.
+/// * `simple_match_type_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized `SimpleMatchTypeWordMap`.
 ///
 /// # Returns
 /// * A raw pointer to a new `SimpleMatcher` instance that is created using the deserialized `SimpleMatchTypeWordMap`.
@@ -154,19 +297,34 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// It performs deserialization of the byte string, transforms it into a `SimpleMatchTypeWordMap`, and then uses it to
 /// create a new `SimpleMatcher`. The newly created `SimpleMatcher` instance is then wrapped in a `Box` and converted
 /// into a raw pointer before being returned.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{SimpleMatcher,, SimpleMatchType};
+///
+/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut word_map = HashMap::new();
+/// word_map.insert(1, "hello,world")
+/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+///
+/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+/// drop_simple_matcher(simple_matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn init_simple_matcher(
     simple_match_type_word_map_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
     unsafe {
-        // Convert the raw pointer passed as `simple_match_type_word_map_bytes` to a CStr and then to a byte slice.
-        // Deserialize the byte slice into a `SimpleMatchTypeWordMap` instance.
         let simple_match_type_word_map: SimpleMatchTypeWordMap = match rmp_serde::from_slice(
             CStr::from_ptr(simple_match_type_word_map_bytes).to_bytes(),
         ) {
-            // If deserialization is successful, assign the `SimpleMatchTypeWordMap` to `simple_match_type_word_map`.
             Ok(simple_match_type_word_map) => simple_match_type_word_map,
-            // If deserialization fails, panic with an error message containing the deserialization error.
             Err(e) => {
                 panic!(
                     "Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\nErr: {}", e,
@@ -174,15 +332,14 @@ pub extern "C" fn init_simple_matcher(
             }
         };
 
-        // Create a new `SimpleMatcher` instance using the deserialized `SimpleMatchTypeWordMap` and wrap it in a Box.
-        // Convert the Box into a raw pointer using `Box::into_raw` before returning it.
         Box::into_raw(Box::new(SimpleMatcher::new(simple_match_type_word_map)))
     }
 }
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `simple_matcher` and `text` pointers are valid.
-/// The `simple_matcher` pointer should point to a valid `SimpleMatcher` instance, and the `text` pointer should point to a null-terminated byte string.
+/// The `simple_matcher` pointer should point to a valid `SimpleMatcher` instance, and the `text` pointer should
+/// point to a null-terminated byte string that represents the text to be processed.
 ///
 /// # Arguments
 /// * `simple_matcher` - A raw pointer to a `SimpleMatcher` instance.
@@ -195,26 +352,46 @@ pub extern "C" fn init_simple_matcher(
 /// This function will panic if the `simple_matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `is_match` method on a `SimpleMatcher` instance. It converts the raw pointers to their
-/// respective Rust types, performs the `is_match` operation, and returns a boolean indicating the match result.
-/// The conversion assumes that the `text` pointer points to a valid UTF-8 encoded, null-terminated C string, and
-/// that the `simple_matcher` pointer is valid and non-null.
+/// This function calls the `is_match` method on a `SimpleMatcher` instance. It converts the raw pointers
+/// to their respective Rust types, performs the `is_match` operation, and returns a boolean indicating
+/// the match result. The conversion assumes that the `text` pointer points to a valid UTF-8 encoded,
+/// null-terminated C string, and that the `simple_matcher` pointer is valid and non-null.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{SimpleMatcher, SimpleMatchType};
+///
+/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut word_map = HashMap::new();
+/// word_map.insert(1, "hello,world");
+/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+///
+/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+///
+/// let match_text_bytes = CString::new("hello world!").unwrap();
+/// let not_match_text_bytes = CString::new("test").unwrap();
+///
+/// assert!(simple_matcher_is_match(simple_matcher_ptr, match_text_bytes.as_ptr()));
+/// assert!(!simple_matcher_is_match(simple_matcher_ptr, not_match_text_bytes.as_ptr()));
+///
+/// drop_simple_matcher(simple_matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> bool {
-    // Unsafe block to perform operations that involve manual memory management and direct pointer manipulation
     unsafe {
-        // Attempt to convert the raw pointer 'simple_matcher' to a reference.
-        // If 'simple_matcher' is a null pointer, 'unwrap()' will panic.
         simple_matcher
             .as_ref()
-            // Dereference the Option to get the underlying 'SimpleMatcher' reference.
             .unwrap()
-            // Call the 'is_match' method on the 'SimpleMatcher' instance.
-            // Convert the 'text' pointer from a C string to a byte slice, and then to a UTF-8 string.
-            .is_match(from_utf8_unchecked(CStr::from_ptr(text).to_bytes()))
+            .is_match(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or(""))
     }
 }
 
@@ -227,45 +404,84 @@ pub extern "C" fn simple_matcher_is_match(
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be processed.
 ///
 /// # Returns
-/// * A raw pointer to an c_char holding a JSON-encoded string indicating the result of the `process` function called on the `SimpleMatcher` instance.
+/// * A raw pointer to a `c_char` holding the result of the `process` function called on the `SimpleMatcher` instance. The result is serialized to a JSON string.
 ///
 /// # Panics
-/// This function will panic if any of the following occur:
-/// * The `simple_matcher` pointer is null.
-/// * The byte slice pointed to by `text` is not valid UTF-8.
-/// * Creating a `CString` from the JSON string fails.
+/// This function will panic if the `simple_matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `process` method on a `SimpleMatcher` instance, converting the result to a JSON string.
-/// It converts the raw pointers to their respective Rust types, performs the `process` operation,
-/// serializes the result as a JSON string, and then converts this string to a C-compatible CString.
-/// The resulting CString is then converted into a raw pointer before being returned.
+/// This function calls the `process` method on a `SimpleMatcher` instance. It converts the raw pointers
+/// to their respective Rust types, performs the `process` operation, serializes the result as a JSON string,
+/// and then converts this string to a C-compatible CString. The resulting CString is then returned as a raw pointer before being returned.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::{CStr, CString};
+/// use std::str::from_utf8;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{SimpleMatcher, SimpleMatchType};
+///
+/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut word_map = HashMap::new();
+/// word_map.insert(1, "hello,world");
+/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+///
+/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+///
+/// let match_text_bytes = CString::new("hello world!").unwrap();
+/// let non_match_text_bytes = CString::new("test").unwrap();
+///
+/// assert_eq!(
+///     from_utf8(
+///         unsafe {
+///             CStr::from_ptr(
+///                 simple_matcher_process(
+///                     simple_matcher_ptr,
+///                     match_text_bytes.as_ptr()
+///                 )
+///             ).to_bytes()
+///         }
+///     ).unwrap_or(""),
+///     r#"[{"word_id":1,"word":"hello,world"}]"#
+/// );
+/// assert_eq!(
+///     from_utf8(
+///         unsafe {
+///             CStr::from_ptr(
+///                 simple_matcher_process(
+///                     simple_matcher_ptr,
+///                     non_match_text_bytes.as_ptr()
+///                 )
+///             ).to_bytes()
+///         }
+///     ).unwrap_or(""),
+///     r#"[]"#
+/// );
+///
+/// drop_simple_matcher(simple_matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn simple_matcher_process(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> *mut c_char {
-    // Begin unsafe block to allow for manual memory management and pointer manipulation.
     let res = unsafe {
-        // Create a new CString, which ensures it is null-terminated and safe for C-interoperability.
         CString::new(
-            // Serialize the result of the process method to a JSON string.
             sonic_rs::to_string(
                 &simple_matcher
-                    // Convert the raw simple_matcher pointer to a reference. If null, unwrap will cause a panic.
                     .as_ref()
                     .unwrap()
-                    // Perform the process operation, converting the text pointer from C string to byte slice, and then to UTF-8 string.
-                    .process(from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
+                    .process(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or("")),
             )
-            // Unwrap the Result to obtain the JSON string. Panics if serialization fails.
             .unwrap(),
         )
-        // Unwrap the Result to obtain the CString. Panics if the string contains an interior null byte.
         .unwrap()
     };
 
-    // Convert the CString into a raw pointer and return it.
     res.into_raw()
 }
 
@@ -283,25 +499,56 @@ pub extern "C" fn simple_matcher_process(
 /// # Description
 /// This function converts the raw pointer back into a `Box` and then drops it, effectively freeing the memory that the `SimpleMatcher` instance occupied.
 /// After calling this function, the `simple_matcher` pointer must not be used again.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::CString;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{SimpleMatcher, SimpleMatchType};
+///
+/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut word_map = HashMap::new();
+/// word_map.insert(1, "hello,world");
+/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+///
+/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+/// drop_simple_matcher(simple_matcher_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     unsafe { drop(Box::from_raw(simple_matcher)) }
 }
 
 /// # Safety
-/// This function is unsafe because it assumes that the provided pointer is valid and was previously allocated using `CString::into_raw`.
-/// It also assumes that the lifetime of the pointer is over and it is safe to drop the data.
+/// This function is unsafe because it assumes that the provided pointer is a valid and previously allocated
+/// CString that needs to be freed. The function will take ownership of the pointer, which implies that no other
+/// part of the code should attempt to use or free this pointer after this function is called.
 ///
 /// # Arguments
-/// * `ptr` - A raw pointer to a null-terminated byte string that needs to be freed.
+/// * `ptr` - A raw pointer to a `c_char` that represents a CString to be freed.
 ///
 /// # Panics
-/// This function will panic if the `ptr` pointer is null.
-/// It is the caller's responsibility to ensure that the pointer is valid and that no other references to the CString data exist.
+/// This function will panic if the `ptr` is null. It is the caller's responsibility to ensure that the pointer is
+/// valid and that no other references to the CString exist.
 ///
 /// # Description
-/// This function converts the raw pointer back into a `CString` and then drops it, effectively freeing the memory that the CString instance occupied.
-/// After calling this function, the `ptr` pointer must not be used again.
+/// This function takes a raw pointer to a `c_char`, converts it back into a CString, and then drops it, effectively
+/// freeing the memory that the CString occupied. After calling this function, the `ptr` must not be used again.
+///
+/// # Example
+///
+/// ```
+/// use std::ffi::CString;
+///
+/// let c_string = CString::new("hello world!").unwrap();
+/// let c_string_ptr = c_string.into_raw();
+///
+/// drop_string(c_string_ptr);
+/// ```
 #[no_mangle]
 pub extern "C" fn drop_string(ptr: *mut c_char) {
     unsafe { drop(CString::from_raw(ptr)) }
