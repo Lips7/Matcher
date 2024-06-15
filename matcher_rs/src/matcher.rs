@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use ahash::AHashMap;
 use nohash_hasher::{IntMap, IntSet};
 use sonic_rs::{to_string, Deserialize, Serialize};
 
@@ -69,7 +68,7 @@ pub enum MatchTableType {
 /// This structure defines the configuration for a specific matching table used in text
 /// matching operations. It includes details about the table's identifier, the type of
 /// matching strategy, and lists of words and exemption words associated with simple
-/// match types. The use of lifetimes ensures that word lists can borrow data, optimising
+/// match types. The use of lifetimes ensures that word lists can borrow data, optimizing
 /// memory usage.
 ///
 /// # Fields
@@ -131,8 +130,8 @@ struct WordTableConf {
 /// * `'a` - The lifetime associated with the `word` field, ensuring that the data
 ///    for the word can be borrowed for efficiency.
 pub struct MatchResult<'a> {
-    table_id: u64,
-    word: Cow<'a, str>,
+    pub table_id: u64,
+    pub word: Cow<'a, str>,
 }
 
 impl MatchResultTrait<'_> for MatchResult<'_> {
@@ -147,7 +146,7 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
     }
 }
 
-pub type MatchTableMap<'a> = AHashMap<u64, Vec<MatchTable<'a>>>;
+pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 
 #[derive(Debug, Clone)]
 /// A structure representing a text matcher that can utilize various matching strategies.
@@ -361,9 +360,9 @@ impl Matcher {
     /// `GxHashMap` data structures. This is done for performance optimization, assuming that the keys used for
     /// lookup exist in the data structures. It is important to ensure that this assumption holds true to avoid
     /// undefined behavior.
-    fn word_match_raw(&self, text: &str) -> AHashMap<u64, Vec<MatchResult>> {
+    pub fn word_match_raw(&self, text: &str) -> HashMap<u64, Vec<MatchResult>> {
         if !text.is_empty() {
-            let mut match_result_dict = AHashMap::default();
+            let mut match_result_dict = HashMap::default();
             let mut failed_match_id_set = IntSet::default();
 
             if let Some(regex_matcher) = &self.regex_matcher {
@@ -426,7 +425,7 @@ impl Matcher {
 
             match_result_dict
         } else {
-            AHashMap::default()
+            HashMap::default()
         }
     }
 

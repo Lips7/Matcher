@@ -6,6 +6,10 @@ class SimpleResult(TypedDict):
     word_id: int
     word: str
 
+class MatchResult(TypedDict):
+    table_id: int
+    word: str
+
 class Matcher:
     """
     Matcher class is designed to perform various types of text matching
@@ -25,11 +29,13 @@ class Matcher:
             Sets the state of the Matcher instance from the provided state dictionary.
         is_match(self, text: str) -> bool:
             Checks if the provided text matches according to the match table.
-        word_match(self, text: str) -> Dict[str, str]:
+        word_match_raw(self, text: str) -> Dict[int, List[MatchResult]]:
+            Matches words in the provided text and returns a dictionary representation.
+        word_match(self, text: str) -> Dict[int, str]:
             Matches words in the provided text and returns a dictionary representation.
         word_match_as_string(self, text: str) -> str:
             Matches words in the provided text and returns a string representation.
-        batch_word_match_as_dict(self, text_array: List[str]) -> List[Dict[str, str]]:
+        batch_word_match_as_dict(self, text_array: List[str]) -> List[Dict[int, str]]:
             Processes a list of texts, matching words in each text and returning a list
             of dictionaries representing the matches.
         batch_word_match_as_string(self, text_array: List[str]) -> List[str]:
@@ -49,11 +55,12 @@ class Matcher:
     def __getstate__(self) -> Dict: ...
     def __setstate__(self, state_dict: Dict): ...
     def is_match(self, text: str) -> bool: ...
-    def word_match(self, text: str) -> Dict[str, str]: ...
+    def word_match_raw(self, text: str) -> Dict[int, List[MatchResult]]: ...
+    def word_match(self, text: str) -> Dict[int, str]: ...
     def word_match_as_string(self, text: str) -> str: ...
     def batch_word_match_as_dict(
         self, text_array: List[str]
-    ) -> List[Dict[str, str]]: ...
+    ) -> List[Dict[int, str]]: ...
     def batch_word_match_as_string(self, text_array: List[str]) -> List[str]: ...
     def numpy_word_match_as_dict(
         self, text_array: np.ndarray, inplace=False

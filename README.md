@@ -41,13 +41,6 @@ It's helpful for
 - **Customizable Exemption Lists**: Exclude specific words from matching.
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
-## Limitations
-- `SimpleMatchType` has only 6 available flags (`None`, `Fanjian`, `Delete`, `Normalize`, `PinYin`, `PinYinChar`), others are just pre-defined combination of them.
-  - `Delete` is a combination of `WordDelete` and `TextDelete`, perform different delete strategy on word and text.
-  - `PinYin` and `PinYinChar` shouldn't be enabled at same time. 'cause `PinYin` is a more limited version of `PinYinChar`, users'd better choose one of them.
-- Can handle words with a maximum of 32 combined words (more than 32 then effective combined words are not guaranteed) and 8 repeated words (more than 8 repeated words will be limited to 8).
-- Users must ensure the correctness of input data and the global uniqueness of `match_id`, `table_id`, and `word_id`.
-
 ## Usage
 
 ### General Instructions
@@ -65,22 +58,30 @@ It's helpful for
 - See the [Python README](./matcher_py/README.md)
 
 #### Java Users
-- Install Rust.
-- Clone the repository.
-- Run `cargo build --release`.
-- Copy `target/release/libmatcher_c.so` (or `libmatcher_c.dylib` for Mac) (or `matcher_c.dll` for Windows) to `matcher_java/src/resources/matcher_c.so`.
-- See the [Java README](./matcher_java/README.md)
+```shell
+git clone https://github.com/Lips7/Matcher.git
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
+cargo build --release
+```
 
-Or you can download pre-built `matcher_c` in [release](https://github.com/Lips7/Matcher/releases).
+Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+
+Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
+
+See [Java Readme](./matcher_java/README.md).
 
 #### C Users
-- Install Rust.
-- Clone the repository.
-- Run `cargo build --release`.
-- Copy `target/release/libmatcher_c.so` (or `libmatcher_c.dylib` for Mac) (or `matcher_c.dll` for Windows) to `matcher_c/matcher_c.so`.
-- See the [C README](./matcher_c/README.md)
+```shell
+git clone https://github.com/Lips7/Matcher.git
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
+cargo build --release
+```
 
-Or you can download pre-built `matcher_c` in [release](https://github.com/Lips7/Matcher/releases).
+Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+
+Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
+
+See [C Readme](./matcher_c/README.md).
 
 ## Design
 

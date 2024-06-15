@@ -80,6 +80,32 @@ def test_regex():
     )
 
 
+def test_similar_char():
+    matcher = Matcher(
+        msgpack_encoder.encode(
+            {
+                1: [
+                    MatchTable(
+                        table_id=1,
+                        match_table_type=MatchTableType.SimilarChar,
+                        simple_match_type=SimpleMatchType.MatchNone,
+                        word_list=["hello,hi,H,你好", "world,word,🌍,世界"],
+                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_word_list=[],
+                    )
+                ]
+            }
+        )
+    )
+    assert matcher.is_match("helloworld")
+    assert matcher.is_match("hi世界")
+    assert json_decoder.decode(matcher.word_match("helloworld")[1])[0]["table_id"] == 1
+    assert (
+        json_decoder.decode(matcher.word_match("helloworld")[1])[0]["word"]
+        == "helloworld"
+    )
+
+
 def test_similar_text_levenshtein():
     matcher = Matcher(
         msgpack_encoder.encode(
@@ -158,6 +184,33 @@ def test_exemption():
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=["worldwide"],
                     )
+                ]
+            }
+        )
+    )
+    assert matcher.is_match("helloworld")
+    assert not matcher.is_match("helloworldwide")
+
+    matcher = Matcher(
+        msgpack_encoder.encode(
+            {
+                1: [
+                    MatchTable(
+                        table_id=1,
+                        match_table_type=MatchTableType.Simple,
+                        simple_match_type=SimpleMatchType.MatchNone,
+                        word_list=["helloworld"],
+                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_word_list=["worldwide"],
+                    ),
+                    MatchTable(
+                        table_id=1,
+                        match_table_type=MatchTableType.Regex,
+                        simple_match_type=SimpleMatchType.MatchNone,
+                        word_list=["hello"],
+                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_word_list=["worldwide"],
+                    ),
                 ]
             }
         )

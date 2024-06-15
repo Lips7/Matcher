@@ -52,7 +52,7 @@ pub struct SimTable<'a> {
 ///
 /// - `table_id` (u64): The unique identifier for the similarity table.
 /// - `match_id` (u64): An ID that serves as an identifier for the match.
-/// - `word_list` (`Vec<String>``): A vector of owned strings representing the words
+/// - `word_list` (`Vec<String>`): A vector of owned strings representing the words
 ///   that have been preprocessed for similarity matching.
 struct SimProcessedTable {
     table_id: u64,
@@ -121,7 +121,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 ///
 /// - `remove_special_pattern` (Regex): A compiled regular expression used for removing
 ///   special characters from the text before processing.
-/// - `sim_processed_table_list` (Vec<SimProcessedTable>): A vector containing preprocessed
+/// - `sim_processed_table_list` (`Vec<SimProcessedTable>`): A vector containing preprocessed
 ///   tables, where each table consists of a list of words and identifiers ready for
 ///   similarity matching.
 ///

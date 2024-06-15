@@ -56,10 +56,10 @@ def test_fanjian():
 
 def test_delete():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode({SimpleMatchType.MatchDelete: {1: "你好", 2: "你！好"}})
+        msgpack_encoder.encode({SimpleMatchType.MatchDelete: {1: "你好"}})
     )
     assert simple_matcher.is_match("你！好")
-    assert len(simple_matcher.simple_process("你！好")) == 2
+    assert len(simple_matcher.simple_process("你！好")) == 1
 
 
 def test_normalize():

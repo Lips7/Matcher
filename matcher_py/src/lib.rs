@@ -12,9 +12,9 @@ use pyo3::types::{
 use pyo3::{intern, Bound, IntoPy, PyAny};
 
 use matcher_rs::{
-    MatchResultTrait, MatchTableMap as MatchTableMapRs, Matcher as MatcherRs,
-    SimpleMatchTypeWordMap as SimpleMatchTypeWordMapRs, SimpleMatcher as SimpleMatcherRs,
-    SimpleResult as SimpleResultRs, TextMatcherTrait,
+    MatchResult as MatchResultRs, MatchResultTrait, MatchTableMap as MatchTableMapRs,
+    Matcher as MatcherRs, SimpleMatchTypeWordMap as SimpleMatchTypeWordMapRs,
+    SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs, TextMatcherTrait,
 };
 
 /// A struct that wraps around the `SimpleResultRs` struct from the `matcher_rs` crate.
@@ -84,6 +84,41 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
     fn word(&self) -> &str {
         self.0.word.as_ref()
+    }
+}
+
+struct MatchResult<'a>(MatchResultRs<'a>);
+
+impl<'a> IntoPy<PyObject> for MatchResult<'a> {
+    /// Converts a `MatchResult` instance into a Python dictionary (`PyObject`).
+    ///
+    /// This implementation of the `IntoPy` trait allows for converting a `MatchResult`
+    /// into a Python dictionary containing the match result data, which can be used
+    /// in Python code. The dictionary includes the following key-value pairs:
+    ///
+    /// - `"table_id"`: The unique identifier (u64) for the table.
+    /// - `"word"`: The matched word as a string slice.
+    ///
+    /// # Parameters
+    /// - `self`: The `MatchResult` instance to be converted.
+    /// - `py`: The Python interpreter state.
+    ///
+    /// # Returns
+    /// - `PyObject`: A Python dictionary containing the match result data.
+    ///
+    /// # Panics
+    /// Panics if setting a dictionary item fails. Although highly unlikely,
+    /// failures might occur due to memory issues or internal Python state inconsistencies.
+    /// ```text
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let dict = PyDict::new_bound(py);
+
+        dict.set_item(intern!(py, "table_id"), self.0.table_id)
+            .unwrap();
+        dict.set_item(intern!(py, "word"), self.0.word.as_ref())
+            .unwrap();
+
+        dict.into()
     }
 }
 
@@ -338,6 +373,75 @@ impl Matcher {
         text.downcast::<PyString>().map_or(false, |text| {
             self.matcher
                 .is_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
+        })
+    }
+
+    #[pyo3(signature=(text))]
+    /// Performs word matching on the given text and returns the results as a detailed
+    /// dictionary containing `MatchResult` instances.
+    ///
+    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
+    /// If the downcast is successful, it calls the `word_match_raw` method on the
+    /// `matcher` instance, passing the text as a string slice, and returns the resulting
+    /// dictionary with detailed match results. If the downcast fails, it returns an empty
+    /// dictionary.
+    ///
+    /// # Parameters
+    /// - `self`: The `Matcher` instance.
+    /// - `_py`: The Python interpreter state.
+    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    ///
+    /// # Returns
+    /// - `HashMap<u64, Vec<MatchResult<'_>>>`: A dictionary where keys are match IDs and
+    ///   values are vectors of `MatchResult` instances. If the input `text` is not a `PyString`,
+    ///   an empty dictionary is returned.
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// import msgspec
+    /// from matcher_py import Matcher
+    /// from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchType
+    ///
+    /// msgpack_encoder = msgspec.msgpack.Encoder()
+    ///
+    /// matcher = Matcher(
+    ///     msgpack_encoder.encode(
+    ///         {
+    ///             1: [
+    ///                 MatchTable(
+    ///                     table_id=1,
+    ///                     match_table_type=MatchTableType.Simple,
+    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     word_list=["hello", "world"],
+    ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
+    ///                     exemption_word_list=["word"],
+    ///                 )
+    ///             ]
+    ///         }
+    ///     )
+    /// )
+    ///
+    /// # Perform word matching
+    /// result = matcher.word_match_raw("hello")
+    /// print(result)  # Output: {1: [<matcher_py.MatchResult object at ...>]}
+    /// ```
+    fn word_match_raw(
+        &self,
+        _py: Python,
+        text: &Bound<'_, PyAny>,
+    ) -> HashMap<u64, Vec<MatchResult<'_>>> {
+        text.downcast::<PyString>().map_or(HashMap::new(), |text| {
+            self.matcher
+                .word_match_raw(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
+                .into_iter()
+                .map(|(match_id, match_result_list)| {
+                    (
+                        match_id,
+                        match_result_list.into_iter().map(MatchResult).collect(),
+                    )
+                })
+                .collect()
         })
     }
 
@@ -962,21 +1066,22 @@ impl SimpleMatcher {
     }
 
     #[pyo3(signature=(text))]
-    /// Processes the given text and returns a list of `SimpleResult` instances.
+    /// Performs simple text processing on the given text and returns the results as a list.
     ///
     /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
     /// If the downcast is successful, it calls the `process` method on the `simple_matcher`
-    /// instance, passing the text as a string slice. The results are then wrapped in `SimpleResult`
-    /// instances and collected into a vector. If the downcast fails, it returns an empty vector.
+    /// field, passing the text as a string slice, and collects the results into a new `PyList`.
+    /// Each result is converted to a `SimpleResult` instance and appended to the list.
+    /// If the downcast fails, it returns an empty `PyList`.
     ///
     /// # Parameters
     /// - `self`: The `SimpleMatcher` instance.
-    /// - `_py`: The Python interpreter state.
+    /// - `py`: The Python interpreter state.
     /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
     ///
     /// # Returns
-    /// - `Vec<SimpleResult>`: A vector containing the processed results as `SimpleResult` instances.
-    ///   If the input `text` is not a `PyString`, an empty vector is returned.
+    /// - `Py<PyList>`: A `PyList` containing the simple processing results.
+    ///   If the input `text` is not a `PyString`, an empty `PyList` is returned.
     ///
     /// # Example
     ///
@@ -998,18 +1103,24 @@ impl SimpleMatcher {
     ///     )
     /// )
     ///
-    /// # Perform simple processing
-    /// results = simple_matcher.simple_process("example")
-    /// print(results)  # Output: [SimpleResult(...)]
+    /// # Perform simple processing on a single text
+    /// result = simple_matcher.simple_process("example")
+    /// print(result)  # Output: A list with the simple processing results
     /// ```
-    fn simple_process(&self, _py: Python, text: &Bound<'_, PyAny>) -> Vec<SimpleResult> {
-        text.downcast::<PyString>().map_or(Vec::new(), |text| {
-            self.simple_matcher
-                .process(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
-                .into_iter()
-                .map(SimpleResult)
-                .collect::<Vec<_>>()
-        })
+    fn simple_process(&self, py: Python, text: &Bound<'_, PyAny>) -> Py<PyList> {
+        text.downcast::<PyString>()
+            .map_or(PyList::empty_bound(py).into(), |text| {
+                let result_list = PyList::empty_bound(py);
+                self.simple_matcher
+                    .process(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
+                    .into_iter()
+                    .for_each(|simple_result| {
+                        result_list
+                            .append(SimpleResult(simple_result).into_py(py))
+                            .unwrap()
+                    });
+                result_list.into()
+            })
     }
 
     #[pyo3(signature=(text_array))]
@@ -1059,9 +1170,7 @@ impl SimpleMatcher {
         let result_list = PyList::empty_bound(py);
 
         text_array.iter().for_each(|text| {
-            result_list
-                .append(self.simple_process(py, &text).into_py(py))
-                .unwrap();
+            result_list.append(self.simple_process(py, &text)).unwrap();
         });
 
         result_list.into()
@@ -1124,7 +1233,7 @@ impl SimpleMatcher {
     ) -> Option<Py<PyArray1<PyObject>>> {
         if inplace {
             unsafe { text_array.as_array_mut() }.map_inplace(|text| {
-                *text = self.simple_process(py, text.bind(py)).into_py(py);
+                *text = self.simple_process(py, text.bind(py)).into_any();
             });
             None
         } else {
@@ -1132,7 +1241,7 @@ impl SimpleMatcher {
                 PyArray1::<PyObject>::from_owned_array_bound(
                     py,
                     unsafe { text_array.as_array() }
-                        .map(|text| self.simple_process(py, text.bind(py)).into_py(py)),
+                        .map(|text| self.simple_process(py, text.bind(py)).into_any()),
                 )
                 .into(),
             )
