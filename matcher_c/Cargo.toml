@@ -10,6 +10,7 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 readme = "README.md"
+documentation = "https://docs.rs/matcher_c/latest/matcher_c/"
 
 [lib]
 name = "matcher_c"
