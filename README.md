@@ -43,23 +43,22 @@ It's helpful for
 
 ## Usage
 
-### General Instructions
-
-- Non-Rust users must use **msgpack** for serializing matcher configurations to bytes.
-  - **Why msgpack?** It handles backslashes better and is faster than JSON.
+Non-Rust users must use **msgpack** for serializing matcher configurations to bytes. **Why msgpack?** It handles backslashes better and is faster than JSON.
   - Example issue with JSON: `It's /\/\y duty` is processed incorrectly.
 
-### Platform-Specific Instructions
-
-#### Rust Users
+### Rust Users
 
 See the [Rust README](./matcher_rs/README.md).
 
-#### Python Users
+### Python Users
 
 See the [Python README](./matcher_py/README.md).
 
-#### Java Users
+### C, Java and Other Users
+
+We provide dynamic library to link. See the [C README](./matcher_c/README.md) and [Java README](./matcher_java/README.md).
+
+#### Build from source
 
 ```shell
 git clone https://github.com/Lips7/Matcher.git
@@ -69,25 +68,20 @@ cargo build --release
 
 Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
 
-Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
-See the [Java README](./matcher_java/README.md).
-
-#### C Users
-
-```shell
-git clone https://github.com/Lips7/Matcher.git
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
-cargo build --release
-```
-
-Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+#### Pre-built binary
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
-See the [C README](./matcher_c/README.md).
 
 ## Design
 
 - Most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which supports finding multiple patterns simultaneously with SIMD acceleration in some cases.
 - For detailed implementation, see the [Design Document](./DESIGN.md).
+
+## Roarmap
+- [ ] Expose SimpleMatcher.reduce_process_text to Python.
+- [ ] Cache middle results during different SimpleMatchType reduce_process_text function calling.
+- [ ] More detailed and rigorous benchmarks.
+- [ ] More detailed and rigorous tests.
+- [ ] Try more aho_corasick library to improve performance and reduce memory usage
+  - [ ] https://github.com/daac-tools/crawdad
+  - [ ] https://github.com/daac-tools/daachorse
