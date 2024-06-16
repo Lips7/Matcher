@@ -175,7 +175,7 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 ///
 /// # Perform batch processing as a dict using a list
 /// text_list = ["hello", "world", "hello,word"]
-/// batch_results = matcher.batch_word_match_as_dict(text_list)
+/// batch_results = matcher.batch_word_match(text_list)
 /// print(batch_results)
 ///
 /// # Perform batch processing as a string using a list
@@ -185,7 +185,7 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 ///
 /// # Perform batch processing as a dict using a numpy array
 /// text_array = np.array(["hello", "world", "hello,word"], dtype=np.dtype("object"))
-/// numpy_results = matcher.numpy_word_match_as_dict(text_array)
+/// numpy_results = matcher.numpy_word_match(text_array)
 /// print(numpy_results)
 ///
 /// # Perform batch processing as a string using a numpy array
