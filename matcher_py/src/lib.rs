@@ -377,81 +377,13 @@ impl Matcher {
     }
 
     #[pyo3(signature=(text))]
-    /// Performs word matching on the given text and returns the results as a detailed
-    /// dictionary containing `MatchResult` instances.
-    ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
-    /// If the downcast is successful, it calls the `word_match_raw` method on the
-    /// `matcher` instance, passing the text as a string slice, and returns the resulting
-    /// dictionary with detailed match results. If the downcast fails, it returns an empty
-    /// dictionary.
-    ///
-    /// # Parameters
-    /// - `self`: The `Matcher` instance.
-    /// - `_py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
-    ///
-    /// # Returns
-    /// - `HashMap<u64, Vec<MatchResult<'_>>>`: A dictionary where keys are match IDs and
-    ///   values are vectors of `MatchResult` instances. If the input `text` is not a `PyString`,
-    ///   an empty dictionary is returned.
-    ///
-    /// # Example
-    ///
-    /// ```python
-    /// import msgspec
-    /// from matcher_py import Matcher
-    /// from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchType
-    ///
-    /// msgpack_encoder = msgspec.msgpack.Encoder()
-    ///
-    /// matcher = Matcher(
-    ///     msgpack_encoder.encode(
-    ///         {
-    ///             1: [
-    ///                 MatchTable(
-    ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
-    ///                     word_list=["hello", "world"],
-    ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
-    ///                     exemption_word_list=["word"],
-    ///                 )
-    ///             ]
-    ///         }
-    ///     )
-    /// )
-    ///
-    /// # Perform word matching
-    /// result = matcher.word_match_raw("hello")
-    /// print(result)  # Output: {1: [<matcher_py.MatchResult object at ...>]}
-    /// ```
-    fn word_match_raw(
-        &self,
-        _py: Python,
-        text: &Bound<'_, PyAny>,
-    ) -> HashMap<u64, Vec<MatchResult<'_>>> {
-        text.downcast::<PyString>().map_or(HashMap::new(), |text| {
-            self.matcher
-                .word_match_raw(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
-                .into_iter()
-                .map(|(match_id, match_result_list)| {
-                    (
-                        match_id,
-                        match_result_list.into_iter().map(MatchResult).collect(),
-                    )
-                })
-                .collect()
-        })
-    }
-
-    #[pyo3(signature=(text))]
-    /// Performs word matching on the given text and returns the results as a dictionary.
+    /// Performs word matching on the given text and returns the results as a `HashMap`.
     ///
     /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
     /// If the downcast is successful, it calls the `word_match` method on the `matcher`
-    /// instance, passing the text as a string slice, and returns the resulting dictionary.
-    /// If the downcast fails, it returns an empty dictionary.
+    /// instance, passing the text as a string slice, and returns a `HashMap` where the keys
+    /// are match identifiers and the values are vectors of `MatchResult` instances.
+    /// If the downcast fails, it returns an empty `HashMap`.
     ///
     /// # Parameters
     /// - `self`: The `Matcher` instance.
@@ -459,8 +391,8 @@ impl Matcher {
     /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
     ///
     /// # Returns
-    /// - `HashMap<&str, String>`: A dictionary containing the word match results.
-    ///   If the input `text` is not a `PyString`, an empty dictionary is returned.
+    /// - `HashMap<u64, Vec<MatchResult<'_>>>`: A `HashMap` containing the word match results.
+    ///   If the input `text` is not a `PyString`, an empty `HashMap` is returned.
     ///
     /// # Example
     ///
@@ -491,12 +423,24 @@ impl Matcher {
     ///
     /// # Perform word matching as a dict
     /// result = matcher.word_match("hello")
-    /// print(result) Output: {1:"[{\"table_id\":1,\"word\":\"hello\"}]"}
+    /// print(result)  # Output: {1: [{"table_id": 1, "word": "hello"}]}
     /// ```
-    fn word_match(&self, _py: Python, text: &Bound<'_, PyAny>) -> HashMap<u64, String> {
+    fn word_match(
+        &self,
+        _py: Python,
+        text: &Bound<'_, PyAny>,
+    ) -> HashMap<u64, Vec<MatchResult<'_>>> {
         text.downcast::<PyString>().map_or(HashMap::new(), |text| {
             self.matcher
                 .word_match(unsafe { text.to_cow().as_ref().unwrap_unchecked() })
+                .into_iter()
+                .map(|(match_id, match_result_list)| {
+                    (
+                        match_id,
+                        match_result_list.into_iter().map(MatchResult).collect(),
+                    )
+                })
+                .collect()
         })
     }
 
@@ -505,8 +449,8 @@ impl Matcher {
     ///
     /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
     /// If the downcast is successful, it calls the `word_match_as_string` method on the `matcher`
-    /// instance, passing the text as a string slice, and returns the resulting JSON string.
-    /// If the downcast fails, it returns a JSON string representing an empty dictionary.
+    /// instance, passing the text as a string slice, and returns the results as a JSON string.
+    /// If the downcast fails, it returns an empty JSON object as a `PyString`.
     ///
     /// # Parameters
     /// - `self`: The `Matcher` instance.
@@ -515,8 +459,7 @@ impl Matcher {
     ///
     /// # Returns
     /// - `Py<PyString>`: A `PyString` containing the word match results as a JSON string.
-    ///   If the input `text` is not a `PyString`, a JSON string representing an empty
-    ///   dictionary is returned.
+    ///   If the input `text` is not a `PyString`, an empty JSON object (`{}`) is returned.
     ///
     /// # Example
     ///
@@ -545,9 +488,9 @@ impl Matcher {
     ///     )
     /// )
     ///
-    /// # Perform word matching as a string
+    /// # Perform word matching as a JSON string
     /// result = matcher.word_match_as_string("hello")
-    /// print(result) Output: '{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}'
+    /// print(result)  # Output: A JSON string with the word match results
     /// ```
     fn word_match_as_string(&self, py: Python, text: &Bound<'_, PyAny>) -> Py<PyString> {
         text.downcast::<PyString>()
@@ -564,11 +507,12 @@ impl Matcher {
 
     #[pyo3(signature=(text_array))]
     /// Batch processes a list of texts and performs word matching on each text,
-    /// returning the results as a dictionary for each text.
+    /// returning the results as a list of dictionaries.
     ///
     /// This method iterates over a list of texts, performs word matching for each text,
-    /// and collects the results into a new list. The result for each text is obtained
-    /// by calling the `word_match` method, which returns a dictionary for each text.
+    /// and collects the results into a new list. Each result is obtained by calling the
+    /// `word_match` method, which returns a `HashMap` of match results. These dictionaries
+    /// are then appended to a new `PyList`.
     ///
     /// # Parameters
     /// - `self`: The `Matcher` instance.
@@ -576,8 +520,8 @@ impl Matcher {
     /// - `text_array`: A reference to a `PyList` containing texts to be processed.
     ///
     /// # Returns
-    /// - `Py<PyList>`: A `PyList` containing the word match results for each text,
-    ///   represented as dictionaries.
+    /// - `Py<PyList>`: A `PyList` containing the word match results for each text
+    ///   as dictionaries.
     ///
     /// # Example
     ///
@@ -588,7 +532,6 @@ impl Matcher {
     /// from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchType
     ///
     /// msgpack_encoder = msgspec.msgpack.Encoder()
-    ///
     /// matcher = Matcher(
     ///     msgpack_encoder.encode(
     ///         {
@@ -606,16 +549,18 @@ impl Matcher {
     ///     )
     /// )
     ///
-    /// # Perform word matching as a dict
+    /// # Perform word matching as a dictionary for a batch of texts
     /// text_array = ["hello", "world", "hello word"]
-    /// result = matcher.batch_word_match_as_dict(text_array)
-    /// print(result) # Output: [{1:"[{\"table_id\":1,\"word\":\"hello\"}]"}, ...]
+    /// result = matcher.batch_word_match(text_array)
+    /// print(result)  # Output: A list of dictionaries with word match results
     /// ```
-    fn batch_word_match_as_dict(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
+    fn batch_word_match(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
 
         text_array.iter().for_each(|text| {
-            result_list.append(self.word_match(py, &text)).unwrap();
+            result_list
+                .append(self.word_match(py, &text).into_py(py))
+                .unwrap();
         });
 
         result_list.into()
@@ -667,7 +612,7 @@ impl Matcher {
     /// # Perform word matching as a string for a batch of texts
     /// text_array = ["hello", "world", "hello word"]
     /// result = matcher.batch_word_match_as_string(text_array)
-    /// print(result)  # Output: ['{1:"[{\\"table_id\\":1,\\"word\\":\\"hello\\"}]"}', ...]
+    /// print(result)  # Output: ['{1:[{\"table_id\":1,\"word\":\"hello\"}]"}', ...]
     /// ```
     fn batch_word_match_as_string(&self, py: Python, text_array: &Bound<'_, PyList>) -> Py<PyList> {
         let result_list = PyList::empty_bound(py);
@@ -731,13 +676,13 @@ impl Matcher {
     /// )
     ///
     /// text_array = np.array(["hello", "world", "hello word"], dtype=np.dtype("object"))
-    /// result = matcher.numpy_word_match_as_dict(text_array)
+    /// result = matcher.numpy_word_match(text_array)
     /// print(result)  # Output: A new NumPy array with word match results as dictionaries
     ///
-    /// inplace_result = matcher.numpy_word_match_as_dict(text_array, inplace=True)
+    /// inplace_result = matcher.numpy_word_match(text_array, inplace=True)
     /// print(text_array)  # Output: The original NumPy array modified with word match results
     /// ```
-    fn numpy_word_match_as_dict(
+    fn numpy_word_match(
         &self,
         py: Python,
         text_array: &Bound<'_, PyArray1<PyObject>>,

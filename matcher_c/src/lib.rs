@@ -158,7 +158,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
 /// use std::str::from_utf8;
@@ -198,7 +198,7 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 ///             ).to_bytes()
 ///         }
 ///     ).unwrap_or(""),
-///     r#"{"test":"[{\"table_id\":1,\"word\":\"hello\"},{\"table_id\":1,\"word\":\"world\"}]"}"#
+///     r#"{"1":[{"table_id":1,"word":"hello"},{"table_id":1,"word":"world"}]}"#
 /// );
 /// assert_eq!(
 ///     from_utf8(

@@ -74,10 +74,8 @@ def test_regex():
     )
     assert matcher.is_match("hallo")
     assert matcher.is_match("ward")
-    assert json_decoder.decode(matcher.word_match("hallo")[1])[0]["table_id"] == 1
-    assert (
-        json_decoder.decode(matcher.word_match("hallo")[1])[0]["word"] == "h[aeiou]llo"
-    )
+    assert matcher.word_match("hallo")[1][0]["table_id"] == 1
+    assert matcher.word_match("hallo")[1][0]["word"] == "h[aeiou]llo"
 
 
 def test_similar_char():
@@ -99,11 +97,8 @@ def test_similar_char():
     )
     assert matcher.is_match("helloworld")
     assert matcher.is_match("hi世界")
-    assert json_decoder.decode(matcher.word_match("helloworld")[1])[0]["table_id"] == 1
-    assert (
-        json_decoder.decode(matcher.word_match("helloworld")[1])[0]["word"]
-        == "helloworld"
-    )
+    assert matcher.word_match("helloworld")[1][0]["table_id"] == 1
+    assert matcher.word_match("helloworld")[1][0]["word"] == "helloworld"
 
 
 def test_similar_text_levenshtein():
@@ -127,11 +122,8 @@ def test_similar_text_levenshtein():
     assert matcher.is_match("halloworld")
     assert matcher.is_match("ha1loworld")
     assert not matcher.is_match("ha1loworld1")
-    assert json_decoder.decode(matcher.word_match("helloworl")[1])[0]["table_id"] == 1
-    assert (
-        json_decoder.decode(matcher.word_match("helloworl")[1])[0]["word"]
-        == "helloworld"
-    )
+    assert matcher.word_match("helloworl")[1][0]["table_id"] == 1
+    assert matcher.word_match("helloworl")[1][0]["word"] == "helloworld"
 
 
 def test_acrostic():
@@ -158,17 +150,10 @@ def test_acrostic():
     assert matcher.is_match("你的笑容温暖, 好心情常伴。")
     assert not matcher.is_match("你好")
     assert (
-        json_decoder.decode(
-            matcher.word_match("hope, endures, love, lasts, onward.")[1]
-        )[0]["word"]
+        matcher.word_match("hope, endures, love, lasts, onward.")[1][0]["word"]
         == "h,e,l,l,o"
     )
-    assert (
-        json_decoder.decode(matcher.word_match("你的笑容温暖, 好心情常伴。")[1])[0][
-            "word"
-        ]
-        == "你,好"
-    )
+    assert matcher.word_match("你的笑容温暖, 好心情常伴。")[1][0]["word"] == "你,好"
 
 
 def test_exemption():
@@ -239,11 +224,21 @@ def matcher():
     )
 
 
-def test_batch_word_match_as_dict(matcher):
-    assert len(matcher.batch_word_match_as_dict(["helloworld"])) == 1
+def test_batch_word_match(matcher):
+    assert len(matcher.batch_word_match(["helloworld"])) == 1
 
 
-def test_numpy_word_match_as_dict(matcher):
+def test_batch_word_match_as_string(matcher):
+    assert len(matcher.batch_word_match_as_string(["helloworld"])) == 1
+
+
+def test_numpy_word_match(matcher):
     text_array = np.array(["helloworld"] * 1000, dtype=np.dtype("object"))
-    matcher.numpy_word_match_as_dict(text_array)
-    matcher.numpy_word_match_as_dict(text_array, inplace=True)
+    matcher.numpy_word_match(text_array)
+    matcher.numpy_word_match(text_array, inplace=True)
+
+
+def test_numpy_word_match_as_string(matcher):
+    text_array = np.array(["helloworld"] * 1000, dtype=np.dtype("object"))
+    matcher.numpy_word_match_as_string(text_array)
+    matcher.numpy_word_match_as_string(text_array, inplace=True)

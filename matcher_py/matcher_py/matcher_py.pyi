@@ -12,10 +12,10 @@ class MatchResult(TypedDict):
 
 class Matcher:
     """
-    Matcher class is designed to perform various types of text matching
-    and processing operations on given text inputs. It offers functionalities
-    for detecting matches, processing single text inputs, and batch processing
-    multiple text inputs both in list and NumPy array formats.
+    Matcher class is designed to perform text matching operations using a provided match table map
+    in byte format. It includes functionalities for detecting matches, processing single text inputs,
+    and batch processing multiple text inputs in list and NumPy array formats. Additional methods
+    provide results in both dictionary and string formats.
 
     Methods:
         __init__(self, match_table_map_bytes: bytes) -> None:
@@ -26,43 +26,40 @@ class Matcher:
         __getstate__(self) -> Dict:
             Gets the state of the Matcher instance as a dictionary.
         __setstate__(self, state_dict: Dict):
-            Sets the state of the Matcher instance from the provided state dictionary.
+            Sets the state of the Matcher instance from the provided dictionary.
         is_match(self, text: str) -> bool:
-            Checks if the provided text matches according to the match table.
-        word_match_raw(self, text: str) -> Dict[int, List[MatchResult]]:
-            Matches words in the provided text and returns a dictionary representation.
-        word_match(self, text: str) -> Dict[int, str]:
-            Matches words in the provided text and returns a dictionary representation.
+            Checks if the provided text matches any word in the match table map.
+        word_match(self, text: str) -> Dict[int, List[MatchResult]]:
+            Processes the provided text, matching words and returning a dictionary where
+            the keys are word IDs and the values are lists of MatchResult dictionaries.
         word_match_as_string(self, text: str) -> str:
-            Matches words in the provided text and returns a string representation.
-        batch_word_match_as_dict(self, text_array: List[str]) -> List[Dict[int, str]]:
-            Processes a list of texts, matching words in each text and returning a list
-            of dictionaries representing the matches.
+            Processes the provided text and returns matching words as a formatted string.
+        batch_word_match(self, text_array: List[str]) -> List[Dict[int, str]]:
+            Processes a list of texts, matching words in each text and returning a list of
+            dictionaries where the keys are word IDs and the values are matching words as strings.
         batch_word_match_as_string(self, text_array: List[str]) -> List[str]:
-            Processes a list of texts, matching words in each text and returning a list
-            of strings representing the matches.
-        numpy_word_match_as_dict(self, text_array: np.ndarray, inplace=False) -> Optional[np.ndarray]:
-            Processes a NumPy array of texts, matching words in each text and returning a
-            NumPy array of dictionaries representing the matches. If inplace is True,
-            the operation is performed in-place.
+            Processes a list of texts and returns matching words for each text as formatted strings.
+        numpy_word_match(self, text_array: np.ndarray, inplace=False) -> Optional[np.ndarray]:
+            Processes a NumPy array of texts, matching words in each text and returning a NumPy
+            array of dictionaries where the keys are word IDs and the values are lists of MatchResult
+            dictionaries. If inplace is True, the operation is performed in-place.
         numpy_word_match_as_string(self, text_array: np.ndarray, inplace=False) -> Optional[np.ndarray]:
-            Processes a NumPy array of texts, matching words in each text and returning a
-            NumPy array of strings representing the matches. If inplace is True,
-            the operation is performed in-place.
+            Processes a NumPy array of texts and returns matching words for each text as formatted
+            strings in a NumPy array. If inplace is True, the operation is performed in-place.
     """
     def __init__(self, match_table_map_bytes: bytes) -> None: ...
     def __getnewargs__(self) -> Tuple[bytes, str, str]: ...
     def __getstate__(self) -> Dict: ...
     def __setstate__(self, state_dict: Dict): ...
     def is_match(self, text: str) -> bool: ...
-    def word_match_raw(self, text: str) -> Dict[int, List[MatchResult]]: ...
-    def word_match(self, text: str) -> Dict[int, str]: ...
+    def word_match(self, text: str) -> Dict[int, List[MatchResult]]: ...
     def word_match_as_string(self, text: str) -> str: ...
-    def batch_word_match_as_dict(
-        self, text_array: List[str]
-    ) -> List[Dict[int, str]]: ...
+    def batch_word_match(self, text_array: List[str]) -> List[Dict[int, str]]: ...
     def batch_word_match_as_string(self, text_array: List[str]) -> List[str]: ...
-    def numpy_word_match_as_dict(
+    def numpy_word_match(
+        self, text_array: np.ndarray, inplace=False
+    ) -> Optional[np.ndarray]: ...
+    def numpy_word_match_as_string(
         self, text_array: np.ndarray, inplace=False
     ) -> Optional[np.ndarray]: ...
 

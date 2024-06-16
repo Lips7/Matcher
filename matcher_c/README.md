@@ -51,7 +51,7 @@ matcher = lib.init_matcher(
 lib.matcher_is_match(matcher, "hello".encode("utf-8")) # True
 
 # match word, output json string
-res = lib.matcher_word_match(matcher, "hello,world".encode("utf-8")) # {"test":"[{\"table_id\":1,\"word\":\"hello\"},{\"table_id\":1,\"word\":\"hello,world\"},{\"table_id\":1,\"word\":\"world\"}]"}
+res = lib.matcher_word_match(matcher, "hello,world".encode("utf-8")) # {1:[{"table_id":1,"word":"hello"},{"table_id":1,"word":"hello,world"},{"table_id":1,"word":"world"}]"}
 print(ffi.string(res).decode("utf-8")) #
 lib.drop_string(res)
 
