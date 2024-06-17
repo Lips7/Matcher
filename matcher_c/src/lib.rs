@@ -9,21 +9,21 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided pointer is valid and points to a null-terminated
-/// byte string that can be deserialized into a `MatchTableMap`.
+/// byte string that can be deserialized into a [MatchTableMap].
 ///
 /// # Arguments
-/// * `match_table_map_bytes` - A pointer to a null-terminated byte string that represents a serialized `MatchTableMap`.
+/// * `match_table_map_bytes` - A pointer to a null-terminated byte string that represents a serialized [MatchTableMap].
 ///
 /// # Returns
-/// * A raw pointer to a new `Matcher` instance that is created using the deserialized `MatchTableMap`.
+/// * A raw pointer to a new [Matcher] instance that is created using the deserialized [MatchTableMap].
 ///
 /// # Panics
 /// This function will panic if the deserialization of `match_table_map_bytes` fails.
 ///
 /// # Description
-/// This function initializes a `Matcher` instance from the provided serialized `MatchTableMap` byte string.
-/// It performs deserialization of the byte string, transforms it into a `MatchTableMap`, and then uses it to
-/// create a new `Matcher`. The newly created `Matcher` instance is then wrapped in a `Box` and converted
+/// This function initializes a [Matcher] instance from the provided serialized [MatchTableMap] byte string.
+/// It performs deserialization of the byte string, transforms it into a [MatchTableMap], and then uses it to
+/// create a new [Matcher]. The newly created [Matcher] instance is then wrapped in a [Box] and converted
 /// into a raw pointer before being returned.
 ///
 /// # Example
@@ -66,27 +66,27 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Mat
             }
         };
 
-        Box::into_raw(Box::new(Matcher::new(match_table_map)))
+        Box::into_raw(Box::new(Matcher::new(&match_table_map)))
     }
 }
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `matcher` and `text` pointers are valid.
-/// The `matcher` pointer should point to a valid `Matcher` instance, and the `text` pointer should point to a null-terminated byte string.
+/// The `matcher` pointer should point to a valid [Matcher] instance, and the `text` pointer should point to a null-terminated byte string.
 ///
 /// # Arguments
-/// * `matcher` - A raw pointer to a `Matcher` instance.
+/// * `matcher` - A raw pointer to a [Matcher] instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns
-/// * A boolean value indicating whether the text matches the pattern defined by the `Matcher` instance.
+/// * A boolean value indicating whether the text matches the pattern defined by the [Matcher] instance.
 ///
 /// # Panics
 /// This function will panic if the `matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `is_match` method on a `Matcher` instance. It converts the raw pointers to their
-/// respective Rust types, performs the `is_match` operation, and returns a boolean indicating the match result.
+/// This function calls the [is_match](matcher_rs::Matcher::is_match) method on a [Matcher] instance. It converts the raw pointers to their
+/// respective Rust types, performs the [is_match](matcher_rs::Matcher::is_match) operation, and returns a boolean indicating the match result.
 /// The conversion assumes that the `text` pointer points to a valid UTF-8 encoded, null-terminated C string, and
 /// that the `matcher` pointer is valid and non-null.
 ///
@@ -137,22 +137,22 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `matcher` and `text` pointers are valid.
-/// The `matcher` pointer should point to a valid `Matcher` instance, and the `text` pointer should point to a
+/// The `matcher` pointer should point to a valid [Matcher] instance, and the `text` pointer should point to a
 /// null-terminated byte string.
 ///
 /// # Arguments
-/// * `matcher` - A raw pointer to a `Matcher` instance.
+/// * `matcher` - A raw pointer to a [Matcher] instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns
-/// * A raw pointer to an `c_char` holding the result of the `word_match` function called on the `Matcher` instance.
+/// * A raw pointer to an [c_char] holding the result of the [word_match_as_string](matcher_rs::Matcher::word_match_as_string) function called on the [Matcher] instance.
 ///
 /// # Panics
 /// This function will panic if the `matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `word_match` method on a `Matcher` instance, converting the result to a JSON string.
-/// It converts the raw pointers to their respective Rust types, performs the `word_match` operation,
+/// This function calls the [word_match_as_string](matcher_rs::Matcher::word_match_as_string) method on a [Matcher] instance, converting the result to a JSON string.
+/// It converts the raw pointers to their respective Rust types, performs the [word_match](matcher_rs::Matcher::word_match_as_string) operation,
 /// serializes the result as a JSON string, and then converts this string to a C-compatible CString.
 /// The resulting CString is then returned as a raw pointer before being returned.
 ///
@@ -232,18 +232,18 @@ pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char)
 }
 
 /// # Safety
-/// This function is unsafe because it assumes that the provided `matcher` pointer is valid and was previously allocated using `Box::into_raw`.
+/// This function is unsafe because it assumes that the provided `matcher` pointer is valid and was previously allocated using [Box::into_raw].
 /// It also assumes that the lifetime of the `matcher` pointer is over and it is safe to drop the data.
 ///
 /// # Arguments
-/// * `matcher` - A raw pointer to a `Matcher` instance that needs to be freed.
+/// * `matcher` - A raw pointer to a [Matcher] instance that needs to be freed.
 ///
 /// # Panics
 /// This function will panic if the `matcher` pointer is null.
-/// It is the caller's responsibility to ensure that the pointer is valid and that no other references to the `Matcher` instance exist.
+/// It is the caller's responsibility to ensure that the pointer is valid and that no other references to the [Matcher] instance exist.
 ///
 /// # Description
-/// This function converts the raw pointer back into a `Box` and then drops it, effectively freeing the memory that the `Matcher` instance occupied.
+/// This function converts the raw pointer back into a [Box] and then drops it, effectively freeing the memory that the [Matcher] instance occupied.
 /// After calling this function, the `matcher` pointer must not be used again.
 ///
 /// # Example
@@ -281,21 +281,21 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided pointer is valid and points to a null-terminated
-/// byte string that can be deserialized into a `SimpleMatchTypeWordMap`.
+/// byte string that can be deserialized into a [SimpleMatchTypeWordMap].
 ///
 /// # Arguments
-/// * `simple_match_type_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized `SimpleMatchTypeWordMap`.
+/// * `simple_match_type_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized [SimpleMatchTypeWordMap].
 ///
 /// # Returns
-/// * A raw pointer to a new `SimpleMatcher` instance that is created using the deserialized `SimpleMatchTypeWordMap`.
+/// * A raw pointer to a new [SimpleMatcher] instance that is created using the deserialized [SimpleMatchTypeWordMap].
 ///
 /// # Panics
 /// This function will panic if the deserialization of `simple_match_type_word_map_bytes` fails.
 ///
 /// # Description
-/// This function initializes a `SimpleMatcher` instance from the provided serialized `SimpleMatchTypeWordMap` byte string.
-/// It performs deserialization of the byte string, transforms it into a `SimpleMatchTypeWordMap`, and then uses it to
-/// create a new `SimpleMatcher`. The newly created `SimpleMatcher` instance is then wrapped in a `Box` and converted
+/// This function initializes a [SimpleMatcher] instance from the provided serialized [SimpleMatchTypeWordMap] byte string.
+/// It performs deserialization of the byte string, transforms it into a [SimpleMatchTypeWordMap], and then uses it to
+/// create a new [SimpleMatcher]. The newly created [SimpleMatcher] instance is then wrapped in a [Box] and converted
 /// into a raw pointer before being returned.
 ///
 /// # Example
@@ -332,28 +332,28 @@ pub extern "C" fn init_simple_matcher(
             }
         };
 
-        Box::into_raw(Box::new(SimpleMatcher::new(simple_match_type_word_map)))
+        Box::into_raw(Box::new(SimpleMatcher::new(&simple_match_type_word_map)))
     }
 }
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `simple_matcher` and `text` pointers are valid.
-/// The `simple_matcher` pointer should point to a valid `SimpleMatcher` instance, and the `text` pointer should
+/// The `simple_matcher` pointer should point to a valid [SimpleMatcher] instance, and the `text` pointer should
 /// point to a null-terminated byte string that represents the text to be processed.
 ///
 /// # Arguments
-/// * `simple_matcher` - A raw pointer to a `SimpleMatcher` instance.
+/// * `simple_matcher` - A raw pointer to a [SimpleMatcher] instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns
-/// * A boolean value indicating whether the text matches the pattern defined by the `SimpleMatcher` instance.
+/// * A boolean value indicating whether the text matches the pattern defined by the [SimpleMatcher] instance.
 ///
 /// # Panics
 /// This function will panic if the `simple_matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `is_match` method on a `SimpleMatcher` instance. It converts the raw pointers
-/// to their respective Rust types, performs the `is_match` operation, and returns a boolean indicating
+/// This function calls the [is_match](matcher_rs::SimpleMatcher::is_match) method on a [SimpleMatcher] instance. It converts the raw pointers
+/// to their respective Rust types, performs the [is_match](matcher_rs::SimpleMatcher::is_match) operation, and returns a boolean indicating the match result.
 /// the match result. The conversion assumes that the `text` pointer points to a valid UTF-8 encoded,
 /// null-terminated C string, and that the `simple_matcher` pointer is valid and non-null.
 ///
@@ -397,21 +397,21 @@ pub extern "C" fn simple_matcher_is_match(
 
 /// # Safety
 /// This function is unsafe because it assumes that the provided `simple_matcher` and `text` pointers are valid.
-/// The `simple_matcher` pointer should point to a valid `SimpleMatcher` instance, and the `text` pointer should point to a null-terminated byte string.
+/// The `simple_matcher` pointer should point to a valid [SimpleMatcher] instance, and the `text` pointer should point to a null-terminated byte string.
 ///
 /// # Arguments
-/// * `simple_matcher` - A raw pointer to a `SimpleMatcher` instance.
+/// * `simple_matcher` - A raw pointer to a [SimpleMatcher] instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be processed.
 ///
 /// # Returns
-/// * A raw pointer to a `c_char` holding the result of the `process` function called on the `SimpleMatcher` instance. The result is serialized to a JSON string.
+/// * A raw pointer to a [c_char] holding the result of the [process](matcher_rs::SimpleMatcher::process) function called on the [SimpleMatcher] instance. The result is serialized to a JSON string.
 ///
 /// # Panics
 /// This function will panic if the `simple_matcher` pointer is null.
 ///
 /// # Description
-/// This function calls the `process` method on a `SimpleMatcher` instance. It converts the raw pointers
-/// to their respective Rust types, performs the `process` operation, serializes the result as a JSON string,
+/// This function calls the [process](matcher_rs::SimpleMatcher::process) method on a [SimpleMatcher] instance. It converts the raw pointers
+/// to their respective Rust types, performs the [process](matcher_rs::SimpleMatcher::process) operation, serializes the result as a JSON string,
 /// and then converts this string to a C-compatible CString. The resulting CString is then returned as a raw pointer before being returned.
 ///
 /// # Example
@@ -486,18 +486,18 @@ pub extern "C" fn simple_matcher_process(
 }
 
 /// # Safety
-/// This function is unsafe because it assumes that the provided `simple_matcher` pointer is valid and was previously allocated using `Box::into_raw`.
+/// This function is unsafe because it assumes that the provided `simple_matcher` pointer is valid and was previously allocated using [Box::into_raw].
 /// It also assumes that the lifetime of the `simple_matcher` pointer is over and it is safe to drop the data.
 ///
 /// # Arguments
-/// * `simple_matcher` - A raw pointer to a `SimpleMatcher` instance that needs to be freed.
+/// * `simple_matcher` - A raw pointer to a [SimpleMatcher] instance that needs to be freed.
 ///
 /// # Panics
 /// This function will panic if the `simple_matcher` pointer is null.
-/// It is the caller's responsibility to ensure that the pointer is valid and that no other references to the `SimpleMatcher` instance exist.
+/// It is the caller's responsibility to ensure that the pointer is valid and that no other references to the [SimpleMatcher] instance exist.
 ///
 /// # Description
-/// This function converts the raw pointer back into a `Box` and then drops it, effectively freeing the memory that the `SimpleMatcher` instance occupied.
+/// This function converts the raw pointer back into a [Box] and then drops it, effectively freeing the memory that the [SimpleMatcher] instance occupied.
 /// After calling this function, the `simple_matcher` pointer must not be used again.
 ///
 /// # Example
@@ -529,14 +529,14 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
 /// part of the code should attempt to use or free this pointer after this function is called.
 ///
 /// # Arguments
-/// * `ptr` - A raw pointer to a `c_char` that represents a CString to be freed.
+/// * `ptr` - A raw pointer to a [c_char] that represents a CString to be freed.
 ///
 /// # Panics
 /// This function will panic if the `ptr` is null. It is the caller's responsibility to ensure that the pointer is
 /// valid and that no other references to the CString exist.
 ///
 /// # Description
-/// This function takes a raw pointer to a `c_char`, converts it back into a CString, and then drops it, effectively
+/// This function takes a raw pointer to a [c_char], converts it back into a CString, and then drops it, effectively
 /// freeing the memory that the CString occupied. After calling this function, the `ptr` must not be used again.
 ///
 /// # Example

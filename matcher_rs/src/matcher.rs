@@ -37,11 +37,11 @@ pub trait MatchResultTrait<'a> {
 ///
 /// # Variants
 ///
-/// * `Simple` - Represents a basic word matching strategy.
-/// * `SimilarChar` - Represents a matching strategy based on similar characters.
-/// * `Acrostic` - Represents a matching strategy based on acrostic patterns.
-/// * `SimilarTextLevenshtein` - Represents a matching strategy using Levenshtein distance to find similar texts.
-/// * `Regex` - Represents a matching strategy using regular expressions.
+/// * [Simple](MatchTableType::Simple) - Represents a basic word matching strategy.
+/// * [SimilarChar](MatchTableType::SimilarChar) - Represents a matching strategy based on similar characters.
+/// * [Acrostic](MatchTableType::Acrostic) - Represents a matching strategy based on acrostic patterns.
+/// * [SimilarTextLevenshtein](MatchTableType::SimilarTextLevenshtein) - Represents a matching strategy using Levenshtein distance to find similar texts.
+/// * [Regex](MatchTableType::Regex) - Represents a matching strategy using regular expressions.
 ///
 /// # Serde Attributes
 ///
@@ -71,12 +71,12 @@ pub enum MatchTableType {
 ///
 /// # Fields
 ///
-/// * `table_id` - A `u64` that uniquely identifies the matching table.
-/// * `match_table_type` - A `MatchTableType` enum that specifies the strategy used for matching.
-/// * `simple_match_type` - A `SimpleMatchType` enum that determines the type of simple matching to be used.
-/// * `word_list` - A `Vec` of string slices (`&'a str`) representing the words to match.
-/// * `exemption_simple_match_type` - A `SimpleMatchType` enum that determines the type of simple matching to be used for exemptions.
-/// * `exemption_word_list` - A `Vec` of string slices (`&'a str`) representing words to be exempted from matches.
+/// * `table_id` - A [u64] that uniquely identifies the matching table.
+/// * `match_table_type` - A [MatchTableType] enum that specifies the strategy used for matching.
+/// * `simple_match_type` - A [SimpleMatchType] enum that determines the type of simple matching to be used.
+/// * `word_list` - A [Vec] of string slices (`&'a str`) representing the words to match.
+/// * `exemption_simple_match_type` - A [SimpleMatchType] enum that determines the type of simple matching to be used for exemptions.
+/// * `exemption_word_list` - A [Vec] of string slices (`&'a str`) representing words to be exempted from matches.
 ///
 /// # Lifetimes
 ///
@@ -116,9 +116,9 @@ pub struct MatchTable<'a> {
 ///
 /// # Fields
 ///
-/// * `match_id` - A `u64` representing the identifier of the match within the system.
-/// * `table_id` - A `u64` representing the identifier of the table within the system.
-/// * `is_exemption` - A `bool` flag that indicates whether the word table is an exemption.
+/// * `match_id` - A [u64] representing the identifier of the match within the system.
+/// * `table_id` - A [u64] representing the identifier of the table within the system.
+/// * `is_exemption` - A [bool] flag that indicates whether the word table is an exemption.
 struct WordTableConf {
     match_id: u64,
     table_id: u64,
@@ -133,8 +133,8 @@ struct WordTableConf {
 ///
 /// # Fields
 ///
-/// * `table_id` - A `u64` that uniquely identifies the table in which the match was found.
-/// * `word` - A `Cow<'a, str>` that holds the matched word. The `Cow` type allows the word
+/// * `table_id` - A [u64] that uniquely identifies the table in which the match was found.
+/// * `word` - A [Cow<'a, str>] that holds the matched word. The [Cow] type allows the word
 ///    to be either borrowed from the original data or owned, optimizing for efficient memory use.
 ///
 /// # Lifetimes
@@ -160,21 +160,21 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
 
 pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 
-#[derive(Debug, Clone)]
-/// The `Matcher` struct encapsulates various matching strategies and their configurations used for text processing.
+#[derive(Clone)]
+/// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
 ///
 /// This structure holds configurations for simple, regex, and similarity-based matchers. It manages
 /// different maps and matchers necessary to perform text matching operations.
 ///
 /// # Fields
 ///
-/// * `simple_word_table_conf_map` - An `IntMap<u64, WordTableConf>` that maps word table configuration IDs to their configurations.
-/// * `simple_word_table_conf_id_map` - An `IntMap<u64, u64>` that maps word IDs to their corresponding word table configuration IDs.
-/// * `simple_matcher` - An `Option<SimpleMatcher>` that holds the simple matcher if it exists.
-/// * `regex_matcher` - An `Option<RegexMatcher>` that holds the regex matcher if it exists.
-/// * `sim_matcher` - An `Option<SimMatcher>` that holds the similarity matcher if it exists.
+/// * `simple_word_table_conf_map` - An [IntMap<u64, WordTableConf>] that maps word table configuration IDs to their configurations.
+/// * `simple_word_table_conf_id_map` - An [IntMap<u64, u64>] that maps word IDs to their corresponding word table configuration IDs.
+/// * `simple_matcher` - An [`Option<SimpleMatcher>`] that holds the simple matcher if it exists.
+/// * `regex_matcher` - An [`Option<RegexMatcher>`] that holds the regex matcher if it exists.
+/// * `sim_matcher` - An [`Option<SimMatcher>`] that holds the similarity matcher if it exists.
 ///
-/// The `Matcher` struct is typically instantiated through the `new` method, which processes an input map of match tables
+/// The [Matcher] struct is typically instantiated through the [new](Matcher::new) method, which processes an input map of match tables
 /// and initializes the appropriate matchers and data structures.
 ///
 /// # Example
@@ -196,7 +196,7 @@ pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 ///     }],
 /// );
 ///
-/// let matcher = Matcher::new(match_table_map);
+/// let matcher = Matcher::new(&match_table_map);
 /// ```
 pub struct Matcher {
     simple_word_table_conf_map: IntMap<u64, WordTableConf>,
@@ -207,39 +207,36 @@ pub struct Matcher {
 }
 
 impl Matcher {
-    /// Creates a new `Matcher` instance from the provided match table map.
+    /// Creates a new [Matcher] instance from the provided match table map.
     ///
-    /// This function initializes a new `Matcher` instance by processing the input `match_table_map`.
-    /// The `match_table_map` is an iterator that yields tuples, where the first element is a match identifier
-    /// and the second element is an iterator over `MatchTable` instances.
-    ///
-    /// The function iterates over the `match_table_map` and constructs the necessary data structures for
-    /// the `Matcher` instance. It handles different matching strategies (simple, regex, and similarity)
-    /// and populates the corresponding data structures based on the match table configurations.
+    /// This function processes the input map of match tables to initialize the various
+    /// components of the [Matcher] including simple, regex, and similarity-based matchers.
     ///
     /// # Arguments
     ///
-    /// * `match_table_map` - An iterator that yields tuples, where the first element is a match identifier
-    ///   and the second element is an iterator over `MatchTable` instances.
+    /// * `match_table_map` - A reference to a [HashMap] where the keys are [u64] identifiers
+    ///   and the values are vectors of [MatchTable] instances representing different types of match tables.
     ///
     /// # Returns
     ///
-    /// A new `Matcher` instance that is configured based on the input `match_table_map`.
+    /// A [Matcher] instance initialized with the configurations derived from the provided match table map.
     ///
-    /// # Type Parameters
+    /// The construction process involves:
     ///
-    /// * `I` - The type of the input `match_table_map` iterator.
-    /// * `M` - The type of the iterator over `MatchTable` instances.
+    /// 1. Iterating through the provided match table map.
+    /// 2. Extracting table configurations and populating the corresponding matcher-specific data structures:
+    ///     - Simple match type word map
+    ///     - Regex table list
+    ///     - Similarity table list
+    /// 3. Handling exemptions by updating the word table configurations.
     ///
-    /// # Lifetimes
-    ///
-    /// * `'a` - The lifetime associated with the borrowed string slices in the `MatchTable` instances.
+    /// The word and table identifiers are incremented as new entries are processed and added.
     ///
     /// # Example
     ///
     /// ```
-    /// use std::collections::HashMap;
     /// use matcher_rs::{Matcher, MatchTable, MatchTableType, SimpleMatchType};
+    /// use std::collections::HashMap;
     ///
     /// let mut match_table_map = HashMap::new();
     /// match_table_map.insert(
@@ -254,13 +251,9 @@ impl Matcher {
     ///     }],
     /// );
     ///
-    /// let matcher = Matcher::new(match_table_map);
+    /// let matcher = Matcher::new(&match_table_map);
     /// ```
-    pub fn new<'a, I, M>(match_table_map: I) -> Matcher
-    where
-        I: IntoIterator<Item = (u64, M)>,
-        M: IntoIterator<Item = MatchTable<'a>>,
-    {
+    pub fn new<'a, S>(match_table_map: &HashMap<u64, Vec<MatchTable<'a>>, S>) -> Matcher {
         let mut word_id: u64 = 0;
         let mut word_table_conf_id: u64 = 0;
 
@@ -273,11 +266,11 @@ impl Matcher {
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
         let mut sim_table_list: Vec<SimTable> = Vec::new();
 
-        for (match_id, table_list) in match_table_map.into_iter() {
-            for table in table_list.into_iter() {
+        for (&match_id, table_list) in match_table_map {
+            for table in table_list {
                 let table_id = table.table_id;
                 let match_table_type = table.match_table_type;
-                let word_list = table.word_list;
+                let word_list = &table.word_list;
                 let exemption_word_list = &table.exemption_word_list;
 
                 if !word_list.is_empty() {
@@ -347,18 +340,18 @@ impl Matcher {
             simple_word_table_conf_map,
             simple_word_table_conf_id_map,
             simple_matcher: (!simple_match_type_word_map.is_empty())
-                .then(|| SimpleMatcher::new(simple_match_type_word_map)),
+                .then(|| SimpleMatcher::new(&simple_match_type_word_map)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
             sim_matcher: (!sim_table_list.is_empty()).then(|| SimMatcher::new(&sim_table_list)),
         }
     }
 
-    /// Matches the provided text and returns the raw results as a `HashMap` with match identifiers and vectors of `MatchResult`s.
+    /// Matches the provided text and returns the raw results as a [HashMap] with match identifiers and vectors of [MatchResult]s.
     ///
     /// This function takes a string slice representing the text to be matched and processes it using the available
-    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a `HashMap` where
-    /// the keys are match identifiers and the values are vectors of `MatchResult` instances.
+    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a [HashMap] where
+    /// the keys are match identifiers and the values are vectors of [MatchResult] instances.
     ///
     /// The function proceeds through the following steps:
     ///
@@ -373,10 +366,10 @@ impl Matcher {
     ///
     /// # Returns
     ///
-    /// A `HashMap<u64, Vec<MatchResult>>` where the keys are match identifiers and the values are vectors of `MatchResult`
+    /// A [`HashMap<u64, Vec<MatchResult>>`] where the keys are match identifiers and the values are vectors of [MatchResult]
     /// instances containing the matching results for each identifier.
     ///
-    /// If the provided text is empty, the function returns an empty `HashMap`.
+    /// If the provided text is empty, the function returns an empty [HashMap].
     pub fn word_match(&self, text: &str) -> HashMap<u64, Vec<MatchResult>> {
         if !text.is_empty() {
             let mut match_result_dict = HashMap::default();
@@ -449,9 +442,9 @@ impl Matcher {
     /// Matches the provided text and returns the raw results as a serialized JSON string.
     ///
     /// This function takes a string slice representing the text to be matched and processes it using the available
-    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a `HashMap` where
-    /// the keys are match identifiers and the values are vectors of `MatchResult` instances. The results are then
-    /// serialized into a JSON string using the `to_string` function from the `sonic_rs` crate.
+    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a [HashMap] where
+    /// the keys are match identifiers and the values are vectors of [MatchResult] instances. The results are then
+    /// serialized into a JSON string using the [to_string] function from the [sonic_rs] crate.
     ///
     /// # Arguments
     ///
@@ -459,13 +452,13 @@ impl Matcher {
     ///
     /// # Returns
     ///
-    /// A `String` containing the serialized JSON representation of the raw matching results.
+    /// A [String] containing the serialized JSON representation of the raw matching results.
     ///
     /// # Safety
     ///
-    /// The function uses an `unsafe` block to call `unwrap_unchecked` on the `to_string` function, which skips
+    /// The function uses an `unsafe` block to call [unwrap_unchecked](Result::unwrap_unchecked) on the [to_string] function, which skips
     /// the error checking for performance optimization. It is important to ensure that the serialization process
-    /// does not fail, as `unwrap_unchecked` will cause undefined behavior if an error occurs.
+    /// does not fail, as [unwrap_unchecked](Result::unwrap_unchecked) will cause undefined behavior if an error occurs.
     pub fn word_match_as_string(&self, text: &str) -> String {
         unsafe { to_string(&self.word_match(text)).unwrap_unchecked() }
     }
@@ -476,12 +469,12 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         !self.word_match(text).is_empty()
     }
 
-    /// Processes the provided text and returns a vector of `MatchResult` instances.
+    /// Processes the provided text and returns a vector of [MatchResult] instances.
     ///
     /// This function takes a string slice representing the text to be processed and matches it using the available
     /// matchers (simple, regex, and similarity matchers). It gathers the matching results and organizes them
     /// by their respective match identifiers. The results for each match identifier are then flattened into a single
-    /// vector of `MatchResult` instances.
+    /// vector of [MatchResult] instances.
     ///
     /// # Arguments
     ///
@@ -489,7 +482,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// # Returns
     ///
-    /// A `Vec` of `MatchResult` instances containing the matching results for all match identifiers.
+    /// A [Vec] of [MatchResult] instances containing the matching results for all match identifiers.
     fn process(&'a self, text: &str) -> Vec<MatchResult<'a>> {
         self.word_match(text)
             .into_iter()

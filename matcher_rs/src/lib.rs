@@ -19,7 +19,8 @@ pub use matcher::{
 
 mod simple_matcher;
 pub use simple_matcher::{
-    get_process_matcher, SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher, SimpleResult,
+    get_process_matcher, ProcessMatcher, SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher,
+    SimpleResult,
 };
 
 mod regex_matcher;

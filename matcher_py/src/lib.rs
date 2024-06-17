@@ -17,15 +17,15 @@ use matcher_rs::{
     SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs, TextMatcherTrait,
 };
 
-/// A struct that wraps around the `SimpleResultRs` struct from the `matcher_rs` crate.
+/// A struct that wraps around the [SimpleResultRs] struct from the [matcher_rs] crate.
 ///
 /// This struct serves as a bridge between the Rust and Python representations of match results.
-/// It encapsulates a `SimpleResultRs` instance and provides necessary implementations
+/// It encapsulates a [SimpleResultRs] instance and provides necessary implementations
 /// for conversion and trait compliance, facilitating its use in Python.
 ///
 /// # Lifetime Parameters
 /// - `'a`: The lifetime parameter that corresponds to the lifetime of the encapsulated
-///   `SimpleResultRs` instance.
+///   [SimpleResultRs] instance.
 ///
 /// # Example
 /// ```no_run
@@ -46,9 +46,9 @@ use matcher_rs::{
 struct SimpleResult<'a>(SimpleResultRs<'a>);
 
 impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
-    /// Converts a `SimpleResult` instance into a Python dictionary (`PyObject`).
+    /// Converts a [SimpleResult] instance into a Python dictionary [PyObject].
     ///
-    /// This implementation of the `IntoPy` trait allows for converting a `SimpleResult`
+    /// This implementation of the [IntoPy] trait allows for converting a [SimpleResult]
     /// into a Python dictionary containing the match result data, which can be used
     /// in Python code. The dictionary includes the following key-value pairs:
     ///
@@ -56,11 +56,11 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
     /// - `"word"`: The matched word as a string slice.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleResult` instance to be converted.
+    /// - `self`: The [SimpleResult] instance to be converted.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `PyObject`: A Python dictionary containing the match result data.
+    /// - [PyObject]: A Python dictionary containing the match result data.
     ///
     /// # Panics
     /// Panics if setting a dictionary item fails. Although highly unlikely,
@@ -90,9 +90,9 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 struct MatchResult<'a>(MatchResultRs<'a>);
 
 impl<'a> IntoPy<PyObject> for MatchResult<'a> {
-    /// Converts a `MatchResult` instance into a Python dictionary (`PyObject`).
+    /// Converts a [MatchResult] instance into a Python dictionary [PyObject].
     ///
-    /// This implementation of the `IntoPy` trait allows for converting a `MatchResult`
+    /// This implementation of the [IntoPy] trait allows for converting a [MatchResult]
     /// into a Python dictionary containing the match result data, which can be used
     /// in Python code. The dictionary includes the following key-value pairs:
     ///
@@ -100,11 +100,11 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
     /// - `"word"`: The matched word as a string slice.
     ///
     /// # Parameters
-    /// - `self`: The `MatchResult` instance to be converted.
+    /// - `self`: The [MatchResult] instance to be converted.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `PyObject`: A Python dictionary containing the match result data.
+    /// - [PyObject]: A Python dictionary containing the match result data.
     ///
     /// # Panics
     /// Panics if setting a dictionary item fails. Although highly unlikely,
@@ -123,16 +123,16 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 }
 
 #[pyclass(module = "matcher_py")]
-/// A Python class that wraps the `MatcherRs` struct from the `matcher_rs` crate.
+/// A Python class that wraps the [MatcherRs] struct from the [matcher_rs] crate.
 ///
 /// This class provides functionality for text matching using a deserialized match table map.
 /// It allows for single text matching, batch text processing using Python lists, and batch
 /// processing using NumPy arrays.
 ///
 /// # Fields
-/// - `matcher`: An instance of the `MatcherRs` struct that performs the core matching logic.
+/// - `matcher`: An instance of the [MatcherRs] struct that performs the core matching logic.
 /// - `match_table_map_bytes`: A serialized byte array representing the match table map,
-///   used for reconstructing the `MatcherRs` instance during deserialization.
+///   used for reconstructing the [MatcherRs] instance during deserialization.
 ///
 /// # Example
 ///
@@ -201,24 +201,24 @@ struct Matcher {
 #[pymethods]
 impl Matcher {
     #[new]
-    /// Creates a new `Matcher` instance by deserializing the provided byte array
-    /// into a `MatchTableMapRs` object and using it to initialize the `matcher`.
+    /// Creates a new [Matcher] instance by deserializing the provided byte array
+    /// into a [MatchTableMapRs] object and using it to initialize the `matcher`.
     ///
-    /// This method attempts to deserialize the input byte array into a `MatchTableMapRs`
+    /// This method attempts to deserialize the input byte array into a [MatchTableMapRs]
     /// object. If deserialization is successful, it initializes the `matcher` field with a
-    /// new `MatcherRs` instance created from the deserialized `MatchTableMapRs` object.
+    /// new [MatcherRs] instance created from the deserialized [MatchTableMapRs] object.
     ///
     /// # Parameters
     /// - `_py`: The Python interpreter state.
-    /// - `match_table_map_bytes`: A reference to a `PyBytes` object containing the
+    /// - `match_table_map_bytes`: A reference to a [PyBytes] object containing the
     ///   serialized byte array of the match table map.
     ///
     /// # Returns
-    /// - `PyResult<Matcher>`: A result containing a new `Matcher` instance if deserialization
-    ///   is successful, or a `PyValueError` if deserialization fails.
+    /// - [`PyResult<Matcher>`]: A result containing a new [Matcher] instance if deserialization
+    ///   is successful, or a [PyValueError] if deserialization fails.
     ///
     /// # Errors
-    /// - Returns a `PyValueError` if deserialization of the byte array fails. The error message
+    /// - Returns a [PyValueError] if deserialization of the byte array fails. The error message
     ///   will include details about the failure.
     ///
     /// # Example
@@ -261,56 +261,56 @@ impl Matcher {
             };
 
         Ok(Matcher {
-            matcher: MatcherRs::new(match_table_map),
+            matcher: MatcherRs::new(&match_table_map),
             match_table_map_bytes: match_table_map_bytes.as_unbound().to_owned(),
         })
     }
 
-    /// Returns the arguments needed to recreate the `Matcher` object during unpickling.
+    /// Returns the arguments needed to recreate the [Matcher] object during unpickling.
     ///
-    /// This method is used for serialization support when pickling the `Matcher`
+    /// This method is used for serialization support when pickling the [Matcher]
     /// instance in Python. It provides the byte array representing the match table map,
-    /// which is necessary to reconstruct the `Matcher` object.
+    /// which is necessary to reconstruct the [Matcher] object.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `Py<PyBytes>`: A reference to the `PyBytes` object containing the
+    /// - [`Py<PyBytes>`]: A reference to the [PyBytes] object containing the
     ///   serialized match table map data.
     fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
         self.match_table_map_bytes.clone_ref(py)
     }
 
-    /// Returns the byte array needed to recreate the `Matcher` object during unpickling.
+    /// Returns the byte array needed to recreate the [Matcher] object during unpickling.
     ///
-    /// This method is used for serialization support when pickling the `Matcher`
+    /// This method is used for serialization support when pickling the [Matcher]
     /// instance in Python. It provides the byte array representing the match table map,
-    /// which is necessary to reconstruct the `Matcher` object.
+    /// which is necessary to reconstruct the [Matcher] object.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `Py<PyBytes>`: A reference to the `PyBytes` object containing the
+    /// - [`Py<PyBytes>`]: A reference to the [PyBytes] object containing the
     ///   serialized match table map data.
     fn __getstate__(&self, py: Python) -> Py<PyBytes> {
         self.match_table_map_bytes.clone_ref(py)
     }
 
-    /// Reconstructs the `Matcher` object during unpickling.
+    /// Reconstructs the [Matcher] object during unpickling.
     ///
     /// This method is called during the unpickling process to restore the state
-    /// of the `Matcher` instance based on the provided byte array representing the
+    /// of the [Matcher] instance based on the provided byte array representing the
     /// match table map. It deserializes the byte array and re-initializes the `matcher`
-    /// field with a new `MatcherRs` instance.
+    /// field with a new [MatcherRs] instance.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance to be re-initialized.
+    /// - `self`: The [Matcher] instance to be re-initialized.
     /// - `_py`: The Python interpreter state.
-    /// - `match_table_map_bytes`: A reference to a `PyBytes` object containing the serialized
+    /// - `match_table_map_bytes`: A reference to a [PyBytes] object containing the serialized
     ///   byte array of the match table map.
     ///
     /// # Panics
@@ -318,21 +318,21 @@ impl Matcher {
     /// In practice, this means that the pickled object was corrupted or incompatible.
     fn __setstate__(&mut self, _py: Python, match_table_map_bytes: &Bound<'_, PyBytes>) {
         self.matcher = MatcherRs::new(
-            rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes.as_bytes()).unwrap(),
+            &rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes.as_bytes()).unwrap(),
         );
     }
 
     #[pyo3(signature=(text))]
     /// Checks if the given text matches using the `matcher` instance.
     ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
+    /// This method attempts to downcast the provided [PyAny] object to a [PyString].
     /// If the downcast is successful, it checks if the `matcher` instance considers the
     /// string to be a match. If the downcast fails, it returns `false`.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `_py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    /// - `text`: A reference to a [PyAny] object which is expected to be a [PyString].
     ///
     /// # Returns
     /// - `bool`: `true` if the text matches; `false` otherwise.
@@ -377,22 +377,22 @@ impl Matcher {
     }
 
     #[pyo3(signature=(text))]
-    /// Performs word matching on the given text and returns the results as a `HashMap`.
+    /// Performs word matching on the given text and returns the results as a [HashMap].
     ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
-    /// If the downcast is successful, it calls the `word_match` method on the `matcher`
-    /// instance, passing the text as a string slice, and returns a `HashMap` where the keys
-    /// are match identifiers and the values are vectors of `MatchResult` instances.
-    /// If the downcast fails, it returns an empty `HashMap`.
+    /// This method attempts to downcast the provided [PyAny] object to a [PyString].
+    /// If the downcast is successful, it calls the [word_match](MatcherRs::word_match) method on the `matcher`
+    /// instance, passing the text as a string slice, and returns a [HashMap] where the keys
+    /// are match identifiers and the values are vectors of [MatchResult] instances.
+    /// If the downcast fails, it returns an empty [HashMap].
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `_py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    /// - `text`: A reference to a [PyAny] object which is expected to be a [PyString].
     ///
     /// # Returns
-    /// - `HashMap<u64, Vec<MatchResult<'_>>>`: A `HashMap` containing the word match results.
-    ///   If the input `text` is not a `PyString`, an empty `HashMap` is returned.
+    /// - [HashMap<u64, Vec<MatchResult<'_>>>]: A [HashMap] containing the word match results.
+    ///   If the input `text` is not a [PyString], an empty [HashMap] is returned.
     ///
     /// # Example
     ///
@@ -447,19 +447,19 @@ impl Matcher {
     #[pyo3(signature=(text))]
     /// Performs word matching on the given text and returns the results as a JSON string.
     ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
-    /// If the downcast is successful, it calls the `word_match_as_string` method on the `matcher`
+    /// This method attempts to downcast the provided [PyAny] object to a [PyString].
+    /// If the downcast is successful, it calls the [word_match_as_string](MatcherRs::word_match_as_string) method on the `matcher`
     /// instance, passing the text as a string slice, and returns the results as a JSON string.
-    /// If the downcast fails, it returns an empty JSON object as a `PyString`.
+    /// If the downcast fails, it returns an empty JSON object as a [PyString].
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    /// - `text`: A reference to a [PyAny] object which is expected to be a [PyString].
     ///
     /// # Returns
-    /// - `Py<PyString>`: A `PyString` containing the word match results as a JSON string.
-    ///   If the input `text` is not a `PyString`, an empty JSON object (`{}`) is returned.
+    /// - [`Py<PyString>`]: A [PyString] containing the word match results as a JSON string.
+    ///   If the input `text` is not a [PyString], an empty JSON object (`{}`) is returned.
     ///
     /// # Example
     ///
@@ -511,16 +511,16 @@ impl Matcher {
     ///
     /// This method iterates over a list of texts, performs word matching for each text,
     /// and collects the results into a new list. Each result is obtained by calling the
-    /// `word_match` method, which returns a `HashMap` of match results. These dictionaries
-    /// are then appended to a new `PyList`.
+    /// [word_match](Matcher::word_match) method, which returns a [HashMap] of match results. These dictionaries
+    /// are then appended to a new [PyList].
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyList` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `Py<PyList>`: A `PyList` containing the word match results for each text
+    /// - [`Py<PyList>`]: A [PyList] containing the word match results for each text
     ///   as dictionaries.
     ///
     /// # Example
@@ -572,15 +572,15 @@ impl Matcher {
     ///
     /// This method iterates over a list of texts, performs word matching for each text,
     /// and collects the results into a new list. The result for each text is obtained
-    /// by calling the `word_match_as_string` method, which returns a JSON string for each text.
+    /// by calling the [word_match_as_string](Matcher::word_match_as_string) method, which returns a JSON string for each text.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyList` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `Py<PyList>`: A `PyList` containing the word match results for each text
+    /// - [`Py<PyList>`]: A [PyList] containing the word match results for each text
     ///   as JSON strings.
     ///
     /// # Example
@@ -634,18 +634,18 @@ impl Matcher {
     /// on each text, and collects the results into a new NumPy array or modifies the
     /// original array in-place based on the `inplace` parameter. If `inplace` is set to `true`,
     /// the original array is modified directly. The result for each text is obtained by
-    /// calling the `word_match` method, producing a dictionary for each text.
+    /// calling the [word_match](Matcher::word_match) method, producing a dictionary for each text.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyArray1` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyArray1] containing texts to be processed.
     /// - `inplace`: A boolean flag indicating whether to modify the original array in-place.
     ///
     /// # Returns
-    /// - `Option<Py<PyArray1<PyObject>>>`: If `inplace` is `false`, a new `PyArray1` containing
+    /// - [`Option<Py<PyArray1<PyObject>>>`]: If `inplace` is `false`, a new [PyArray1] containing
     ///   the word match results for each text as dictionaries. If `inplace` is `true`, returns
-    ///   `None` as the original array is modified in-place.
+    ///   [None] as the original array is modified in-place.
     ///
     /// # Example
     ///
@@ -713,18 +713,18 @@ impl Matcher {
     /// on each text, and collects the results into a new NumPy array or modifies the
     /// original array in-place based on the `inplace` parameter. If `inplace` is set to `true`,
     /// the original array is modified directly. The result for each text is obtained by
-    /// calling the `word_match_as_string` method, producing a JSON string for each text.
+    /// calling the [word_match_as_string](Matcher::word_match_as_string) method, producing a JSON string for each text.
     ///
     /// # Parameters
-    /// - `self`: The `Matcher` instance.
+    /// - `self`: The [Matcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyArray1` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyArray1] containing texts to be processed.
     /// - `inplace`: A boolean flag indicating whether to modify the original array in-place.
     ///
     /// # Returns
     /// - `Option<Py<PyArray1<PyObject>>>`: If `inplace` is `false`, a new `PyArray1` containing
     ///   the word match results for each text as JSON strings. If `inplace` is `true`, returns
-    ///   `None` as the original array is modified in-place.
+    ///   [None] as the original array is modified in-place.
     ///
     /// # Example
     ///
@@ -786,14 +786,14 @@ impl Matcher {
 }
 
 #[pyclass(module = "matcher_py")]
-/// A Python class that wraps the `SimpleMatcherRs` struct from the `matcher_rs` crate.
+/// A Python class that wraps the [SimpleMatcherRs] struct from the [matcher_rs] crate.
 ///
 /// This class provides functionality for simple text matching using a serialized
 /// type word map. It enables single text matching and batch text processing
 /// using both Python lists and NumPy arrays.
 ///
 /// # Fields
-/// - `simple_matcher`: An instance of the `SimpleMatcherRs` struct which performs
+/// - `simple_matcher`: An instance of the [SimpleMatcherRs] struct which performs
 ///   the core matching logic.
 /// - `simple_match_type_word_map_bytes`: A serialized byte array representing the
 ///   simple match type word map used for initializing the `simple_matcher` field during
@@ -845,24 +845,24 @@ struct SimpleMatcher {
 #[pymethods]
 impl SimpleMatcher {
     #[new]
-    /// Creates a new `SimpleMatcher` instance by deserializing the provided byte array
-    /// into a `SimpleMatchTypeWordMapRs` object and using it to initialize the `simple_matcher`.
+    /// Creates a new [SimpleMatcher] instance by deserializing the provided byte array
+    /// into a [SimpleMatchTypeWordMapRs] object and using it to initialize the `simple_matcher`.
     ///
-    /// This method attempts to deserialize the input byte array into a `SimpleMatchTypeWordMapRs`
+    /// This method attempts to deserialize the input byte array into a [SimpleMatchTypeWordMapRs]
     /// object. If deserialization is successful, it initializes the `simple_matcher` field with a
-    /// new `SimpleMatcherRs` instance created from the deserialized `SimpleMatchTypeWordMapRs` object.
+    /// new [SimpleMatcherRs] instance created from the deserialized [SimpleMatchTypeWordMapRs] object.
     ///
     /// # Parameters
     /// - `_py`: The Python interpreter state.
-    /// - `simple_match_type_word_map_bytes`: A reference to a `PyBytes` object containing the
+    /// - `simple_match_type_word_map_bytes`: A reference to a [PyBytes] object containing the
     ///   serialized byte array of the simple match type word map.
     ///
     /// # Returns
-    /// - `PyResult<SimpleMatcher>`: A result containing a new `SimpleMatcher` instance if deserialization
-    ///   is successful, or a `PyValueError` if deserialization fails.
+    /// - [`PyResult<SimpleMatcher>`]: A result containing a new [SimpleMatcher] instance if deserialization
+    ///   is successful, or a [PyValueError] if deserialization fails.
     ///
     /// # Errors
-    /// - Returns a `PyValueError` if deserialization of the byte array fails. The error message
+    /// - Returns a [PyValueError] if deserialization of the byte array fails. The error message
     ///   will include details about the failure.
     ///
     /// # Example
@@ -898,58 +898,58 @@ impl SimpleMatcher {
             };
 
         Ok(SimpleMatcher {
-            simple_matcher: SimpleMatcherRs::new(simple_match_type_word_map),
+            simple_matcher: SimpleMatcherRs::new(&simple_match_type_word_map),
             simple_match_type_word_map_bytes: simple_match_type_word_map_bytes
                 .as_unbound()
                 .to_owned(),
         })
     }
 
-    /// Returns the arguments needed to recreate the `SimpleMatcher` object during unpickling.
+    /// Returns the arguments needed to recreate the [SimpleMatcher] object during unpickling.
     ///
-    /// This method is used for serialization support when pickling the `SimpleMatcher`
+    /// This method is used for serialization support when pickling the [SimpleMatcher]
     /// instance in Python. It provides the byte array representing the simple match type word map,
-    /// which is necessary to reconstruct the `SimpleMatcher` object.
+    /// which is necessary to reconstruct the [SimpleMatcher] object.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `Py<PyBytes>`: A reference to the `PyBytes` object containing the
+    /// - [`Py<PyBytes>`]: A reference to the [PyBytes] object containing the
     ///   serialized simple match type word map data.
     fn __getnewargs__(&self, py: Python) -> Py<PyBytes> {
         self.simple_match_type_word_map_bytes.clone_ref(py)
     }
 
-    /// Returns the byte array needed to recreate the `SimpleMatcher` object during unpickling.
+    /// Returns the byte array needed to recreate the [SimpleMatcher] object during unpickling.
     ///
-    /// This method is used for serialization support when pickling the `SimpleMatcher`
+    /// This method is used for serialization support when pickling the [SimpleMatcher]
     /// instance in Python. It provides the byte array representing the simple match type word map,
-    /// which is necessary to reconstruct the `SimpleMatcher` object.
+    /// which is necessary to reconstruct the [SimpleMatcher] object.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `py`: The Python interpreter state.
     ///
     /// # Returns
-    /// - `Py<PyBytes>`: A reference to the `PyBytes` object containing the
+    /// - [`Py<PyBytes>`]: A reference to the [PyBytes] object containing the
     ///   serialized simple match type word map data.
     fn __getstate__(&self, py: Python) -> Py<PyBytes> {
         self.simple_match_type_word_map_bytes.clone_ref(py)
     }
 
-    /// Reconstructs the `SimpleMatcher` object during unpickling.
+    /// Reconstructs the [SimpleMatcher] object during unpickling.
     ///
     /// This method is called during the unpickling process to restore the state
-    /// of the `SimpleMatcher` instance based on the provided byte array representing the
+    /// of the [SimpleMatcher] instance based on the provided byte array representing the
     /// simple match type word map. It deserializes the byte array and re-initializes the
-    /// `simple_matcher` field with a new `SimpleMatcherRs` instance.
+    /// `simple_matcher` field with a new [SimpleMatcherRs] instance.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance to be re-initialized.
+    /// - `self`: The [SimpleMatcher] instance to be re-initialized.
     /// - `_py`: The Python interpreter state.
-    /// - `simple_match_type_word_map_bytes`: A reference to a `PyBytes` object containing the
+    /// - `simple_match_type_word_map_bytes`: A reference to a [PyBytes] object containing the
     ///   serialized byte array of the simple match type word map.
     ///
     /// # Panics
@@ -957,7 +957,7 @@ impl SimpleMatcher {
     /// that the pickled object was corrupted or is incompatible.
     fn __setstate__(&mut self, _py: Python, simple_match_type_word_map_bytes: &Bound<'_, PyBytes>) {
         self.simple_matcher = SimpleMatcherRs::new(
-            rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(
+            &rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(
                 simple_match_type_word_map_bytes.as_bytes(),
             )
             .unwrap(),
@@ -967,14 +967,14 @@ impl SimpleMatcher {
     #[pyo3(signature=(text))]
     /// Checks if the given text matches any of the predefined words in the `simple_matcher` instance.
     ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
+    /// This method attempts to downcast the provided [PyAny] object to a [PyString].
     /// If the downcast is successful, it checks if the `simple_matcher` instance considers the
     /// string to be a match. If the downcast fails, it returns `false`.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `_py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    /// - `text`: A reference to a [PyAny] object which is expected to be a [PyString].
     ///
     /// # Returns
     /// - `bool`: `true` if the text matches any of the predefined words; `false` otherwise.
@@ -1013,20 +1013,20 @@ impl SimpleMatcher {
     #[pyo3(signature=(text))]
     /// Performs simple text processing on the given text and returns the results as a list.
     ///
-    /// This method attempts to downcast the provided `PyAny` object to a `PyString`.
-    /// If the downcast is successful, it calls the `process` method on the `simple_matcher`
-    /// field, passing the text as a string slice, and collects the results into a new `PyList`.
-    /// Each result is converted to a `SimpleResult` instance and appended to the list.
-    /// If the downcast fails, it returns an empty `PyList`.
+    /// This method attempts to downcast the provided [PyAny] object to a [PyString].
+    /// If the downcast is successful, it calls the [process](SimpleMatcherRs::process) method on the `simple_matcher`
+    /// field, passing the text as a string slice, and collects the results into a new [PyList].
+    /// Each result is converted to a [SimpleResult] instance and appended to the list.
+    /// If the downcast fails, it returns an empty [PyList].
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text`: A reference to a `PyAny` object which is expected to be a `PyString`.
+    /// - `text`: A reference to a [PyAny] object which is expected to be a [PyString].
     ///
     /// # Returns
-    /// - `Py<PyList>`: A `PyList` containing the simple processing results.
-    ///   If the input `text` is not a `PyString`, an empty `PyList` is returned.
+    /// - [`Py<PyList>`]: A [PyList] containing the simple processing results.
+    ///   If the input `text` is not a [PyString], an empty [PyList] is returned.
     ///
     /// # Example
     ///
@@ -1074,16 +1074,16 @@ impl SimpleMatcher {
     ///
     /// This method iterates over a list of texts, performs simple processing for each text,
     /// and collects the results into a new list. The result for each text is obtained
-    /// by calling the `simple_process` method, which returns a list of `SimpleResult` instances
-    /// for each text. These lists are then appended to a new `PyList`.
+    /// by calling the [simple_process](SimpleMatcher::simple_process) method, which returns a list of [SimpleResult] instances
+    /// for each text. These lists are then appended to a new [PyList].
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyList` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `Py<PyList>`: A `PyList` containing the simple processing results for each text,
+    /// - [`Py<PyList>`]: A [PyList] containing the simple processing results for each text,
     ///   represented as lists.
     ///
     /// # Example
@@ -1123,24 +1123,24 @@ impl SimpleMatcher {
 
     #[pyo3(signature=(text_array, inplace = false))]
     /// Batch processes a NumPy 1-D array of texts and performs simple processing
-    /// on each text, returning the results as lists of `SimpleResult` instances.
+    /// on each text, returning the results as lists of [SimpleResult] instances.
     ///
     /// This function iterates over a NumPy 1-D array of texts, performs simple processing
     /// on each text, and collects the results into a new NumPy array or modifies the
     /// original array in-place based on the `inplace` parameter. If `inplace` is set to `true`,
     /// the original array is modified directly. The result for each text is obtained by
-    /// calling the `simple_process` method, producing a list of `SimpleResult` instances for each text.
+    /// calling the [simple_process](SimpleMatcher::simple_process) method, producing a list of [SimpleResult] instances for each text.
     ///
     /// # Parameters
-    /// - `self`: The `SimpleMatcher` instance.
+    /// - `self`: The [SimpleMatcher] instance.
     /// - `py`: The Python interpreter state.
-    /// - `text_array`: A reference to a `PyArray1` containing texts to be processed.
+    /// - `text_array`: A reference to a [PyArray1] containing texts to be processed.
     /// - `inplace`: A boolean flag indicating whether to modify the original array in-place.
     ///
     /// # Returns
-    /// - `Option<Py<PyArray1<PyObject>>>`: If `inplace` is `false`, a new `PyArray1` containing
-    ///   the simple processing results for each text as lists of `SimpleResult` instances. If `inplace` is `true`, returns
-    ///   `None` as the original array is modified in-place.
+    /// - [`Option<Py<PyArray1<PyObject>>>`]: If `inplace` is `false`, a new [PyArray1] containing
+    ///   the simple processing results for each text as lists of [SimpleResult] instances. If `inplace` is `true`, returns
+    ///   [None] as the original array is modified in-place.
     ///
     /// # Example
     ///
@@ -1165,7 +1165,7 @@ impl SimpleMatcher {
     ///
     /// text_array = np.array(["example", "test", "example test"], dtype=np.dtype("object"))
     /// result = simple_matcher.numpy_simple_process(text_array)
-    /// print(result)  # Output: A new NumPy array with simple processing results as lists of `SimpleResult` instances
+    /// print(result)  # Output: A new NumPy array with simple processing results as lists of [SimpleResult] instances
     ///
     /// inplace_result = simple_matcher.numpy_simple_process(text_array, inplace=True)
     /// print(text_array)  # Output: The original NumPy array modified with simple processing results

@@ -5,8 +5,8 @@ mod test_simple {
 
     #[test]
     fn simple_match_init() {
-        let _ = SimpleMatcher::new(HashMap::from([(SimpleMatchType::None, HashMap::new())]));
-        let _ = SimpleMatcher::new(HashMap::from([(
+        let _ = SimpleMatcher::new(&HashMap::from([(SimpleMatchType::None, HashMap::new())]));
+        let _ = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::None,
             HashMap::from([(1, "hello"), (2, "world")]),
         )]));
@@ -14,13 +14,13 @@ mod test_simple {
 
     #[test]
     fn simple_match_fanjian() {
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::Fanjian,
             HashMap::from([(1, "你好")]),
         )]));
         assert!(simple_matcher.is_match("妳好"));
 
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::Fanjian,
             HashMap::from([(1, "妳好")]),
         )]));
@@ -29,7 +29,7 @@ mod test_simple {
 
     #[test]
     fn simple_match_delete() {
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::Delete,
             HashMap::from([(1, "你好")]),
         )]));
@@ -38,7 +38,7 @@ mod test_simple {
 
     #[test]
     fn simple_match_normalize() {
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::Normalize,
             HashMap::from([(1, "he11o")]),
         )]));
@@ -47,7 +47,7 @@ mod test_simple {
 
     #[test]
     fn simple_match_pinyin() {
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::PinYin,
             HashMap::from([(1, "西安")]),
         )]));
@@ -57,7 +57,7 @@ mod test_simple {
 
     #[test]
     fn simple_match_pinyinchar() {
-        let simple_matcher = SimpleMatcher::new(HashMap::from([(
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::PinYinChar,
             HashMap::from([(1, "西安")]),
         )]));
@@ -76,7 +76,7 @@ mod test_regex {
             table_id: 1,
             match_id: 1,
             match_table_type: MatchTableType::Regex,
-            word_list: vec!["h[aeiou]llo", "w[aeiou]rd"],
+            word_list: &vec!["h[aeiou]llo", "w[aeiou]rd"],
         }]);
 
         assert!(regex_matcher.is_match("hallo"));
@@ -89,7 +89,7 @@ mod test_regex {
             table_id: 1,
             match_id: 1,
             match_table_type: MatchTableType::Acrostic,
-            word_list: vec!["h,e,l,l,o", "你,好"],
+            word_list: &vec!["h,e,l,l,o", "你,好"],
         }]);
 
         assert!(regex_matcher.is_match("hope, endures, love, lasts, onward."));
@@ -103,7 +103,7 @@ mod test_regex {
             table_id: 1,
             match_id: 1,
             match_table_type: MatchTableType::SimilarChar,
-            word_list: vec!["hello,hi,H,你好", "world,word,🌍,世界"],
+            word_list: &vec!["hello,hi,H,你好", "world,word,🌍,世界"],
         }]);
 
         assert!(regex_matcher.is_match("helloworld"));
@@ -119,7 +119,7 @@ mod test_sim {
         let sim_matcher = SimMatcher::new(&[SimTable {
             table_id: 1,
             match_id: 1,
-            word_list: vec!["helloworld"],
+            word_list: &vec!["helloworld"],
         }]);
 
         assert!(sim_matcher.is_match("helloworl"));
@@ -136,10 +136,10 @@ mod test_matcher {
 
     #[test]
     fn matcher_init() {
-        let _ = Matcher::new(HashMap::from([(1, [])]));
-        let _ = Matcher::new(HashMap::from([(
+        let _ = Matcher::new(&HashMap::from([(1, vec![])]));
+        let _ = Matcher::new(&HashMap::from([(
             1,
-            [MatchTable {
+            vec![MatchTable {
                 table_id: 1,
                 match_table_type: MatchTableType::Simple,
                 simple_match_type: SimpleMatchType::None,
@@ -152,9 +152,9 @@ mod test_matcher {
 
     #[test]
     fn matcher_exemption() {
-        let matcher = Matcher::new(HashMap::from([(
+        let matcher = Matcher::new(&HashMap::from([(
             1,
-            [MatchTable {
+            vec![MatchTable {
                 table_id: 1,
                 match_table_type: MatchTableType::Simple,
                 simple_match_type: SimpleMatchType::None,

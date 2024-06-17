@@ -13,8 +13,8 @@ readme = "README.md"
 documentation = "https://docs.rs/crate/matcher_rs/latest"
 
 [package.metadata.docs.rs]
-rustc-args = ["-C", "target-feature=+aes"]
-rustdoc-args = ["-C", "target-feature=+aes"]
+rustc-args = ["-C", "target-feature=native"]
+rustdoc-args = ["-C", "target-feature=native", "--document-private-items"]
 
 [lib]
 name = "matcher_rs"
