@@ -77,7 +77,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - Most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which supports finding multiple patterns simultaneously with SIMD acceleration in some cases.
 - For detailed implementation, see the [Design Document](./DESIGN.md).
 
-## Roarmap
+## Roadmap
 - [ ] Expose SimpleMatcher.reduce_process_text to Python.
 - [ ] Cache middle results during different SimpleMatchType reduce_process_text function calling.
 - [ ] More detailed and rigorous benchmarks.
