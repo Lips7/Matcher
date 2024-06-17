@@ -57,7 +57,7 @@ For each match table, word matching is performed over the `word_list`, and exemp
 * `MatchPinYin`: Convert all unicode Chinese characters to pinyin with boundaries.
   * `你好` -> `␀ni␀␀hao␀`
   * `西安` -> `␀xi␀␀an␀`
-* `MatchPinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries
+* `MatchPinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries.
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
