@@ -7,6 +7,12 @@ on:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'matcher_c/src/**'
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - '.github/workflows/rust.yml'
 
 permissions:
   contents: read

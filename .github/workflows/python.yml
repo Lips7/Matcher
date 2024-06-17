@@ -6,6 +6,11 @@ on:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - '.github/workflows/python.yml'
+  pull_request:
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - '.github/workflows/python.yml'
 
 permissions:
   contents: read

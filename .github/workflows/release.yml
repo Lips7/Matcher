@@ -7,6 +7,12 @@ on:
       - 'matcher_rs/src/**'
       - 'matcher_c/src/**'
       - '.github/workflows/release.yml'
+  pull_request:
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - 'matcher_c/src/**'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write

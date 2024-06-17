@@ -2,11 +2,17 @@ name: test
 
 on:
   push:
-    branches:
-      - master
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - 'matcher_c/src/**'
+      - '.github/workflows/test.yml'
   pull_request:
-    branches:
-      - master
+    paths:
+      - 'matcher_py/src/**'
+      - 'matcher_rs/src/**'
+      - 'matcher_c/src/**'
+      - '.github/workflows/test.yml'
 
 permissions:
   contents: read
