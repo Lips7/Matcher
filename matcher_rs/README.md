@@ -99,7 +99,7 @@ let match_table_map: MatchTableMap = HashMap::from_iter(vec![
         exemption_word_list: vec![],
     }]),
 ]);
-let matcher = Matcher::new(match_table_map);
+let matcher = Matcher::new(&match_table_map);
 let text = "This is an example text.";
 let results = matcher.word_match(text);
 ```
@@ -116,7 +116,7 @@ simple_word_map.insert(2, "世界");
 
 simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
 
-let matcher = SimpleMatcher::new(simple_match_type_word_map);
+let matcher = SimpleMatcher::new(&simple_match_type_word_map);
 let text = "你好，世界！";
 let results = matcher.process(text);
 ```
