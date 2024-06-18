@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::intrinsics::unlikely;
 use std::iter;
 use std::simd::Simd;
@@ -68,6 +69,12 @@ impl<'de> Deserialize<'de> for SimpleMatchType {
     {
         let bits: u8 = u8::deserialize(deserializer)?;
         Ok(SimpleMatchType::from_bits_retain(bits))
+    }
+}
+
+impl Display for SimpleMatchType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -252,9 +259,12 @@ impl SimpleMatcher {
     /// let is_match = simple_matcher.is_match(text);
     /// let results = simple_matcher.process(text);
     /// ```
-    pub fn new<S1, S2>(
-        simple_match_type_word_map: &HashMap<SimpleMatchType, HashMap<u64, &str, S1>, S2>,
-    ) -> SimpleMatcher {
+    pub fn new<I, S1, S2>(
+        simple_match_type_word_map: &HashMap<SimpleMatchType, HashMap<u64, I, S1>, S2>,
+    ) -> SimpleMatcher
+    where
+        I: AsRef<str>,
+    {
         let mut simple_matcher = SimpleMatcher {
             simple_match_type_process_map: IntMap::default(),
             simple_match_type_ac_table_map: IntMap::default(),
@@ -312,17 +322,20 @@ impl SimpleMatcher {
     /// 3. Construct and return a `SimpleAcTable` by building an Aho-Corasick matcher from `ac_wordlist`,
     ///    and pairing it with the collected word configurations (`ac_word_conf_list`).
     ///
-    fn build_simple_ac_table<S2>(
+    fn build_simple_ac_table<I, S2>(
         &mut self,
         simple_match_type: SimpleMatchType,
-        simple_word_map: &HashMap<u64, &str, S2>,
-    ) -> SimpleAcTable {
+        simple_word_map: &HashMap<u64, I, S2>,
+    ) -> SimpleAcTable
+    where
+        I: AsRef<str>,
+    {
         let mut ac_wordlist = Vec::new();
         let mut ac_word_conf_list = Vec::new();
 
-        for (&simple_word_id, &simple_word) in simple_word_map {
+        for (&simple_word_id, simple_word) in simple_word_map {
             let mut ac_split_word_counter = AHashMap::default();
-            for ac_split_word in simple_word.split(',').filter(|&x| !x.is_empty()) {
+            for ac_split_word in simple_word.as_ref().split(',').filter(|&x| !x.is_empty()) {
                 ac_split_word_counter
                     .entry(ac_split_word)
                     .and_modify(|cnt| *cnt += 1)
@@ -339,7 +352,7 @@ impl SimpleMatcher {
             self.simple_wordconf_map.insert(
                 simple_word_id,
                 WordConf {
-                    word: simple_word.to_owned(),
+                    word: simple_word.as_ref().to_owned(),
                     split_bit,
                 },
             );

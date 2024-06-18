@@ -5,7 +5,10 @@ mod test_simple {
 
     #[test]
     fn simple_match_init() {
-        let _ = SimpleMatcher::new(&HashMap::from([(SimpleMatchType::None, HashMap::new())]));
+        let _ = SimpleMatcher::new(&HashMap::from([(
+            SimpleMatchType::None,
+            HashMap::from([(1, "")]),
+        )]));
         let _ = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::None,
             HashMap::from([(1, "hello"), (2, "world")]),
