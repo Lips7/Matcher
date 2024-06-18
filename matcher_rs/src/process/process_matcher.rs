@@ -329,6 +329,48 @@ pub fn get_process_matcher(
 }
 
 #[cfg(feature = "prebuilt")]
+/// Generates a [ProcessMatcher] based on the provided [SimpleMatchType].
+///
+/// This implementation makes use of prebuilt, serialized data for certain match types to enhance
+/// performance by avoiding runtime construction of the matcher and replacement list. The function
+/// expects that the relevant data has been compiled with the `prebuilt` feature.
+///
+/// # Parameters
+///
+/// - `simple_match_type_bit`: A variant of [SimpleMatchType] enumerating the various matching strategies.
+///
+/// # Returns
+///
+/// - A tuple containing:
+///   - A vector of replacement patterns ([`Vec<&str>`]).
+///   - A [ProcessMatcher] object relevant to the specified match type.
+///
+/// # Safety
+///
+/// For certain match types like [Fanjian](SimpleMatchType::Fanjian), [PinYin](SimpleMatchType::PinYin), [PinYinChar](SimpleMatchType::PinYinChar), unsafe deserialization is performed
+/// using [deserialize_unchecked](CharwiseDoubleArrayAhoCorasick::deserialize_unchecked). This assumes that the prebuilt serialized data is trustworthy and correctly formatted.
+///
+/// # Match Types
+///
+/// The function supports the following match types:
+///
+/// - [SimpleMatchType::None]: Returns an empty matcher.
+/// - [SimpleMatchType::Fanjian]: Returns a matcher using prebuilt replacement list and matcher data for Fanjian.
+/// - [SimpleMatchType::WordDelete]: Builds a matcher for deleting punctuation and whitespace.
+/// - [SimpleMatchType::TextDelete]: Builds a matcher for deleting special text characters and whitespace.
+/// - [SimpleMatchType::Normalize]: Returns a matcher using prebuilt normalization data.
+/// - [SimpleMatchType::PinYin]: Returns a matcher using prebuilt replacement list and matcher data for PinYin.
+/// - [SimpleMatchType::PinYinChar]: Returns a matcher using prebuilt replacement list and matcher data for PinYin characters.
+///
+/// # Example
+///
+/// ```
+/// use matcher_rs::{SimpleMatchType, get_process_matcher};
+///
+/// let (process_replace_list, matcher) = get_process_matcher(SimpleMatchType::Normalize);
+/// ```
+///
+/// This function requires the `prebuilt` feature to be enabled.
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
 ) -> (Vec<&'static str>, ProcessMatcher) {

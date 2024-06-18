@@ -73,6 +73,25 @@ pub mod runtime_build_feature {
 
 #[cfg(feature = "prebuilt")]
 pub mod prebuilt_feature {
+    /// This module contains constants that reference various prebuilt string conversion maps.
+    ///
+    /// These constants are typically used for normalizing text data, converting between different
+    /// character sets, and handling special cases in text processing. The data is included from
+    /// prebuilt binary files and text files located in specific directories.
+    ///
+    /// # Constants
+    ///
+    /// * [NORMALIZE_PROCESS_LIST_STR] - A string containing normalized process list rules.
+    /// * [NORMALIZE_PROCESS_REPLACE_LIST_STR] - A string containing normalized process replace rules.
+    /// * [FANJIAN_PROCESS_REPLACE_LIST_STR] - A string containing rules for replacing traditional Chinese characters with simplified ones.
+    /// * [FANJIAN_PROCESS_MATCHER_BYTES] - A byte slice representing a prebuilt matcher for `SimpleMatchType::Fanjian`.
+    /// * [PINYIN_PROCESS_REPLACE_LIST_STR] - A string containing rules for converting Chinese characters to Pinyin.
+    /// * [PINYIN_PROCESS_MATCHER_BYTES] - A byte slice representing a prebuilt matcher for `SimpleMatchType::PinYin`.
+    /// * [PINYINCHAR_PROCESS_REPLACE_LIST_STR] - A string containing rules for converting individual Chinese characters to Pinyin.
+    /// * [PINYINCHAR_PROCESS_MATCHER_BYTES] - A byte slice representing a prebuilt matcher for `SimpleMatchType::PinYinChar`.
+    /// * [CN_SPECIAL] - A string containing special Chinese characters.
+    /// * [EN_SPECIAL] - A string containing special English characters.
+    /// * [PUNCTUATION_SPECIAL] - A string containing special punctuation characters.
     pub const NORMALIZE_PROCESS_LIST_STR: &str =
         include_str!("../../prebuilt_str_conv_map/normalize_process_list.bin");
     pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str =
