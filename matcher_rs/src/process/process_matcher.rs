@@ -46,13 +46,13 @@ impl ProcessMatcher {
     ///
     /// * `text`: A reference to the input text where replacements will be made.
     /// * `process_replace_list`: A slice of replacement strings. Each match from the internal matcher is replaced with the
-    /// corresponding string from this list.
+    ///   corresponding string from this list.
     ///
     /// # Returns
     ///
     /// * `(bool, Cow<'a, str>)`: A tuple where the first element is a boolean indicating whether any replacements were made,
-    /// and the second element is a [Cow] string containing the modified text. If no replacements were made, the original text
-    /// is returned as a [Cow::Borrowed].
+    ///   and the second element is a [Cow] string containing the modified text. If no replacements were made, the original text
+    ///   is returned as a [Cow::Borrowed].
     ///
     /// # Safety
     ///
@@ -78,7 +78,7 @@ impl ProcessMatcher {
         match self {
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
-                    result.push_str(unsafe { &text.get_unchecked(last_end..mat.start()) });
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.value() as usize)
                     });
@@ -87,7 +87,7 @@ impl ProcessMatcher {
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
-                    result.push_str(unsafe { &text.get_unchecked(last_end..mat.start()) });
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.pattern().as_usize())
                     });
@@ -97,7 +97,7 @@ impl ProcessMatcher {
         }
 
         if last_end > 0 {
-            result.push_str(unsafe { &text.get_unchecked(last_end..) });
+            result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
             (false, Cow::Borrowed(text))
@@ -118,8 +118,8 @@ impl ProcessMatcher {
     /// # Returns
     ///
     /// * `(bool, Cow<'a, str>)`: A tuple where the first element is a boolean indicating whether any deletions were made,
-    /// and the second element is a [Cow] string containing the modified text. If no deletions were made, the original text
-    /// is returned as a [Cow::Borrowed].
+    ///   and the second element is a [Cow] string containing the modified text. If no deletions were made, the original text
+    ///   is returned as a [Cow::Borrowed].
     ///
     /// # Safety
     ///
@@ -140,20 +140,20 @@ impl ProcessMatcher {
         match self {
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
-                    result.push_str(unsafe { &text.get_unchecked(last_end..mat.start()) });
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
-                    result.push_str(unsafe { &text.get_unchecked(last_end..mat.start()) });
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
             }
         }
 
         if last_end > 0 {
-            result.push_str(unsafe { &text.get_unchecked(last_end..) });
+            result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
             (false, Cow::Borrowed(text))
@@ -386,7 +386,7 @@ pub fn get_process_matcher(
             FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
             ProcessMatcher::Chinese(unsafe {
                 CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
-                    &FANJIAN_PROCESS_MATCHER_BYTES,
+                    FANJIAN_PROCESS_MATCHER_BYTES,
                 )
                 .0
             }),
@@ -456,7 +456,7 @@ pub fn get_process_matcher(
             PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
             ProcessMatcher::Chinese(unsafe {
                 CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
-                    &PINYIN_PROCESS_MATCHER_BYTES,
+                    PINYIN_PROCESS_MATCHER_BYTES,
                 )
                 .0
             }),
@@ -466,7 +466,7 @@ pub fn get_process_matcher(
             PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
             ProcessMatcher::Chinese(unsafe {
                 CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
-                    &PINYINCHAR_PROCESS_MATCHER_BYTES,
+                    PINYINCHAR_PROCESS_MATCHER_BYTES,
                 )
                 .0
             }),
