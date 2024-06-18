@@ -30,8 +30,8 @@ matcher_rs = "*"
 
 ### Explaination of the configuration
 
-1. `Matcher`'s configuration is defined by the `MatchTableMap = HashMap<u64, Vec<MatchTable>>` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
-2. `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = HashMap<SimpleMatchType, HashMap<u64, &'a str>>` type, the value `HashMap<u64, &'a str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
+* `Matcher`'s configuration is defined by the `MatchTableMap = HashMap<u64, Vec<MatchTable>>` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
+* `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = HashMap<SimpleMatchType, HashMap<u64, &'a str>>` type, the value `HashMap<u64, &'a str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
 * `table_id`: The unique ID of the match table.
@@ -79,7 +79,7 @@ You can combine these transformations as needed. Pre-defined combinations like `
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
 ### Limitations
-- Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
+Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
 
 ### Basic Example
 
