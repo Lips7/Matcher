@@ -11,6 +11,7 @@ repository.workspace = true
 version.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/crate/matcher_rs/latest"
+build = "build.rs"
 
 [package.metadata.docs.rs]
 rustc-args = ["-C", "target-feature=native"]
@@ -43,5 +44,14 @@ tikv-jemallocator = "0.5.4"
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
 mimalloc = "0.1.42"
 
+[build-dependencies]
+daachorse = "1.0.0"
+sonic-rs = "0.3.7"
+
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[features]
+default = ["prebuilt"]
+prebuilt = []
+runtime_build = []

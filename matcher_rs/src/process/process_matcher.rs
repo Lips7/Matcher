@@ -10,7 +10,12 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 
-use crate::process::constants::*;
+#[cfg(feature = "prebuilt")]
+use crate::process::constants::prebuilt_feature::*;
+
+#[cfg(feature = "runtime_build")]
+use crate::process::constants::runtime_build_feature::*;
+
 use crate::SimpleMatchType;
 
 #[derive(Clone)]
@@ -59,7 +64,7 @@ impl ProcessMatcher {
     /// ```
     /// use matcher_rs::{ProcessMatcher, SimpleMatchType, get_process_matcher};
     ///
-    /// let (process_replace_list, matcher) = get_process_matcher(SimpleMatchType::TextDelete); // Assume this returns a valid ProcessMatcher
+    /// let (process_replace_list, matcher) = get_process_matcher(SimpleMatchType::Normalize); // Assume this returns a valid ProcessMatcher
     /// let text = "Some text for processing";
     /// let (replaced, result) = matcher.replace_all(text, &process_replace_list);
     /// ```
@@ -156,6 +161,7 @@ impl ProcessMatcher {
     }
 }
 
+#[cfg(feature = "runtime_build")]
 /// Generates a [ProcessMatcher] based on the specified [SimpleMatchType].
 ///
 /// This function generates a matcher and a corresponding replacement list
@@ -288,21 +294,21 @@ pub fn get_process_matcher(
     let process_replace_list = process_dict.iter().map(|(_, &val)| val).collect();
 
     match simple_match_type_bit {
-        // SimpleMatchType::Fanjian | SimpleMatchType::PinYin | SimpleMatchType::PinYinChar => {
-        //     let process_matcher = CharwiseDoubleArrayAhoCorasickBuilder::new()
-        //         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-        //         .build(
-        //             process_dict
-        //                 .iter()
-        //                 .map(|(&key, _)| key)
-        //                 .collect::<Vec<&str>>(),
-        //         )
-        //         .unwrap();
-        //     (
-        //         process_replace_list,
-        //         ProcessMatcher::Chinese(process_matcher),
-        //     )
-        // }
+        SimpleMatchType::Fanjian | SimpleMatchType::PinYin | SimpleMatchType::PinYinChar => {
+            let process_matcher = CharwiseDoubleArrayAhoCorasickBuilder::new()
+                .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                .build(
+                    process_dict
+                        .iter()
+                        .map(|(&key, _)| key)
+                        .collect::<Vec<&str>>(),
+                )
+                .unwrap();
+            (
+                process_replace_list,
+                ProcessMatcher::Chinese(process_matcher),
+            )
+        }
         _ => {
             let process_matcher = AhoCorasickBuilder::new()
                 .kind(Some(DFA))
@@ -319,5 +325,110 @@ pub fn get_process_matcher(
                 ProcessMatcher::Others(process_matcher),
             )
         }
+    }
+}
+
+#[cfg(feature = "prebuilt")]
+pub fn get_process_matcher(
+    simple_match_type_bit: SimpleMatchType,
+) -> (Vec<&'static str>, ProcessMatcher) {
+    match simple_match_type_bit {
+        SimpleMatchType::None => {
+            let empty_patterns: Vec<&str> = Vec::new();
+            (
+                Vec::new(),
+                ProcessMatcher::Others(AhoCorasick::new(&empty_patterns).unwrap()),
+            )
+        }
+        SimpleMatchType::Fanjian => (
+            FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+            ProcessMatcher::Chinese(unsafe {
+                CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    &FANJIAN_PROCESS_MATCHER_BYTES,
+                )
+                .0
+            }),
+        ),
+        SimpleMatchType::WordDelete => {
+            let mut process_dict = AHashMap::new();
+            process_dict.extend(
+                PUNCTUATION_SPECIAL
+                    .trim()
+                    .lines()
+                    .map(|pair_str| (pair_str, "")),
+            );
+            process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+            process_dict
+                .retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
+            let process_list = process_dict
+                .iter()
+                .map(|(&key, _)| key)
+                .collect::<Vec<&str>>();
+
+            (
+                Vec::new(),
+                ProcessMatcher::Others(
+                    AhoCorasickBuilder::new()
+                        .kind(Some(DFA))
+                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                        .build(&process_list)
+                        .unwrap(),
+                ),
+            )
+        }
+        SimpleMatchType::TextDelete => {
+            let mut process_dict = AHashMap::new();
+            for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
+                process_dict.extend(str_conv_map.trim().lines().map(|pair_str| (pair_str, "")));
+            }
+            process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+            process_dict
+                .retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
+            let process_list = process_dict
+                .iter()
+                .map(|(&key, _)| key)
+                .collect::<Vec<&str>>();
+
+            (
+                Vec::new(),
+                ProcessMatcher::Others(
+                    AhoCorasickBuilder::new()
+                        .kind(Some(DFA))
+                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                        .build(&process_list)
+                        .unwrap(),
+                ),
+            )
+        }
+        SimpleMatchType::Normalize => (
+            NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+            ProcessMatcher::Others(
+                AhoCorasickBuilder::new()
+                    .kind(Some(DFA))
+                    .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                    .build(NORMALIZE_PROCESS_LIST_STR.lines())
+                    .unwrap(),
+            ),
+        ),
+        SimpleMatchType::PinYin => (
+            PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+            ProcessMatcher::Chinese(unsafe {
+                CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    &PINYIN_PROCESS_MATCHER_BYTES,
+                )
+                .0
+            }),
+        ),
+
+        SimpleMatchType::PinYinChar => (
+            PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
+            ProcessMatcher::Chinese(unsafe {
+                CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    &PINYINCHAR_PROCESS_MATCHER_BYTES,
+                )
+                .0
+            }),
+        ),
+        _ => unreachable!(),
     }
 }
