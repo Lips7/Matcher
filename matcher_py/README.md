@@ -36,11 +36,11 @@ For each match table, word matching is performed over the `word_list`, and exemp
   * It can handle combination patterns and repeated times sensitive matching, delimited by `,`, such as `hello,world,hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
 * `SimilarChar = "similar_char"`: Supports similar character matching using regex.
   * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
-* `Acrostic = acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
+* `Acrostic = "acrostic"`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
   * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
-* `SimilarTextLevenshtein = similar_text_levenshtein`: Supports similar text matching based on Levenshtein distance **(threshold is 0.8)**.
+* `SimilarTextLevenshtein = "similar_text_levenshtei"n"`: Supports similar text matching based on Levenshtein distance **(threshold is 0.8)**.
   * `["helloworld"]` will match `helloworld`, `hellowrld`, `helloworld!` ··· any similar text to the words in the list.
-* `Regex = regex`: Supports regex matching.
+* `Regex = "regex"`: Supports regex matching.
   * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
 
 #### SimpleMatchType
