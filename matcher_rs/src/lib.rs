@@ -11,6 +11,9 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod process;
+pub use process::process_matcher::{get_process_matcher, ProcessMatcher};
+
 mod matcher;
 pub use matcher::{
     MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableType, Matcher,
@@ -18,10 +21,7 @@ pub use matcher::{
 };
 
 mod simple_matcher;
-pub use simple_matcher::{
-    get_process_matcher, ProcessMatcher, SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher,
-    SimpleResult,
-};
+pub use simple_matcher::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher, SimpleResult};
 
 mod regex_matcher;
 pub use regex_matcher::{RegexMatcher, RegexResult, RegexTable};

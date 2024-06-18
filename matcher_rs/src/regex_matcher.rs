@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use fancy_regex::{escape, Regex};
 
-use super::{MatchResultTrait, MatchTableType, TextMatcherTrait};
+use crate::{MatchResultTrait, MatchTableType, TextMatcherTrait};
 
 #[derive(Debug, Clone)]
 /// A structure representing a table of regex matches with associated identifiers and metadata.

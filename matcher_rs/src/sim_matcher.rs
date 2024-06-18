@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use fancy_regex::Regex;
 use rapidfuzz::distance::levenshtein;
 
-use super::{MatchResultTrait, TextMatcherTrait};
+use crate::{MatchResultTrait, TextMatcherTrait};
 
 #[derive(Debug, Clone)]
 /// A struct representing a table used for similarity matching.
