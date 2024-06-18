@@ -150,3 +150,7 @@ cython_debug/
 
 .ruff_cache
 test.ipynb
+matcher_rs/prebuilt_str_conv_map/*.bin
+matcher_c/matcher_c.so
+matcher_py/matcher_py/matcher_py.so
+matcher_java/target/classed/matcher_c.so
