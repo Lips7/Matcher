@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::io::{Result, Write};
 
@@ -21,6 +22,7 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "prebuilt")]
     {
+        let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
             ("fanjian", vec![FANJIAN, UNICODE]),
             ("normalize", vec![UPPER_LOWER, EN_VARIATION, NUM_NORM]),
@@ -49,7 +51,7 @@ fn main() -> Result<()> {
                 .collect::<Vec<&str>>();
 
             let mut process_list_bin = File::create(format!(
-                "./prebuilt_str_conv_map/{simple_match_type_bit_str}_process_list.bin"
+                "{out_dir}/{simple_match_type_bit_str}_process_list.bin"
             ))?;
             process_list_bin.write_all(process_list.join("\n").as_bytes())?;
 
@@ -58,7 +60,7 @@ fn main() -> Result<()> {
                 .map(|(_, &val)| val)
                 .collect::<Vec<&str>>();
             let mut process_replace_list_bin = File::create(format!(
-                "./prebuilt_str_conv_map/{simple_match_type_bit_str}_process_replace_list.bin"
+                "{out_dir}/{simple_match_type_bit_str}_process_replace_list.bin"
             ))?;
             process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
 
@@ -69,7 +71,9 @@ fn main() -> Result<()> {
                         .build(&process_list)
                         .unwrap();
                 let matcher_bytes = matcher.serialize();
-                let mut matcher_bin = File::create(format!("./prebuilt_str_conv_map/{simple_match_type_bit_str}_daachorse_charwise_u64_matcher.bin"))?;
+                let mut matcher_bin = File::create(format!(
+                    "{out_dir}/{simple_match_type_bit_str}_daachorse_charwise_u64_matcher.bin"
+                ))?;
                 matcher_bin.write_all(&matcher_bytes)?;
             }
         }

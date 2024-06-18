@@ -93,22 +93,34 @@ pub mod prebuilt_feature {
     /// * [EN_SPECIAL] - A string containing special English characters.
     /// * [PUNCTUATION_SPECIAL] - A string containing special punctuation characters.
     pub const NORMALIZE_PROCESS_LIST_STR: &str =
-        include_str!("../../prebuilt_str_conv_map/normalize_process_list.bin");
-    pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str =
-        include_str!("../../prebuilt_str_conv_map/normalize_process_replace_list.bin");
+        include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
+    pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
+        env!("OUT_DIR"),
+        "/normalize_process_replace_list.bin"
+    ));
 
-    pub const FANJIAN_PROCESS_REPLACE_LIST_STR: &str =
-        include_str!("../../prebuilt_str_conv_map/fanjian_process_replace_list.bin");
-    pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] =
-        include_bytes!("../../prebuilt_str_conv_map/fanjian_daachorse_charwise_u64_matcher.bin");
+    pub const FANJIAN_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
+        env!("OUT_DIR"),
+        "/fanjian_process_replace_list.bin"
+    ));
+    pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/fanjian_daachorse_charwise_u64_matcher.bin"
+    ));
     pub const PINYIN_PROCESS_REPLACE_LIST_STR: &str =
-        include_str!("../../prebuilt_str_conv_map/pinyin_process_replace_list.bin");
-    pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] =
-        include_bytes!("../../prebuilt_str_conv_map/pinyin_daachorse_charwise_u64_matcher.bin");
-    pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str =
-        include_str!("../../prebuilt_str_conv_map/pinyinchar_process_replace_list.bin");
-    pub const PINYINCHAR_PROCESS_MATCHER_BYTES: &[u8] =
-        include_bytes!("../../prebuilt_str_conv_map/pinyinchar_daachorse_charwise_u64_matcher.bin");
+        include_str!(concat!(env!("OUT_DIR"), "/pinyin_process_replace_list.bin"));
+    pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/pinyin_daachorse_charwise_u64_matcher.bin"
+    ));
+    pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
+        env!("OUT_DIR"),
+        "/pinyinchar_process_replace_list.bin"
+    ));
+    pub const PINYINCHAR_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/pinyinchar_daachorse_charwise_u64_matcher.bin"
+    ));
 
     pub const CN_SPECIAL: &str = include_str!("../../str_conv_map/CN-SPECIAL.txt");
     pub const EN_SPECIAL: &str = include_str!("../../str_conv_map/EN-SPECIAL.txt");
