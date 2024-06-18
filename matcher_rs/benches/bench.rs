@@ -50,7 +50,7 @@ fn build_simple_word_map(
     simple_word_map
 }
 
-fn add_build_benches(group: &mut BenchmarkGroup<WallTime>, patterns: &[String]) {
+fn add_build_benches_cn(group: &mut BenchmarkGroup<WallTime>, patterns: &[String]) {
     let mut global_word_id: u64 = 0;
     for simple_match_type in [
         SimpleMatchType::None,
@@ -63,8 +63,8 @@ fn add_build_benches(group: &mut BenchmarkGroup<WallTime>, patterns: &[String]) 
         SimpleMatchType::FanjianDeleteNormalize,
         SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYin,
     ] {
-        for simple_word_map_size in [100, 1000, 10000, 50000, 100000] {
-            for combined_times in [1, 2, 3, 4, 5] {
+        for simple_word_map_size in [100, 1000, 10000, 50000] {
+            for combined_times in [1, 2, 3, 4] {
                 let mut simple_match_type_word_map = IntMap::default();
                 let simple_word_map = build_simple_word_map(
                     patterns,
@@ -86,7 +86,38 @@ fn add_build_benches(group: &mut BenchmarkGroup<WallTime>, patterns: &[String]) 
     }
 }
 
-fn add_search_benches(
+fn add_build_benches_en(group: &mut BenchmarkGroup<WallTime>, patterns: &[String]) {
+    let mut global_word_id: u64 = 0;
+    for simple_match_type in [
+        SimpleMatchType::None,
+        SimpleMatchType::Delete,
+        SimpleMatchType::Normalize,
+        SimpleMatchType::DeleteNormalize,
+    ] {
+        for simple_word_map_size in [100, 1000, 10000, 50000] {
+            for combined_times in [1, 2, 3, 4] {
+                let mut simple_match_type_word_map = IntMap::default();
+                let simple_word_map = build_simple_word_map(
+                    patterns,
+                    combined_times,
+                    simple_word_map_size,
+                    &mut global_word_id,
+                );
+                simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+                group.bench_function(
+                    format!("simple_matcher_build_{simple_match_type}_{simple_word_map_size}_{combined_times}"),
+                    |b| {
+                        b.iter(|| {
+                            let _ = SimpleMatcher::new(&simple_match_type_word_map);
+                        })
+                    },
+                );
+            }
+        }
+    }
+}
+
+fn add_search_benches_cn(
     group: &mut BenchmarkGroup<WallTime>,
     patterns: &[String],
     haystacks: &[String],
@@ -103,8 +134,8 @@ fn add_search_benches(
         SimpleMatchType::FanjianDeleteNormalize,
         SimpleMatchType::FanjianDeleteNormalize | SimpleMatchType::PinYin,
     ] {
-        for simple_word_map_size in [100, 1000, 10000, 50000, 100000] {
-            for combined_times in [1, 2, 3, 4, 5] {
+        for simple_word_map_size in [100, 1000, 10000, 50000] {
+            for combined_times in [1, 2, 3, 4] {
                 let mut simple_match_type_word_map = IntMap::default();
                 let simple_word_map = build_simple_word_map(
                     patterns,
@@ -129,7 +160,45 @@ fn add_search_benches(
     }
 }
 
-macro_rules! define_build_bench {
+fn add_search_benches_en(
+    group: &mut BenchmarkGroup<WallTime>,
+    patterns: &[String],
+    haystacks: &[String],
+) {
+    let mut global_word_id: u64 = 0;
+    for simple_match_type in [
+        SimpleMatchType::None,
+        SimpleMatchType::Delete,
+        SimpleMatchType::Normalize,
+        SimpleMatchType::DeleteNormalize,
+    ] {
+        for simple_word_map_size in [100, 1000, 10000, 50000] {
+            for combined_times in [1, 2, 3, 4] {
+                let mut simple_match_type_word_map = IntMap::default();
+                let simple_word_map = build_simple_word_map(
+                    patterns,
+                    combined_times,
+                    simple_word_map_size,
+                    &mut global_word_id,
+                );
+                simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+                let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+                group.bench_function(
+                    format!("simple_matcher_search_{simple_match_type}_{simple_word_map_size}_{combined_times}"),
+                    |b| {
+                        b.iter(|| {
+                            for haystack in haystacks {
+                                simple_matcher.process(haystack);
+                            }
+                        })
+                    },
+                );
+            }
+        }
+    }
+}
+
+macro_rules! define_build_bench_cn {
     ( $func_name:ident, $group:literal, $corpus:literal ) => {
         fn $func_name(c: &mut Criterion) {
             let mut group = c.benchmark_group($group);
@@ -139,24 +208,39 @@ macro_rules! define_build_bench {
             group.sampling_mode(SamplingMode::Flat);
             let mut patterns = load_file($corpus);
             patterns.sort_unstable();
-            add_build_benches(&mut group, &patterns);
+            add_build_benches_cn(&mut group, &patterns);
         }
     };
 }
 
-define_build_bench!(
+macro_rules! define_build_bench_en {
+    ( $func_name:ident, $group:literal, $corpus:literal ) => {
+        fn $func_name(c: &mut Criterion) {
+            let mut group = c.benchmark_group($group);
+            group.sample_size(BUILD_SAMPLE_SIZE);
+            group.warm_up_time(BUILD_WARM_UP_TIME);
+            group.measurement_time(BUILD_MEASURE_TIME);
+            group.sampling_mode(SamplingMode::Flat);
+            let mut patterns = load_file($corpus);
+            patterns.sort_unstable();
+            add_build_benches_en(&mut group, &patterns);
+        }
+    };
+}
+
+define_build_bench_cn!(
     criterion_words_build_cn,
     "simple_matcher_build_cn",
     "../data/word_list/cn/cn_words_100000.txt"
 );
 
-define_build_bench!(
+define_build_bench_en!(
     criterion_words_build_en,
     "simple_matcher_build_en",
     "../data/word_list/en/en_words_100000.txt"
 );
 
-macro_rules! define_find_bench {
+macro_rules! define_find_bench_cn {
     ( $func_name:ident, $group:literal, $corpus:literal, $haystack:literal ) => {
         fn $func_name(c: &mut Criterion) {
             let mut group = c.benchmark_group($group);
@@ -167,19 +251,35 @@ macro_rules! define_find_bench {
             let mut patterns = load_file($corpus);
             patterns.sort_unstable();
             let haystacks = load_file($haystack);
-            add_search_benches(&mut group, &patterns, &haystacks);
+            add_search_benches_cn(&mut group, &patterns, &haystacks);
         }
     };
 }
 
-define_find_bench!(
+macro_rules! define_find_bench_en {
+    ( $func_name:ident, $group:literal, $corpus:literal, $haystack:literal ) => {
+        fn $func_name(c: &mut Criterion) {
+            let mut group = c.benchmark_group($group);
+            group.sample_size(SEARCH_SAMPLE_SIZE);
+            group.warm_up_time(SEARCH_WARM_UP_TIME);
+            group.measurement_time(SEARCH_MEASURE_TIME);
+            group.sampling_mode(SamplingMode::Flat);
+            let mut patterns = load_file($corpus);
+            patterns.sort_unstable();
+            let haystacks = load_file($haystack);
+            add_search_benches_en(&mut group, &patterns, &haystacks);
+        }
+    };
+}
+
+define_find_bench_cn!(
     criterion_words_search_cn,
     "simple_matcher_search_cn",
     "../data/word_list/cn/cn_words_100000.txt",
-    "../data/text/cn/三体.txt"
+    "../data/text/cn/西游记.txt"
 );
 
-define_find_bench!(
+define_find_bench_en!(
     criterion_words_search_en,
     "simple_matcher_search_en",
     "../data/word_list/en/en_words_100000.txt",

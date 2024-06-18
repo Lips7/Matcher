@@ -78,7 +78,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - For detailed implementation, see the [Design Document](./DESIGN.md).
 
 ## Roadmap
-- [ ] Cache get_process_matcher results globally, instead cache result inside SimpleMatcher.
+- [x] Cache get_process_matcher results globally, instead cache result inside SimpleMatcher.
 - [ ] Expose SimpleMatcher.reduce_process_text to Python.
 - [ ] Cache middle results during different SimpleMatchType reduce_process_text function calling.
 - [x] More detailed and rigorous benchmarks.

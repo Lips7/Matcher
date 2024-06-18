@@ -4,6 +4,7 @@ use ahash::AHashMap;
 use aho_corasick::{
     AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind as AhoCorasickMatchKind,
 };
+use cached::{proc_macro::cached, SizedCache};
 #[allow(unused_imports)]
 use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
@@ -217,6 +218,12 @@ impl ProcessMatcher {
 /// The commented-out section for [CharwiseDoubleArrayAhoCorasick] implies that it is not yet used in
 /// the current version. Any errors regarding missing or incorrectly formatted string mappings will
 /// result in a panic due to the use of `unwrap()`.
+#[
+    cached(
+        ty = "SizedCache<SimpleMatchType, (Vec<&'static str>, ProcessMatcher)>",
+        create = "{ SizedCache::with_size(7) }",
+    )
+]
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
 ) -> (Vec<&'static str>, ProcessMatcher) {
@@ -371,6 +378,12 @@ pub fn get_process_matcher(
 /// ```
 ///
 /// This function requires the `prebuilt` feature to be enabled.
+#[
+    cached(
+        ty = "SizedCache<SimpleMatchType, (Vec<&'static str>, ProcessMatcher)>",
+        create = "{ SizedCache::with_size(7) }",
+    )
+]
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
 ) -> (Vec<&'static str>, ProcessMatcher) {
