@@ -82,6 +82,6 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [ ] Cache middle results during different SimpleMatchType reduce_process_text function calling.
 - [ ] More detailed and rigorous benchmarks.
 - [ ] More detailed and rigorous tests.
-- [ ] Try more aho_corasick library to improve performance and reduce memory usage
-  - [ ] https://github.com/daac-tools/crawdad
-  - [ ] https://github.com/daac-tools/daachorse
+- [x] Try more aho_corasick library to improve performance and reduce memory usage
+  - [x] https://github.com/daac-tools/crawdad
+  - [x] https://github.com/daac-tools/daachorse
