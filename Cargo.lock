@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "ahash",
  "aho-corasick",
