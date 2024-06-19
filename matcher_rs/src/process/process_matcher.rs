@@ -22,9 +22,11 @@ use crate::process::constants::runtime_build_feature::*;
 
 use crate::SimpleMatchType;
 
+type ProcessMatcherCache =
+    RwLock<IntMap<SimpleMatchType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
+
 lazy_static! {
-    pub static ref PROCESS_MATCHER_CACHE: RwLock<IntMap<SimpleMatchType, Arc<(Vec<&'static str>, ProcessMatcher)>>> =
-        RwLock::new(IntMap::default());
+    pub static ref PROCESS_MATCHER_CACHE: ProcessMatcherCache = RwLock::new(IntMap::default());
 }
 
 #[derive(Clone)]

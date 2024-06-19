@@ -21,10 +21,6 @@ rustdoc-args = ["-C", "target-feature=native", "--document-private-items"]
 name = "matcher_rs"
 crate-type = ["rlib"]
 
-[[bench]]
-name = "bench"
-harness = false
-
 [dependencies]
 ahash = { version = "0.8.11", features = ["serde", "compile-time-rng"] }
 aho-corasick = "1.1.3"
@@ -50,10 +46,14 @@ daachorse = "1.0.0"
 sonic-rs = "0.3.7"
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
+divan = "0.1.14"
 fastrand = "2.1.0"
 
 [features]
 default = ["prebuilt"]
 prebuilt = []
 runtime_build = []
+
+[[bench]]
+name = "bench"
+harness = false

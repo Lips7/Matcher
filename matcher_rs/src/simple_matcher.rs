@@ -74,7 +74,11 @@ impl<'de> Deserialize<'de> for SimpleMatchType {
 
 impl Display for SimpleMatchType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let display_str_list = self
+            .iter_names()
+            .map(|(name, _)| name.to_lowercase())
+            .collect::<Vec<_>>();
+        write!(f, "{:?}", display_str_list.join("_"))
     }
 }
 
