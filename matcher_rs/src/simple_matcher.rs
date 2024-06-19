@@ -182,8 +182,6 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///
 /// # Fields
 ///
-/// * `simple_match_type_process_map` - A mapping of [SimpleMatchType] to process mappings, where each
-///   process mapping consists of a list of replacement strings and an [ProcessMatcher] matcher.
 /// * `simple_match_type_ac_table_map` - A mapping of [SimpleMatchType] to `SimpleAcTable`, which contains
 ///   the Aho-Corasick matcher and word configurations for efficient text matching.
 /// * `simple_wordconf_map` - A mapping of word IDs to `WordConf` structures, which hold the textual
@@ -378,37 +376,36 @@ impl SimpleMatcher {
         }
     }
 
-    /// Reduces the input text according to the specified simple match type transformations.
+    #[inline(always)]
+    /// Processes the input text to apply transformations specified by the SimpleMatchType.
     ///
-    /// This function processes the input `text` by iterating over each bit flag in the `simple_match_type`.
-    /// For each transformation, it either replaces or deletes text segments based on the associated matcher
-    /// and replacement list, which are retrieved from `simple_match_type_process_map`. The resulting processed
-    /// text segments are collected into an array and returned.
+    /// This function iterates over the bits of a SimpleMatchType to apply various text transformations.
+    /// Depending on the transformation type (e.g., text replace, text delete, etc.), it processes the text
+    /// and stores the result in an array of [Cow] (Copy on Write) strings.
     ///
     /// # Arguments
     ///
     /// * `simple_match_type` - A [SimpleMatchType] bit flags that define specific text transformation rules.
-    /// * `text` - A string slice representing the input text to be processed.
+    /// * `text` - A string slice representing the input text to be transformed.
     ///
     /// # Returns
     ///
-    /// * [ArrayVec<[Cow<'a, str>; 8]>] - An array containing the processed versions of the input text,
-    ///   with each element being either the original text or a transformed version.
+    /// * `ArrayVec<[Cow<'a, str>; 8]>` - A fixed-size vector containing the processed versions of the input text.
     ///
     /// # Detailed Processing:
     ///
-    /// 1. Initialize an [ArrayVec] to hold the processed text segments and add the original `text` as the first entry.
-    /// 2. Iterate over each bit flag in `simple_match_type`:
-    ///     a. Retrieve the associated replacement list and matcher for the current bit flag.
-    ///     b. Fetch the last processed text segment.
-    ///     c. Apply the transformation based on the bit flag:
-    ///         - For [SimpleMatchType::None], do nothing.
-    ///         - For [SimpleMatchType::Fanjian], replace matching text segments and update in place.
-    ///         - For [SimpleMatchType::TextDelete] and [SimpleMatchType::WordDelete], delete matching segments and add the result to the array.
-    ///         - For all other flags, replace matching text segments and add the result to the array.
-    ///
-    /// 3. Return the array containing the processed text segments.
-    #[inline(always)]
+    /// 1. Initialize an [ArrayVec] to hold up to 8 versions of the processed text.
+    /// 2. Push the original text into the vector as the first entry.
+    /// 3. Iterate over each bit in the `simple_match_type`:
+    ///    a. Retrieve the cached matcher and replacement list for the current bit.
+    ///    b. Borrow the last processed text from the vector using an unsafe operation.
+    ///    c. Match the current transformation type and apply the corresponding matcher:
+    ///         i.  [SimpleMatchType::None] - Do nothing.
+    ///         ii. [SimpleMatchType::Fanjian] - Apply the matcher and replace all occurrences.
+    ///         iii. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
+    ///         iv. Other types - Apply the matcher and replace all occurrences.
+    ///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
+    /// 4. Return the populated [ArrayVec] containing all processed text variations.
     fn reduce_text_process<'a>(
         &self,
         simple_match_type: SimpleMatchType,
