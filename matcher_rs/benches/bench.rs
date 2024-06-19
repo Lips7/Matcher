@@ -288,9 +288,9 @@ define_find_bench_en!(
 
 criterion_group!(
     benches,
+    criterion_words_search_cn,
+    criterion_words_search_en,
     criterion_words_build_cn,
     criterion_words_build_en,
-    criterion_words_search_cn,
-    criterion_words_search_en
 );
 criterion_main!(benches);
