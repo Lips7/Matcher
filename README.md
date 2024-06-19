@@ -10,6 +10,8 @@
 
 A high-performance matcher for massive amounts of sensitive words.
 
+Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching.
+
 It's helpful for
 - **Content Filtering**: Detecting and filtering out offensive or sensitive words.
 - **Search Engines**: Improving search results by identifying relevant keywords.
