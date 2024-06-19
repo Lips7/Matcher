@@ -63,7 +63,7 @@ fn build_simple_word_map(
 mod build_cn {
     use super::*;
 
-    #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
+    #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn build_cn_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
         let simple_word_map =
@@ -103,7 +103,7 @@ mod build_cn {
 mod build_en {
     use super::*;
 
-    #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
+    #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn build_en_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
         let simple_word_map =
@@ -143,7 +143,7 @@ mod build_en {
 mod search_cn {
     use super::*;
 
-    #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
+    #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn search_cn_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
         let simple_word_map =
@@ -239,5 +239,9 @@ mod search_en {
 }
 
 fn main() {
+    println!("Current default simple match type: {DEFAULT_SIMPLE_MATCH_TYPE:?}");
+    println!("Current default simple word map size: {DEFAULT_SIMPLE_WORD_MAP_SIZE:?}");
+    println!("Current default combined times: {DEFAULT_COMBINED_TIMES:?}");
+
     divan::main()
 }
