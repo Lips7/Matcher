@@ -146,7 +146,7 @@ fn add_search_benches_cn(
                 simple_match_type_word_map.insert(simple_match_type, simple_word_map);
                 let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
                 group.bench_function(
-                    format!("simple_matcher_build_{simple_match_type}_{simple_word_map_size}_{combined_times}"),
+                    format!("simple_matcher_search_{simple_match_type}_{simple_word_map_size}_{combined_times}"),
                     |b| {
                         b.iter(|| {
                             for haystack in haystacks {

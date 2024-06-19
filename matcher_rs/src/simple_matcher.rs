@@ -12,7 +12,7 @@ use serde::{Deserializer, Serializer};
 use sonic_rs::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
-use crate::process::process_matcher::{get_process_matcher, ProcessMatcher};
+use crate::process::process_matcher::get_process_matcher;
 use crate::{MatchResultTrait, TextMatcherTrait};
 
 /// The maximum limit of word combinations that are considered for matches.
@@ -209,7 +209,6 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// ```
 #[derive(Clone)]
 pub struct SimpleMatcher {
-    simple_match_type_process_map: IntMap<SimpleMatchType, (Vec<&'static str>, ProcessMatcher)>,
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_wordconf_map: IntMap<u64, WordConf>,
 }
@@ -266,19 +265,11 @@ impl SimpleMatcher {
         I: AsRef<str>,
     {
         let mut simple_matcher = SimpleMatcher {
-            simple_match_type_process_map: IntMap::default(),
             simple_match_type_ac_table_map: IntMap::default(),
             simple_wordconf_map: IntMap::default(),
         };
 
         for (simple_match_type, simple_word_map) in simple_match_type_word_map {
-            for simple_match_type_bit in simple_match_type.iter() {
-                simple_matcher
-                    .simple_match_type_process_map
-                    .entry(simple_match_type_bit)
-                    .or_insert_with(|| get_process_matcher(simple_match_type_bit));
-            }
-
             let simple_ac_table = simple_matcher.build_simple_ac_table(
                 *simple_match_type - SimpleMatchType::TextDelete,
                 simple_word_map,
@@ -423,11 +414,8 @@ impl SimpleMatcher {
         processed_text_list.push(Cow::Borrowed(text));
 
         for simple_match_type_bit in simple_match_type.iter() {
-            let (process_replace_list, process_matcher) = unsafe {
-                self.simple_match_type_process_map
-                    .get(&simple_match_type_bit)
-                    .unwrap_unchecked()
-            };
+            let cached_result = get_process_matcher(simple_match_type_bit);
+            let (process_replace_list, process_matcher) = cached_result.as_ref();
             let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
             match (simple_match_type_bit, process_matcher) {
