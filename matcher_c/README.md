@@ -1,3 +1,11 @@
+- [Matcher Rust Implement C FFI bindings](#matcher-rust-implement-c-ffi-bindings)
+  - [Overview](#overview)
+  - [Installation](#installation)
+    - [Build from source](#build-from-source)
+    - [Install pre-built binary](#install-pre-built-binary)
+  - [Python usage example](#python-usage-example)
+  - [Important Notes](#important-notes)
+
 # Matcher Rust Implement C FFI bindings
 
 ## Overview

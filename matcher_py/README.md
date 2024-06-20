@@ -1,3 +1,19 @@
+- [Matcher Rust Implementation with PyO3 Binding](#matcher-rust-implementation-with-pyo3-binding)
+  - [Installation](#installation)
+    - [Use pip](#use-pip)
+    - [Install pre-built binary](#install-pre-built-binary)
+  - [Usage](#usage)
+    - [Explaination of the configuration](#explaination-of-the-configuration)
+      - [MatchTable](#matchtable)
+      - [MatchTableType](#matchtabletype)
+      - [SimpleMatchType](#simplematchtype)
+    - [Limitations](#limitations)
+    - [Matcher Basic Usage](#matcher-basic-usage)
+    - [Simple Matcher Basic Usage](#simple-matcher-basic-usage)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [More Information](#more-information)
+
 # Matcher Rust Implementation with PyO3 Binding
 
 A high-performance, multi-functional word matcher implemented in Rust.
