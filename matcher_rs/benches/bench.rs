@@ -129,6 +129,24 @@ mod build_cn {
             let _ = SimpleMatcher::new(&simple_match_type_word_map);
         });
     }
+
+    #[divan::bench]
+    fn build_cn_by_mutiple_simple_match_type(bencher: Bencher) {
+        let mut simple_match_type_word_map = IntMap::default();
+        for simple_match_type in [
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::DeleteNormalize,
+            SimpleMatchType::FanjianDeleteNormalize,
+        ] {
+            let simple_word_map =
+                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+        }
+
+        bencher.bench(|| {
+            let _ = SimpleMatcher::new(&simple_match_type_word_map);
+        });
+    }
 }
 
 mod build_en {
@@ -164,6 +182,24 @@ mod build_en {
         let simple_word_map =
             build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
+
+        bencher.bench(|| {
+            let _ = SimpleMatcher::new(&simple_match_type_word_map);
+        });
+    }
+
+    #[divan::bench]
+    fn build_en_by_mutiple_simple_match_type(bencher: Bencher) {
+        let mut simple_match_type_word_map = IntMap::default();
+        for simple_match_type in [
+            SimpleMatchType::None,
+            SimpleMatchType::Delete,
+            SimpleMatchType::DeleteNormalize,
+        ] {
+            let simple_word_map =
+                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+        }
 
         bencher.bench(|| {
             let _ = SimpleMatcher::new(&simple_match_type_word_map);
@@ -218,6 +254,27 @@ mod search_cn {
             }
         });
     }
+
+    #[divan::bench]
+    fn search_cn_by_mutiple_simple_match_type(bencher: Bencher) {
+        let mut simple_match_type_word_map = IntMap::default();
+        for simple_match_type in [
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::DeleteNormalize,
+            SimpleMatchType::FanjianDeleteNormalize,
+        ] {
+            let simple_word_map =
+                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+        }
+        let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+
+        bencher.bench(|| {
+            for line in CN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
 }
 
 mod search_en {
@@ -259,6 +316,27 @@ mod search_en {
         let simple_word_map =
             build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+
+        bencher.bench(|| {
+            for line in EN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
+
+    #[divan::bench]
+    fn search_en_by_mutiple_simple_match_type(bencher: Bencher) {
+        let mut simple_match_type_word_map = IntMap::default();
+        for simple_match_type in [
+            SimpleMatchType::None,
+            SimpleMatchType::Delete,
+            SimpleMatchType::DeleteNormalize,
+        ] {
+            let simple_word_map =
+                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            simple_match_type_word_map.insert(simple_match_type, simple_word_map);
+        }
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
         bencher.bench(|| {

@@ -1,19 +1,17 @@
 use std::fmt::Display;
 use std::iter;
 use std::simd::Simd;
-use std::str::FromStr;
 use std::{borrow::Cow, collections::HashMap};
 
 use ahash::AHashMap;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA};
 use bitflags::bitflags;
-use faststr::FastStr;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
 use serde::{Deserializer, Serializer};
 use sonic_rs::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
-use crate::process::process_matcher::{reduce_text_process, reduce_text_process_with_cache};
+use crate::process::process_matcher::reduce_text_process;
 use crate::{MatchResultTrait, TextMatcherTrait};
 
 /// The maximum limit of word combinations that are considered for matches.
@@ -496,7 +494,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// This ensures efficient text matching across transformed versions of the input text using
     /// SIMD and Aho-Corasick algorithms.
     fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
-        let text = unsafe {FastStr::from_str(text).unwrap_unchecked()};
         let mut result_list = Vec::new();
 
         if text.is_empty() {
@@ -505,16 +502,15 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
         let mut word_id_set = IntSet::default();
         let mut word_id_split_bit_map = IntMap::default();
-        let mut simple_match_type_text_cache_map: AHashMap<(SimpleMatchType, FastStr), FastStr> = AHashMap::with_capacity(self.simple_match_type_ac_table_map.len());
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            let processed_text_list = reduce_text_process_with_cache(simple_match_type, text.as_str(), &mut simple_match_type_text_cache_map);
+            let processed_text_list = reduce_text_process(simple_match_type, text);
             let processed_times = processed_text_list.len(); // Get the number of processed versions of the text
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
                 for ac_result in simple_ac_table
                     .ac_matcher
-                    .find_overlapping_iter(processed_text.as_str())
+                    .find_overlapping_iter(processed_text.as_ref())
                 {
                     let ac_word_conf = unsafe {
                         simple_ac_table

@@ -324,7 +324,6 @@ dependencies = [
  "divan",
  "fancy-regex",
  "fastrand",
- "faststr",
  "lazy_static",
  "mimalloc",
  "nohash-hasher",

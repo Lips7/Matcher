@@ -10,7 +10,6 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-use faststr::FastStr;
 use lazy_static::lazy_static;
 use nohash_hasher::IntMap;
 use parking_lot::RwLock;
@@ -580,75 +579,13 @@ pub fn reduce_text_process<'a>(
                     (_, _) => unreachable!(),
                 }
             }
-            (_, pm) => {
-                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
-                    (true, Cow::Owned(tx)) => {
-                        processed_text_list.push(Cow::Owned(tx));
-                    }
-                    (false, _) => {}
-                    (_, _) => unreachable!(),
+            (_, pm) => match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                (true, Cow::Owned(tx)) => {
+                    processed_text_list.push(Cow::Owned(tx));
                 }
-            }
-        }
-    }
-
-    processed_text_list
-}
-
-pub fn reduce_text_process_with_cache(
-    simple_match_type: SimpleMatchType,
-    text: &str,
-    simple_match_type_text_cache_map: &mut AHashMap<(SimpleMatchType, FastStr), FastStr>
-) -> ArrayVec<[FastStr; 8]> {
-    let mut processed_text_list: ArrayVec<[FastStr; 8]> = ArrayVec::new();
-    processed_text_list.push(FastStr::new(text));
-
-    for simple_match_type_bit in simple_match_type.iter() {
-        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
-        let simple_match_type_text = (simple_match_type_bit, tmp_processed_text.clone());
-        if let Some(cached_text) = simple_match_type_text_cache_map.get(&simple_match_type_text) {
-            processed_text_list.push(cached_text.clone());
-            continue;
-        }
-
-        let cached_result = get_process_matcher(simple_match_type_bit);
-        let (process_replace_list, process_matcher) = cached_result.as_ref();
-
-        match (simple_match_type_bit, process_matcher) {
-            (SimpleMatchType::None, _) => {}
-            (SimpleMatchType::Fanjian, pm) => {
-                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
-                    (true, Cow::Owned(pt)) => {
-                        let processed_text = FastStr::from_string(pt);
-                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
-                        *tmp_processed_text = processed_text.clone();
-                    }
-                    (false, _) => {}
-                    (_, _) => unreachable!(),
-                }
-            }
-            (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
-                match pm.delete_all(tmp_processed_text.as_ref()) {
-                    (true, Cow::Owned(pt)) => {
-                        let processed_text = FastStr::from_string(pt);
-                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
-                        processed_text_list.push(processed_text.clone());
-                    }
-                    (false, _) => {}
-                    (_, _) => unreachable!(),
-                }
-            }
-            (_, pm) => {
-                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
-                    (true, Cow::Owned(pt)) => {
-                        let processed_text = FastStr::from_string(pt);
-                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
-                        processed_text_list.push(processed_text.clone());
-                    }
-                    (false, _) => {}
-                    (_, _) => unreachable!(),
-                }
-            }
+                (false, _) => {}
+                (_, _) => unreachable!(),
+            },
         }
     }
 
