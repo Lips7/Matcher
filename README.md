@@ -76,8 +76,8 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 ## Roadmap
 - [x] Cache get_process_matcher results globally, instead cache result inside SimpleMatcher.
-- [ ] Expose SimpleMatcher.reduce_process_text to Python.
-- [ ] Cache middle results during different SimpleMatchType reduce_process_text function calling.
+- [x] Expose reduce_process_text to Python.
+- [x] Cache middle results during different SimpleMatchType reduce_process_text function calling. (failed, too slow)
 - [x] More detailed and rigorous benchmarks.
 - [x] More detailed and rigorous tests.
 - [x] Try more aho_corasick library to improve performance and reduce memory usage
