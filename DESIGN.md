@@ -175,21 +175,27 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 
 #### Word1 AND Word2 match
 ```json
+Input:
 {
     "SimpleMatchType.None": {
         "1": "word1,word2"
     }
 }
+
+Output: Check if `word_id` 1 is matched.
 ```
 
 #### Word1 OR Word2 match
 ```json
+Input:
 {
     "SimpleMatchType.None": {
         "1": "word1",
         "2": "word2"
     }
 }
+
+Output: Check if `word_id` 1 or 2 is matched.
 ```
 
 ## Summary
