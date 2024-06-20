@@ -355,7 +355,7 @@ impl SimpleMatcher {
                 .take(WORD_COMBINATION_LIMIT)
                 .enumerate()
             {
-                for ac_word in self.reduce_text_process(simple_match_type, split_word) {
+                for ac_word in Self::reduce_text_process(simple_match_type, split_word) {
                     ac_wordlist.push(ac_word);
                     ac_word_conf_list.push((simple_word_id, offset));
                 }
@@ -406,8 +406,7 @@ impl SimpleMatcher {
     ///         iv. Other types - Apply the matcher and replace all occurrences.
     ///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
     /// 4. Return the populated [ArrayVec] containing all processed text variations.
-    fn reduce_text_process<'a>(
-        &self,
+    pub fn reduce_text_process<'a>(
         simple_match_type: SimpleMatchType,
         text: &'a str,
     ) -> ArrayVec<[Cow<'a, str>; 8]> {
@@ -496,7 +495,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_split_bit_map = IntMap::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            let processed_text_list = self.reduce_text_process(simple_match_type, text);
+            let processed_text_list = Self::reduce_text_process(simple_match_type, text);
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
@@ -584,7 +583,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_split_bit_map = IntMap::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            let processed_text_list = self.reduce_text_process(simple_match_type, text);
+            let processed_text_list = Self::reduce_text_process(simple_match_type, text);
             let processed_times = processed_text_list.len(); // Get the number of processed versions of the text
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {

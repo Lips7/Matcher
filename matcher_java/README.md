@@ -1,11 +1,3 @@
-- [Matcher Rust Implement JAVA FFI bindings](#matcher-rust-implement-java-ffi-bindings)
-  - [Overview](#overview)
-  - [Installation](#installation)
-    - [Build from source](#build-from-source)
-    - [Install pre-built binary](#install-pre-built-binary)
-  - [Java usage example](#java-usage-example)
-  - [Important Notes](#important-notes)
-
 # Matcher Rust Implement JAVA FFI bindings
 
 ## Overview

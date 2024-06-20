@@ -1,18 +1,3 @@
-- [Matcher](#matcher)
-  - [Features](#features)
-  - [Usage](#usage)
-    - [Adding to Your Project](#adding-to-your-project)
-    - [Explaination of the configuration](#explaination-of-the-configuration)
-      - [MatchTable](#matchtable)
-      - [MatchTableType](#matchtabletype)
-      - [SimpleMatchType](#simplematchtype)
-    - [Limitations](#limitations)
-    - [Basic Example](#basic-example)
-  - [Benchmarks](#benchmarks)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [More Information](#more-information)
-
 # Matcher
 
 A high-performance, multi-functional word matcher implemented in Rust.
