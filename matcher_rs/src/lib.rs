@@ -1,5 +1,3 @@
-#![allow(internal_features)]
-#![feature(core_intrinsics)]
 #![feature(portable_simd)]
 #![feature(iter_repeat_n)]
 

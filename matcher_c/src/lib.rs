@@ -1,5 +1,3 @@
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-
 use std::{
     ffi::{c_char, CStr, CString},
     str::from_utf8,
@@ -55,7 +53,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 /// drop_matcher(matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
+pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
         let match_table_map: MatchTableMap = match rmp_serde::from_slice(
             CStr::from_ptr(match_table_map_bytes).to_bytes(),
@@ -126,7 +124,7 @@ pub extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Mat
 /// drop_matcher(matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
+pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
     unsafe {
         matcher
             .as_ref()
@@ -217,7 +215,10 @@ pub extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -
 /// drop_matcher(matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn matcher_word_match(
+    matcher: *mut Matcher,
+    text: *const c_char,
+) -> *mut c_char {
     let res = unsafe {
         CString::new(
             matcher
@@ -275,7 +276,7 @@ pub extern "C" fn matcher_word_match(matcher: *mut Matcher, text: *const c_char)
 /// drop_matcher(matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
+pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
     unsafe { drop(Box::from_raw(matcher)) }
 }
 
@@ -317,7 +318,7 @@ pub extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// drop_simple_matcher(simple_matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn init_simple_matcher(
+pub unsafe extern "C" fn init_simple_matcher(
     simple_match_type_word_map_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
     unsafe {
@@ -383,7 +384,7 @@ pub extern "C" fn init_simple_matcher(
 /// drop_simple_matcher(simple_matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn simple_matcher_is_match(
+pub unsafe extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> bool {
@@ -465,7 +466,7 @@ pub extern "C" fn simple_matcher_is_match(
 /// drop_simple_matcher(simple_matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn simple_matcher_process(
+pub unsafe extern "C" fn simple_matcher_process(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> *mut c_char {
@@ -519,7 +520,7 @@ pub extern "C" fn simple_matcher_process(
 /// drop_simple_matcher(simple_matcher_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
+pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     unsafe { drop(Box::from_raw(simple_matcher)) }
 }
 
@@ -552,6 +553,6 @@ pub extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
 /// drop_string(c_string_ptr);
 /// ```
 #[no_mangle]
-pub extern "C" fn drop_string(ptr: *mut c_char) {
+pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     unsafe { drop(CString::from_raw(ptr)) }
 }

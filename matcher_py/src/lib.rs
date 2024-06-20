@@ -1,5 +1,3 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-
 use std::collections::HashMap;
 
 use numpy::{PyArray1, PyArrayMethods};

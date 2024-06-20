@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::intrinsics::unlikely;
 use std::iter;
 use std::simd::Simd;
 use std::{borrow::Cow, collections::HashMap};
@@ -488,7 +487,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// This function ensures efficient text matching using SIMD and Aho-Corasick algorithms
     /// while accounting for various transformations specified by the [SimpleMatchType].
     fn is_match(&self, text: &str) -> bool {
-        if unlikely(text.is_empty()) {
+        if text.is_empty() {
             return false;
         }
 
@@ -523,12 +522,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked_mut(ac_word_conf.1)
                     } >>= 1;
 
-                    if unlikely(
-                        split_bit_vec
-                            .iter()
-                            .fold(Simd::splat(1), |acc, &bit| acc & bit)
-                            == ZEROS,
-                    ) {
+                    if split_bit_vec
+                        .iter()
+                        .fold(Simd::splat(1), |acc, &bit| acc & bit)
+                        == ZEROS
+                    {
                         return true;
                     }
                 }
@@ -575,7 +573,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
         let mut result_list = Vec::new();
 
-        if unlikely(text.is_empty()) {
+        if text.is_empty() {
             return result_list;
         }
 
@@ -617,12 +615,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked_mut(ac_word_conf.1)
                     } >>= 1;
 
-                    if unlikely(
-                        split_bit_vec
-                            .iter()
-                            .fold(Simd::splat(1), |acc, &bit| acc & bit)
-                            == ZEROS,
-                    ) {
+                    if split_bit_vec
+                        .iter()
+                        .fold(Simd::splat(1), |acc, &bit| acc & bit)
+                        == ZEROS
+                    {
                         word_id_set.insert(word_id);
                         result_list.push(SimpleResult {
                             word_id,

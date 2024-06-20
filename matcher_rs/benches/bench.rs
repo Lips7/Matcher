@@ -60,6 +60,37 @@ fn build_simple_word_map(
     simple_word_map
 }
 
+mod bench_test {
+    use aho_corasick::AhoCorasick;
+    use divan::Bencher;
+
+    #[divan::bench]
+    fn bench_test_find(bencher: Bencher) {
+        let patterns = &["apple", "maple", "snapple"];
+        let haystack = "helpdsaifnsajifdqkwehirjksaghujksandhkfjansfgajfdiaosfsajkndjkas";
+
+        let ac = AhoCorasick::builder()
+            .ascii_case_insensitive(true)
+            .build(patterns)
+            .unwrap();
+
+        bencher.bench(|| {
+            let mut matches = vec![];
+            for mat in ac.find_iter(haystack) {
+                matches.push((mat.pattern(), mat.start(), mat.end()));
+            }
+        });
+    }
+
+    #[divan::bench]
+    fn bench_test_clone(bencher: Bencher) {
+        let haystack = "helpdsaifnsajifdqkwehirjksaghujksandhkfjansfgajfdiaosfsajkndjkas";
+        bencher.bench(|| {
+            let _ = divan::black_box(haystack).to_string();
+        });
+    }
+}
+
 mod build_cn {
     use super::*;
 
