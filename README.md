@@ -10,7 +10,7 @@
 
 A high-performance matcher for massive amounts of sensitive words.
 
-Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching.
+Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching. For detailed implementation, see the [Design Document](./DESIGN.md).
 
 It's helpful for
 - **Content Filtering**: Detecting and filtering out offensive or sensitive words.
@@ -73,11 +73,6 @@ Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` 
 #### Pre-built binary
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
-## Design
-
-- Most features are based on [aho_corasick](https://github.com/BurntSushi/aho-corasick), which supports finding multiple patterns simultaneously with SIMD acceleration in some cases.
-- For detailed implementation, see the [Design Document](./DESIGN.md).
 
 ## Roadmap
 - [x] Cache get_process_matcher results globally, instead cache result inside SimpleMatcher.

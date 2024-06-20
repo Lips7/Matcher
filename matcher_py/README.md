@@ -1,5 +1,9 @@
 # Matcher Rust Implementation with PyO3 Binding
 
+A high-performance, multi-functional word matcher implemented in Rust.
+
+Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching. For detailed implementation, see the [Design Document](../DESIGN.md).
+
 ## Installation
 
 ### Use pip
