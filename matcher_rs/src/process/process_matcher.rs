@@ -10,9 +10,11 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
+use faststr::FastStr;
 use lazy_static::lazy_static;
 use nohash_hasher::IntMap;
 use parking_lot::RwLock;
+use tinyvec::ArrayVec;
 
 #[cfg(feature = "prebuilt")]
 use crate::process::constants::prebuilt_feature::*;
@@ -514,4 +516,141 @@ pub fn get_process_matcher(
         process_matcher_cache.insert(simple_match_type_bit, Arc::clone(&uncached_result));
         uncached_result
     }
+}
+
+#[inline(always)]
+/// Processes the input text to apply transformations specified by the SimpleMatchType.
+///
+/// This function iterates over the bits of a SimpleMatchType to apply various text transformations.
+/// Depending on the transformation type (e.g., text replace, text delete, etc.), it processes the text
+/// and stores the result in an array of [Cow] (Copy on Write) strings.
+///
+/// # Arguments
+///
+/// * `simple_match_type` - A [SimpleMatchType] bit flags that define specific text transformation rules.
+/// * `text` - A string slice representing the input text to be transformed.
+///
+/// # Returns
+///
+/// * `ArrayVec<[Cow<'a, str>; 8]>` - A fixed-size vector containing the processed versions of the input text.
+///
+/// # Detailed Processing:
+///
+/// 1. Initialize an [ArrayVec] to hold up to 8 versions of the processed text.
+/// 2. Push the original text into the vector as the first entry.
+/// 3. Iterate over each bit in the `simple_match_type`:
+///    a. Retrieve the cached matcher and replacement list for the current bit.
+///    b. Borrow the last processed text from the vector using an unsafe operation.
+///    c. Match the current transformation type and apply the corresponding matcher:
+///         i.  [SimpleMatchType::None] - Do nothing.
+///         ii. [SimpleMatchType::Fanjian] - Apply the matcher and replace all occurrences.
+///         iii. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
+///         iv. Other types - Apply the matcher and replace all occurrences.
+///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
+/// 4. Return the populated [ArrayVec] containing all processed text variations.
+pub fn reduce_text_process<'a>(
+    simple_match_type: SimpleMatchType,
+    text: &'a str,
+) -> ArrayVec<[Cow<'a, str>; 8]> {
+    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+    processed_text_list.push(Cow::Borrowed(text));
+
+    for simple_match_type_bit in simple_match_type.iter() {
+        let cached_result = get_process_matcher(simple_match_type_bit);
+        let (process_replace_list, process_matcher) = cached_result.as_ref();
+        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
+
+        match (simple_match_type_bit, process_matcher) {
+            (SimpleMatchType::None, _) => {}
+            (SimpleMatchType::Fanjian, pm) => {
+                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                    (true, Cow::Owned(tx)) => {
+                        *tmp_processed_text = Cow::Owned(tx);
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+            (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+                match pm.delete_all(tmp_processed_text.as_ref()) {
+                    (true, Cow::Owned(tx)) => {
+                        processed_text_list.push(Cow::Owned(tx));
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+            (_, pm) => {
+                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                    (true, Cow::Owned(tx)) => {
+                        processed_text_list.push(Cow::Owned(tx));
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+        }
+    }
+
+    processed_text_list
+}
+
+pub fn reduce_text_process_with_cache(
+    simple_match_type: SimpleMatchType,
+    text: &str,
+    simple_match_type_text_cache_map: &mut AHashMap<(SimpleMatchType, FastStr), FastStr>
+) -> ArrayVec<[FastStr; 8]> {
+    let mut processed_text_list: ArrayVec<[FastStr; 8]> = ArrayVec::new();
+    processed_text_list.push(FastStr::new(text));
+
+    for simple_match_type_bit in simple_match_type.iter() {
+        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
+        let simple_match_type_text = (simple_match_type_bit, tmp_processed_text.clone());
+        if let Some(cached_text) = simple_match_type_text_cache_map.get(&simple_match_type_text) {
+            processed_text_list.push(cached_text.clone());
+            continue;
+        }
+
+        let cached_result = get_process_matcher(simple_match_type_bit);
+        let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+        match (simple_match_type_bit, process_matcher) {
+            (SimpleMatchType::None, _) => {}
+            (SimpleMatchType::Fanjian, pm) => {
+                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                    (true, Cow::Owned(pt)) => {
+                        let processed_text = FastStr::from_string(pt);
+                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
+                        *tmp_processed_text = processed_text.clone();
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+            (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+                match pm.delete_all(tmp_processed_text.as_ref()) {
+                    (true, Cow::Owned(pt)) => {
+                        let processed_text = FastStr::from_string(pt);
+                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
+                        processed_text_list.push(processed_text.clone());
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+            (_, pm) => {
+                match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                    (true, Cow::Owned(pt)) => {
+                        let processed_text = FastStr::from_string(pt);
+                        simple_match_type_text_cache_map.insert(simple_match_type_text, processed_text.clone());
+                        processed_text_list.push(processed_text.clone());
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+        }
+    }
+
+    processed_text_list
 }
