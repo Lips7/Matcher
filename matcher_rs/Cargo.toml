@@ -43,7 +43,6 @@ mimalloc = "0.1.42"
 
 [build-dependencies]
 daachorse = "1.0.0"
-sonic-rs = "0.3.7"
 
 [dev-dependencies]
 divan = "0.1.14"
