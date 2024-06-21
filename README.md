@@ -80,7 +80,10 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [x] Cache middle results during different SimpleMatchType reduce_process_text function calling. (failed, too slow)
 - [x] More detailed and rigorous benchmarks.
 - [x] More detailed and rigorous tests.
-- [x] Try more aho_corasick library to improve performance and reduce memory usage
+- [x] Try more aho_corasick library to improve performance and reduce memory usage.
   - [x] https://github.com/daac-tools/crawdad (produce char-wise index, not byte-wise index, it's not acceptable)
   - [x] https://github.com/daac-tools/daachorse (use it when Fanjian, PinYin or PinYinChar transformation is performed)
-- [ ] Add a new function that can handle single simple match type
+- [x] Add a new function that can handle single simple match type.
+  - [x] `text_process` now is available.
+- [ ] More detailed simple match type explanation.
+- [ ] Add fuzzy matcher, https://github.com/lotabout/fuzzy-matcher.
