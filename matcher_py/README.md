@@ -27,7 +27,6 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 #### MatchTable
 * `table_id`: The unique ID of the match table.
 * `match_table_type`: The type of the match table.
-* `simple_match_type`: The type of the simple match **(only relevant if `match_table_type` is "simple")**.
 * `word_list`: The word list of the match table.
 * `exemption_simple_match_type`: The type of the exemption simple match.
 * `exemption_word_list`: The exemption word list of the match table.
@@ -100,8 +99,7 @@ matcher = Matcher(
         1: [
             MatchTable(
                 table_id=1,
-                match_table_type=MatchTableType.Simple,
-                simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+                match_table_type=MatchTableType.Simple(simple_match_type = SimpleMatchType.MatchFanjianDeleteNormalize),
                 word_list=["hello", "world"],
                 exemption_simple_match_type=SimpleMatchType.MatchNone,
                 exemption_word_list=["word"],

@@ -36,9 +36,9 @@ matcher_rs = "*"
 * `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = HashMap<SimpleMatchType, HashMap<u64, &'a str>>` type, the value `HashMap<u64, &'a str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
+
 * `table_id`: The unique ID of the match table.
 * `match_table_type`: The type of the match table.
-* `simple_match_type`: The type of the simple match **(only relevant if `match_table_type` is "simple")**.
 * `word_list`: The word list of the match table.
 * `exemption_simple_match_type`: The type of the exemption simple match.
 * `exemption_word_list`: The exemption word list of the match table.
@@ -46,19 +46,26 @@ matcher_rs = "*"
 For each match table, word matching is performed over the `word_list`, and exemption word matching is performed over the `exemption_word_list`. If the exemption word matching result is True, the word matching result will be False.
 
 #### MatchTableType
+
 * `Simple`: Supports simple multiple patterns matching with text normalization defined by `simple_match_type`.
   * We offer transformation methods for text normalization, including `Fanjian`, `Normalize`, `PinYin` ···.
   * It can handle combination patterns and repeated times sensitive matching, delimited by `,`, such as `hello,world,hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
-* `SimilarChar`: Supports similar character matching using regex.
-  * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
-* `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
-  * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
-* `SimilarTextLevenshtein`: Supports similar text matching based on Levenshtein distance **(threshold is 0.8)**.
-  * `["helloworld"]` will match `helloworld`, `hellowrld`, `helloworld!` ··· any similar text to the words in the list.
-* `Regex`: Supports regex matching.
-  * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
+* `Regex`: Supports regex patterns matching.
+  * `SimilarChar`: Supports similar character matching using regex.
+    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
+  * `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
+    * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
+  * `Regex`: Supports regex matching.
+    * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
+* `Similar`: Supports similar text matching based on distance and threshold.
+  * `Levenshtein`: Supports similar text matching based on Levenshtein distance.
+  * `DamerauLevenshtein`: Supports similar text matching based on Damerau-Levenshtein distance.
+  * `Indel`: Supports similar text matching based on Indel distance.
+  * `Jaro`: Supports similar text matching based on Jaro distance.
+  * `JaroWinkler`: Supports similar text matching based on Jaro-Winkler distance.
 
 #### SimpleMatchType
+
 * `None`: No transformation.
 * `Fanjian`: Traditional Chinese to simplified Chinese transformation.
   * `妳好` -> `你好`
@@ -81,6 +88,7 @@ You can combine these transformations as needed. Pre-defined combinations like `
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
 ### Limitations
+
 Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
 
 ### Basic Example
@@ -101,8 +109,7 @@ use matcher_rs::{Matcher, MatchTableMap, MatchTable, MatchTableType, SimpleMatch
 let match_table_map: MatchTableMap = HashMap::from_iter(vec![
     (1, vec![MatchTable {
         table_id: 1,
-        match_table_type: MatchTableType::Simple,
-        simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
+        match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::FanjianDeleteNormalize},
         word_list: vec!["example", "test"],
         exemption_simple_match_type: SimpleMatchType::FanjianDeleteNormalize,
         exemption_word_list: vec![],

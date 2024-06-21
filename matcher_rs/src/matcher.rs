@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use nohash_hasher::{IntMap, IntSet};
 use sonic_rs::{to_string, Deserialize, Serialize};
 
-use crate::regex_matcher::{RegexMatcher, RegexTable};
-use crate::sim_matcher::{SimMatcher, SimTable};
+use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexTable};
+use crate::sim_matcher::{SimMatchType, SimMatcher, SimTable};
 use crate::simple_matcher::{SimpleMatchType, SimpleMatcher};
 
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a>> {
@@ -24,82 +24,93 @@ pub trait MatchResultTrait<'a> {
         0
     }
     fn word(&self) -> &str;
+    fn similarity(&self) -> f64 {
+        1.0
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-/// Enum defining different types of matching tables used for text processing.
+#[serde(untagged)]
+/// An enumeration representing the different types of matching strategies available for a match table.
 ///
-/// This enum is used to specify the type of matching table when performing text matching operations.
-/// Each variant represents a distinct matching strategy, enabling the selection of the most appropriate
-/// method based on the required use case. The enum variants support Serde serialization and deserialization,
-/// making them easy to work with in contexts where data persistence or configuration might be necessary.
+/// This enum defines the various strategies that can be applied when attempting to match text
+/// within a table. Each variant encapsulates the specific configuration required for that type of matching.
 ///
 /// # Variants
 ///
-/// * [Simple](MatchTableType::Simple) - Represents a basic word matching strategy.
-/// * [SimilarChar](MatchTableType::SimilarChar) - Represents a matching strategy based on similar characters.
-/// * [Acrostic](MatchTableType::Acrostic) - Represents a matching strategy based on acrostic patterns.
-/// * [SimilarTextLevenshtein](MatchTableType::SimilarTextLevenshtein) - Represents a matching strategy using Levenshtein distance to find similar texts.
-/// * [Regex](MatchTableType::Regex) - Represents a matching strategy using regular expressions.
+/// * `Simple { simple_match_type }` - Indicates the use of a simple matching strategy. Contains a `simple_match_type` field of type [SimpleMatchType].
+/// * `Regex { regex_match_type }` - Indicates the use of a regular expression matching strategy. Contains a `regex_match_type` field of type [RegexMatchType].
+/// * `Similar { sim_match_type, threshold }` - Indicates the use of a similarity-based matching strategy. Contains a `sim_match_type` field of type [SimMatchType] and a `threshold` field of type [f64].
 ///
 /// # Serde Attributes
 ///
-/// * `rename_all = "snake_case"` - Ensures that the serialized/deserialized variant names are in snake_case format.
+/// The `snake_case` renaming strategy is used for serialization and deserialization to ensure
+/// that the field names in the serialized output conform to the snake_case convention.
 ///
 /// # Example
 ///
 /// ```
-/// use matcher_rs::MatchTableType;
+/// use matcher_rs::{MatchTableType, SimpleMatchType, RegexMatchType, SimMatchType};
 ///
-/// let match_type = MatchTableType::Simple;
+/// let simple_match = MatchTableType::Simple {
+///     simple_match_type: SimpleMatchType::None,
+/// };
+///
+/// let regex_match = MatchTableType::Regex {
+///     regex_match_type: RegexMatchType::Regex,
+/// };
+///
+/// let similar_match = MatchTableType::Similar {
+///     sim_match_type: SimMatchType::Levenshtein,
+///     threshold: 0.8,
+/// };
 /// ```
 pub enum MatchTableType {
-    Simple,
-    SimilarChar,
-    Acrostic,
-    SimilarTextLevenshtein,
-    Regex,
+    Simple {
+        simple_match_type: SimpleMatchType,
+    },
+    Regex {
+        regex_match_type: RegexMatchType,
+    },
+    Similar {
+        sim_match_type: SimMatchType,
+        threshold: f64,
+    },
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-/// A structure representing a table used for matching text based on various strategies.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+/// A structure representing a match table configuration used for text matching operations.
 ///
-/// This structure defines the configuration of a matching table, including its identifier, type,
-/// and the words it contains for both matching and exemption purposes. It supports Serde
-/// serialization and deserialization to facilitate data handling in different contexts.
+/// This structure defines the necessary fields and types required for configuring a match
+/// table. Each match table has an associated matching strategy, a list of words to be matched,
+/// and a list of exemptions. The match table configuration is essential for initializing matchers
+/// and performing text matching processes.
+///
+/// The structure supports serialization and deserialization through the `serde` library,
+/// allowing it to be easily converted to and from various data formats like JSON.
 ///
 /// # Fields
 ///
-/// * `table_id` - A [u64] that uniquely identifies the matching table.
-/// * `match_table_type` - A [MatchTableType] enum that specifies the strategy used for matching.
-/// * `simple_match_type` - A [SimpleMatchType] enum that determines the type of simple matching to be used.
-/// * `word_list` - A [Vec] of string slices (`&'a str`) representing the words to match.
-/// * `exemption_simple_match_type` - A [SimpleMatchType] enum that determines the type of simple matching to be used for exemptions.
-/// * `exemption_word_list` - A [Vec] of string slices (`&'a str`) representing words to be exempted from matches.
+/// * `table_id` - A [u64] that uniquely identifies the match table in the system.
+/// * `match_table_type` - A [MatchTableType] enumeration that specifies the matching strategy to be used.
+/// * `word_list` - A [`Vec<&'a str>`] containing the list of words for matching. The use of `&'a str`
+///   allows the words to be borrowed, which can optimize memory usage.
+/// * `exemption_simple_match_type` - A [SimpleMatchType] indicating the matching strategy for the exemption words.
+/// * `exemption_word_list` - A [`Vec<&'a str>`] containing the list of words to be exempted from matching. Like `word_list`,
+///   this is also a borrowed vector to allow efficient memory use.
 ///
 /// # Lifetimes
 ///
-/// * `'a` - The lifetime associated with the borrowed string slices in the `word_list` and `exemption_word_list`.
+/// * `'a` - The lifetime associated with the `word_list` and `exemption_word_list` fields, ensuring that the data
+///   for the words can be borrowed for efficiency.
 ///
-/// # Example
+/// # Serde Attributes
 ///
-/// ```
-/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
-///
-/// let match_table = MatchTable {
-///     table_id: 1,
-///     match_table_type: MatchTableType::Simple,
-///     simple_match_type: SimpleMatchType::None,
-///     word_list: vec!["apple", "banana"],
-///     exemption_simple_match_type: SimpleMatchType::None,
-///     exemption_word_list: vec!["orange"],
-/// };
-/// ```
+/// The `borrow` attribute on `word_list` and `exemption_word_list` fields ensures that the deserialized
+/// data can borrow from the input data, providing better performance by avoiding unnecessary allocations.
 pub struct MatchTable<'a> {
     pub table_id: u64,
     pub match_table_type: MatchTableType,
-    pub simple_match_type: SimpleMatchType,
     #[serde(borrow)]
     pub word_list: Vec<&'a str>,
     pub exemption_simple_match_type: SimpleMatchType,
@@ -188,8 +199,7 @@ pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 ///     1,
 ///     vec![MatchTable {
 ///         table_id: 1,
-///         match_table_type: MatchTableType::Simple,
-///         simple_match_type: SimpleMatchType::None,
+///         match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
 ///         word_list: vec!["apple", "banana"],
 ///         exemption_simple_match_type: SimpleMatchType::None,
 ///         exemption_word_list: vec!["orange"],
@@ -243,8 +253,7 @@ impl Matcher {
     ///     1,
     ///     vec![MatchTable {
     ///         table_id: 1,
-    ///         match_table_type: MatchTableType::Simple,
-    ///         simple_match_type: SimpleMatchType::None,
+    ///         match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
     ///         word_list: vec!["apple", "banana"],
     ///         exemption_simple_match_type: SimpleMatchType::None,
     ///         exemption_word_list: vec!["orange"],
@@ -275,7 +284,7 @@ impl Matcher {
 
                 if !word_list.is_empty() {
                     match match_table_type {
-                        MatchTableType::Simple => {
+                        MatchTableType::Simple { simple_match_type } => {
                             simple_word_table_conf_map.insert(
                                 word_table_conf_id,
                                 WordTableConf {
@@ -286,7 +295,7 @@ impl Matcher {
                             );
 
                             let simple_word_map = simple_match_type_word_map
-                                .entry(table.simple_match_type)
+                                .entry(simple_match_type)
                                 .or_default();
 
                             for word in word_list.iter() {
@@ -297,17 +306,24 @@ impl Matcher {
 
                             word_table_conf_id += 1
                         }
-                        MatchTableType::SimilarTextLevenshtein => sim_table_list.push(SimTable {
+                        MatchTableType::Similar {
+                            sim_match_type,
+                            threshold,
+                        } => sim_table_list.push(SimTable {
                             table_id,
                             match_id,
+                            sim_match_type,
                             word_list,
+                            threshold,
                         }),
-                        _ => regex_table_list.push(RegexTable {
-                            table_id,
-                            match_id,
-                            match_table_type,
-                            word_list,
-                        }),
+                        MatchTableType::Regex { regex_match_type } => {
+                            regex_table_list.push(RegexTable {
+                                table_id,
+                                match_id,
+                                regex_match_type,
+                                word_list,
+                            })
+                        }
                     }
                 }
 

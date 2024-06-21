@@ -3,7 +3,13 @@ import pytest
 import msgspec
 import numpy as np
 from matcher_py.matcher_py import Matcher
-from matcher_py.extension_types import SimpleMatchType, MatchTable, MatchTableType
+from matcher_py.extension_types import (
+    SimpleMatchType,
+    MatchTable,
+    MatchTableType,
+    RegexMatchType,
+    SimMatchType,
+)
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 json_encoder = msgspec.json.Encoder()
@@ -36,8 +42,9 @@ def test_init_with_empty_map():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Simple,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Simple(
+                            SimpleMatchType.MatchNone
+                        ),
                         word_list=[],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -62,8 +69,7 @@ def test_regex():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Regex,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchRegex),
                         word_list=["h[aeiou]llo", "w[aeiou]rd"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -85,8 +91,9 @@ def test_similar_char():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.SimilarChar,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Regex(
+                            RegexMatchType.MatchSimilarChar
+                        ),
                         word_list=["hello,hi,H,你好", "world,word,🌍,世界"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -108,8 +115,10 @@ def test_similar_text_levenshtein():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.SimilarTextLevenshtein,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Similar(
+                            SimMatchType.MatchLevenshtein,
+                            0.8
+                        ),
                         word_list=["helloworld"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -133,8 +142,7 @@ def test_acrostic():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Acrostic,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchAcrostic),
                         word_list=["h,e,l,l,o", "你,好"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -163,8 +171,9 @@ def test_exemption():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Simple,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Simple(
+                            SimpleMatchType.MatchNone
+                        ),
                         word_list=["helloworld"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=["worldwide"],
@@ -182,16 +191,16 @@ def test_exemption():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Simple,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Simple(
+                            SimpleMatchType.MatchNone
+                        ),
                         word_list=["helloworld"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=["worldwide"],
                     ),
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Regex,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchRegex),
                         word_list=["hello"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=["worldwide"],
@@ -212,8 +221,9 @@ def matcher():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Simple,
-                        simple_match_type=SimpleMatchType.MatchNone,
+                        match_table_type=MatchTableType.Simple(
+                            SimpleMatchType.MatchNone
+                        ),
                         word_list=["helloworld"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],

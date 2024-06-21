@@ -71,14 +71,14 @@ mod test_simple {
 }
 
 mod test_regex {
-    use matcher_rs::{MatchTableType, RegexMatcher, RegexTable, TextMatcherTrait};
+    use matcher_rs::{RegexMatchType, RegexMatcher, RegexTable, TextMatcherTrait};
 
     #[test]
     fn regex_match_regex() {
         let regex_matcher = RegexMatcher::new(&[RegexTable {
             table_id: 1,
             match_id: 1,
-            match_table_type: MatchTableType::Regex,
+            regex_match_type: RegexMatchType::Regex,
             word_list: &vec!["h[aeiou]llo", "w[aeiou]rd"],
         }]);
 
@@ -91,7 +91,7 @@ mod test_regex {
         let regex_matcher = RegexMatcher::new(&[RegexTable {
             table_id: 1,
             match_id: 1,
-            match_table_type: MatchTableType::Acrostic,
+            regex_match_type: RegexMatchType::Acrostic,
             word_list: &vec!["h,e,l,l,o", "你,好"],
         }]);
 
@@ -105,7 +105,7 @@ mod test_regex {
         let regex_matcher = RegexMatcher::new(&[RegexTable {
             table_id: 1,
             match_id: 1,
-            match_table_type: MatchTableType::SimilarChar,
+            regex_match_type: RegexMatchType::SimilarChar,
             word_list: &vec!["hello,hi,H,你好", "world,word,🌍,世界"],
         }]);
 
@@ -115,14 +115,16 @@ mod test_regex {
 }
 
 mod test_sim {
-    use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait};
+    use matcher_rs::{SimMatchType, SimMatcher, SimTable, TextMatcherTrait};
 
     #[test]
     fn sim_match() {
         let sim_matcher = SimMatcher::new(&[SimTable {
             table_id: 1,
             match_id: 1,
+            sim_match_type: SimMatchType::Levenshtein,
             word_list: &vec!["helloworld"],
+            threshold: 0.8,
         }]);
 
         assert!(sim_matcher.is_match("helloworl"));
@@ -144,8 +146,9 @@ mod test_matcher {
             1,
             vec![MatchTable {
                 table_id: 1,
-                match_table_type: MatchTableType::Simple,
-                simple_match_type: SimpleMatchType::None,
+                match_table_type: MatchTableType::Simple {
+                    simple_match_type: SimpleMatchType::None,
+                },
                 word_list: vec![],
                 exemption_simple_match_type: SimpleMatchType::None,
                 exemption_word_list: vec![],
@@ -159,8 +162,9 @@ mod test_matcher {
             1,
             vec![MatchTable {
                 table_id: 1,
-                match_table_type: MatchTableType::Simple,
-                simple_match_type: SimpleMatchType::None,
+                match_table_type: MatchTableType::Simple {
+                    simple_match_type: SimpleMatchType::None,
+                },
                 word_list: vec!["hello"],
                 exemption_simple_match_type: SimpleMatchType::None,
                 exemption_word_list: vec!["world"],

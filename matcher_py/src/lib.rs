@@ -209,8 +209,7 @@ fn reduce_text_process(simple_match_type: u8, text: &str) -> Vec<Cow<'_, str>> {
 ///             1: [
 ///                 MatchTable(
 ///                     table_id=1,
-///                     match_table_type=MatchTableType.Simple,
-///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
 ///                     word_list=["hello", "world"],
 ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
 ///                     exemption_word_list=["word"],
@@ -293,8 +292,7 @@ impl Matcher {
     ///         1: [
     ///             MatchTable(
     ///                 table_id=1,
-    ///                 match_table_type=MatchTableType.Simple,
-    ///                 simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                 match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                 word_list=["hello", "world"],
     ///                 exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                 exemption_word_list=["word"],
@@ -349,8 +347,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -394,8 +391,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -445,8 +441,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -466,8 +461,7 @@ impl Matcher {
     ///         1: [
     ///             MatchTable(
     ///                 table_id=1,
-    ///                 match_table_type=MatchTableType.Simple,
-    ///                 simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                 match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                 word_list=["hello", "world"],
     ///                 exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                 exemption_word_list=["word"],
@@ -511,8 +505,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -561,8 +554,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -619,8 +611,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -673,8 +664,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -734,8 +724,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],
@@ -799,8 +788,7 @@ impl Matcher {
     ///             1: [
     ///                 MatchTable(
     ///                     table_id=1,
-    ///                     match_table_type=MatchTableType.Simple,
-    ///                     simple_match_type=SimpleMatchType.MatchFanjianDeleteNormalize,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
     ///                     word_list=["hello", "world"],
     ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
     ///                     exemption_word_list=["word"],

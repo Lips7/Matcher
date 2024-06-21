@@ -1,61 +1,114 @@
 use std::borrow::Cow;
 
 use fancy_regex::Regex;
-use rapidfuzz::distance::levenshtein;
+use rapidfuzz::distance;
+use sonic_rs::{Deserialize, Serialize};
 
 use crate::{MatchResultTrait, TextMatcherTrait};
 
-#[derive(Debug, Clone)]
-/// A struct representing a table used for similarity matching.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+/// An enumeration representing different types of similarity matching algorithms.
 ///
-/// The [SimTable] struct is used to define the input data for similarity matching operations.
-/// It contains an identifier for the table, a match identifier, and a list of words
-/// that will be used in the matching process. The word list is a reference to a vector
-/// of string slices with lifetimes tied to the lifetime of the [SimTable] instance.
+/// The [SimMatchType] enum defines several types of algorithms that can be used
+/// for similarity matching operations. Each variant corresponds to a specific
+/// algorithm, providing flexibility in choosing the appropriate method based on
+/// the use case.
+///
+/// # Variants
+///
+/// - [Levenshtein](SimMatchType::Levenshtein): Represents the Levenshtein distance algorithm, which calculates
+///   the number of single-character edits (insertions, deletions, or substitutions)
+///   required to change one word into another.
+/// - [DamerauLevenshtein](SimMatchType::DamerauLevenshtein): Represents the Damerau-Levenshtein distance algorithm,
+///   an extension of Levenshtein that also considers transpositions (swapping of
+///   two adjacent characters) as a single edit.
+/// - [Indel](SimMatchType::Indel): Represents the Insertion-Deletion distance algorithm, focusing on
+///   insertions and deletions as the only operations.
+/// - [Jaro](SimMatchType::Jaro): Represents the Jaro distance algorithm, measuring the similarity between
+///   two strings based on the number and order of matching characters.
+/// - [JaroWinkler](SimMatchType::JaroWinkler): Represents the Jaro-Winkler distance algorithm, a variant of Jaro
+///   that gives more favorable ratings to strings that match from the beginning.
+///
+/// This enum can be serialized and deserialized using Serde, with the variant names
+/// automatically converted to snake_case during this process.
+pub enum SimMatchType {
+    Levenshtein,
+    DamerauLevenshtein,
+    Indel,
+    Jaro,
+    JaroWinkler,
+}
+
+#[derive(Debug, Clone)]
+/// A struct representing a similarity table used for matching operations.
+///
+/// The [SimTable] struct is used to define a table of words and associated identifiers that
+/// will be used in similarity matching. Each table has an ID, a match identifier, a list of words,
+/// and a threshold for scoring.
+///
+/// The lifetime `'a` ensures that the references to the word list remain valid for as long as
+/// the `SimTable` instance exists.
 ///
 /// # Fields
 ///
 /// - `table_id` ([u64]): The unique identifier for the similarity table.
-/// - `match_id` ([u64]): An ID that serves as an identifier for the match.
-/// - `word_list` (&'a Vec<&'a str>): A reference to a vector of string slices representing
-///   the words to be used in the similarity matching process. The lifetimes ensure that
-///   the references remain valid for as long as the [SimTable] instance exists.
+/// - `match_id` ([u64]): An ID that serves as an identifier for the match within the table.
+/// - `sim_match_type` ([SimMatchType]): The type of similarity matching algorithm to be used
+///   with this table.
+/// - `word_list` ([&'a Vec<&'a str>]): A reference to a vector of string slices representing
+///   the words in this similarity table. These words will be used in the matching process.
+/// - `threshold` ([f64]): The threshold value for similarity scoring. This score typically
+///   ranges from 0.0 to 1.0, with higher values indicating higher similarity.
 ///
 /// # Example
 ///
 /// ```
-/// use matcher_rs::SimTable;
+/// use matcher_rs::{SimTable, SimMatchType};
 ///
-/// let word_list = vec!["example1", "example2"];
+/// let words = vec!["example1", "example2"];
 ///
-/// let sim_table = SimTable {
+/// let table = SimTable {
 ///     table_id: 1,
 ///     match_id: 1,
-///     word_list: &word_list,
+///     sim_match_type: SimMatchType::Levenshtein,
+///     word_list: &words,
+///     threshold: 0.8,
 /// };
 /// ```
 pub struct SimTable<'a> {
     pub table_id: u64,
     pub match_id: u64,
+    pub sim_match_type: SimMatchType,
     pub word_list: &'a Vec<&'a str>,
+    pub threshold: f64,
 }
 
 #[derive(Debug, Clone)]
-/// A struct representing a preprocessed table for similarity matching.
+/// A struct representing a processed similarity table.
 ///
-/// The `SimProcessedTable` struct is used internally within the [SimMatcher] to store
-/// preprocessed versions of the tables originally defined by the user through the [SimTable] struct.
+/// The [SimProcessedTable] struct holds the preprocessed data for similarity matching operations.
+/// After a [SimTable] has been processed, its data is converted and stored in this struct, which
+/// includes all necessary information for performing match operations, such as the unique table ID,
+/// match ID, type of similarity matching algorithm used, a list of words, and the threshold for
+/// similarity scoring.
 ///
 /// # Fields
 ///
 /// - `table_id` ([u64]): The unique identifier for the similarity table.
-/// - `match_id` ([u64]): An ID that serves as an identifier for the match.
-/// - `word_list` ([`Vec<String>`]): A vector of owned strings representing the words
-///   that have been preprocessed for similarity matching.
+/// - `match_id` ([u64]): An ID that serves as an identifier for the match within the table.
+/// - `sim_match_type` ([SimMatchType]): The type of similarity matching algorithm used for this table.
+/// - `word_list` ([`Vec<String>`]): A vector of owned strings representing the words in this similarity table.
+///   These words have been preprocessed and are ready for the matching process.
+/// - `threshold` ([f64]): The threshold value for similarity scoring. This score ranges from 0.0 to 1.0,
+///   with higher values indicating higher similarity.
+///
 struct SimProcessedTable {
     table_id: u64,
     match_id: u64,
+    sim_match_type: SimMatchType,
     word_list: Vec<String>,
+    threshold: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +179,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// # Example
 ///
 /// ```
-/// use matcher_rs::{SimMatcher, SimTable};
+/// use matcher_rs::{SimMatcher, SimTable, SimMatchType};
 ///
 /// let word_list = vec!["example1", "example2"];
 ///
@@ -134,7 +187,9 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 ///     SimTable {
 ///         table_id: 1,
 ///         match_id: 1,
+///         sim_match_type: SimMatchType::Levenshtein,
 ///         word_list: &word_list,
+///         threshold: 0.8,
 ///     },
 ///     // Add more SimTable instances as desired
 /// ];
@@ -165,7 +220,7 @@ impl SimMatcher {
     /// # Example
     ///
     /// ```
-    /// use matcher_rs::{SimMatcher, SimTable};
+    /// use matcher_rs::{SimMatcher, SimTable, SimMatchType};
     ///
     /// let word_list = vec!["example1", "example2"];
     ///
@@ -173,7 +228,9 @@ impl SimMatcher {
     ///     SimTable {
     ///         table_id: 1,
     ///         match_id: 1,
+    ///         sim_match_type: SimMatchType::Levenshtein,
     ///         word_list: &word_list,
+    ///         threshold: 0.8,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
@@ -188,11 +245,13 @@ impl SimMatcher {
                 .map(|sim_table| SimProcessedTable {
                     table_id: sim_table.table_id,
                     match_id: sim_table.match_id,
+                    sim_match_type: sim_table.sim_match_type,
                     word_list: sim_table
                         .word_list
                         .iter()
                         .map(|&word| word.to_owned())
                         .collect::<Vec<String>>(),
+                    threshold: sim_table.threshold,
                 })
                 .collect(),
         }
@@ -200,12 +259,13 @@ impl SimMatcher {
 }
 
 impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
-    /// Checks if the given text has a similarity match in any of the preprocessed tables.
+    /// Checks if the given text has any similarity match within the preprocessed tables.
     ///
-    /// This function takes a reference to a text string, processes it by removing
-    /// special characters, and then checks for similarity matches within the preprocessed
-    /// tables using normalized Levenshtein similarity. It returns `true` if any similarity
-    /// match with a score above the specified cutoff (0.8) is found, and `false` otherwise.
+    /// This function processes the input text by removing special characters and then
+    /// checks if the processed text has any similarity match within the preprocessed tables.
+    /// Various similarity metrics are used based on the type specified in each table.
+    /// The function returns `true` if there is any match that meets the threshold specified
+    /// for similarity, otherwise `false`.
     ///
     /// # Parameters
     ///
@@ -214,13 +274,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Returns
     ///
-    /// - `bool`: A boolean value indicating whether a similarity match was found (`true`)
-    ///   or not (`false`).
+    /// - (bool): `true` if a similarity match is found that meets the specified threshold, otherwise `false`.
     ///
     /// # Example
     ///
     /// ```
-    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait};
+    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait, SimMatchType};
     ///
     /// let word_list = vec!["example1", "example2"];
     ///
@@ -229,52 +288,94 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///         table_id: 1,
     ///         match_id: 1,
     ///         word_list: &word_list,
+    ///         sim_match_type: SimMatchType::Levenshtein,
+    ///         threshold: 0.8,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
     ///
     /// let matcher = SimMatcher::new(&sim_tables);
     ///
-    /// let is_match_found = matcher.is_match("example3");
-    /// println!("Is a similarity match found? {}", is_match_found);
+    /// let is_matched = matcher.is_match("example3");
+    ///
+    /// if is_matched {
+    ///     println!("The text has a similarity match in the preprocessed tables.");
+    /// } else {
+    ///     println!("No similarity match found.");
+    /// }
     /// ```
     fn is_match(&self, text: &str) -> bool {
         let processed_text = self.remove_special_pattern.replace_all(text, "");
 
-        self.sim_processed_table_list.iter().any(|sim_table| {
-            sim_table.word_list.iter().any(|text| {
-                levenshtein::normalized_similarity_with_args(
-                    text.chars(),
-                    processed_text.chars(),
-                    &levenshtein::Args::default().score_cutoff(0.8),
-                )
-                .is_some()
+        self.sim_processed_table_list
+            .iter()
+            .any(|sim_table| match sim_table.sim_match_type {
+                SimMatchType::Levenshtein => sim_table.word_list.iter().any(|text| {
+                    distance::levenshtein::normalized_similarity_with_args(
+                        text.chars(),
+                        processed_text.chars(),
+                        &distance::levenshtein::Args::default().score_cutoff(sim_table.threshold),
+                    )
+                    .is_some()
+                }),
+                SimMatchType::DamerauLevenshtein => sim_table.word_list.iter().any(|text| {
+                    distance::damerau_levenshtein::normalized_similarity_with_args(
+                        text.chars(),
+                        processed_text.chars(),
+                        &distance::damerau_levenshtein::Args::default()
+                            .score_cutoff(sim_table.threshold),
+                    )
+                    .is_some()
+                }),
+                SimMatchType::Indel => sim_table.word_list.iter().any(|text| {
+                    distance::indel::normalized_similarity_with_args(
+                        text.chars(),
+                        processed_text.chars(),
+                        &distance::indel::Args::default().score_cutoff(sim_table.threshold),
+                    )
+                    .is_some()
+                }),
+                SimMatchType::Jaro => sim_table.word_list.iter().any(|text| {
+                    distance::jaro::normalized_similarity_with_args(
+                        text.chars(),
+                        processed_text.chars(),
+                        &distance::jaro::Args::default().score_cutoff(sim_table.threshold),
+                    )
+                    .is_some()
+                }),
+                SimMatchType::JaroWinkler => sim_table.word_list.iter().any(|text| {
+                    distance::jaro_winkler::normalized_similarity_with_args(
+                        text.chars(),
+                        processed_text.chars(),
+                        &distance::jaro_winkler::Args::default().score_cutoff(sim_table.threshold),
+                    )
+                    .is_some()
+                }),
             })
-        })
     }
 
-    /// Processes the given text and finds all similarity matches in the preprocessed tables.
+    /// Processes the input text and returns a list of similarity results based on the
+    /// preprocessed tables and their respective similarity match types and thresholds.
     ///
-    /// This function takes a reference to a text string, processes it by removing
-    /// special characters, and then searches for similarity matches within the preprocessed
-    /// tables using normalized Levenshtein similarity. It returns a vector of [SimResult]
-    /// instances, capturing details of each word found to be similar along with its similarity
-    /// score and associated identifiers.
+    /// This function removes special characters from the input text, then iterates through
+    /// each preprocessed similarity table to calculate the similarity scores between the
+    /// processed input text and each word in the table's word list. The results are collected
+    /// into a vector of [SimResult] instances for each word that meets the similarity threshold.
     ///
     /// # Parameters
     ///
-    /// - `text` (&str): A reference to the text string to be processed and checked
-    ///   against the preprocessed tables for similarity matches.
+    /// - `text` (&str): A reference to the text string to be processed and checked against
+    ///   the preprocessed tables for similarity matches.
     ///
     /// # Returns
     ///
-    /// - [`Vec<SimResult>`]: A vector of [SimResult] instances, each representing a
-    ///   word that was found to be similar, along with its similarity score and associated identifiers.
+    /// - Vec<SimResult>: A vector containing [SimResult] instances for each word that meets
+    ///   the similarity threshold specified in the corresponding similarity table.
     ///
     /// # Example
     ///
     /// ```
-    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait};
+    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait, SimResult, SimMatchType};
     ///
     /// let word_list = vec!["example1", "example2"];
     ///
@@ -283,18 +384,20 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///         table_id: 1,
     ///         match_id: 1,
     ///         word_list: &word_list,
+    ///         sim_match_type: SimMatchType::Levenshtein,
+    ///         threshold: 0.8,
     ///     },
     ///     // Add more SimTable instances as desired
     /// ];
     ///
     /// let matcher = SimMatcher::new(&sim_tables);
     ///
-    /// let results = matcher.process("example3");
+    /// let results: Vec<SimResult> = matcher.process("example3");
     ///
     /// for result in results {
     ///     println!(
-    ///         "Matched word: {}, Table ID: {}, Match ID: {}, Similarity: {}",
-    ///         result.word, result.table_id, result.match_id, result.similarity
+    ///         "Found match in table {}: word={}, similarity={}",
+    ///         result.table_id, result.word, result.similarity
     ///     );
     /// }
     /// ```
@@ -304,19 +407,86 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let mut result_list = Vec::new();
 
         for sim_table in &self.sim_processed_table_list {
-            result_list.extend(sim_table.word_list.iter().filter_map(|text| {
-                levenshtein::normalized_similarity_with_args(
-                    text.chars(),
-                    processed_text.chars(),
-                    &levenshtein::Args::default().score_cutoff(0.8),
-                )
-                .map(|similarity| SimResult {
-                    word: Cow::Borrowed(text),
-                    table_id: sim_table.table_id,
-                    match_id: sim_table.match_id,
-                    similarity,
-                })
-            }));
+            match sim_table.sim_match_type {
+                SimMatchType::Levenshtein => {
+                    result_list.extend(sim_table.word_list.iter().filter_map(|text| {
+                        distance::levenshtein::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::levenshtein::Args::default()
+                                .score_cutoff(sim_table.threshold),
+                        )
+                        .map(|similarity| SimResult {
+                            word: Cow::Borrowed(text),
+                            table_id: sim_table.table_id,
+                            match_id: sim_table.match_id,
+                            similarity,
+                        })
+                    }));
+                }
+                SimMatchType::DamerauLevenshtein => {
+                    result_list.extend(sim_table.word_list.iter().filter_map(|text| {
+                        distance::damerau_levenshtein::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::damerau_levenshtein::Args::default()
+                                .score_cutoff(sim_table.threshold),
+                        )
+                        .map(|similarity| SimResult {
+                            word: Cow::Borrowed(text),
+                            table_id: sim_table.table_id,
+                            match_id: sim_table.match_id,
+                            similarity,
+                        })
+                    }));
+                }
+                SimMatchType::Indel => {
+                    result_list.extend(sim_table.word_list.iter().filter_map(|text| {
+                        distance::indel::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::indel::Args::default().score_cutoff(sim_table.threshold),
+                        )
+                        .map(|similarity| SimResult {
+                            word: Cow::Borrowed(text),
+                            table_id: sim_table.table_id,
+                            match_id: sim_table.match_id,
+                            similarity,
+                        })
+                    }));
+                }
+                SimMatchType::Jaro => {
+                    result_list.extend(sim_table.word_list.iter().filter_map(|text| {
+                        distance::jaro::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::jaro::Args::default().score_cutoff(sim_table.threshold),
+                        )
+                        .map(|similarity| SimResult {
+                            word: Cow::Borrowed(text),
+                            table_id: sim_table.table_id,
+                            match_id: sim_table.match_id,
+                            similarity,
+                        })
+                    }));
+                }
+                SimMatchType::JaroWinkler => {
+                    result_list.extend(sim_table.word_list.iter().filter_map(|text| {
+                        distance::jaro_winkler::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::jaro_winkler::Args::default()
+                                .score_cutoff(sim_table.threshold),
+                        )
+                        .map(|similarity| SimResult {
+                            word: Cow::Borrowed(text),
+                            table_id: sim_table.table_id,
+                            match_id: sim_table.match_id,
+                            similarity,
+                        })
+                    }));
+                }
+            }
         }
 
         result_list

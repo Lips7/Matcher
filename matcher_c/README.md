@@ -24,7 +24,7 @@ import msgspec
 
 from cffi import FFI
 
-from extention_types import MatchTableType, SimpleMatchType, MatchTable
+from extension_types import MatchTableType, SimpleMatchType, MatchTable
 
 ## define ffi
 ffi = FFI()
@@ -37,8 +37,7 @@ matcher = lib.init_matcher(
         1: [
             MatchTable(
                 table_id=1,
-                match_table_type=MatchTableType.Simple,
-                simple_match_type=SimpleMatchType.MatchDeleteNormalize,
+                match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
                 word_list=["hello,world", "hello", "world"],
                 exemption_simple_match_type=SimpleMatchType.MatchNone,
                 exemption_word_list=[],

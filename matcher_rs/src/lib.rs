@@ -24,7 +24,7 @@ mod simple_matcher;
 pub use simple_matcher::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher, SimpleResult};
 
 mod regex_matcher;
-pub use regex_matcher::{RegexMatcher, RegexResult, RegexTable};
+pub use regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 
 mod sim_matcher;
-pub use sim_matcher::{SimMatcher, SimResult, SimTable};
+pub use sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};

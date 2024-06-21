@@ -107,17 +107,16 @@ public class Demo {
         packer.packMapHeader(1);
         packer.packInt(1);
         packer.packArrayHeader(1);
-        packer.packMapHeader(6);
+        packer.packMapHeader(5);
         packer.packString("table_id");
         packer.packInt(1);
         packer.packString("match_table_type");
-        packer.packString("simple");
+        packer.packMapHeader(1);
         packer.packString("simple_match_type");
         packer.packInt(30); // 30 = FanjianDeleteNormalize
         packer.packString("word_list");
         packer.packArrayHeader(1);
         packer.packString("hello,world");
-        packer.packString("exemption_simple_match_type");
         packer.packString("exemption_simple_match_type");
         packer.packInt(1); // 1 = None
         packer.packString("exemption_word_list");

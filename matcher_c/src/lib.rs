@@ -26,7 +26,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -39,22 +39,22 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
-///             match_table_type: MatchTableType::Simple,
-///             simple_match_type: SimpleMatchType::None,
+///             match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
 ///             word_list: vec!["hello", "world"],
 ///             exemption_simple_match_type: SimpleMatchType::None,
 ///             exemption_word_list: vec![],
 ///         }
 ///     ]
 /// );
-/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec_named(&match_table_map).unwrap()).unwrap();
 ///
-/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
-/// drop_matcher(matcher_ptr);
+/// let matcher_ptr = unsafe {init_matcher(match_table_map_bytes.as_ptr())};
+/// unsafe {drop_matcher(matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
+        println!("{:?}", CStr::from_ptr(match_table_map_bytes).to_bytes());
         let match_table_map: MatchTableMap = match rmp_serde::from_slice(
             CStr::from_ptr(match_table_map_bytes).to_bytes(),
         ) {
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -103,25 +103,24 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
-///             match_table_type: MatchTableType::Simple,
-///             simple_match_type: SimpleMatchType::None,
+///             match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
 ///             word_list: vec!["hello", "world"],
 ///             exemption_simple_match_type: SimpleMatchType::None,
 ///             exemption_word_list: vec![],
 ///         }
 ///     ]
 /// );
-/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec_named(&match_table_map).unwrap()).unwrap();
 ///
-/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+/// let matcher_ptr = unsafe {init_matcher(match_table_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let not_match_text_bytes = CString::new("test").unwrap();
 ///
-/// assert!(matcher_is_match(matcher_ptr, match_text_bytes.as_ptr()));
-/// assert!(!matcher_is_match(matcher_ptr, not_match_text_bytes.as_ptr()));
+/// assert!(unsafe {matcher_is_match(matcher_ptr, match_text_bytes.as_ptr())});
+/// assert!(!unsafe {matcher_is_match(matcher_ptr, not_match_text_bytes.as_ptr())});
 ///
-/// drop_matcher(matcher_ptr);
+/// unsafe {drop_matcher(matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
@@ -170,17 +169,16 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
-///             match_table_type: MatchTableType::Simple,
-///             simple_match_type: SimpleMatchType::None,
+///             match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
 ///             word_list: vec!["hello", "world"],
 ///             exemption_simple_match_type: SimpleMatchType::None,
 ///             exemption_word_list: vec![],
 ///         }
 ///     ]
 /// );
-/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec_named(&match_table_map).unwrap()).unwrap();
 ///
-/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
+/// let matcher_ptr = unsafe {init_matcher(match_table_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let not_match_text_bytes = CString::new("test").unwrap();
@@ -212,7 +210,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 ///     r#"{}"#
 /// );
 ///
-/// drop_matcher(matcher_ptr);
+/// unsafe {drop_matcher(matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn matcher_word_match(
@@ -249,7 +247,7 @@ pub unsafe extern "C" fn matcher_word_match(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -262,18 +260,19 @@ pub unsafe extern "C" fn matcher_word_match(
 ///     vec![
 ///         MatchTable {
 ///             table_id: 1,
-///             match_table_type: MatchTableType::Simple,
-///             simple_match_type: SimpleMatchType::None,
+///             match_table_type: MatchTableType::Simple {
+///                 simple_match_type: SimpleMatchType::None,
+///             },
 ///             word_list: vec!["hello", "world"],
 ///             exemption_simple_match_type: SimpleMatchType::None,
 ///             exemption_word_list: vec![],
 ///         }
 ///     ]
 /// );
-/// let match_table_map_bytes = CString::new(rmp_serde::to_vec(&match_table_map).unwrap()).unwrap();
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec_named(&match_table_map).unwrap()).unwrap();
 ///
-/// let matcher_ptr = init_matcher(match_table_map_bytes.as_ptr());
-/// drop_matcher(matcher_ptr);
+/// let matcher_ptr = unsafe {init_matcher(match_table_map_bytes.as_ptr())};
+/// unsafe {drop_matcher(matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
@@ -301,7 +300,7 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -312,10 +311,10 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello,world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
-/// drop_simple_matcher(simple_matcher_ptr);
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn init_simple_matcher(
@@ -360,7 +359,7 @@ pub unsafe extern "C" fn init_simple_matcher(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -371,17 +370,17 @@ pub unsafe extern "C" fn init_simple_matcher(
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello,world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let not_match_text_bytes = CString::new("test").unwrap();
 ///
-/// assert!(simple_matcher_is_match(simple_matcher_ptr, match_text_bytes.as_ptr()));
-/// assert!(!simple_matcher_is_match(simple_matcher_ptr, not_match_text_bytes.as_ptr()));
+/// assert!(unsafe {simple_matcher_is_match(simple_matcher_ptr, match_text_bytes.as_ptr())});
+/// assert!(!unsafe{simple_matcher_is_match(simple_matcher_ptr, not_match_text_bytes.as_ptr())});
 ///
-/// drop_simple_matcher(simple_matcher_ptr);
+/// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn simple_matcher_is_match(
@@ -417,7 +416,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
 /// use std::str::from_utf8;
@@ -429,9 +428,9 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello,world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let non_match_text_bytes = CString::new("test").unwrap();
@@ -463,7 +462,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 ///     r#"[]"#
 /// );
 ///
-/// drop_simple_matcher(simple_matcher_ptr);
+/// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn simple_matcher_process(
@@ -503,7 +502,7 @@ pub unsafe extern "C" fn simple_matcher_process(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::collections::HashMap;
 /// use std::ffi::CString;
 ///
@@ -514,10 +513,10 @@ pub unsafe extern "C" fn simple_matcher_process(
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello,world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec(&simple_match_type_word_map).unwrap()).unwrap();
+/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = init_simple_matcher(simple_match_type_word_map_bytes.as_ptr());
-/// drop_simple_matcher(simple_matcher_ptr);
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
@@ -542,7 +541,7 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::ffi::CString;
 ///
 /// use matcher_c::*;
@@ -550,7 +549,7 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 /// let c_string = CString::new("hello world!").unwrap();
 /// let c_string_ptr = c_string.into_raw();
 ///
-/// drop_string(c_string_ptr);
+/// unsafe {drop_string(c_string_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {

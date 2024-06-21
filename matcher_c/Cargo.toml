@@ -14,7 +14,7 @@ documentation = "https://docs.rs/matcher_c/latest/matcher_c/"
 
 [lib]
 name = "matcher_c"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 matcher_rs = { path = "../matcher_rs", version = "0.2.10" }
