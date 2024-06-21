@@ -102,18 +102,18 @@ enum RegexType {
 #[derive(Debug, Clone)]
 /// A structure representing a table of regex patterns used for text matching.
 ///
-/// The [RegexPatternTable] struct is designed to hold compiled regex patterns and associated metadata,
+/// The `RegexPatternTable` struct is designed to hold compiled regex patterns and associated metadata,
 /// allowing the [RegexMatcher] to efficiently organize and manage different sets of patterns for matching
-/// text. Each [RegexPatternTable] instance corresponds to a specific regex table and contains details
+/// text. Each `RegexPatternTable` instance corresponds to a specific regex table and contains details
 /// such as a unique identifier, match identifier, and the type of regex patterns stored.
 ///
 /// # Fields
 ///
 /// * `table_id` - A unique identifier for the regex pattern table. This identifier distinguishes the table from other regex tables.
 /// * `match_id` - A unique identifier for the match, which corresponds to the `match_id` of the [RegexTable] that contains the regex pattern.
-/// * `table_match_type` - The type of regex pattern table, represented by the [RegexType] enum. This field determines the structure and behavior of the regex patterns stored in the table.
+/// * `table_match_type` - The type of regex pattern table, represented by the `RegexType` enum. This field determines the structure and behavior of the regex patterns stored in the table.
 ///
-/// The [RegexPatternTable] struct is utilized internally by the [RegexMatcher] to categorize and execute regex-based text matching operations.
+/// The `RegexPatternTable` struct is utilized internally by the [RegexMatcher] to categorize and execute regex-based text matching operations.
 struct RegexPatternTable {
     table_id: u64,
     match_id: u64,
@@ -220,7 +220,7 @@ impl RegexMatcher {
     /// Constructs a new [RegexMatcher] instance from a list of [RegexTable] structures.
     ///
     /// This function initializes a [RegexMatcher] by processing the provided `regex_table_list` and
-    /// compiling the necessary regex patterns based on the [MatchTableType] for each table. The resulting
+    /// compiling the necessary regex patterns based on the [MatchTableType](crate::MatchTableType) for each table. The resulting
     /// [RegexMatcher] contains a list of `RegexPatternTable` structures that store compiled regex patterns
     /// and related metadata for efficient text matching operations.
     ///
@@ -239,17 +239,17 @@ impl RegexMatcher {
     /// The function handles different [RegexMatchType] variants within the [RegexTable]:
     ///
     /// * [SimilarChar](RegexMatchType::SimilarChar) - Creates a combined regex pattern by escaping each word in the word list and joining
-    ///   them with a `.?` separator. The resulting pattern is stored as a [StandardRegex](RegexType::StandardRegex) type in a new
+    ///   them with a `.?` separator. The resulting pattern is stored as a `StandardRegex` type in a new
     ///   `RegexPatternTable` entry.
     ///
     /// * [Acrostic](RegexMatchType::Acrostic) - Iterates through each word in the word list, creating corresponding regex patterns to
     ///   match acrostic patterns in the text. Each pattern is prefixed with `(?:^|[\s\pP]+?)` to support
     ///   case-insensitive matching at the start of words or after punctuation. The resulting patterns and
-    ///   words are stored as a [ListRegex](RegexType::ListRegex) type in a new [RegexPatternTable] entry.
+    ///   words are stored as a `ListRegex` type in a new `RegexPatternTable` entry.
     ///
     /// * [Regex](RegexMatchType::Regex) - Treats each word in the word list as a full regex pattern and compiles it accordingly.
-    ///   The compiled regex patterns and corresponding words are stored as a [ListRegex](RegexType::ListRegex) type in a new
-    ///   [RegexPatternTable] entry.
+    ///   The compiled regex patterns and corresponding words are stored as a `ListRegex` type in a new
+    ///   `RegexPatternTable` entry.
     ///
     /// # Panics
     ///
@@ -351,8 +351,8 @@ impl RegexMatcher {
 impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// Determines if the provided text matches any of the regex patterns stored in the match tables.
     ///
-    /// This function iterates through all the [RegexPatternTable] instances in `regex_pattern_table_list`
-    /// and checks if the provided text matches any of the regex patterns based on the [RegexType] of each table.
+    /// This function iterates through all the `RegexPatternTable` instances in `regex_pattern_table_list`
+    /// and checks if the provided text matches any of the regex patterns based on the `RegexType` of each table.
     ///
     /// # Arguments
     ///
@@ -365,12 +365,12 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Match Checking
     ///
-    /// The function handles different [RegexType] variants within the [RegexPatternTable]:
+    /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * [StandardRegex](RegexType::StandardRegex) - Checks if the text matches the single compiled regex pattern stored in the table.
+    /// * `StandardRegex` - Checks if the text matches the single compiled regex pattern stored in the table.
     ///   If a match is found, the function returns `true`.
     ///
-    /// * [ListRegex](RegexType::ListRegex) - Iterates through the list of compiled regex patterns and checks if the text matches
+    /// * `ListRegex` - Iterates through the list of compiled regex patterns and checks if the text matches
     ///   any of them. If a match is found, the function returns `true`.
     ///
     /// If no matches are found after checking all regex patterns in all tables, the function returns `false`.
@@ -415,7 +415,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// Processes the given text and returns a list of [RegexResult] instances for matches found.
     ///
     /// This function iterates through all the regex tables stored in `regex_pattern_table_list` and checks
-    /// the provided text against the regex patterns based on the [RegexType] of each table. If a match is found,
+    /// the provided text against the regex patterns based on the `RegexType` of each table. If a match is found,
     /// a corresponding [RegexResult] instance is created and added to the result list.
     ///
     /// # Arguments
@@ -429,12 +429,12 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Match Processing
     ///
-    /// The function handles different [RegexType] variants within the [RegexPatternTable]:
+    /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * [StandardRegex](RegexType::StandardRegex) - For each match found, the captured groups (except the full match) are concatenated
+    /// * `StandardRegex` - For each match found, the captured groups (except the full match) are concatenated
     ///   to form the matched word, which is stored in a [RegexResult] instance.
     ///
-    /// * [ListRegex](RegexType::ListRegex) - If the text matches any regex pattern in the list, the corresponding word from `word_list`
+    /// * `ListRegex` - If the text matches any regex pattern in the list, the corresponding word from `word_list`
     ///   is stored in a [RegexResult] instance.
     ///
     /// # Examples

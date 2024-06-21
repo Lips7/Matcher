@@ -69,7 +69,9 @@ def test_regex():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchRegex),
+                        match_table_type=MatchTableType.Regex(
+                            RegexMatchType.MatchRegex
+                        ),
                         word_list=["h[aeiou]llo", "w[aeiou]rd"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -116,8 +118,7 @@ def test_similar_text_levenshtein():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Similar(
-                            SimMatchType.MatchLevenshtein,
-                            0.8
+                            SimMatchType.MatchLevenshtein, 0.8
                         ),
                         word_list=["helloworld"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
@@ -142,7 +143,9 @@ def test_acrostic():
                 1: [
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchAcrostic),
+                        match_table_type=MatchTableType.Regex(
+                            RegexMatchType.MatchAcrostic
+                        ),
                         word_list=["h,e,l,l,o", "你,好"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=[],
@@ -200,7 +203,9 @@ def test_exemption():
                     ),
                     MatchTable(
                         table_id=1,
-                        match_table_type=MatchTableType.Regex(RegexMatchType.MatchRegex),
+                        match_table_type=MatchTableType.Regex(
+                            RegexMatchType.MatchRegex
+                        ),
                         word_list=["hello"],
                         exemption_simple_match_type=SimpleMatchType.MatchNone,
                         exemption_word_list=["worldwide"],
