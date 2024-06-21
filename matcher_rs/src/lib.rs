@@ -10,7 +10,9 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod process;
-pub use process::process_matcher::{get_process_matcher, reduce_text_process, ProcessMatcher};
+pub use process::process_matcher::{
+    get_process_matcher, reduce_text_process, text_process, ProcessMatcher,
+};
 
 mod matcher;
 pub use matcher::{

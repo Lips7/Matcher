@@ -518,6 +518,47 @@ pub fn get_process_matcher(
 }
 
 #[inline(always)]
+pub fn text_process(
+    simple_match_type_bit: SimpleMatchType,
+    text: &str,
+) -> Result<Cow<'_, str>, &'static str> {
+    if simple_match_type_bit.iter().count() > 1 {
+        return Err("text_process function only accept one bit of simple_match_type");
+    }
+
+    let cached_result = get_process_matcher(simple_match_type_bit);
+    let (process_replace_list, process_matcher) = cached_result.as_ref();
+    let mut result = Cow::Borrowed(text);
+    match (simple_match_type_bit, process_matcher) {
+        (SimpleMatchType::None, _) => {}
+        (SimpleMatchType::Fanjian, pm) => match pm.replace_all(text, process_replace_list) {
+            (true, Cow::Owned(pt)) => {
+                result = Cow::Owned(pt);
+            }
+            (false, _) => {}
+            (_, _) => unreachable!(),
+        },
+        (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+            match pm.delete_all(text) {
+                (true, Cow::Owned(pt)) => {
+                    result = Cow::Owned(pt);
+                }
+                (false, _) => {}
+                (_, _) => unreachable!(),
+            }
+        }
+        (_, pm) => match pm.replace_all(text, process_replace_list) {
+            (true, Cow::Owned(pt)) => {
+                result = Cow::Owned(pt);
+            }
+            (false, _) => {}
+            (_, _) => unreachable!(),
+        },
+    };
+    Ok(result)
+}
+
+#[inline(always)]
 /// Processes the input text to apply transformations specified by the SimpleMatchType.
 ///
 /// This function iterates over the bits of a SimpleMatchType to apply various text transformations.
@@ -563,8 +604,8 @@ pub fn reduce_text_process<'a>(
             (SimpleMatchType::None, _) => {}
             (SimpleMatchType::Fanjian, pm) => {
                 match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
-                    (true, Cow::Owned(tx)) => {
-                        *tmp_processed_text = Cow::Owned(tx);
+                    (true, Cow::Owned(pt)) => {
+                        *tmp_processed_text = Cow::Owned(pt);
                     }
                     (false, _) => {}
                     (_, _) => unreachable!(),
@@ -572,16 +613,16 @@ pub fn reduce_text_process<'a>(
             }
             (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
                 match pm.delete_all(tmp_processed_text.as_ref()) {
-                    (true, Cow::Owned(tx)) => {
-                        processed_text_list.push(Cow::Owned(tx));
+                    (true, Cow::Owned(pt)) => {
+                        processed_text_list.push(Cow::Owned(pt));
                     }
                     (false, _) => {}
                     (_, _) => unreachable!(),
                 }
             }
             (_, pm) => match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
-                (true, Cow::Owned(tx)) => {
-                    processed_text_list.push(Cow::Owned(tx));
+                (true, Cow::Owned(pt)) => {
+                    processed_text_list.push(Cow::Owned(pt));
                 }
                 (false, _) => {}
                 (_, _) => unreachable!(),

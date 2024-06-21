@@ -83,3 +83,4 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [x] Try more aho_corasick library to improve performance and reduce memory usage
   - [x] https://github.com/daac-tools/crawdad (produce char-wise index, not byte-wise index, it's not acceptable)
   - [x] https://github.com/daac-tools/daachorse (use it when Fanjian, PinYin or PinYinChar transformation is performed)
+- [ ] Add a new function that can handle single simple match type

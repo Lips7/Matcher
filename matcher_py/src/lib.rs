@@ -12,10 +12,10 @@ use pyo3::types::{
 use pyo3::{intern, pyfunction, Bound, IntoPy};
 
 use matcher_rs::{
-    reduce_text_process as reduce_text_process_rs, MatchResult as MatchResultRs, MatchResultTrait,
-    MatchTableMap as MatchTableMapRs, Matcher as MatcherRs, SimpleMatchType,
-    SimpleMatchTypeWordMap as SimpleMatchTypeWordMapRs, SimpleMatcher as SimpleMatcherRs,
-    SimpleResult as SimpleResultRs, TextMatcherTrait,
+    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
+    MatchResult as MatchResultRs, MatchResultTrait, MatchTableMap as MatchTableMapRs,
+    Matcher as MatcherRs, SimpleMatchType, SimpleMatchTypeWordMap as SimpleMatchTypeWordMapRs,
+    SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs, TextMatcherTrait,
 };
 
 /// A struct that wraps around the [SimpleResultRs] struct from the [matcher_rs] crate.
@@ -125,6 +125,53 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 
 #[pyfunction]
 #[pyo3(signature=(simple_match_type, text))]
+/// Processes text using a specified simple match type.
+///
+/// This function applies a text processing operation based on the provided simple match type,
+/// which is an enumeration representing different types of simple matches.
+/// The function is directly linked to the `text_process_rs` function from the
+/// `matcher_rs` crate, which performs the actual processing logic.
+///
+/// # Parameters
+/// - `simple_match_type` (u8): A byte value that corresponds to a specific type of simple match.
+/// - `text` (&str): A string slice containing the text to be processed.
+///
+/// # Returns
+/// - `PyResult<Cow<'_, str>>`: On success, returns a `Cow` string representing the processed text.
+///   On failure, returns a Python exception detailing the error.
+///
+/// # Errors
+/// This function will return a `PyValueError` if the text processing operation
+/// in the `matcher_rs` crate fails, encapsulating the underlying error message.
+fn text_process(simple_match_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
+    let simple_match_type =
+        SimpleMatchType::from_bits(simple_match_type).unwrap_or(SimpleMatchType::None);
+    match text_process_rs(simple_match_type, text) {
+        Ok(result) => Ok(result),
+        Err(e) => Err(PyValueError::new_err(e)),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature=(simple_match_type, text))]
+/// Reduces text using a specified simple match type.
+///
+/// This function applies a text reduction process based on the provided simple match type,
+/// which is an enumeration representing different types of simple matches.
+/// The function is directly linked to the `reduce_text_process_rs` function from the
+/// `matcher_rs` crate, which performs the actual reduction logic.
+///
+/// # Parameters
+/// - `simple_match_type` (u8): A byte value that corresponds to a specific type of simple match.
+/// - `text` (&str): A string slice containing the text to be processed.
+///
+/// # Returns
+/// - `Vec<Cow<'_, str>>`: A vector of `Cow` strings representing the reduced text fragments.
+///
+/// # Errors
+/// This function will default to `SimpleMatchType::None` if the provided byte value does not
+/// correspond to a valid `SimpleMatchType`. It will not raise an error in such cases but will
+/// produce results based on the `SimpleMatchType::None`.
 fn reduce_text_process(simple_match_type: u8, text: &str) -> Vec<Cow<'_, str>> {
     let simple_match_type =
         SimpleMatchType::from_bits(simple_match_type).unwrap_or(SimpleMatchType::None);
@@ -1337,5 +1384,6 @@ fn matcher_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Matcher>()?;
     m.add_class::<SimpleMatcher>()?;
     m.add_function(wrap_pyfunction!(reduce_text_process, m)?)?;
+    m.add_function(wrap_pyfunction!(text_process, m)?)?;
     Ok(())
 }

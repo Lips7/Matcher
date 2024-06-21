@@ -10,6 +10,19 @@ class MatchResult(TypedDict):
     table_id: int
     word: str
 
+def text_process(simple_match_type: int, text: str) -> str:
+    """
+    Processes the provided text based on the specified match type.
+
+    Args:
+        simple_match_type (int): An integer representing the type of match to perform.
+        text (str): The input text to be processed.
+
+    Returns:
+        str: The processed text as a single string.
+    """
+    ...
+
 def reduce_text_process(simple_match_type: int, text: str) -> List[str]:
     """
     Reduces the provided text based on the specified match type.
