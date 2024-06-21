@@ -87,3 +87,4 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
   - [x] `text_process` now is available.
 - [ ] More detailed simple match type explanation.
 - [ ] Add fuzzy matcher, https://github.com/lotabout/fuzzy-matcher.
+- [ ] More precise and convenient MatchTable.
