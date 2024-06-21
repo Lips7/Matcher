@@ -363,8 +363,8 @@ impl Matcher {
     /// pickle_data = pickle.dumps(matcher)
     /// unpickled_matcher = pickle.loads(pickle_data)
     /// ```
-    fn __getnewargs__(&self) -> &[u8] {
-        &self.match_table_map_bytes
+    fn __getnewargs__(&self) -> (&[u8],) {
+        (&self.match_table_map_bytes,)
     }
 
     /// Serializes the [Matcher] object's state for pickling.
@@ -1066,8 +1066,8 @@ impl SimpleMatcher {
     /// serialized_args = simple_matcher.__getnewargs__()
     /// print(serialized_args)
     /// ```
-    fn __getnewargs__(&self) -> &[u8] {
-        &self.simple_match_type_word_map_bytes
+    fn __getnewargs__(&self) -> (&[u8],) {
+        (&self.simple_match_type_word_map_bytes,)
     }
 
     /// Serializes the state of the [SimpleMatcher] object for pickling.
