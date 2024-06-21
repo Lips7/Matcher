@@ -111,13 +111,13 @@ enum RegexType {
 ///
 /// * `table_id` - A unique identifier for the regex pattern table. This identifier distinguishes the table from other regex tables.
 /// * `match_id` - A unique identifier for the match, which corresponds to the `match_id` of the [RegexTable] that contains the regex pattern.
-/// * `table_match_type` - The type of regex pattern table, represented by the `RegexType` enum. This field determines the structure and behavior of the regex patterns stored in the table.
+/// * `regex_type` - The type of regex pattern table, represented by the `RegexType` enum. This field determines the structure and behavior of the regex patterns stored in the table.
 ///
 /// The `RegexPatternTable` struct is utilized internally by the [RegexMatcher] to categorize and execute regex-based text matching operations.
 struct RegexPatternTable {
     table_id: u64,
     match_id: u64,
-    table_match_type: RegexType,
+    regex_type: RegexType,
 }
 
 /// Represents a result from a regex matching operation, containing metadata about the match.
@@ -292,7 +292,7 @@ impl RegexMatcher {
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
-                        table_match_type: RegexType::StandardRegex {
+                        regex_type: RegexType::StandardRegex {
                             regex: Regex::new(&pattern).unwrap(),
                         },
                     });
@@ -314,7 +314,7 @@ impl RegexMatcher {
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
-                        table_match_type: RegexType::ListRegex {
+                        regex_type: RegexType::ListRegex {
                             regex_list,
                             word_list,
                         },
@@ -330,7 +330,7 @@ impl RegexMatcher {
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
-                        table_match_type: RegexType::ListRegex {
+                        regex_type: RegexType::ListRegex {
                             regex_list: word_list
                                 .iter()
                                 .filter_map(|word| Regex::new(word).ok())
@@ -395,7 +395,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// ```
     fn is_match(&self, text: &str) -> bool {
         for regex_table in &self.regex_pattern_table_list {
-            match &regex_table.table_match_type {
+            match &regex_table.regex_type {
                 RegexType::StandardRegex { regex } => {
                     if regex.is_match(text).unwrap() {
                         return true;
@@ -463,7 +463,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let mut result_list = Vec::new();
 
         for regex_table in &self.regex_pattern_table_list {
-            match &regex_table.table_match_type {
+            match &regex_table.regex_type {
                 RegexType::StandardRegex { regex } => {
                     for caps in regex.captures_iter(text).map(|caps| caps.unwrap()) {
                         result_list.push(RegexResult {

@@ -94,12 +94,12 @@ public class Demo {
         packer.packInt(1); // 1 = None
         packer.packString("exemption_word_list");
         packer.packArrayHeader(0);
-        byte[] table_match_dict_bytes = packer.toByteArray();
+        byte[] match_table_map_dict_bytes = packer.toByteArray();
         packer.close();
 
         Matcher instance = Matcher.INSTANCE;
 
-        Pointer matcher = instance.init_matcher(table_match_dict_bytes);
+        Pointer matcher = instance.init_matcher(match_table_map_dict_bytes);
 
         byte[] str_bytes = "hello,world".getBytes("utf-8");
         byte[] c_str_bytes = new byte[str_bytes.length + 1];

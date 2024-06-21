@@ -20,8 +20,7 @@ The `Matcher` utilizes a JSON structure to define matches and tables. Below is a
     "777": [
         {
             "table_id": 45,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["hello", "world"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
@@ -57,8 +56,7 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["hello", "world"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
@@ -67,8 +65,7 @@ Input:
     "2": [
         {
             "table_id": 2,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["你", "好"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
@@ -86,16 +83,14 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["hello", "world"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
         },
         {
             "table_id": 2,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["你", "好"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
@@ -113,8 +108,7 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["hello", "world"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []
@@ -123,8 +117,7 @@ Input:
     "2": [
         {
             "table_id": 2,
-            "table_match_type": "Simple",
-            "simple_match_type": "MatchNone",
+            "match_table_type": {"simple_match_type": "MatchNone"},
             "word_list": ["你", "好"],
             "exemption_simple_match_type": "MatchNone",
             "exemption_word_list": []

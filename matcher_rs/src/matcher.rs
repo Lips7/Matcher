@@ -78,7 +78,7 @@ pub enum MatchTableType {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 /// A structure representing a match table configuration used for text matching operations.
 ///
 /// This structure defines the necessary fields and types required for configuring a match
@@ -171,7 +171,7 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
 
 pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
 ///
 /// This structure holds configurations for simple, regex, and similarity-based matchers. It manages

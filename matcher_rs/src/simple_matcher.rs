@@ -208,7 +208,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// // Process the input text and return a list of matching results.
 /// let results = simple_matcher.process(text);
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_wordconf_map: IntMap<u64, WordConf>,
