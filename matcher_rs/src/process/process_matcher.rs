@@ -518,6 +518,37 @@ pub fn get_process_matcher(
 }
 
 #[inline(always)]
+/// Processes the input text according to the specified single-bit `SimpleMatchType`.
+///
+/// This function takes a `SimpleMatchType` bit flag and transforms the input text based on the rules
+/// associated with that flag. It accepts only a single bit of `simple_match_type` and returns a Result
+/// containing the transformed text or an error.
+///
+/// # Arguments
+///
+/// * `simple_match_type_bit` - A single bit of [SimpleMatchType] defining a specific text transformation rule.
+/// * `text` - A string slice representing the input text to be transformed.
+///
+/// # Returns
+///
+/// * `Result<Cow<'_, str>, &'static str>` - The function returns a `Cow` (Copy on Write) string containing
+///   the processed text if the transformation is successful or an error message if more than one bit is set.
+///
+/// # Errors
+///
+/// This function will return an error if the `simple_match_type_bit` contains more than one active transformation bit.
+///
+/// # Detailed Processing:
+///
+/// 1. Checks if more than one bit is set in `simple_match_type_bit` and returns an error if true.
+/// 2. Retrieves the cached matcher and replacement list for the given bit.
+/// 3. Initializes the `result` as a borrowed version of the input `text`.
+/// 4. Matches the transformation type and applies the corresponding matcher:
+///     a. [SimpleMatchType::None] - Do nothing.
+///     b. [SimpleMatchType::Fanjian] - Apply the matcher and replace all occurrences.
+///     c. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
+///     d. Other types - Apply the matcher and replace all occurrences.
+/// 5. Updates the `result` accordingly and returns it within an `Ok`.
 pub fn text_process(
     simple_match_type_bit: SimpleMatchType,
     text: &str,

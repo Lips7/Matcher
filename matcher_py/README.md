@@ -72,6 +72,18 @@ Avoid combining `MatchPinYin` and `MatchPinYinChar` due to that `MatchPinYin` is
 ### Limitations
 Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
 
+### Text Process Usage
+
+Here’s an example of how to use the `reduce_text_process` and `text_process` functions:
+
+```python
+from matcher_py import reduce_text_process, text_process
+from matcher_py.extension_types import SimpleMatchType
+
+print(reduce_text_process(SimpleMatchType.MatchTextDelete | SimpleMatchType.MatchNormalize, "hello, world!"))
+print(text_process(SimpleMatchType.MatchTextDelete, "hello, world!"))
+```
+
 ### Matcher Basic Usage
 
 Here’s an example of how to use the `Matcher`:

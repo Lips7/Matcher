@@ -25,21 +25,25 @@ class MatchTableType(Enum):
 
 class SimpleMatchType(IntFlag):
     """
-    IntFlag representing different types of simple matches.
+    IntFlag representing different simple match types.
 
     Attributes:
-        None: No transformations applied.
-        Fanjian: Match simplified and traditional Chinese characters.
-        Delete: Match with deletion of certain characters.
-        Normalize: Match with normalization of certain characters.
-        DeleteNormalize: Match with normalization and deletion of certain characters.
-        FanjianDeleteNormalize: Match both simplified and traditional Chinese characters, with normalization and deletion of certain characters.
-        PinYin: Match using Pinyin, the Romanization of Chinese characters, considering character boundaries.
-        PinYinChar: Match using Pinyin, the Romanization of Chinese characters, without considering character boundaries.
+        MatchNone (int): A match type indicating no specific match criteria (0b00000001).
+        MatchFanjian (int): A match type for matching between traditional and simplified Chinese characters (0b00000010).
+        MatchWordDelete (int): A match type where words are deleted for matching purposes (0b00000100).
+        MatchTextDelete (int): A match type where text is deleted for matching purposes (0b00001000).
+        MatchDelete (int): A combined match type where both word and text deletions are applied (0b00001100).
+        MatchNormalize (int): A match type where text normalization is applied (0b00010000).
+        MatchDeleteNormalize (int): A combined match type where deletion and normalization are both applied (0b00011100).
+        MatchFanjianDeleteNormalize (int): A combined match type that includes Fanjian matching, deletion, and normalization (0b00011110).
+        MatchPinYin (int): A match type using Pinyin for matching Chinese characters (0b00100000).
+        MatchPinYinChar (int): A match type using individual Pinyin characters for a finer granularity match (0b01000000).
     """
 
     MatchNone = 0b00000001
     MatchFanjian = 0b00000010
+    MatchWordDelete = 0b00000100
+    MatchTextDelete = 0b00001000
     MatchDelete = 0b00001100
     MatchNormalize = 0b00010000
     MatchDeleteNormalize = 0b00011100

@@ -88,6 +88,13 @@ Simple Match can handle words with a maximum of **32** combined words (more than
 Here’s a basic example of how to use the `Matcher` struct for text matching:
 
 ```rust
+use matcher_rs::{text_process, reduce_text_process, SimpleMatchType};
+
+let result = text_process(SimpleMatchType::TextDelete, "你好，世界！");
+let result = reduce_text_process(SimpleMatchType::FanjianDeleteNormalize, "你好，世界！");
+```
+
+```rust
 use std::collections::HashMap;
 use matcher_rs::{Matcher, MatchTableMap, MatchTable, MatchTableType, SimpleMatchType};
 
