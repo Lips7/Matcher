@@ -50,7 +50,9 @@ fastrand = "2.1.0"
 
 [features]
 default = ["prebuilt"]
+# By enable prebuilt feature, we could boost matcher and simple_matcher build time, but with package size increasing.
 prebuilt = []
+# By enable runtime_build feature, we could build matcher and simple_matcher at runtime, but with build time increasing.
 runtime_build = []
 
 [[bench]]
