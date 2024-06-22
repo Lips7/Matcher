@@ -44,7 +44,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 The `msgspec` library is recommended for serializing the matcher configuration due to its performance benefits. You can also use other msgpack serialization libraries like `ormsgpack`. All relevant types are defined in [extension_types.py](./matcher_py/extension_types.py).
 
-### Explaination of the configuration
+### Explanation of the configuration
 
 * `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
 * `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = Dict[SimpleMatchType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
