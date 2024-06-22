@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use fancy_regex::{escape, Regex};
 use sonic_rs::{Deserialize, Serialize};
 
-use crate::{MatchResultTrait, TextMatcherTrait};
+use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -122,7 +122,7 @@ struct RegexPatternTable {
 
 /// Represents a result from a regex matching operation, containing metadata about the match.
 ///
-/// The [RegexResult] structure is designed to encapsulate information about a particular regex match,
+/// The `RegexResult` structure is designed to encapsulate information about a particular regex match,
 /// including the matched word or pattern, the table identifier from which the match originated, and
 /// the match identifier associated with the match.
 ///
@@ -138,24 +138,6 @@ struct RegexPatternTable {
 /// * `match_id` - A [u64] that serves as an identifier for the match. This identifier
 ///   is used to differentiate between match results originating from different regex tables, allowing
 ///   for more detailed and organized match results.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::RegexResult;
-/// use std::borrow::Cow;
-///
-/// let result = RegexResult {
-///     word: Cow::Borrowed("example"),
-///     table_id: 1,
-///     match_id: 1,
-/// };
-///
-/// println!("{:?}", result);
-/// ```
-///
-/// The example above demonstrates how to create a [RegexResult] instance and print its fields for
-/// debugging or logging purposes.
 ///
 /// This structure is primarily utilized in text matching applications where regex patterns are used
 /// to identify specific words or patterns within the target text, and the results need to be tracked
@@ -412,11 +394,11 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         false
     }
 
-    /// Processes the given text and returns a list of [RegexResult] instances for matches found.
+    /// Processes the given text and returns a list of `RegexResult` instances for matches found.
     ///
     /// This function iterates through all the regex tables stored in `regex_pattern_table_list` and checks
     /// the provided text against the regex patterns based on the `RegexType` of each table. If a match is found,
-    /// a corresponding [RegexResult] instance is created and added to the result list.
+    /// a corresponding `RegexResult` instance is created and added to the result list.
     ///
     /// # Arguments
     ///
@@ -425,22 +407,22 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Returns
     ///
-    /// * [Vec<RegexResult<'a>>] - A vector of [RegexResult] instances, each representing a match found in the text.
+    /// * [Vec<RegexResult<'a>>] - A vector of `RegexResult` instances, each representing a match found in the text.
     ///
     /// # Match Processing
     ///
     /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
     /// * `StandardRegex` - For each match found, the captured groups (except the full match) are concatenated
-    ///   to form the matched word, which is stored in a [RegexResult] instance.
+    ///   to form the matched word, which is stored in a `RegexResult` instance.
     ///
     /// * `ListRegex` - If the text matches any regex pattern in the list, the corresponding word from `word_list`
-    ///   is stored in a [RegexResult] instance.
+    ///   is stored in a `RegexResult` instance.
     ///
     /// # Examples
     ///
     /// ```
-    /// use matcher_rs::{RegexMatcher, RegexTable, RegexMatchType, TextMatcherTrait, RegexResult};
+    /// use matcher_rs::{RegexMatcher, RegexTable, RegexMatchType, TextMatcherTrait};
     /// use std::borrow::Cow;
     ///
     /// let regex_table = RegexTable {

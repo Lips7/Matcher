@@ -70,17 +70,6 @@ impl ProcessMatcher {
     ///
     /// This function uses unsafe code to access slices and indices. This assumes that the match indices and the replacement list
     /// indices are always within bounds.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::{ProcessMatcher, SimpleMatchType, get_process_matcher};
-    ///
-    /// let cached_result = get_process_matcher(SimpleMatchType::Normalize);
-    /// let (process_replace_list, matcher) = cached_result.as_ref(); // Assume this returns a valid ProcessMatcher
-    /// let text = "Some text for processing";
-    /// let (replaced, result) = matcher.replace_all(text, &process_replace_list);
-    /// ```
     pub fn replace_all<'a>(
         &self,
         text: &'a str,
@@ -137,17 +126,6 @@ impl ProcessMatcher {
     /// # Safety
     ///
     /// This function uses unsafe code to access slices and indices. This assumes that the match indices are always within bounds.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::{ProcessMatcher, SimpleMatchType, get_process_matcher};
-    ///
-    /// let cached_result = get_process_matcher(SimpleMatchType::Normalize);
-    /// let (process_replace_list, matcher) = cached_result.as_ref(); // Assume this returns a valid ProcessMatcher
-    /// let text = "Some text for processing";
-    /// let (deleted, result) = matcher.delete_all(text);
-    /// ```
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0;
@@ -385,15 +363,6 @@ pub fn get_process_matcher(
 /// - [SimpleMatchType::Normalize]: Returns a matcher using prebuilt normalization data.
 /// - [SimpleMatchType::PinYin]: Returns a matcher using prebuilt replacement list and matcher data for PinYin.
 /// - [SimpleMatchType::PinYinChar]: Returns a matcher using prebuilt replacement list and matcher data for PinYin characters.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{SimpleMatchType, get_process_matcher};
-///
-/// let cached_result = get_process_matcher(SimpleMatchType::TextDelete);
-/// let (process_replace_list, matcher) = cached_result.as_ref();
-/// ```
 ///
 /// This function requires the `prebuilt` feature to be enabled.
 pub fn get_process_matcher(

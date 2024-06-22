@@ -11,8 +11,8 @@ use serde::{Deserializer, Serializer};
 use sonic_rs::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
+use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::reduce_text_process;
-use crate::{MatchResultTrait, TextMatcherTrait};
 
 /// The maximum limit of word combinations that are considered for matches.
 /// This value is used to limit the number of different word combinations the algorithm evaluates.

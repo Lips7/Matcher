@@ -4,7 +4,7 @@ use fancy_regex::Regex;
 use rapidfuzz::distance;
 use sonic_rs::{Deserialize, Serialize};
 
-use crate::{MatchResultTrait, TextMatcherTrait};
+use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -114,12 +114,12 @@ struct SimProcessedTable {
 #[derive(Debug, Clone)]
 /// A struct representing the result of a similarity match.
 ///
-/// The [SimResult] struct captures the details of a word that was found to be similar
+/// The `SimResult` struct captures the details of a word that was found to be similar
 /// during the similarity matching process. It includes the matched word, the unique
 /// identifier of the table where the word was found, the match identifier of that table,
 /// and the similarity score computed for the match.
 ///
-/// The lifetimes ensure that the references in the [SimResult] struct remain valid
+/// The lifetimes ensure that the references in the `SimResult` struct remain valid
 /// for as long as the struct instance exists.
 ///
 /// # Fields
@@ -130,20 +130,6 @@ struct SimProcessedTable {
 /// - `match_id` ([u64]): An ID that serves as an identifier for the match.
 /// - `similarity` ([f64]): The similarity score computed for the match. This score typically
 ///   ranges from 0.0 to 1.0, with higher values indicating greater similarity.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::SimResult;
-/// use std::borrow::Cow;
-///
-/// let match_result = SimResult {
-///     word: Cow::Borrowed("example"),
-///     table_id: 1,
-///     match_id: 1,
-///     similarity: 0.9,
-/// };
-/// ```
 pub struct SimResult<'a> {
     pub word: Cow<'a, str>,
     pub table_id: u64,
@@ -360,7 +346,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// This function removes special characters from the input text, then iterates through
     /// each preprocessed similarity table to calculate the similarity scores between the
     /// processed input text and each word in the table's word list. The results are collected
-    /// into a vector of [SimResult] instances for each word that meets the similarity threshold.
+    /// into a vector of `SimResult` instances for each word that meets the similarity threshold.
     ///
     /// # Parameters
     ///
@@ -369,13 +355,13 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Returns
     ///
-    /// - `Vec<SimResult>`: A vector containing [SimResult] instances for each word that meets
+    /// - `Vec<SimResult>`: A vector containing `SimResult` instances for each word that meets
     ///   the similarity threshold specified in the corresponding similarity table.
     ///
     /// # Example
     ///
     /// ```
-    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait, SimResult, SimMatchType};
+    /// use matcher_rs::{SimMatcher, SimTable, TextMatcherTrait, SimMatchType};
     ///
     /// let word_list = vec!["example1", "example2"];
     ///
@@ -392,7 +378,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// let matcher = SimMatcher::new(&sim_tables);
     ///
-    /// let results: Vec<SimResult> = matcher.process("example3");
+    /// let results = matcher.process("example3");
     ///
     /// for result in results {
     ///     println!(
