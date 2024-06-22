@@ -98,7 +98,7 @@ Input:
     ]
 }
 
-Output: Check if `match_id` 1 is matched.
+Output: Check if `match_id` 1 or 2 is matched.
 ```
 
 #### Table1 NOT Table2 match
