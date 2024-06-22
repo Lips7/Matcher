@@ -58,3 +58,7 @@ runtime_build = []
 [[bench]]
 name = "bench"
 harness = false
+
+[[bench]]
+name = "bench_test"
+harness = false
