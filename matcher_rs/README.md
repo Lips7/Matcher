@@ -6,28 +6,36 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
 
 ## Features
 
-- **Supports Multiple Matching Methods**:
-  - Simple word matching
-  - Regex-based matching
-  - Similarity-based matching
-- **Text Normalization Options**:
-  - Fanjian (Simplify traditional Chinese characters to simplified ones)
-  - Delete (Remove whitespaces, punctuation, and non-alphanumeric characters)
-  - Normalize (Normalize special characters to identifiable characters)
-  - PinYin (Convert Chinese characters to Pinyin for fuzzy matching)
-  - PinYinChar (Convert Chinese characters to Pinyin)
+- **Multiple Matching Methods**:
+  - Simple Word Matching
+  - Regex-Based Matching
+  - Similarity-Based Matching
+- **Text Normalization**:
+  - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
+    Example: `蟲艸` -> `虫艹`
+  - **Delete**: Remove specific characters.
+    Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
+  - **Normalize**: Normalize special characters to identifiable characters.
+    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `hello world`
+  - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
+    Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
+  - **PinYinChar**: Convert Chinese characters to Pinyin.
+    Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **Combination and Repeated Word Matching**:
-  - Handles combination and repetition of words with specified constraints.
+  - Takes into account the number of repetitions of words.
+  - Example: `hello,world` matches `hello world` and `world,hello`
+  - Example: `无,法,无,天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+- **Customizable Exemption Lists**: Exclude specific words from matching.
+- **Efficient Handling of Large Word Lists**: Optimized for performance.
 
 ## Usage
 
 ### Adding to Your Project
 
-To use `matcher_rs` in your Rust project, add the following to your `Cargo.toml` file:
+To use `matcher_rs` in your Rust project, run the following command:
 
-```toml
-[dependencies]
-matcher_rs = "*"
+```shell
+cargo add matcher_rs
 ```
 
 ### Explaination of the configuration
