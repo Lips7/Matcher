@@ -67,25 +67,29 @@ For each match table, word matching is performed over the `word_list`, and exemp
 #### SimpleMatchType
 
 * `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation.
+* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](./str_conv_map/FANJIAN.txt) and [UNICODE](./str_conv_map/UNICODE.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `Delete`: Delete all non-alphanumeric and non-unicode Chinese characters.
+* `Delete`: Delete all punctuation, special characters and white spaces.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters.
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [UPPER_LOWER](./str_conv_map/UPPER-LOWER.txt), [EN_VARIATION](./str_conv_map/EN-VARIATION.txt) and [NUM_NORM](./str_conv_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠ϕ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries.
+* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](./str_conv_map/PINYIN.txt).
   * `你好` -> `␀ni␀␀hao␀`
   * `西安` -> `␀xi␀␀an␀`
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries
+* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN_CHAR](./str_conv_map/PINYIN-CHAR.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
 You can combine these transformations as needed. Pre-defined combinations like `DeleteNormalize` and `FanjianDeleteNormalize` are provided for convenience.
 
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
+
+`Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe `CN_SPECIAL` and `EN_SPECIAL` are parts of the word, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
+* `WordDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](./str_conv_map/PUNCTUATION-SPECIAL.txt).
+* `TextDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](./str_conv_map/PUNCTUATION-SPECIAL.txt), [CN_SPECIAL](./str_conv_map/CN-SPECIAL.txt), [EN_SPECIAL](./str_conv_map/EN-SPECIAL.txt).
 
 ### Limitations
 

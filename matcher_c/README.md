@@ -7,6 +7,7 @@ Matcher is a high-performance matching library implemented in Rust, providing C 
 ## Installation
 
 ### Build from source
+
 ```shell
 git clone https://github.com/Lips7/Matcher.git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
@@ -16,9 +17,11 @@ cargo build --release
 Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
 
 ### Install pre-built binary
+
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
 ## Python usage example
+
 ```Python
 import msgspec
 
@@ -80,5 +83,6 @@ lib.drop_simple_matcher(simple_matcher)
 ```
 
 ## Important Notes
+
 1. The [extension_types.py](./extension_types.py) is not required, you can use the dynamic library directly.
 2. Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` after initializing and processing to avoid memory leaks.

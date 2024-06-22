@@ -4,6 +4,22 @@ A high-performance, multi-functional word matcher implemented in Rust.
 
 Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching. For detailed implementation, see the [Design Document](../DESIGN.md).
 
+## Features
+
+- **Supports Multiple Matching Methods**:
+  - Simple word matching
+  - Regex-based matching
+  - Similarity-based matching
+- **Text Normalization Options**:
+  - Fanjian (Simplify traditional Chinese characters to simplified ones)
+  - Delete (Remove whitespaces, punctuation, and non-alphanumeric characters)
+  - Normalize (Normalize special characters to identifiable characters)
+  - PinYin (Convert Chinese characters to Pinyin for fuzzy matching)
+  - PinYinChar (Convert Chinese characters to Pinyin)
+- **Combination and Repeated Word Matching**:
+  - Handles combination and repetition of words with specified constraints.
+
+
 ## Installation
 
 ### Use pip
@@ -13,6 +29,7 @@ pip install matcher_py
 ```
 
 ### Install pre-built binary
+
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
 ## Usage
@@ -25,6 +42,7 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 * `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = Dict[SimpleMatchType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
+
 * `table_id`: The unique ID of the match table.
 * `match_table_type`: The type of the match table.
 * `word_list`: The word list of the match table.
@@ -34,41 +52,53 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 For each match table, word matching is performed over the `word_list`, and exemption word matching is performed over the `exemption_word_list`. If the exemption word matching result is True, the word matching result will be False.
 
 #### MatchTableType
-* `Simple = "simple"`: Supports simple multiple patterns matching with text normalization defined by `simple_match_type`.
-  * We offer transformation methods for text normalization, including `MatchFanjian`, `MatchNormalize`, `MatchPinYin` ···.
+
+* `Simple`: Supports simple multiple patterns matching with text normalization defined by `simple_match_type`.
+  * We offer transformation methods for text normalization, including `Fanjian`, `Normalize`, `PinYin` ···.
   * It can handle combination patterns and repeated times sensitive matching, delimited by `,`, such as `hello,world,hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
-* `SimilarChar = "similar_char"`: Supports similar character matching using regex.
-  * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
-* `Acrostic = "acrostic"`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
-  * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
-* `SimilarTextLevenshtein = "similar_text_levenshtei"n"`: Supports similar text matching based on Levenshtein distance **(threshold is 0.8)**.
-  * `["helloworld"]` will match `helloworld`, `hellowrld`, `helloworld!` ··· any similar text to the words in the list.
-* `Regex = "regex"`: Supports regex matching.
-  * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
+* `Regex`: Supports regex patterns matching.
+  * `SimilarChar`: Supports similar character matching using regex.
+    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
+  * `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
+    * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
+  * `Regex`: Supports regex matching.
+    * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
+* `Similar`: Supports similar text matching based on distance and threshold.
+  * `Levenshtein`: Supports similar text matching based on Levenshtein distance.
+  * `DamerauLevenshtein`: Supports similar text matching based on Damerau-Levenshtein distance.
+  * `Indel`: Supports similar text matching based on Indel distance.
+  * `Jaro`: Supports similar text matching based on Jaro distance.
+  * `JaroWinkler`: Supports similar text matching based on Jaro-Winkler distance.
 
 #### SimpleMatchType
-* `MatchNone = 1`: No transformation.
-* `MatchFanjian = 2`: Traditional Chinese to simplified Chinese transformation.
+
+* `None`: No transformation.
+* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/str_conv_map/FANJIAN.txt) and [UNICODE](../matcher_rs/str_conv_map/UNICODE.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `MatchDelete = 12`: Delete all non-alphanumeric and non-unicode Chinese characters.
+* `Delete`: Delete all punctuation, special characters and white spaces.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `MatchNormalize = 16`: Normalize all English character variations and number variations to basic characters.
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [UPPER_LOWER](../matcher_rs/str_conv_map/UPPER-LOWER.txt), [EN_VARIATION](../matcher_rs/str_conv_map/EN-VARIATION.txt) and [NUM_NORM](../matcher_rs/str_conv_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠ϕ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `MatchPinYin = 32`: Convert all unicode Chinese characters to pinyin with boundaries.
+* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv_map/PINYIN.txt).
   * `你好` -> `␀ni␀␀hao␀`
   * `西安` -> `␀xi␀␀an␀`
-* `MatchPinYinChar = 64`: Convert all unicode Chinese characters to pinyin without boundaries.
+* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN_CHAR](../matcher_rs/str_conv_map/PINYIN-CHAR.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
-You can combine these transformations as needed. Pre-defined combinations like `MatchDeleteNormalize = 28` and `MatchFanjianDeleteNormalize = 30` are provided for convenience.
+You can combine these transformations as needed. Pre-defined combinations like `DeleteNormalize` and `FanjianDeleteNormalize` are provided for convenience.
 
-Avoid combining `MatchPinYin` and `MatchPinYinChar` due to that `MatchPinYin` is a more limited version of `MatchPinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
+Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
+
+`Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe `CN_SPECIAL` and `EN_SPECIAL` are parts of the word, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
+* `WordDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt).
+* `TextDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt), [CN_SPECIAL](../matcher_rs/str_conv_map/CN-SPECIAL.txt), [EN_SPECIAL](../matcher_rs/str_conv_map/EN-SPECIAL.txt).
 
 ### Limitations
+
 Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
 
 ### Text Process Usage
