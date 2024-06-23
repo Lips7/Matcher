@@ -1,10 +1,10 @@
 [project]
 name = "matcher_py"
-version = "0.3.0"
+version = "0.3.1"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = 'Fuji Guo' }, { email = "f975793771@gmail.com" }]
-dependencies = ["cffi", "typing-extensions", "msgspec", "numpy"]
+dependencies = ["typing-extensions", "msgspec", "numpy"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
