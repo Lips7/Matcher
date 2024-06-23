@@ -2,12 +2,16 @@ name: release
 
 on:
   push:
+    branches:
+      - master
     paths:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - 'matcher_c/src/**'
       - '.github/workflows/release.yml'
   pull_request:
+    branches:
+      - master
     paths:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'

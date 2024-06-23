@@ -2,11 +2,15 @@ name: python
 
 on:
   push:
+    branches:
+      - master
     paths:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - '.github/workflows/python.yml'
   pull_request:
+    branches:
+      - master
     paths:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
