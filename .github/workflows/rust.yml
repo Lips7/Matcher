@@ -2,16 +2,12 @@ name: rust
 
 on:
   push:
-    branches:
-      - master
     paths:
       - 'matcher_c/src/**'
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - '.github/workflows/rust.yml'
   pull_request:
-    branches:
-      - master
     paths:
       - 'matcher_c/src/**'
       - 'matcher_py/src/**'
