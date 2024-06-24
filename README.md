@@ -92,3 +92,4 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [ ] Make SimpleMatcher and Matcher serializable.
 - [ ] Implement NOT logic word-wise.
 - [ ] More detailed [DESIGN](./DESIGN.md).
+- [ ] Support stable rust.
