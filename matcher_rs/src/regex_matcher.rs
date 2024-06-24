@@ -236,7 +236,7 @@ impl RegexMatcher {
     /// # Panics
     ///
     /// This function may panic if the regex compilation fails for any of the provided patterns. Such cases
-    /// should be rare, as the input is typically prevalidated to ensure proper regex syntax.
+    /// should be rare, as the input is typically pre-validated to ensure proper regex syntax.
     ///
     /// # Examples
     ///

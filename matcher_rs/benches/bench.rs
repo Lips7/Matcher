@@ -119,7 +119,7 @@ mod build_cn {
     }
 
     #[divan::bench]
-    fn build_cn_by_mutiple_simple_match_type(bencher: Bencher) {
+    fn build_cn_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
         for simple_match_type in [
             SimpleMatchType::Fanjian,
@@ -177,7 +177,7 @@ mod build_en {
     }
 
     #[divan::bench]
-    fn build_en_by_mutiple_simple_match_type(bencher: Bencher) {
+    fn build_en_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
         for simple_match_type in [
             SimpleMatchType::None,
@@ -244,7 +244,7 @@ mod search_cn {
     }
 
     #[divan::bench]
-    fn search_cn_by_mutiple_simple_match_type(bencher: Bencher) {
+    fn search_cn_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
         for simple_match_type in [
             SimpleMatchType::Fanjian,
@@ -314,7 +314,7 @@ mod search_en {
     }
 
     #[divan::bench]
-    fn search_en_by_mutiple_simple_match_type(bencher: Bencher) {
+    fn search_en_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
         for simple_match_type in [
             SimpleMatchType::None,
