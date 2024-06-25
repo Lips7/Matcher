@@ -93,3 +93,4 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [ ] Implement NOT logic word-wise.
 - [ ] More detailed [DESIGN](./DESIGN.md).
 - [ ] Support stable rust.
+- [ ] Unsafe aho-corasick crate implement.
