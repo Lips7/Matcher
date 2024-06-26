@@ -53,7 +53,7 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
     /// into a Python dictionary containing the match result data, which can be used
     /// in Python code. The dictionary includes the following key-value pairs:
     ///
-    /// - `"word_id"`: The unique identifier (u64) for the matched word.
+    /// - `"word_id"`: The unique identifier (u32) for the matched word.
     /// - `"word"`: The matched word as a string slice.
     ///
     /// # Parameters
@@ -80,7 +80,7 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
 }
 
 impl MatchResultTrait<'_> for SimpleResult<'_> {
-    fn word_id(&self) -> u64 {
+    fn word_id(&self) -> u32 {
         self.0.word_id()
     }
     fn word(&self) -> &str {
@@ -97,7 +97,7 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
     /// into a Python dictionary containing the match result data, which can be used
     /// in Python code. The dictionary includes the following key-value pairs:
     ///
-    /// - `"table_id"`: The unique identifier (u64) for the table.
+    /// - `"table_id"`: The unique identifier (u32) for the table.
     /// - `"word"`: The matched word as a string slice.
     ///
     /// # Parameters
@@ -535,7 +535,7 @@ impl Matcher {
     /// - `text`: A string slice representing the text to be checked for matches.
     ///
     /// # Returns
-    /// - `HashMap<u64, Vec<MatchResult<'_>>>`: A dictionary where each key is a match ID (u64),
+    /// - `HashMap<u32, Vec<MatchResult<'_>>>`: A dictionary where each key is a match ID (u32),
     ///   and each value is a list of [MatchResult] objects corresponding to the matches found.
     ///
     /// # Example
@@ -568,7 +568,7 @@ impl Matcher {
     /// result = matcher.word_match("hello")
     /// print(result)  # Output: Dictionary with match IDs as keys and lists of MatchResult objects as values
     /// ```
-    fn word_match(&self, text: &str) -> HashMap<u64, Vec<MatchResult<'_>>> {
+    fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult<'_>>> {
         self.matcher
             .word_match(text)
             .into_iter()
@@ -637,15 +637,15 @@ impl Matcher {
     ///
     /// This method iterates over a [PyList] containing texts, performs word matching
     /// on each text using the [word_match](Matcher::word_match) method, and collects
-    /// the results into a [Vec<HashMap<u64, Vec<MatchResult<'_>>>>].
+    /// the results into a [Vec<HashMap<u32, Vec<MatchResult<'_>>>>].
     ///
     /// # Parameters
     /// - `self`: The [Matcher] instance.
     /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `PyResult<Vec<HashMap<u64, Vec<MatchResult<'_>>>>>`: A result containing a
-    ///   vector of dictionaries. Each dictionary has match IDs (u64) as keys and lists
+    /// - `PyResult<Vec<HashMap<u32, Vec<MatchResult<'_>>>>>`: A result containing a
+    ///   vector of dictionaries. Each dictionary has match IDs (u32) as keys and lists
     ///   of [MatchResult] objects as values.
     ///
     /// # Example
@@ -682,7 +682,7 @@ impl Matcher {
     fn batch_word_match(
         &self,
         text_array: &Bound<'_, PyList>,
-    ) -> PyResult<Vec<HashMap<u64, Vec<MatchResult<'_>>>>> {
+    ) -> PyResult<Vec<HashMap<u32, Vec<MatchResult<'_>>>>> {
         let mut result_list = Vec::with_capacity(text_array.len());
 
         for text in text_array.iter() {

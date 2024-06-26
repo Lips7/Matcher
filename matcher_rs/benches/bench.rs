@@ -37,7 +37,7 @@ fn build_simple_word_map(
     en_or_cn: &str,
     simple_word_map_size: usize,
     combined_times: usize,
-) -> IntMap<u64, String> {
+) -> IntMap<u32, String> {
     let mut patterns: Vec<String> = if en_or_cn == "cn" {
         CN_WORD_LIST_100000.lines().map(String::from).collect()
     } else {
@@ -58,25 +58,6 @@ fn build_simple_word_map(
         simple_word_map.insert(global_word_id, combined_word);
     }
     simple_word_map
-}
-
-mod bench_test {
-    // use super::*;
-
-    // fn bench_aho_corasick_find(bencher: Bencher) {
-    //     let ac = AhoCorasickBuilder::new()
-    //         .kind(Some(DFA))
-    //         .ascii_case_insensitive(true)
-    //         .build(EN_WORD_LIST_100000.lines().take(100))
-    //         .unwrap();
-    //     bencher.bench(|| {
-    //         ac.find_overlapping_iter(EN_HAYSTACK)
-    //     });
-    // }
-
-    // fn bench_regex_automata_find(bencher: Bencher) {
-    //     let ac = dense::Builder::new().
-    // }
 }
 
 mod build_cn {

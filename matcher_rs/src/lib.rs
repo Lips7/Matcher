@@ -1,6 +1,3 @@
-#![feature(portable_simd)]
-#![feature(iter_repeat_n)]
-
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;

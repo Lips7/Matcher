@@ -52,8 +52,8 @@ pub enum SimMatchType {
 ///
 /// # Fields
 ///
-/// - `table_id` ([u64]): The unique identifier for the similarity table.
-/// - `match_id` ([u64]): An ID that serves as an identifier for the match within the table.
+/// - `table_id` ([u32]): The unique identifier for the similarity table.
+/// - `match_id` ([u32]): An ID that serves as an identifier for the match within the table.
 /// - `sim_match_type` ([SimMatchType]): The type of similarity matching algorithm to be used
 ///   with this table.
 /// - `word_list` ([&'a Vec<&'a str>]): A reference to a vector of string slices representing
@@ -77,8 +77,8 @@ pub enum SimMatchType {
 /// };
 /// ```
 pub struct SimTable<'a> {
-    pub table_id: u64,
-    pub match_id: u64,
+    pub table_id: u32,
+    pub match_id: u32,
     pub sim_match_type: SimMatchType,
     pub word_list: &'a Vec<&'a str>,
     pub threshold: f64,
@@ -95,8 +95,8 @@ pub struct SimTable<'a> {
 ///
 /// # Fields
 ///
-/// - `table_id` ([u64]): The unique identifier for the similarity table.
-/// - `match_id` ([u64]): An ID that serves as an identifier for the match within the table.
+/// - `table_id` ([u32]): The unique identifier for the similarity table.
+/// - `match_id` ([u32]): An ID that serves as an identifier for the match within the table.
 /// - `sim_match_type` ([SimMatchType]): The type of similarity matching algorithm used for this table.
 /// - `word_list` ([`Vec<String>`]): A vector of owned strings representing the words in this similarity table.
 ///   These words have been preprocessed and are ready for the matching process.
@@ -104,8 +104,8 @@ pub struct SimTable<'a> {
 ///   with higher values indicating higher similarity.
 ///
 struct SimProcessedTable {
-    table_id: u64,
-    match_id: u64,
+    table_id: u32,
+    match_id: u32,
     sim_match_type: SimMatchType,
     word_list: Vec<String>,
     threshold: f64,
@@ -126,19 +126,19 @@ struct SimProcessedTable {
 ///
 /// - `word` ([Cow<'a, str>]): The word that was found to be similar. It is stored as a [Cow]
 ///   (clone-on-write) to allow for both owned and borrowed strings.
-/// - `table_id` ([u64]): The unique identifier of the table where the word was found.
-/// - `match_id` ([u64]): An ID that serves as an identifier for the match.
+/// - `table_id` ([u32]): The unique identifier of the table where the word was found.
+/// - `match_id` ([u32]): An ID that serves as an identifier for the match.
 /// - `similarity` ([f64]): The similarity score computed for the match. This score typically
 ///   ranges from 0.0 to 1.0, with higher values indicating greater similarity.
 pub struct SimResult<'a> {
     pub word: Cow<'a, str>,
-    pub table_id: u64,
-    pub match_id: u64,
+    pub table_id: u32,
+    pub match_id: u32,
     pub similarity: f64,
 }
 
 impl MatchResultTrait<'_> for SimResult<'_> {
-    fn table_id(&self) -> u64 {
+    fn table_id(&self) -> u32 {
         self.table_id
     }
     fn word(&self) -> &str {

@@ -63,8 +63,8 @@ pub enum RegexMatchType {
 /// This struct is primarily used in advanced text matching applications, where the organization and efficient
 /// management of regex patterns are crucial for the performance and accuracy of the matching process.
 pub struct RegexTable<'a> {
-    pub table_id: u64,
-    pub match_id: u64,
+    pub table_id: u32,
+    pub match_id: u32,
     pub regex_match_type: RegexMatchType,
     pub word_list: &'a Vec<&'a str>,
 }
@@ -115,8 +115,8 @@ enum RegexType {
 ///
 /// The `RegexPatternTable` struct is utilized internally by the [RegexMatcher] to categorize and execute regex-based text matching operations.
 struct RegexPatternTable {
-    table_id: u64,
-    match_id: u64,
+    table_id: u32,
+    match_id: u32,
     regex_type: RegexType,
 }
 
@@ -131,11 +131,11 @@ struct RegexPatternTable {
 /// * `word` - A [Cow<'a, str>] that holds the matched word or pattern. This field can either be a
 ///   borrowed string slice or an owned [String], offering flexibility in how the match result is stored.
 ///
-/// * `table_id` - A [u64] representing the unique identifier of the regex table that produced the match result.
+/// * `table_id` - A [u32] representing the unique identifier of the regex table that produced the match result.
 ///   This helps in distinguishing which regex table contributed to the result, facilitating organized processing
 ///   and categorization of matches.
 ///
-/// * `match_id` - A [u64] that serves as an identifier for the match. This identifier
+/// * `match_id` - A [u32] that serves as an identifier for the match. This identifier
 ///   is used to differentiate between match results originating from different regex tables, allowing
 ///   for more detailed and organized match results.
 ///
@@ -145,12 +145,12 @@ struct RegexPatternTable {
 #[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
     pub word: Cow<'a, str>,
-    pub table_id: u64,
-    pub match_id: u64,
+    pub table_id: u32,
+    pub match_id: u32,
 }
 
 impl MatchResultTrait<'_> for RegexResult<'_> {
-    fn table_id(&self) -> u64 {
+    fn table_id(&self) -> u32 {
         self.table_id
     }
     fn word(&self) -> &str {

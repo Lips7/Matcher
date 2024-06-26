@@ -40,8 +40,8 @@ cargo add matcher_rs
 
 ### Explanation of the configuration
 
-* `Matcher`'s configuration is defined by the `MatchTableMap = HashMap<u64, Vec<MatchTable>>` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
-* `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = HashMap<SimpleMatchType, HashMap<u64, &'a str>>` type, the value `HashMap<u64, &'a str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
+* `Matcher`'s configuration is defined by the `MatchTableMap = HashMap<u32, Vec<MatchTable>>` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
+* `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = HashMap<SimpleMatchType, HashMap<u32, &'a str>>` type, the value `HashMap<u32, &'a str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
 
@@ -98,10 +98,6 @@ Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited
 `Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe `CN_SPECIAL` and `EN_SPECIAL` are parts of the word, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
 * `WordDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](./str_conv_map/PUNCTUATION-SPECIAL.txt).
 * `TextDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](./str_conv_map/PUNCTUATION-SPECIAL.txt), [CN_SPECIAL](./str_conv_map/CN-SPECIAL.txt), [EN_SPECIAL](./str_conv_map/EN-SPECIAL.txt).
-
-### Limitations
-
-Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
 
 ### Basic Example
 

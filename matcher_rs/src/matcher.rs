@@ -17,10 +17,10 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a>> {
 }
 
 pub trait MatchResultTrait<'a> {
-    fn word_id(&self) -> u64 {
+    fn word_id(&self) -> u32 {
         0
     }
-    fn table_id(&self) -> u64 {
+    fn table_id(&self) -> u32 {
         0
     }
     fn word(&self) -> &str;
@@ -91,7 +91,7 @@ pub enum MatchTableType {
 ///
 /// # Fields
 ///
-/// * `table_id` - A [u64] that uniquely identifies the match table in the system.
+/// * `table_id` - A [u32] that uniquely identifies the match table in the system.
 /// * `match_table_type` - A [MatchTableType] enumeration that specifies the matching strategy to be used.
 /// * `word_list` - A [`Vec<&'a str>`] containing the list of words for matching. The use of `&'a str`
 ///   allows the words to be borrowed, which can optimize memory usage.
@@ -109,7 +109,7 @@ pub enum MatchTableType {
 /// The `borrow` attribute on `word_list` and `exemption_word_list` fields ensures that the deserialized
 /// data can borrow from the input data, providing better performance by avoiding unnecessary allocations.
 pub struct MatchTable<'a> {
-    pub table_id: u64,
+    pub table_id: u32,
     pub match_table_type: MatchTableType,
     #[serde(borrow)]
     pub word_list: Vec<&'a str>,
@@ -127,12 +127,12 @@ pub struct MatchTable<'a> {
 ///
 /// # Fields
 ///
-/// * `match_id` - A [u64] representing the identifier of the match within the system.
-/// * `table_id` - A [u64] representing the identifier of the table within the system.
+/// * `match_id` - A [u32] representing the identifier of the match within the system.
+/// * `table_id` - A [u32] representing the identifier of the table within the system.
 /// * `is_exemption` - A [bool] flag that indicates whether the word table is an exemption.
 struct WordTableConf {
-    match_id: u64,
-    table_id: u64,
+    match_id: u32,
+    table_id: u32,
     is_exemption: bool,
 }
 
@@ -144,7 +144,7 @@ struct WordTableConf {
 ///
 /// # Fields
 ///
-/// * `table_id` - A [u64] that uniquely identifies the table in which the match was found.
+/// * `table_id` - A [u32] that uniquely identifies the table in which the match was found.
 /// * `word` - A [Cow<'a, str>] that holds the matched word. The [Cow] type allows the word
 ///    to be either borrowed from the original data or owned, optimizing for efficient memory use.
 ///
@@ -153,15 +153,15 @@ struct WordTableConf {
 /// * `'a` - The lifetime associated with the `word` field, ensuring that the data
 ///    for the word can be borrowed for efficiency.
 pub struct MatchResult<'a> {
-    pub table_id: u64,
+    pub table_id: u32,
     pub word: Cow<'a, str>,
 }
 
 impl MatchResultTrait<'_> for MatchResult<'_> {
-    fn word_id(&self) -> u64 {
+    fn word_id(&self) -> u32 {
         0
     }
-    fn table_id(&self) -> u64 {
+    fn table_id(&self) -> u32 {
         self.table_id
     }
     fn word(&self) -> &str {
@@ -169,7 +169,7 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
     }
 }
 
-pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
+pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
 #[derive(Debug, Clone)]
 /// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
@@ -179,8 +179,8 @@ pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 ///
 /// # Fields
 ///
-/// * `simple_word_table_conf_map` - An [IntMap<u64, WordTableConf>] that maps word table configuration IDs to their configurations.
-/// * `simple_word_table_conf_id_map` - An [IntMap<u64, u64>] that maps word IDs to their corresponding word table configuration IDs.
+/// * `simple_word_table_conf_map` - An [IntMap<u32, WordTableConf>] that maps word table configuration IDs to their configurations.
+/// * `simple_word_table_conf_id_map` - An [IntMap<u32, u32>] that maps word IDs to their corresponding word table configuration IDs.
 /// * `simple_matcher` - An [`Option<SimpleMatcher>`] that holds the simple matcher if it exists.
 /// * `regex_matcher` - An [`Option<RegexMatcher>`] that holds the regex matcher if it exists.
 /// * `sim_matcher` - An [`Option<SimMatcher>`] that holds the similarity matcher if it exists.
@@ -209,8 +209,8 @@ pub type MatchTableMap<'a> = IntMap<u64, Vec<MatchTable<'a>>>;
 /// let matcher = Matcher::new(&match_table_map);
 /// ```
 pub struct Matcher {
-    simple_word_table_conf_map: IntMap<u64, WordTableConf>,
-    simple_word_table_conf_id_map: IntMap<u64, u64>,
+    simple_word_table_conf_map: IntMap<u32, WordTableConf>,
+    simple_word_table_conf_id_map: IntMap<u32, u32>,
     simple_matcher: Option<SimpleMatcher>,
     regex_matcher: Option<RegexMatcher>,
     sim_matcher: Option<SimMatcher>,
@@ -224,7 +224,7 @@ impl Matcher {
     ///
     /// # Arguments
     ///
-    /// * `match_table_map` - A reference to a [HashMap] where the keys are [u64] identifiers
+    /// * `match_table_map` - A reference to a [HashMap] where the keys are [u32] identifiers
     ///   and the values are vectors of [MatchTable] instances representing different types of match tables.
     ///
     /// # Returns
@@ -262,14 +262,14 @@ impl Matcher {
     ///
     /// let matcher = Matcher::new(&match_table_map);
     /// ```
-    pub fn new<'a, S>(match_table_map: &HashMap<u64, Vec<MatchTable<'a>>, S>) -> Matcher {
-        let mut word_id: u64 = 0;
-        let mut word_table_conf_id: u64 = 0;
+    pub fn new<'a, S>(match_table_map: &HashMap<u32, Vec<MatchTable<'a>>, S>) -> Matcher {
+        let mut word_id: u32 = 0;
+        let mut word_table_conf_id: u32 = 0;
 
         let mut simple_word_table_conf_map = IntMap::default();
         let mut simple_word_table_conf_id_map = IntMap::default();
 
-        let mut simple_match_type_word_map: IntMap<SimpleMatchType, IntMap<u64, &'a str>> =
+        let mut simple_match_type_word_map: IntMap<SimpleMatchType, IntMap<u32, &'a str>> =
             IntMap::default();
 
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
@@ -382,11 +382,11 @@ impl Matcher {
     ///
     /// # Returns
     ///
-    /// A [`HashMap<u64, Vec<MatchResult>>`] where the keys are match identifiers and the values are vectors of [MatchResult]
+    /// A [`HashMap<u32, Vec<MatchResult>>`] where the keys are match identifiers and the values are vectors of [MatchResult]
     /// instances containing the matching results for each identifier.
     ///
     /// If the provided text is empty, the function returns an empty [HashMap].
-    pub fn word_match(&self, text: &str) -> HashMap<u64, Vec<MatchResult>> {
+    pub fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult>> {
         if !text.is_empty() {
             let mut match_result_dict = HashMap::default();
             let mut failed_match_id_set = IntSet::default();

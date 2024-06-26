@@ -36,13 +36,13 @@ lazy_static! {
 /// This enum is used as part of the text processing framework, allowing for specialized handling of Chinese text
 /// compared to other types of text. It supports two variants:
 ///
-/// - [Chinese](ProcessMatcher::Chinese): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u64>`] matcher optimized for Chinese characters.
+/// - [Chinese](ProcessMatcher::Chinese): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for Chinese characters.
 /// - [Others](ProcessMatcher::Others): Uses an [AhoCorasick] matcher for all other types of text.
 ///
 /// By distinguishing between these two categories, [ProcessMatcher] allows for more efficient and accurate pattern
 /// matching tailored to the linguistic properties of the text being processed.
 pub enum ProcessMatcher {
-    Chinese(CharwiseDoubleArrayAhoCorasick<u64>),
+    Chinese(CharwiseDoubleArrayAhoCorasick<u32>),
     Others(AhoCorasick),
 }
 
@@ -51,7 +51,7 @@ impl ProcessMatcher {
     /// Replaces all occurrences of patterns in the input text with corresponding replacements from the provided list.
     ///
     /// This function performs a find-and-replace operation on the input text. It searches for patterns using the internal matcher
-    /// (either [`CharwiseDoubleArrayAhoCorasick<u64>`] for Chinese text or [AhoCorasick] for other text) and replaces each match
+    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [AhoCorasick] for other text) and replaces each match
     /// with the corresponding replacement string from the given `process_replace_list`.
     ///
     /// # Parameters
@@ -110,7 +110,7 @@ impl ProcessMatcher {
     /// Deletes all occurrences of patterns in the input text.
     ///
     /// This function performs a delete operation on the input text. It searches for patterns using the internal matcher
-    /// (either [`CharwiseDoubleArrayAhoCorasick<u64>`] for Chinese text or [AhoCorasick] for other text) and removes each match
+    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [AhoCorasick] for other text) and removes each match
     /// from the input.
     ///
     /// # Parameters
@@ -292,8 +292,7 @@ pub fn get_process_matcher(
             _ => {}
         }
 
-        process_dict
-            .retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
+        process_dict.retain(|&key, &mut value| key != value);
 
         let (process_replace_list, process_matcher) = match simple_match_type_bit {
             SimpleMatchType::Fanjian | SimpleMatchType::PinYin | SimpleMatchType::PinYinChar => (
@@ -388,7 +387,7 @@ pub fn get_process_matcher(
             SimpleMatchType::Fanjian => (
                 FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         FANJIAN_PROCESS_MATCHER_BYTES,
                     )
                     .0
@@ -403,9 +402,7 @@ pub fn get_process_matcher(
                         .map(|pair_str| (pair_str, "")),
                 );
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-                process_dict.retain(|&key, &mut value| {
-                    (key == "#" || !key.starts_with('#')) && key != value
-                });
+                process_dict.retain(|&key, &mut value| key != value);
                 let process_list = process_dict
                     .iter()
                     .map(|(&key, _)| key)
@@ -428,9 +425,7 @@ pub fn get_process_matcher(
                     process_dict.extend(str_conv_map.trim().lines().map(|pair_str| (pair_str, "")));
                 }
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-                process_dict.retain(|&key, &mut value| {
-                    (key == "#" || !key.starts_with('#')) && key != value
-                });
+                process_dict.retain(|&key, &mut value| key != value);
                 let process_list = process_dict
                     .iter()
                     .map(|(&key, _)| key)
@@ -460,7 +455,7 @@ pub fn get_process_matcher(
             SimpleMatchType::PinYin => (
                 PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
                     )
                     .0
@@ -470,7 +465,7 @@ pub fn get_process_matcher(
             SimpleMatchType::PinYinChar => (
                 PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u64>::deserialize_unchecked(
+                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYINCHAR_PROCESS_MATCHER_BYTES,
                     )
                     .0

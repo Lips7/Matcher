@@ -105,13 +105,13 @@ pub mod prebuilt_feature {
     ));
     pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/fanjian_daachorse_charwise_u64_matcher.bin"
+        "/fanjian_daachorse_charwise_u32_matcher.bin"
     ));
     pub const PINYIN_PROCESS_REPLACE_LIST_STR: &str =
         include_str!(concat!(env!("OUT_DIR"), "/pinyin_process_replace_list.bin"));
     pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/pinyin_daachorse_charwise_u64_matcher.bin"
+        "/pinyin_daachorse_charwise_u32_matcher.bin"
     ));
     pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
         env!("OUT_DIR"),
@@ -119,7 +119,7 @@ pub mod prebuilt_feature {
     ));
     pub const PINYINCHAR_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/pinyinchar_daachorse_charwise_u64_matcher.bin"
+        "/pinyinchar_daachorse_charwise_u32_matcher.bin"
     ));
 
     pub const CN_SPECIAL: &str = include_str!("../../str_conv_map/CN-SPECIAL.txt");

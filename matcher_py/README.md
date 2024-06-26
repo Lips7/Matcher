@@ -105,10 +105,6 @@ Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited
 * `WordDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt).
 * `TextDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt), [CN_SPECIAL](../matcher_rs/str_conv_map/CN-SPECIAL.txt), [EN_SPECIAL](../matcher_rs/str_conv_map/EN-SPECIAL.txt).
 
-### Limitations
-
-Simple Match can handle words with a maximum of **32** combined words (more than 32 then effective combined words are not guaranteed) and **8** repeated words (more than 8 repeated words will be limited to 8).
-
 ### Text Process Usage
 
 Here’s an example of how to use the `reduce_text_process` and `text_process` functions:

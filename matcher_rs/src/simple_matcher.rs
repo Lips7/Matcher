@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::iter;
-use std::simd::Simd;
 use std::{borrow::Cow, collections::HashMap};
 
 use ahash::AHashMap;
@@ -9,15 +8,9 @@ use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
 use serde::{Deserializer, Serializer};
 use sonic_rs::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::reduce_text_process;
-
-/// The maximum limit of word combinations that are considered for matches.
-/// This value is used to limit the number of different word combinations the algorithm evaluates.
-const WORD_COMBINATION_LIMIT: usize = 32;
-const ZEROS: Simd<u8, WORD_COMBINATION_LIMIT> = Simd::from_array([0; WORD_COMBINATION_LIMIT]);
 
 bitflags! {
     /// [SimpleMatchType] is a set of flags used to specify various text transformation rules.
@@ -83,32 +76,22 @@ impl Display for SimpleMatchType {
 
 impl IsEnabled for SimpleMatchType {}
 
-pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u64, &'a str>>;
+pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u32, &'a str>>;
 
 #[derive(Debug, Clone)]
-/// [WordConf] is a structure that holds configuration details for a word used
-/// within the [SimpleMatcher].
+/// `WordConf` is a structure that holds the configuration details for a word used in text matching and transformations.
 ///
-/// This structure is designed to store both the textual representation of a word
-/// and a SIMD (Single Instruction, Multiple Data) vector that represents the split
-/// bits for efficient text matching and transformation operations.
-///
-/// The `split_bit` vector is used to keep track of the various segments or parts
-/// of the word that may be transformed or matched against. It allows for efficient
-/// bitwise operations to quickly identify matching patterns based on pre-defined rules.
+/// This structure is used within the [SimpleMatcher] to store the textual representation of a word and a vector
+/// of split bits. The `word` field contains the actual string of the word, and the `split_bit` field holds a vector
+/// of integers that represent specific bit patterns associated with the word.
 ///
 /// # Fields
 ///
-/// * `word` - A [String] representing the word that is to be configured for matching.
-/// * `split_bit` - A SIMD vector ([Simd<u8, WORD_COMBINATION_LIMIT>]) representing the
-///   split bits for the word. This vector aids in performing efficient combination
-///   matching by storing bitwise information about the word's segments.
-///
-/// This structure plays a critical role in facilitating efficient text processing
-/// and matching within the [SimpleMatcher] by combining textual and SIMD vector data.
+/// * `word` - A [String] that represents the actual word involved in text matching and transformation.
+/// * `split_bit` - A [`Vec<i32>`] that contains bit patterns or segments associated with the word.
 struct WordConf {
     word: String,
-    split_bit: Simd<u8, WORD_COMBINATION_LIMIT>,
+    split_bit: Vec<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,11 +105,11 @@ struct WordConf {
 ///
 /// * `ac_matcher` - An instance of the [AhoCorasick] matcher, which is used to perform efficient pattern matching.
 /// * `ac_word_conf_list` - A vector of tuples, where each tuple contains:
-///     * [u64] - A unique identifier for the word.
+///     * [u32] - A unique identifier for the word.
 ///     * [usize] - An offset representing the position or segment of the word within the matcher.
 struct SimpleAcTable {
     ac_matcher: AhoCorasick,
-    ac_word_conf_list: Vec<(u64, usize)>,
+    ac_word_conf_list: Vec<(u32, usize)>,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,7 +123,7 @@ struct SimpleAcTable {
 ///
 /// # Fields
 ///
-/// * `word_id` - A [u64] value representing the unique identifier of the matched word.
+/// * `word_id` - A [u32] value representing the unique identifier of the matched word.
 /// * `word` - A [Cow<'a, str>] representing the matched text. This allows the text to be
 ///   either borrowed or owned, providing flexibility in handling the string data.
 ///
@@ -158,12 +141,12 @@ struct SimpleAcTable {
 /// assert_eq!(result.word_id(), 42);
 /// ```
 pub struct SimpleResult<'a> {
-    pub word_id: u64,
+    pub word_id: u32,
     pub word: Cow<'a, str>,
 }
 
 impl MatchResultTrait<'_> for SimpleResult<'_> {
-    fn word_id(&self) -> u64 {
+    fn word_id(&self) -> u32 {
         self.word_id
     }
     fn word(&self) -> &str {
@@ -211,7 +194,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
-    simple_wordconf_map: IntMap<u64, WordConf>,
+    simple_wordconf_map: IntMap<u32, WordConf>,
 }
 
 impl SimpleMatcher {
@@ -226,7 +209,7 @@ impl SimpleMatcher {
     /// * `simple_match_type_word_map` - A reference to a [HashMap] where:
     ///   * The key is a [SimpleMatchType] representing a specific matching and transformation rule.
     ///   * The value is another [HashMap] containing word mappings with:
-    ///     * A word identifier ([u64]).
+    ///     * A word identifier ([u32]).
     ///     * The actual word as a string slice (`&'a str`).
     ///
     /// # Returns
@@ -260,7 +243,7 @@ impl SimpleMatcher {
     /// let results = simple_matcher.process(text);
     /// ```
     pub fn new<I, S1, S2>(
-        simple_match_type_word_map: &HashMap<SimpleMatchType, HashMap<u64, I, S1>, S2>,
+        simple_match_type_word_map: &HashMap<SimpleMatchType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
     where
         I: AsRef<str>,
@@ -296,7 +279,7 @@ impl SimpleMatcher {
     ///
     /// * `simple_match_type` - A [SimpleMatchType] bit flags that define specific text transformation rules.
     /// * `simple_word_map` - An iterable of tuples, where each tuple contains:
-    ///     * A word identifier (u64).
+    ///     * A word identifier (u32).
     ///     * The actual word as a string slice.
     ///
     /// # Returns
@@ -317,7 +300,7 @@ impl SimpleMatcher {
     fn build_simple_ac_table<I, S2>(
         &mut self,
         simple_match_type: SimpleMatchType,
-        simple_word_map: &HashMap<u64, I, S2>,
+        simple_word_map: &HashMap<u32, I, S2>,
     ) -> SimpleAcTable
     where
         I: AsRef<str>,
@@ -334,12 +317,10 @@ impl SimpleMatcher {
                     .or_insert(1);
             }
 
-            let split_bit_vec = ac_split_word_counter
+            let split_bit = ac_split_word_counter
                 .values()
-                .take(WORD_COMBINATION_LIMIT)
-                .map(|&x| 1 << (x.min(8) - 1))
-                .collect::<ArrayVec<[u8; WORD_COMBINATION_LIMIT]>>();
-            let split_bit = Simd::load_or_default(&split_bit_vec);
+                .copied()
+                .collect::<Vec<i32>>();
 
             self.simple_wordconf_map.insert(
                 simple_word_id,
@@ -349,11 +330,7 @@ impl SimpleMatcher {
                 },
             );
 
-            for (offset, &split_word) in ac_split_word_counter
-                .keys()
-                .take(WORD_COMBINATION_LIMIT)
-                .enumerate()
-            {
+            for (offset, &split_word) in ac_split_word_counter.keys().enumerate() {
                 for ac_word in reduce_text_process(simple_match_type, split_word) {
                     ac_wordlist.push(ac_word);
                     ac_word_conf_list.push((simple_word_id, offset));
@@ -434,21 +411,27 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
 
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                        iter::repeat_n(word_conf.split_bit, processed_times)
-                            .collect::<ArrayVec<[_; 8]>>()
+                        word_conf
+                            .split_bit
+                            .iter()
+                            .map(|&bit| {
+                                iter::repeat(bit)
+                                    .take(processed_times)
+                                    .collect::<Vec<i32>>()
+                            })
+                            .collect::<Vec<Vec<i32>>>()
                     });
 
-                    *unsafe {
-                        split_bit_vec
-                            .get_unchecked_mut(index)
-                            .as_mut_array()
+                    unsafe {
+                        let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
-                    } >>= 1;
+                            .get_unchecked_mut(index);
+                        *bit = bit.unchecked_sub(1);
+                    };
 
                     if split_bit_vec
                         .iter()
-                        .fold(Simd::splat(1), |acc, &bit| acc & bit)
-                        == ZEROS
+                        .all(|bit_vec| bit_vec.iter().any(|bit| bit <= &0))
                     {
                         return true;
                     }
@@ -527,21 +510,27 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
 
                     let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                        iter::repeat_n(word_conf.split_bit, processed_times)
-                            .collect::<ArrayVec<[_; 8]>>()
+                        word_conf
+                            .split_bit
+                            .iter()
+                            .map(|&bit| {
+                                iter::repeat(bit)
+                                    .take(processed_times)
+                                    .collect::<Vec<i32>>()
+                            })
+                            .collect::<Vec<Vec<i32>>>()
                     });
 
-                    *unsafe {
-                        split_bit_vec
-                            .get_unchecked_mut(index)
-                            .as_mut_array()
+                    unsafe {
+                        let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
-                    } >>= 1;
+                            .get_unchecked_mut(index);
+                        *bit = bit.unchecked_sub(1);
+                    };
 
                     if split_bit_vec
                         .iter()
-                        .fold(Simd::splat(1), |acc, &bit| acc & bit)
-                        == ZEROS
+                        .all(|bit_vec| bit_vec.iter().any(|bit| bit <= &0))
                     {
                         word_id_set.insert(word_id);
                         result_list.push(SimpleResult {

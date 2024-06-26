@@ -43,8 +43,7 @@ fn main() -> Result<()> {
                 }))
             }
 
-            process_dict
-                .retain(|&key, &mut value| (key == "#" || !key.starts_with('#')) && key != value);
+            process_dict.retain(|&key, &mut value| key != value);
             let process_list = process_dict
                 .iter()
                 .map(|(&key, _)| key)
@@ -65,14 +64,14 @@ fn main() -> Result<()> {
             process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
 
             if ["fanjian", "pinyin", "pinyinchar"].contains(&simple_match_type_bit_str) {
-                let matcher: CharwiseDoubleArrayAhoCorasick<u64> =
+                let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
                     CharwiseDoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                         .build(&process_list)
                         .unwrap();
                 let matcher_bytes = matcher.serialize();
                 let mut matcher_bin = File::create(format!(
-                    "{out_dir}/{simple_match_type_bit_str}_daachorse_charwise_u64_matcher.bin"
+                    "{out_dir}/{simple_match_type_bit_str}_daachorse_charwise_u32_matcher.bin"
                 ))?;
                 matcher_bin.write_all(&matcher_bytes)?;
             }
