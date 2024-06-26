@@ -322,7 +322,6 @@ dependencies = [
  "pyo3",
  "pyo3-build-config",
  "rmp-serde",
- "serde",
 ]
 
 [[package]]

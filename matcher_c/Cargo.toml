@@ -9,8 +9,9 @@ keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+rust-version.workspace = true
 readme = "README.md"
-documentation = "https://docs.rs/matcher_c/latest/matcher_c/"
+documentation = "https://docs.rs/crate/matcher_c/latest"
 
 [lib]
 name = "matcher_c"
