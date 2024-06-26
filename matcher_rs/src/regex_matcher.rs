@@ -4,6 +4,8 @@ use fancy_regex::{escape, Regex};
 use sonic_rs::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
+#[cfg(feature = "serde")]
+use crate::util::serde::{serde_regex, serde_regex_list};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -70,6 +72,7 @@ pub struct RegexTable<'a> {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Enum representing different types of regex pattern tables used in the [RegexMatcher].
 ///
 /// The `RegexType` enum is utilized within `RegexPatternTable` to define the structure and behavior of the regex
@@ -91,15 +94,18 @@ pub struct RegexTable<'a> {
 /// can accurately process match operations and return results based on the specific table type.
 enum RegexType {
     StandardRegex {
+        #[cfg_attr(feature = "serde", serde(with = "serde_regex"))]
         regex: Regex,
     },
     ListRegex {
+        #[cfg_attr(feature = "serde", serde(with = "serde_regex_list"))]
         regex_list: Vec<Regex>,
         word_list: Vec<String>,
     },
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A structure representing a table of regex patterns used for text matching.
 ///
 /// The `RegexPatternTable` struct is designed to hold compiled regex patterns and associated metadata,
@@ -159,6 +165,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A structure responsible for managing and handling regex pattern tables for text matching.
 ///
 /// The [RegexMatcher] stores a list of `RegexPatternTable` structures, each of which contains

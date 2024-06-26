@@ -60,6 +60,27 @@ fn build_simple_word_map(
     simple_word_map
 }
 
+fn build_simple_word_map_baseline(
+    en_or_cn: &str,
+    simple_word_map_size: usize,
+) -> IntMap<u32, String> {
+    let mut patterns: Vec<String> = if en_or_cn == "cn" {
+        CN_WORD_LIST_100000.lines().map(String::from).collect()
+    } else {
+        EN_WORD_LIST_100000.lines().map(String::from).collect()
+    };
+    patterns.sort_unstable();
+
+    let mut simple_word_map = IntMap::default();
+    let mut global_word_id = 0;
+
+    for word in patterns.iter().take(simple_word_map_size) {
+        global_word_id += 1;
+        simple_word_map.insert(global_word_id, word.to_owned());
+    }
+    simple_word_map
+}
+
 mod build_cn {
     use super::*;
 
@@ -179,6 +200,20 @@ mod build_en {
 mod search_cn {
     use super::*;
 
+    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
+    fn search_cn_baseline(bencher: Bencher, simple_word_map_size: usize) {
+        let mut simple_match_type_word_map = IntMap::default();
+        let simple_word_map = build_simple_word_map_baseline("cn", simple_word_map_size);
+        simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+
+        bencher.bench(|| {
+            for line in CN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
+
     #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn search_cn_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
@@ -248,6 +283,20 @@ mod search_cn {
 
 mod search_en {
     use super::*;
+
+    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
+    fn search_en_baseline(bencher: Bencher, simple_word_map_size: usize) {
+        let mut simple_match_type_word_map = IntMap::default();
+        let simple_word_map = build_simple_word_map_baseline("en", simple_word_map_size);
+        simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+
+        bencher.bench(|| {
+            for line in CN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
 
     #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn search_en_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {

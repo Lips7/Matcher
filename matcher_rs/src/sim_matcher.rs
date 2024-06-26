@@ -5,6 +5,8 @@ use rapidfuzz::distance;
 use sonic_rs::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
+#[cfg(feature = "serde")]
+use crate::util::serde::serde_regex;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -85,6 +87,7 @@ pub struct SimTable<'a> {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A struct representing a processed similarity table.
 ///
 /// The [SimProcessedTable] struct holds the preprocessed data for similarity matching operations.
@@ -147,6 +150,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A struct representing a similarity matcher.
 ///
 /// The [SimMatcher] struct is responsible for managing and processing similarity matching
@@ -183,6 +187,7 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// let matcher = SimMatcher::new(&sim_tables);
 /// ```
 pub struct SimMatcher {
+    #[cfg_attr(feature = "serde", serde(with = "serde_regex"))]
     remove_special_pattern: Regex,
     sim_processed_table_list: Vec<SimProcessedTable>,
 }

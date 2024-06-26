@@ -78,7 +78,7 @@ impl IsEnabled for SimpleMatchType {}
 
 pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u32, &'a str>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// `WordConf` is a structure that holds the configuration details for a word used in text matching and transformations.
 ///
 /// This structure is used within the [SimpleMatcher] to store the textual representation of a word and a vector
@@ -95,6 +95,7 @@ struct WordConf {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// `SimpleAcTable` is a structure that encapsulates the Aho-Corasick matcher and a list of word configurations.
 ///
 /// This structure is used within the [SimpleMatcher] to hold the compiled Aho-Corasick automaton (`ac_matcher`)
@@ -192,6 +193,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// let results = simple_matcher.process(text);
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimpleMatcher {
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_wordconf_map: IntMap<u32, WordConf>,
@@ -339,9 +341,21 @@ impl SimpleMatcher {
         }
 
         SimpleAcTable {
+            #[cfg(not(feature = "serde"))]
             ac_matcher: AhoCorasickBuilder::new()
                 .kind(Some(DFA))
                 .ascii_case_insensitive(true)
+                .build(
+                    ac_wordlist
+                        .iter()
+                        .map(|ac_word| ac_word.as_ref().as_bytes()),
+                )
+                .unwrap(),
+            #[cfg(feature = "serde")]
+            ac_matcher: AhoCorasickBuilder::new()
+                .kind(Some(DFA))
+                .ascii_case_insensitive(true)
+                .prefilter(false)
                 .build(
                     ac_wordlist
                         .iter()
@@ -431,7 +445,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
                     if split_bit_vec
                         .iter()
-                        .all(|bit_vec| bit_vec.iter().any(|bit| bit <= &0))
+                        .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
                     {
                         return true;
                     }
@@ -530,7 +544,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
                     if split_bit_vec
                         .iter()
-                        .all(|bit_vec| bit_vec.iter().any(|bit| bit <= &0))
+                        .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
                     {
                         word_id_set.insert(word_id);
                         result_list.push(SimpleResult {

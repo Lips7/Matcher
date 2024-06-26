@@ -119,6 +119,7 @@ pub struct MatchTable<'a> {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A structure representing the configuration of a word table used in text matching.
 ///
 /// This structure holds the details of a specific word table and its configuration within
@@ -172,6 +173,7 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
 pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
 ///
 /// This structure holds configurations for simple, regex, and similarity-based matchers. It manages

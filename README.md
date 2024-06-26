@@ -89,8 +89,12 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [x] Add fuzzy matcher, https://github.com/lotabout/fuzzy-matcher.
   - [x] Use `rapidfuzz` instead.
 - [x] More precise and convenient MatchTable.
-- [x] ~~Make SimpleMatcher and Matcher serializable. (AhoCorasick is not serializable)~~
+- [x] Make SimpleMatcher and Matcher serializable.
+  - [x] Make aho-corasick serializable.
+  - [x] See https://github.com/Lips7/aho-corasick.
 - [ ] Implement NOT logic word-wise.
 - [ ] More detailed [DESIGN](./DESIGN.md).
 - [x] Support stable rust.
-- [x] ~~Unsafe aho-corasick crate implement. (It's fast enough)~~
+- [x] Unsafe aho-corasick crate implement.
+  - [x] Faster and faster!
+  - [x] See https://github.com/Lips7/aho-corasick.
