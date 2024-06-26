@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use aho_corasick::{
+use aho_corasick_unsafe::{
     AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA, MatchKind as AhoCorasickMatchKind,
 };
 #[allow(unused_imports)]

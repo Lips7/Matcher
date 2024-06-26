@@ -3,7 +3,7 @@ use std::iter;
 use std::{borrow::Cow, collections::HashMap};
 
 use ahash::AHashMap;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA};
+use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind::DFA};
 use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
 use serde::{Deserializer, Serializer};
