@@ -60,7 +60,7 @@ runtime_build = []
 # By enable serde feature, we could serialize and deserialize matcher and simple_matcher.
 # With serde feature, AhoCorasick's prefilter is disabled, because I don't know how to serialize it correctly,
 # which will lead to performance regression when the patterns size is small (say, less than 100).
-serde = ["aho-corasick/serde"]
+serde = []
 
 [[bench]]
 name = "bench"
