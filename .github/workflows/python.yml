@@ -35,7 +35,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z mir-opt-level=4 -Z threads=2 -D warnings"
+          RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -68,7 +68,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z mir-opt-level=4 -Z threads=2 -D warnings"
+          RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -100,7 +100,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z mir-opt-level=4 -Z threads=2 -D warnings"
+          RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -132,7 +132,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z mir-opt-level=4 -Z threads=2 -D warnings"
+          RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
