@@ -42,4 +42,3 @@ strip = true
 profile = "release"
 module-name = "matcher_py"
 rustc-args = ["-C", "target-cpu=native"]
-all-features = true
