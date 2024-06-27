@@ -28,8 +28,8 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick-unsafe"
-version = "0.0.1"
-source = "git+https://github.com/Lips7/aho-corasick#3581d2e7dd00ffe795c0d20a04394354c5d91c79"
+version = "0.0.2"
+source = "git+https://github.com/Lips7/aho-corasick#e6cb7cd2771e8d6e3ce8ecd926d6485c5e2c2ca9"
 dependencies = [
  "memchr",
  "serde",
