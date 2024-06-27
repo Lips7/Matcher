@@ -12,6 +12,7 @@ pub mod runtime_build_feature {
     ///
     /// # Constants
     ///
+    /// * [CHAR] - Contains general character mappings.
     /// * [FANJIAN] - Simplifies traditional Chinese characters to simplified ones.
     /// * [CN_SPECIAL] - Contains special Chinese characters.
     /// * [EN_SPECIAL] - Contains special English characters.
@@ -22,6 +23,7 @@ pub mod runtime_build_feature {
     /// * [UPPER_LOWER] - Maps between upper and lower case characters.
     /// * [PINYIN] - Converts Chinese characters to Pinyin.
     /// * [PINYIN_CHAR] - Converts individual Chinese characters to Pinyin.
+    pub const CHAR: &str = include_str!("../../str_conv_map/CHAR.txt");
     pub const FANJIAN: &str = include_str!("../../str_conv_map/FANJIAN.txt");
     pub const CN_SPECIAL: &str = include_str!("../../str_conv_map/CN-SPECIAL.txt");
     pub const EN_SPECIAL: &str = include_str!("../../str_conv_map/EN-SPECIAL.txt");

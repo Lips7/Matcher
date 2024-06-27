@@ -258,7 +258,7 @@ pub fn get_process_matcher(
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
             SimpleMatchType::Normalize => {
-                for str_conv_map in [UPPER_LOWER, EN_VARIATION, NUM_NORM] {
+                for str_conv_map in [CHAR, UPPER_LOWER, EN_VARIATION, NUM_NORM] {
                     process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (

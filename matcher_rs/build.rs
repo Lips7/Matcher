@@ -8,6 +8,7 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 
+const CHAR: &str = include_str!("./str_conv_map/CHAR.txt");
 const FANJIAN: &str = include_str!("./str_conv_map/FANJIAN.txt");
 const EN_VARIATION: &str = include_str!("./str_conv_map/EN-VARIATION.txt");
 const UNICODE: &str = include_str!("./str_conv_map/UNICODE.txt");
@@ -25,7 +26,7 @@ fn main() -> Result<()> {
         let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
             ("fanjian", vec![FANJIAN, UNICODE]),
-            ("normalize", vec![UPPER_LOWER, EN_VARIATION, NUM_NORM]),
+            ("normalize", vec![CHAR, UPPER_LOWER, EN_VARIATION, NUM_NORM]),
             ("pinyin", vec![PINYIN]),
             ("pinyinchar", vec![PINYIN_CHAR]),
         ]);
