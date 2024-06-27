@@ -1,3 +1,6 @@
+#[cfg(all(feature = "prebuilt", feature = "runtime_build"))]
+compile_error!("feature \"prebuilt\" and feature \"runtime_build\" cannot be enabled at the same time");
+
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;

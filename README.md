@@ -98,3 +98,4 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [x] Unsafe aho-corasick crate implement.
   - [x] Faster and faster!
   - [x] See https://github.com/Lips7/aho-corasick.
+- [ ] Support iterator.
