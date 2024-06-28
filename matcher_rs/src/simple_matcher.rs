@@ -78,7 +78,6 @@ impl IsEnabled for SimpleMatchType {}
 
 pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u32, &'a str>>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// `WordConf` is a structure that holds the configuration details for a word used in text matching and transformations.
 ///
 /// This structure is used within the [SimpleMatcher] to store the textual representation of a word and a vector
@@ -89,13 +88,12 @@ pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u32, &'a st
 ///
 /// * `word` - A [String] that represents the actual word involved in text matching and transformation.
 /// * `split_bit` - A [`Vec<i32>`] that contains bit patterns or segments associated with the word.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct WordConf {
     word: String,
     split_bit: Vec<i32>,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// `SimpleAcTable` is a structure that encapsulates the Aho-Corasick matcher and a list of word configurations.
 ///
 /// This structure is used within the [SimpleMatcher] to hold the compiled Aho-Corasick automaton (`ac_matcher`)
@@ -108,12 +106,13 @@ struct WordConf {
 /// * `ac_word_conf_list` - A vector of tuples, where each tuple contains:
 ///     * [u32] - A unique identifier for the word.
 ///     * [usize] - An offset representing the position or segment of the word within the matcher.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimpleAcTable {
     ac_matcher: AhoCorasick,
     ac_word_conf_list: Vec<(u32, usize)>,
 }
 
-#[derive(Debug, Serialize)]
 /// [SimpleResult] represents the result of a matching operation.
 ///
 /// This structure is used to store the outcome of a text matching operation performed
@@ -141,6 +140,7 @@ struct SimpleAcTable {
 ///
 /// assert_eq!(result.word_id(), 42);
 /// ```
+#[derive(Debug, Serialize)]
 pub struct SimpleResult<'a> {
     pub word_id: u32,
     pub word: Cow<'a, str>,

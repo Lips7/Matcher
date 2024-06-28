@@ -4,8 +4,8 @@ description = "Blazingly fast Word Matcher"
 version = "0.3.4"
 readme = "README.md"
 requires-python = ">=3.8"
-authors = [{ name = 'Fuji Guo' }, { email = "f975793771@gmail.com" }]
-dependencies = ["numpy"]
+authors = [{ name = 'Fuji Guo', email = "f975793771@gmail.com" }]
+dependencies = ["numpy>=1.16", "msgspec"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -29,9 +29,6 @@ classifiers = [
 [project.urls]
 homepage = "https://github.com/Lips7/Matcher"
 repository = "https://github.com/Lips7/Matcher"
-
-[project.optional-dependencies]
-extension = ["msgspec"]
 
 [build-system]
 requires = ["maturin>=1,<2"]

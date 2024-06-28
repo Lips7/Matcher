@@ -123,8 +123,6 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
     }
 }
 
-#[pyfunction]
-#[pyo3(signature=(simple_match_type, text))]
 /// Processes text using a specified simple match type.
 ///
 /// This function applies a text processing operation based on the provided simple match type,
@@ -143,6 +141,8 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 /// # Errors
 /// This function will return a `PyValueError` if the text processing operation
 /// in the `matcher_rs` crate fails, encapsulating the underlying error message.
+#[pyfunction]
+#[pyo3(signature=(simple_match_type, text))]
 fn text_process(simple_match_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
     let simple_match_type =
         SimpleMatchType::from_bits(simple_match_type).unwrap_or(SimpleMatchType::None);
@@ -152,8 +152,6 @@ fn text_process(simple_match_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
     }
 }
 
-#[pyfunction]
-#[pyo3(signature=(simple_match_type, text))]
 /// Reduces text using a specified simple match type.
 ///
 /// This function applies a text reduction process based on the provided simple match type,
@@ -172,6 +170,8 @@ fn text_process(simple_match_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
 /// This function will default to `SimpleMatchType::None` if the provided byte value does not
 /// correspond to a valid `SimpleMatchType`. It will not raise an error in such cases but will
 /// produce results based on the `SimpleMatchType::None`.
+#[pyfunction]
+#[pyo3(signature=(simple_match_type, text))]
 fn reduce_text_process(simple_match_type: u8, text: &str) -> Vec<Cow<'_, str>> {
     let simple_match_type =
         SimpleMatchType::from_bits(simple_match_type).unwrap_or(SimpleMatchType::None);
@@ -180,7 +180,6 @@ fn reduce_text_process(simple_match_type: u8, text: &str) -> Vec<Cow<'_, str>> {
         .collect()
 }
 
-#[pyclass(module = "matcher_py")]
 /// A Python class that wraps the [MatcherRs] struct from the [matcher_rs] crate.
 ///
 /// This class provides functionality for text matching using a deserialized match table map.
@@ -250,6 +249,7 @@ fn reduce_text_process(simple_match_type: u8, text: &str) -> Vec<Cow<'_, str>> {
 /// numpy_results = matcher.numpy_word_match_as_string(text_array)
 /// print(numpy_results)
 /// ```
+#[pyclass(module = "matcher_py")]
 struct Matcher {
     matcher: MatcherRs,
     match_table_map_bytes: Vec<u8>,
@@ -257,8 +257,6 @@ struct Matcher {
 
 #[pymethods]
 impl Matcher {
-    #[new]
-    #[pyo3(signature=(match_table_map_bytes))]
     /// Creates a new instance of the [Matcher] class from a serialized byte array.
     ///
     /// This constructor takes a serialized byte array representing a match table map,
@@ -303,6 +301,8 @@ impl Matcher {
     ///
     /// matcher = Matcher(match_table_map_bytes)
     /// ```
+    #[new]
+    #[pyo3(signature=(match_table_map_bytes))]
     fn new(match_table_map_bytes: &[u8]) -> PyResult<Matcher> {
         let match_table_map: MatchTableMapRs = match rmp_serde::from_slice(match_table_map_bytes) {
             Ok(match_table_map) => match_table_map,
@@ -411,7 +411,6 @@ impl Matcher {
         &self.match_table_map_bytes
     }
 
-    #[pyo3(signature=(match_table_map_bytes))]
     /// Restores the state of the [Matcher] object from a serialized byte array.
     ///
     /// This method is called during the unpickling process to restore the state of the
@@ -470,13 +469,13 @@ impl Matcher {
     ///     }
     /// ))
     /// ```
+    #[pyo3(signature=(match_table_map_bytes))]
     fn __setstate__(&mut self, match_table_map_bytes: &[u8]) {
         self.matcher = MatcherRs::new(
             &rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes).unwrap(),
         );
     }
 
-    #[pyo3(signature=(text))]
     /// Checks if the given text contains any matches according to the configured match tables.
     ///
     /// This method uses the `is_match` function of the [MatcherRs] instance to determine whether
@@ -519,11 +518,11 @@ impl Matcher {
     /// result = matcher.is_match("hello")
     /// print(result)  # Output: True
     /// ```
+    #[pyo3(signature=(text))]
     fn is_match(&self, text: &str) -> bool {
         self.matcher.is_match(text)
     }
 
-    #[pyo3(signature=(text))]
     /// Performs word matching on the given text and returns the results as a dictionary.
     ///
     /// This method leverages the `word_match` function of the [MatcherRs] instance to identify
@@ -568,6 +567,7 @@ impl Matcher {
     /// result = matcher.word_match("hello")
     /// print(result)  # Output: Dictionary with match IDs as keys and lists of MatchResult objects as values
     /// ```
+    #[pyo3(signature=(text))]
     fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult<'_>>> {
         self.matcher
             .word_match(text)
@@ -581,7 +581,6 @@ impl Matcher {
             .collect()
     }
 
-    #[pyo3(signature=(text))]
     /// Returns the word match results for the given text as a JSON string.
     ///
     /// This method checks if the input `text` is empty. If it is, the method returns an empty JSON object (`{}`)
@@ -625,13 +624,13 @@ impl Matcher {
     /// result = matcher.word_match_as_string("hello")
     /// print(result)  # Output: JSON string with match results
     /// ```
+    #[pyo3(signature=(text))]
     fn word_match_as_string(&self, text: &str) -> String {
         text.is_empty()
             .then_some(String::from("{}"))
             .unwrap_or_else(|| self.matcher.word_match_as_string(text))
     }
 
-    #[pyo3(signature=(text_array))]
     /// Batch processes a list of texts and performs word matching on each text,
     /// returning the results as a list of dictionaries.
     ///
@@ -679,6 +678,7 @@ impl Matcher {
     /// result = matcher.batch_word_match(text_array)
     /// print(result)  # Output: List of dictionaries with match results for each text
     /// ```
+    #[pyo3(signature=(text_array))]
     fn batch_word_match(
         &self,
         text_array: &Bound<'_, PyList>,
@@ -693,7 +693,6 @@ impl Matcher {
         Ok(result_list)
     }
 
-    #[pyo3(signature=(text_array))]
     /// Batch processes a list of texts and performs word matching,
     /// returning the results as a list of JSON strings.
     ///
@@ -739,6 +738,7 @@ impl Matcher {
     /// result = matcher.batch_word_match_as_string(text_array)
     /// print(result)  # Output: List of JSON strings with match results for each text
     /// ```
+    #[pyo3(signature=(text_array))]
     fn batch_word_match_as_string(&self, text_array: &Bound<'_, PyList>) -> PyResult<Vec<String>> {
         let mut result_list = Vec::with_capacity(text_array.len());
 
@@ -750,7 +750,6 @@ impl Matcher {
         Ok(result_list)
     }
 
-    #[pyo3(signature=(text_array, inplace = false))]
     /// Batch processes a NumPy 1-D array of texts and performs word matching
     /// on each text, returning the results as Python objects.
     ///
@@ -805,6 +804,7 @@ impl Matcher {
     /// inplace_result = matcher.numpy_word_match(text_array, inplace=True)
     /// print(text_array)  # Output: The original NumPy array modified with word match results
     /// ```
+    #[pyo3(signature=(text_array, inplace = false))]
     fn numpy_word_match(
         &self,
         py: Python,
@@ -838,7 +838,6 @@ impl Matcher {
         }
     }
 
-    #[pyo3(signature=(text_array, inplace = false))]
     /// Batch processes a NumPy 1-D array of texts and performs word matching as strings
     /// on each text, returning the results as Python objects.
     ///
@@ -875,6 +874,7 @@ impl Matcher {
     /// inplace_result = matcher.numpy_word_match_as_string(text_array, inplace=True)
     /// print(text_array)  # Output: The original NumPy array modified with word match results
     /// ```
+    #[pyo3(signature=(text_array, inplace = false))]
     fn numpy_word_match_as_string(
         &self,
         py: Python,
@@ -909,7 +909,6 @@ impl Matcher {
     }
 }
 
-#[pyclass(module = "matcher_py")]
 /// A Python class that wraps the [SimpleMatcherRs] struct from the [matcher_rs] crate.
 ///
 /// This class provides functionality for simple text matching using a serialized
@@ -961,6 +960,7 @@ impl Matcher {
 /// numpy_results = simple_matcher.numpy_simple_process(text_array)
 /// print(numpy_results)
 /// ```
+#[pyclass(module = "matcher_py")]
 struct SimpleMatcher {
     simple_matcher: SimpleMatcherRs,
     simple_match_type_word_map_bytes: Vec<u8>,
@@ -968,8 +968,6 @@ struct SimpleMatcher {
 
 #[pymethods]
 impl SimpleMatcher {
-    #[new]
-    #[pyo3(signature=(simple_match_type_word_map_bytes))]
     /// Creates a new instance of [SimpleMatcher].
     ///
     /// This constructor initializes a new [SimpleMatcher] by deserializing the provided byte array
@@ -1006,6 +1004,8 @@ impl SimpleMatcher {
     /// simple_matcher = SimpleMatcher(simple_match_type_word_map)
     /// print(simple_matcher.simple_matcher)
     /// ```
+    #[new]
+    #[pyo3(signature=(simple_match_type_word_map_bytes))]
     fn new(_py: Python, simple_match_type_word_map_bytes: &[u8]) -> PyResult<SimpleMatcher> {
         let simple_match_type_word_map: SimpleMatchTypeWordMapRs =
             match rmp_serde::from_slice(simple_match_type_word_map_bytes) {
@@ -1096,7 +1096,6 @@ impl SimpleMatcher {
         &self.simple_match_type_word_map_bytes
     }
 
-    #[pyo3(signature=(simple_match_type_word_map_bytes))]
     /// Restores the state of the [SimpleMatcher] object from the provided serialized data.
     ///
     /// This method is called during the unpickling process to reinitialize the `simple_matcher`
@@ -1137,6 +1136,7 @@ impl SimpleMatcher {
     /// # The deserialized object should have the same state
     /// assert deserialized_matcher.is_match("example")
     /// ```
+    #[pyo3(signature=(simple_match_type_word_map_bytes))]
     fn __setstate__(&mut self, simple_match_type_word_map_bytes: &[u8]) {
         self.simple_matcher = SimpleMatcherRs::new(
             &rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(simple_match_type_word_map_bytes)
@@ -1144,7 +1144,6 @@ impl SimpleMatcher {
         );
     }
 
-    #[pyo3(signature=(text))]
     /// Checks if the given text matches any of the patterns in the simple matcher.
     ///
     /// This method takes a string slice as input and invokes the `is_match` method on the internal
@@ -1182,11 +1181,11 @@ impl SimpleMatcher {
     /// is_match = simple_matcher.is_match("example")
     /// print(is_match)  # Output: True if "example" matches any pattern; otherwise, False
     /// ```
+    #[pyo3(signature=(text))]
     fn is_match(&self, text: &str) -> bool {
         self.simple_matcher.is_match(text)
     }
 
-    #[pyo3(signature=(text))]
     /// Performs simple processing on the given text and returns the results as a list of [SimpleResult] instances.
     ///
     /// This method takes a string slice as input, invokes the `process` method on the internal `simple_matcher`
@@ -1222,6 +1221,7 @@ impl SimpleMatcher {
     /// results = simple_matcher.simple_process("example")
     /// print(results)  # Output: A list of SimpleResult instances
     /// ```
+    #[pyo3(signature=(text))]
     fn simple_process(&self, text: &str) -> Vec<SimpleResult> {
         self.simple_matcher
             .process(text)
@@ -1230,7 +1230,6 @@ impl SimpleMatcher {
             .collect()
     }
 
-    #[pyo3(signature=(text_array))]
     /// Batch processes a list of texts and performs simple processing
     /// on each text, returning the results as vectors of [SimpleResult] instances.
     ///
@@ -1270,6 +1269,7 @@ impl SimpleMatcher {
     /// result = simple_matcher.batch_simple_process(text_list)
     /// print(result)  # Output: A list of lists of SimpleResult instances
     /// ```
+    #[pyo3(signature=(text_array))]
     fn batch_simple_process(
         &self,
         text_array: &Bound<'_, PyList>,
@@ -1284,7 +1284,6 @@ impl SimpleMatcher {
         Ok(result_list)
     }
 
-    #[pyo3(signature=(text_array, inplace = false))]
     /// Processes a NumPy array of texts using the simple processing method,
     /// with an optional in-place operation. Each element of the input array
     /// is expected to be a Python string object.
@@ -1333,6 +1332,7 @@ impl SimpleMatcher {
     /// simple_matcher.numpy_simple_process(text_array, inplace=True)
     /// print(text_array)  # Output: The original NumPy array modified in-place with lists of SimpleResult instances
     /// ```
+    #[pyo3(signature=(text_array, inplace = false))]
     fn numpy_simple_process(
         &self,
         py: Python,

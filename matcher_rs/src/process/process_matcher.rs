@@ -30,7 +30,6 @@ lazy_static! {
     pub static ref PROCESS_MATCHER_CACHE: ProcessMatcherCache = RwLock::new(IntMap::default());
 }
 
-#[derive(Clone)]
 /// [ProcessMatcher] is an enum designed to differentiate between matching strategies based on the input text type.
 ///
 /// This enum is used as part of the text processing framework, allowing for specialized handling of Chinese text
@@ -41,13 +40,13 @@ lazy_static! {
 ///
 /// By distinguishing between these two categories, [ProcessMatcher] allows for more efficient and accurate pattern
 /// matching tailored to the linguistic properties of the text being processed.
+#[derive(Clone)]
 pub enum ProcessMatcher {
     Chinese(CharwiseDoubleArrayAhoCorasick<u32>),
     Others(AhoCorasick),
 }
 
 impl ProcessMatcher {
-    #[inline(always)]
     /// Replaces all occurrences of patterns in the input text with corresponding replacements from the provided list.
     ///
     /// This function performs a find-and-replace operation on the input text. It searches for patterns using the internal matcher
@@ -70,6 +69,7 @@ impl ProcessMatcher {
     ///
     /// This function uses unsafe code to access slices and indices. This assumes that the match indices and the replacement list
     /// indices are always within bounds.
+    #[inline(always)]
     pub fn replace_all<'a>(
         &self,
         text: &'a str,
@@ -106,7 +106,6 @@ impl ProcessMatcher {
         }
     }
 
-    #[inline(always)]
     /// Deletes all occurrences of patterns in the input text.
     ///
     /// This function performs a delete operation on the input text. It searches for patterns using the internal matcher
@@ -126,6 +125,7 @@ impl ProcessMatcher {
     /// # Safety
     ///
     /// This function uses unsafe code to access slices and indices. This assumes that the match indices are always within bounds.
+    #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0;
@@ -153,7 +153,6 @@ impl ProcessMatcher {
     }
 }
 
-#[cfg(feature = "runtime_build")]
 /// Generates a [ProcessMatcher] based on the specified [SimpleMatchType].
 ///
 /// This function generates a matcher and a corresponding replacement list
@@ -210,6 +209,7 @@ impl ProcessMatcher {
 /// The commented-out section for [CharwiseDoubleArrayAhoCorasick] implies that it is not yet used in
 /// the current version. Any errors regarding missing or incorrectly formatted string mappings will
 /// result in a panic due to the use of `unwrap()`.
+#[cfg(feature = "runtime_build")]
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
 ) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
@@ -329,7 +329,6 @@ pub fn get_process_matcher(
     }
 }
 
-#[cfg(feature = "prebuilt")]
 /// Generates a [ProcessMatcher] based on the provided [SimpleMatchType].
 ///
 /// This implementation makes use of prebuilt, serialized data for certain match types to enhance
@@ -364,6 +363,7 @@ pub fn get_process_matcher(
 /// - [SimpleMatchType::PinYinChar]: Returns a matcher using prebuilt replacement list and matcher data for PinYin characters.
 ///
 /// This function requires the `prebuilt` feature to be enabled.
+#[cfg(feature = "prebuilt")]
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
 ) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
@@ -481,7 +481,6 @@ pub fn get_process_matcher(
     }
 }
 
-#[inline(always)]
 /// Processes the input text according to the specified single-bit `SimpleMatchType`.
 ///
 /// This function takes a `SimpleMatchType` bit flag and transforms the input text based on the rules
@@ -513,6 +512,7 @@ pub fn get_process_matcher(
 ///     c. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
 ///     d. Other types - Apply the matcher and replace all occurrences.
 /// 5. Updates the `result` accordingly and returns it within an `Ok`.
+#[inline(always)]
 pub fn text_process(
     simple_match_type_bit: SimpleMatchType,
     text: &str,
@@ -553,7 +553,6 @@ pub fn text_process(
     Ok(result)
 }
 
-#[inline(always)]
 /// Processes the input text to apply transformations specified by the SimpleMatchType.
 ///
 /// This function iterates over the bits of a SimpleMatchType to apply various text transformations.
@@ -583,6 +582,7 @@ pub fn text_process(
 ///         iv. Other types - Apply the matcher and replace all occurrences.
 ///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
 /// 4. Return the populated [ArrayVec] containing all processed text variations.
+#[inline(always)]
 pub fn reduce_text_process<'a>(
     simple_match_type: SimpleMatchType,
     text: &'a str,

@@ -8,8 +8,6 @@ use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 #[cfg(feature = "serde")]
 use crate::util::serde::serde_regex;
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
 /// An enumeration representing different types of similarity matching algorithms.
 ///
 /// The [SimMatchType] enum defines several types of algorithms that can be used
@@ -34,6 +32,8 @@ use crate::util::serde::serde_regex;
 ///
 /// This enum can be serialized and deserialized using Serde, with the variant names
 /// automatically converted to snake_case during this process.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum SimMatchType {
     Levenshtein,
     DamerauLevenshtein,
@@ -42,7 +42,6 @@ pub enum SimMatchType {
     JaroWinkler,
 }
 
-#[derive(Debug, Clone)]
 /// A struct representing a similarity table used for matching operations.
 ///
 /// The [SimTable] struct is used to define a table of words and associated identifiers that
@@ -78,6 +77,7 @@ pub enum SimMatchType {
 ///     threshold: 0.8,
 /// };
 /// ```
+#[derive(Debug, Clone)]
 pub struct SimTable<'a> {
     pub table_id: u32,
     pub match_id: u32,
@@ -86,8 +86,6 @@ pub struct SimTable<'a> {
     pub threshold: f64,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A struct representing a processed similarity table.
 ///
 /// The [SimProcessedTable] struct holds the preprocessed data for similarity matching operations.
@@ -105,7 +103,8 @@ pub struct SimTable<'a> {
 ///   These words have been preprocessed and are ready for the matching process.
 /// - `threshold` ([f64]): The threshold value for similarity scoring. This score ranges from 0.0 to 1.0,
 ///   with higher values indicating higher similarity.
-///
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimProcessedTable {
     table_id: u32,
     match_id: u32,
@@ -114,7 +113,6 @@ struct SimProcessedTable {
     threshold: f64,
 }
 
-#[derive(Debug, Clone)]
 /// A struct representing the result of a similarity match.
 ///
 /// The `SimResult` struct captures the details of a word that was found to be similar
@@ -133,6 +131,7 @@ struct SimProcessedTable {
 /// - `match_id` ([u32]): An ID that serves as an identifier for the match.
 /// - `similarity` ([f64]): The similarity score computed for the match. This score typically
 ///   ranges from 0.0 to 1.0, with higher values indicating greater similarity.
+#[derive(Debug, Clone)]
 pub struct SimResult<'a> {
     pub word: Cow<'a, str>,
     pub table_id: u32,
@@ -149,8 +148,6 @@ impl MatchResultTrait<'_> for SimResult<'_> {
     }
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A struct representing a similarity matcher.
 ///
 /// The [SimMatcher] struct is responsible for managing and processing similarity matching
@@ -186,6 +183,8 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 ///
 /// let matcher = SimMatcher::new(&sim_tables);
 /// ```
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimMatcher {
     #[cfg_attr(feature = "serde", serde(with = "serde_regex"))]
     remove_special_pattern: Regex,

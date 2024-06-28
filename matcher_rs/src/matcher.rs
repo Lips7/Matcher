@@ -29,8 +29,6 @@ pub trait MatchResultTrait<'a> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(untagged)]
 /// An enumeration representing the different types of matching strategies available for a match table.
 ///
 /// This enum defines the various strategies that can be applied when attempting to match text
@@ -65,6 +63,8 @@ pub trait MatchResultTrait<'a> {
 ///     threshold: 0.8,
 /// };
 /// ```
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(untagged)]
 pub enum MatchTableType {
     Simple {
         simple_match_type: SimpleMatchType,
@@ -78,7 +78,6 @@ pub enum MatchTableType {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
 /// A structure representing a match table configuration used for text matching operations.
 ///
 /// This structure defines the necessary fields and types required for configuring a match
@@ -108,6 +107,7 @@ pub enum MatchTableType {
 ///
 /// The `borrow` attribute on `word_list` and `exemption_word_list` fields ensures that the deserialized
 /// data can borrow from the input data, providing better performance by avoiding unnecessary allocations.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
@@ -118,8 +118,6 @@ pub struct MatchTable<'a> {
     pub exemption_word_list: Vec<&'a str>,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// A structure representing the configuration of a word table used in text matching.
 ///
 /// This structure holds the details of a specific word table and its configuration within
@@ -131,13 +129,14 @@ pub struct MatchTable<'a> {
 /// * `match_id` - A [u32] representing the identifier of the match within the system.
 /// * `table_id` - A [u32] representing the identifier of the table within the system.
 /// * `is_exemption` - A [bool] flag that indicates whether the word table is an exemption.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct WordTableConf {
     match_id: u32,
     table_id: u32,
     is_exemption: bool,
 }
 
-#[derive(Serialize)]
 /// A structure representing the result of a matching operation.
 ///
 /// This structure contains details about an individual matching result,
@@ -153,6 +152,7 @@ struct WordTableConf {
 ///
 /// * `'a` - The lifetime associated with the `word` field, ensuring that the data
 ///    for the word can be borrowed for efficiency.
+#[derive(Serialize)]
 pub struct MatchResult<'a> {
     pub table_id: u32,
     pub word: Cow<'a, str>,
@@ -172,8 +172,6 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
 
 pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
 ///
 /// This structure holds configurations for simple, regex, and similarity-based matchers. It manages
@@ -210,6 +208,8 @@ pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 ///
 /// let matcher = Matcher::new(&match_table_map);
 /// ```
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Matcher {
     simple_word_table_conf_map: IntMap<u32, WordTableConf>,
     simple_word_table_conf_id_map: IntMap<u32, u32>,
