@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Display};
 
 use sonic_rs::{Deserialize, Serialize};
 
@@ -21,14 +21,6 @@ impl SimpleWord {
         self.0.is_empty()
     }
 
-    pub fn from_string(word: String) -> Self {
-        SimpleWord(word)
-    }
-
-    pub fn from_str(word: &str) -> Self {
-        SimpleWord(word.to_owned())
-    }
-
     pub fn and<I>(mut self, word: I) -> Self
     where
         I: AsRef<str>,
@@ -47,12 +39,14 @@ impl SimpleWord {
         self
     }
 
-    pub fn to_string(self) -> String {
-        self.0
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl Display for SimpleWord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -74,9 +68,9 @@ impl<'a> From<Cow<'a, str>> for SimpleWord {
     }
 }
 
-impl Into<String> for SimpleWord {
-    fn into(self) -> String {
-        self.0
+impl From<SimpleWord> for String {
+    fn from(value: SimpleWord) -> Self {
+        value.0
     }
 }
 
