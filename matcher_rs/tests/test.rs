@@ -1,7 +1,7 @@
 mod test_simple {
     use std::collections::HashMap;
 
-    use matcher_rs::{SimpleMatchType, SimpleMatcher, TextMatcherTrait};
+    use matcher_rs::{SimpleMatchType, SimpleMatcher, SimpleWord, TextMatcherTrait};
 
     #[test]
     fn simple_match_init() {
@@ -74,12 +74,18 @@ mod test_simple {
         let simple_matcher = SimpleMatcher::new(&HashMap::from([(
             SimpleMatchType::None,
             HashMap::from([
-                (1, "hello&world"),
-                (2, "hello&hello&world"),
-                (3, "hello~world"),
-                (4, "hello~world~world"),
-                (5, "hello&world~word"),
-                (6, "hello&world~word~word"),
+                (1, SimpleWord::from("hello").and("world")),
+                (2, SimpleWord::from("hello").and("world").and("hello")),
+                (3, SimpleWord::from("hello").not("world")),
+                (4, SimpleWord::from("hello").not("world").not("world")),
+                (5, SimpleWord::from("hello").and("world").not("word")),
+                (
+                    6,
+                    SimpleWord::from("hello")
+                        .and("world")
+                        .not("word")
+                        .not("word"),
+                ),
             ]),
         )]));
         assert!(simple_matcher.is_match("hello world"));

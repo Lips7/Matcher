@@ -12,6 +12,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod util;
+pub use util::word::SimpleWord;
 
 mod process;
 pub use process::process_matcher::{reduce_text_process, text_process};
