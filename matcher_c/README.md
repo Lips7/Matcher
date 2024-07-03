@@ -41,7 +41,7 @@ matcher = lib.init_matcher(
             MatchTable(
                 table_id=1,
                 match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
-                word_list=["hello,world", "hello", "world"],
+                word_list=["hello&world", "hello", "world"],
                 exemption_simple_match_type=SimpleMatchType.MatchNone,
                 exemption_word_list=[],
             )
@@ -53,7 +53,7 @@ matcher = lib.init_matcher(
 lib.matcher_is_match(matcher, "hello".encode("utf-8")) # True
 
 # match word, output json string
-res = lib.matcher_word_match(matcher, "hello,world".encode("utf-8")) # {1:[{"table_id":1,"word":"hello"},{"table_id":1,"word":"hello,world"},{"table_id":1,"word":"world"}]"}
+res = lib.matcher_word_match(matcher, "hello,world".encode("utf-8")) # {1:[{"table_id":1,"word":"hello"},{"table_id":1,"word":"hello&world"},{"table_id":1,"word":"world"}]"}
 print(ffi.string(res).decode("utf-8")) #
 lib.drop_string(res)
 
@@ -64,7 +64,7 @@ lib.drop_matcher(matcher)
 simple_matcher = lib.init_simple_matcher(
     msgspec.msgpack.encode(({
         SimpleMatchType.MatchFanjianDeleteNormalize | SimpleMatchType.MatchPinYinChar: {
-            1: "妳好,世界",
+            1: "妳好&世界",
             2: "hello"
         }
     }))

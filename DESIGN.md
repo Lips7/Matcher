@@ -145,7 +145,7 @@ The `SimpleMatcher` uses a mapping structure to define words and their IDs based
 ```json
 {
     "SimpleMatchType.None": {
-        "1": "hello,world",
+        "1": "hello&world",
         "2": "你好"
         // other words
     }
@@ -162,7 +162,8 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 ### Logical Operations
 
 - **OR Logic (between different `simple_match_type` and words in the same `simple_match_type`)**: The `simple_matcher` is considered matched if any word in the map is matched.
-- **AND Logic (between words separated by `,` within a `WordID`)**: All words separated by `,` must be matched for the word to be considered as matched.
+- **AND Logic (between words separated by `&` within a `WordID`)**: All words separated by `&` must be matched for the word to be considered as matched.
+- **NOT Logic (between words separated by `~` within a `WordID`)**: All words separated by `~` must not be matched for the word to be considered as matched.
 
 ### Usage Cases
 
@@ -171,7 +172,7 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 Input:
 {
     "SimpleMatchType.None": {
-        "1": "word1,word2"
+        "1": "word1&word2"
     }
 }
 
@@ -189,6 +190,18 @@ Input:
 }
 
 Output: Check if `word_id` 1 or 2 is matched.
+```
+
+#### Word1 NOT Word2 match
+```json
+Input:
+{
+    "SimpleMatchType.None": {
+        "1": "word1~word2",
+    }
+}
+
+Output: Check if `word_id` 1 is matched.
 ```
 
 ## Summary

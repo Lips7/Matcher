@@ -21,10 +21,11 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
     Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
-- **Combination and Repeated Word Matching**:
+- **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
-  - Example: `hello,world` matches `hello world` and `world,hello`
-  - Example: `无,法,无,天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+  - Example: `hello&world` matches `hello world` and `world,hello`
+  - Example: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+  - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
 - **Customizable Exemption Lists**: Exclude specific words from matching.
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
@@ -57,7 +58,7 @@ For each match table, word matching is performed over the `word_list`, and exemp
 
 * `Simple`: Supports simple multiple patterns matching with text normalization defined by `simple_match_type`.
   * We offer transformation methods for text normalization, including `Fanjian`, `Normalize`, `PinYin` ···.
-  * It can handle combination patterns and repeated times sensitive matching, delimited by `,`, such as `hello,world,hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
+  * It can handle combination patterns and repeated times sensitive matching, delimited by `&` and `~`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
 * `Regex`: Supports regex patterns matching.
   * `SimilarChar`: Supports similar character matching using regex.
     * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.

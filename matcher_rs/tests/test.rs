@@ -68,6 +68,22 @@ mod test_simple {
         assert!(simple_matcher.is_match("现"));
         assert!(simple_matcher.is_match("xian"));
     }
+
+    #[test]
+    fn simple_match_combination() {
+        let simple_matcher = SimpleMatcher::new(&HashMap::from([(
+            SimpleMatchType::None,
+            HashMap::from([
+                (1, "hello&world"),
+                (2, "hello&hello&world"),
+                (3, "hello~world"),
+                (4, "hello~world~world"),
+            ]),
+        )]));
+        assert!(simple_matcher.is_match("hello world"));
+        assert!(simple_matcher.is_match("hello hello world"));
+        assert!(simple_matcher.is_match("hello word"));
+    }
 }
 
 mod test_regex {
@@ -101,7 +117,7 @@ mod test_regex {
     }
 
     #[test]
-    fn rege_match_similar_char() {
+    fn regex_match_similar_char() {
         let regex_matcher = RegexMatcher::new(&[RegexTable {
             table_id: 1,
             match_id: 1,

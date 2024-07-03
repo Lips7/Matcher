@@ -309,7 +309,7 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 ///
 /// let mut simple_match_type_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
-/// word_map.insert(1, "hello,world");
+/// word_map.insert(1, "hello&world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
 /// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn init_simple_matcher(
 ///
 /// let mut simple_match_type_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
-/// word_map.insert(1, "hello,world");
+/// word_map.insert(1, "hello&world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
 /// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 ///
 /// let mut simple_match_type_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
-/// word_map.insert(1, "hello,world");
+/// word_map.insert(1, "hello&world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
 /// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///
@@ -446,7 +446,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 ///             ).to_bytes()
 ///         }
 ///     ).unwrap_or(""),
-///     r#"[{"word_id":1,"word":"hello,world"}]"#
+///     r#"[{"word_id":1,"word":"hello&world"}]"#
 /// );
 /// assert_eq!(
 ///     from_utf8(
@@ -511,7 +511,7 @@ pub unsafe extern "C" fn simple_matcher_process(
 ///
 /// let mut simple_match_type_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
-/// word_map.insert(1, "hello,world");
+/// word_map.insert(1, "hello&world");
 /// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
 /// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
 ///

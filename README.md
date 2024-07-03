@@ -36,10 +36,11 @@ It's helpful for
     Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
-- **Combination and Repeated Word Matching**:
+- **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
-  - Example: `hello,world` matches `hello world` and `world,hello`
-  - Example: `无,法,无,天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+  - Example: `hello&world` matches `hello world` and `world,hello`
+  - Example: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+  - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
 - **Customizable Exemption Lists**: Exclude specific words from matching.
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
@@ -92,7 +93,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 - [x] Make SimpleMatcher and Matcher serializable.
   - [x] Make aho-corasick serializable.
   - [x] See https://github.com/Lips7/aho-corasick.
-- [ ] Implement NOT logic word-wise.
+- [x] Implement NOT logic word-wise.
 - [ ] More detailed [DESIGN](./DESIGN.md).
 - [x] Support stable rust.
 - [x] Unsafe aho-corasick crate implement.

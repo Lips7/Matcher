@@ -78,20 +78,24 @@ impl IsEnabled for SimpleMatchType {}
 
 pub type SimpleMatchTypeWordMap<'a> = IntMap<SimpleMatchType, IntMap<u32, &'a str>>;
 
-/// `WordConf` is a structure that holds the configuration details for a word used in text matching and transformations.
+/// `WordConf` represents the configuration and attributes of a specific word,
+/// including its textual representation, split bit vector, and a non-indexable position.
 ///
-/// This structure is used within the [SimpleMatcher] to store the textual representation of a word and a vector
-/// of split bits. The `word` field contains the actual string of the word, and the `split_bit` field holds a vector
-/// of integers that represent specific bit patterns associated with the word.
+/// This structure is essential for configuring words that will be processed by the
+/// [SimpleMatcher] for pattern matching and text transformations. The `word` field holds
+/// the actual text of the word, `split_bit` contains the vector for split bits, and
+/// `not_index` indicates a specific position that should not be indexed during the matching process.
 ///
 /// # Fields
 ///
-/// * `word` - A [String] that represents the actual word involved in text matching and transformation.
-/// * `split_bit` - A [`Vec<i32>`] that contains bit patterns or segments associated with the word.
+/// * `word` - A [String] representing the textual content of the word.
+/// * `split_bit` - A [`Vec<i32>`] representing the vector that holds split bits for the word.
+/// * `not_index` - A [usize] denoting a position in the word that is exempt from indexing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WordConf {
     word: String,
     split_bit: Vec<i32>,
+    not_index: usize,
 }
 
 /// `SimpleAcTable` is a structure that encapsulates the Aho-Corasick matcher and a list of word configurations.
@@ -270,35 +274,41 @@ impl SimpleMatcher {
         simple_matcher
     }
 
-    /// Builds a `SimpleAcTable` from the provided word map and [SimpleMatchType].
+    /// Builds a `SimpleAcTable` for a given `SimpleMatchType` and a word map.
     ///
-    /// This function constructs a `SimpleAcTable` by iterating through the provided `simple_word_map`,
-    /// processing each word according to the specified `simple_match_type`. It collects words to be
-    /// matched (using Aho-Corasick algorithm) and their corresponding configurations into vectors.
-    /// The resulting `SimpleAcTable` contains both the matcher and word configuration list.
+    /// This function generates an Aho-Corasick table structured for efficient pattern matching,
+    /// based on the specified `SimpleMatchType` and a supplied mapping of words. It processes
+    /// the word map to split words into sub-patterns based on specified delimiters ('&' and '~'),
+    /// constructs the Aho-Corasick matcher, and sets up the internal configuration for each word.
     ///
     /// # Arguments
     ///
-    /// * `simple_match_type` - A [SimpleMatchType] bit flags that define specific text transformation rules.
-    /// * `simple_word_map` - An iterable of tuples, where each tuple contains:
-    ///     * A word identifier (u32).
-    ///     * The actual word as a string slice.
+    /// * `simple_match_type` - The `SimpleMatchType` specifying the type of text transformation/matching rule to apply.
+    /// * `simple_word_map` - A reference to a `HashMap<u32, I, S2>` where:
+    ///   * The key is a word identifier (`u32`).
+    ///   * The value is a word itself, which is a type that implements `AsRef<str>`.
     ///
     /// # Returns
     ///
-    /// * `SimpleAcTable` - A structure containing the Aho-Corasick matcher and word configuration list.
+    /// * `SimpleAcTable` - The constructed Aho-Corasick table for the given match type and word map.
     ///
     /// # Detailed Processing:
     ///
-    /// 1. Initialize vectors to hold words (`ac_wordlist`) and word configurations (`ac_word_conf_list`).
-    /// 2. Iterate through each word in the `simple_word_map`:
-    ///     a. Split the word by commas and count occurrences of each split segment using `ac_split_word_counter`.
-    ///     b. Create a SIMD vector (`split_bit_vec`) representing the count of each split segment.
-    ///     c. Store the word and its SIMD split bit in `simple_wordconf_map`.
-    ///     d. For each unique split segment, reduce the text based on `simple_match_type` and add to `ac_wordlist`.
-    /// 3. Construct and return a `SimpleAcTable` by building an Aho-Corasick matcher from `ac_wordlist`,
-    ///    and pairing it with the collected word configurations (`ac_word_conf_list`).
+    /// 1. Initialize empty vectors for `ac_wordlist` and `ac_word_conf_list`.
+    /// 2. For each word in `simple_word_map`:
+    ///     a. Split the word into sub-patterns based on '&' and '~' delimiters.
+    ///     b. Track sub-patterns that should be counted positively ('&') or negatively ('~').
+    ///     c. Construct split bit vectors combining positive and negative counts.
+    ///     d. Store word configuration (`WordConf`) with its split bit vector and special index.
+    /// 3. For each sub-pattern, apply text processing based on `simple_match_type`.
+    /// 4. Add processed sub-patterns to `ac_wordlist` and their configurations to `ac_word_conf_list`.
+    /// 5. Build and return a `SimpleAcTable` with the constructed Aho-Corasick matcher and configurations.
     ///
+    /// # Safety
+    ///
+    /// Unsafe code is used for unchecked slice accesses and integer operations to maximize performance.
+    /// Ensure input data complies with expected formats and types to avoid undefined behavior.
+    /// ```
     fn build_simple_ac_table<I, S2>(
         &mut self,
         simple_match_type: SimpleMatchType,
@@ -311,17 +321,58 @@ impl SimpleMatcher {
         let mut ac_word_conf_list = Vec::new();
 
         for (&simple_word_id, simple_word) in simple_word_map {
-            let mut ac_split_word_counter = AHashMap::default();
-            for ac_split_word in simple_word.as_ref().split(',').filter(|&x| !x.is_empty()) {
-                ac_split_word_counter
-                    .entry(ac_split_word)
+            let mut ac_split_word_and_counter = AHashMap::default();
+            let mut ac_split_word_not_counter = AHashMap::default();
+
+            let mut start = 0;
+            let mut is_and = false;
+            let mut is_not = false;
+
+            for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
+                if (is_and || start == 0) && start != index {
+                    ac_split_word_and_counter
+                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                        .and_modify(|cnt| *cnt += 1)
+                        .or_insert(1);
+                }
+                if is_not && start != index {
+                    ac_split_word_not_counter
+                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                        .and_modify(|cnt| *cnt += 1)
+                        .or_insert(1);
+                }
+                match char {
+                    "&" => {
+                        is_and = true;
+                        is_not = false;
+                        start = index + 1;
+                    }
+                    "~" => {
+                        is_and = false;
+                        is_not = true;
+                        start = index + 1
+                    }
+                    _ => {}
+                }
+            }
+            if (is_and || start == 0) && start != simple_word.as_ref().len() {
+                ac_split_word_and_counter
+                    .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
+                    .and_modify(|cnt| *cnt += 1)
+                    .or_insert(1);
+            }
+            if is_not && start != simple_word.as_ref().len() {
+                ac_split_word_not_counter
+                    .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                     .and_modify(|cnt| *cnt += 1)
                     .or_insert(1);
             }
 
-            let split_bit = ac_split_word_counter
+            let not_index = ac_split_word_and_counter.len();
+            let split_bit = ac_split_word_and_counter
                 .values()
                 .copied()
+                .chain(ac_split_word_not_counter.values().map(|&cnt| -cnt))
                 .collect::<Vec<i32>>();
 
             self.simple_wordconf_map.insert(
@@ -329,10 +380,15 @@ impl SimpleMatcher {
                 WordConf {
                     word: simple_word.as_ref().to_owned(),
                     split_bit,
+                    not_index,
                 },
             );
 
-            for (offset, &split_word) in ac_split_word_counter.keys().enumerate() {
+            for (offset, &split_word) in ac_split_word_and_counter
+                .keys()
+                .chain(ac_split_word_not_counter.keys())
+                .enumerate()
+            {
                 for ac_word in reduce_text_process(simple_match_type, split_word) {
                     ac_wordlist.push(ac_word);
                     ac_word_conf_list.push((simple_word_id, offset));
@@ -440,7 +496,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_sub(1);
+                        *bit = bit.unchecked_add((index < word_conf.not_index) as i32 * -2 + 1);
                     };
 
                     if split_bit_vec
@@ -539,7 +595,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_sub(1);
+                        *bit = bit.unchecked_add((index < word_conf.not_index) as i32 * -2 + 1);
                     };
 
                     if split_bit_vec
