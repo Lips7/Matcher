@@ -37,6 +37,7 @@ fn build_simple_word_map(
     en_or_cn: &str,
     simple_word_map_size: usize,
     combined_times: usize,
+    global_word_id: &mut u32,
 ) -> IntMap<u32, String> {
     let mut patterns: Vec<String> = if en_or_cn == "cn" {
         CN_WORD_LIST_100000.lines().map(String::from).collect()
@@ -46,16 +47,22 @@ fn build_simple_word_map(
     patterns.sort_unstable();
 
     let mut simple_word_map = IntMap::default();
-    let mut global_word_id = 0;
+
+    let mut rng = fastrand::Rng::new();
 
     for _ in 0..simple_word_map_size {
-        global_word_id += 1;
-        let combined_word = fastrand::choose_multiple(patterns.iter(), combined_times)
-            .iter()
+        *global_word_id += 1;
+        let mut combined_word_list = Vec::with_capacity(combined_times);
+        for _ in 0..combined_times {
+            let word = &patterns[rng.usize(0..patterns.len())];
+            combined_word_list.push(word);
+        }
+        let combined_word = combined_word_list
+            .into_iter()
             .map(|s| s.as_str())
-            .intersperse(",")
+            .intersperse(rng.choice(["&", "~"]).unwrap())
             .collect::<String>();
-        simple_word_map.insert(global_word_id, combined_word);
+        simple_word_map.insert(*global_word_id, combined_word);
     }
     simple_word_map
 }
@@ -87,8 +94,13 @@ mod build_cn {
     #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn build_cn_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(simple_match_type, simple_word_map);
 
         bencher.bench(|| {
@@ -99,8 +111,13 @@ mod build_cn {
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn build_cn_by_simple_word_map_size(bencher: Bencher, simple_word_map_size: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", simple_word_map_size, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            simple_word_map_size,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
 
         bencher.bench(|| {
@@ -111,8 +128,13 @@ mod build_cn {
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn build_cn_by_combined_times(bencher: Bencher, combined_times: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            combined_times,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
 
         bencher.bench(|| {
@@ -123,13 +145,18 @@ mod build_cn {
     #[divan::bench]
     fn build_cn_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
+        let mut global_word_id = 0;
         for simple_match_type in [
             SimpleMatchType::Fanjian,
             SimpleMatchType::DeleteNormalize,
             SimpleMatchType::FanjianDeleteNormalize,
         ] {
-            let simple_word_map =
-                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            let simple_word_map = build_simple_word_map(
+                "cn",
+                DEFAULT_SIMPLE_WORD_MAP_SIZE,
+                DEFAULT_COMBINED_TIMES,
+                &mut global_word_id,
+            );
             simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         }
 
@@ -145,8 +172,13 @@ mod build_en {
     #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn build_en_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(simple_match_type, simple_word_map);
 
         bencher.bench(|| {
@@ -157,8 +189,13 @@ mod build_en {
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn build_en_by_simple_word_map_size(bencher: Bencher, simple_word_map_size: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", simple_word_map_size, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            simple_word_map_size,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
 
         bencher.bench(|| {
@@ -169,8 +206,13 @@ mod build_en {
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn build_en_by_combined_times(bencher: Bencher, combined_times: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            combined_times,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
 
         bencher.bench(|| {
@@ -181,13 +223,18 @@ mod build_en {
     #[divan::bench]
     fn build_en_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
+        let mut global_word_id = 0;
         for simple_match_type in [
             SimpleMatchType::None,
             SimpleMatchType::Delete,
             SimpleMatchType::DeleteNormalize,
         ] {
-            let simple_word_map =
-                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            let simple_word_map = build_simple_word_map(
+                "cn",
+                DEFAULT_SIMPLE_WORD_MAP_SIZE,
+                DEFAULT_COMBINED_TIMES,
+                &mut global_word_id,
+            );
             simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         }
 
@@ -217,8 +264,13 @@ mod search_cn {
     #[divan::bench(args = CN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn search_cn_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -232,8 +284,13 @@ mod search_cn {
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn search_cn_by_simple_word_map_size(bencher: Bencher, simple_word_map_size: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", simple_word_map_size, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            simple_word_map_size,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -247,8 +304,13 @@ mod search_cn {
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn search_cn_by_combined_times(bencher: Bencher, combined_times: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "cn",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            combined_times,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -262,13 +324,18 @@ mod search_cn {
     #[divan::bench]
     fn search_cn_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
+        let mut global_word_id = 0;
         for simple_match_type in [
             SimpleMatchType::Fanjian,
             SimpleMatchType::DeleteNormalize,
             SimpleMatchType::FanjianDeleteNormalize,
         ] {
-            let simple_word_map =
-                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            let simple_word_map = build_simple_word_map(
+                "cn",
+                DEFAULT_SIMPLE_WORD_MAP_SIZE,
+                DEFAULT_COMBINED_TIMES,
+                &mut global_word_id,
+            );
             simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         }
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
@@ -301,8 +368,13 @@ mod search_en {
     #[divan::bench(args = EN_SIMPLE_MATCH_TYPE_LIST, max_time = 5)]
     fn search_en_by_simple_match_type(bencher: Bencher, simple_match_type: SimpleMatchType) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -316,8 +388,13 @@ mod search_en {
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn search_en_by_simple_word_map_size(bencher: Bencher, simple_word_map_size: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", simple_word_map_size, DEFAULT_COMBINED_TIMES);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            simple_word_map_size,
+            DEFAULT_COMBINED_TIMES,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -331,8 +408,13 @@ mod search_en {
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn search_en_by_combined_times(bencher: Bencher, combined_times: usize) {
         let mut simple_match_type_word_map = IntMap::default();
-        let simple_word_map =
-            build_simple_word_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times);
+        let mut global_word_id = 0;
+        let simple_word_map = build_simple_word_map(
+            "en",
+            DEFAULT_SIMPLE_WORD_MAP_SIZE,
+            combined_times,
+            &mut global_word_id,
+        );
         simple_match_type_word_map.insert(DEFAULT_SIMPLE_MATCH_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
 
@@ -346,13 +428,18 @@ mod search_en {
     #[divan::bench]
     fn search_en_by_multiple_simple_match_type(bencher: Bencher) {
         let mut simple_match_type_word_map = IntMap::default();
+        let mut global_word_id = 0;
         for simple_match_type in [
             SimpleMatchType::None,
             SimpleMatchType::Delete,
             SimpleMatchType::DeleteNormalize,
         ] {
-            let simple_word_map =
-                build_simple_word_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, DEFAULT_COMBINED_TIMES);
+            let simple_word_map = build_simple_word_map(
+                "cn",
+                DEFAULT_SIMPLE_WORD_MAP_SIZE,
+                DEFAULT_COMBINED_TIMES,
+                &mut global_word_id,
+            );
             simple_match_type_word_map.insert(simple_match_type, simple_word_map);
         }
         let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
