@@ -308,7 +308,6 @@ impl SimpleMatcher {
     ///
     /// Unsafe code is used for unchecked slice accesses and integer operations to maximize performance.
     /// Ensure input data complies with expected formats and types to avoid undefined behavior.
-    /// ```
     fn build_simple_ac_table<I, S2>(
         &mut self,
         simple_match_type: SimpleMatchType,
@@ -338,8 +337,8 @@ impl SimpleMatcher {
                 if is_not && start != index {
                     ac_split_word_not_counter
                         .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
-                        .and_modify(|cnt| *cnt += 1)
-                        .or_insert(1);
+                        .and_modify(|cnt| *cnt -= 1)
+                        .or_insert(0);
                 }
                 match char {
                     "&" => {
@@ -364,15 +363,15 @@ impl SimpleMatcher {
             if is_not && start != simple_word.as_ref().len() {
                 ac_split_word_not_counter
                     .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
-                    .and_modify(|cnt| *cnt += 1)
-                    .or_insert(1);
+                    .and_modify(|cnt| *cnt -= 1)
+                    .or_insert(0);
             }
 
             let not_index = ac_split_word_and_counter.len();
             let split_bit = ac_split_word_and_counter
                 .values()
                 .copied()
-                .chain(ac_split_word_not_counter.values().map(|&cnt| -cnt))
+                .chain(ac_split_word_not_counter.values().copied())
                 .collect::<Vec<i32>>();
 
             self.simple_wordconf_map.insert(
@@ -424,12 +423,12 @@ impl SimpleMatcher {
 }
 
 impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
-    /// Determines if any patterns match the input text after applying transformations.
+    /// Checks if the input text matches any of the patterns stored in the matcher.
     ///
-    /// This function checks if any patterns from the provided [SimpleMatchType] transformations
-    /// match the input text using Aho-Corasick pattern matching. It ensures that the input text
-    /// undergoes all specified transformations and then verifies the presence of overlapping
-    /// patterns. This allows flexible and efficient text matching with transformations.
+    /// This function processes the input text based on each [SimpleMatchType] transformation and
+    /// uses the Aho-Corasick algorithm to determine if any patterns from the `simple_match_type_ac_table_map`
+    /// are present in the input text. It utilizes a bit vector technique to keep track of matched
+    /// patterns and their configurations.
     ///
     /// # Arguments
     ///
@@ -437,25 +436,24 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * `bool` - Returns `true` if a match is found after applying transformations, otherwise `false`.
+    /// * `bool` - Returns `true` if any of the patterns match the input text, otherwise returns `false`.
     ///
     /// # Detailed Processing:
     ///
     /// 1. If the input text is empty, return `false`.
-    /// 2. Initialize a map to track word IDs and their split bit vectors during processing.
-    /// 3. Iterate over each [SimpleMatchType] and its associated `SimpleAcTable`:
-    ///     a. Process the text according to the transformation rules defined by the [SimpleMatchType].
+    /// 2. Initialize a map (`word_id_split_bit_map`) to track word configurations during processing.
+    /// 3. For each [SimpleMatchType] and its corresponding `SimpleAcTable`:
+    ///     a. Apply the transformation rules defined by the [SimpleMatchType] to process the text.
     ///     b. Iterate over each processed version of the text.
     ///     c. Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
     ///     d. Retrieve the word configuration based on the pattern found.
     ///     e. Initialize or update the split bit vector corresponding to the word ID.
     ///     f. Update the split bit vector by shifting the bit to the right.
-    ///     g. Check if all shifts have reduced the split bit vector to all zeros.
-    ///     h. If so, return `true` indicating a match is found.
-    /// 4. If no matches are found after all transformations and checks, return `false`.
+    /// 4. Check if any entry in `word_id_split_bit_map` contains a bit vector where all bits are zero
+    ///    after processing. If such an entry exists, return `true`.
     ///
-    /// This function ensures efficient text matching using SIMD and Aho-Corasick algorithms
-    /// while accounting for various transformations specified by the [SimpleMatchType].
+    /// This function ensures efficient pattern matching using Aho-Corasick algorithms across
+    /// transformed versions of the input text.
     fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -496,65 +494,56 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_add((index < word_conf.not_index) as i32 * -2 + 1);
-                    };
-
-                    if split_bit_vec
-                        .iter()
-                        .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
-                    {
-                        return true;
+                        *bit = bit
+                            .unchecked_add((ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1);
                     }
                 }
             }
         }
 
-        false
+        word_id_split_bit_map.into_iter().any(|(_, split_bit_vec)| {
+            split_bit_vec
+                .into_iter()
+                .all(|bit_vec| bit_vec.into_iter().any(|bit| bit <= 0))
+        })
     }
 
-    /// Processes the input text to find matches and returns a list of results.
+    /// Processes the input text and returns a vector of [SimpleResult] containing matches found.
     ///
-    /// This function goes through multiple transformation stages to process the input text
-    /// and uses Aho-Corasick pattern matching to identify text segments that match the
-    /// specified patterns across these transformations.
+    /// This function is responsible for processing the input text using various transformation rules
+    /// defined by [SimpleMatchType] and then utilizing the Aho-Corasick algorithm to find overlapping patterns
+    /// within the processed text. It leverages a bit vector technique to determine matched patterns and keep
+    /// track of their configurations.
     ///
     /// # Arguments
     ///
-    /// * `text` - A string slice representing the input text to be processed and checked for matches.
+    /// * `text` - A string slice representing the input text to be checked for matches.
     ///
     /// # Returns
     ///
-    /// * [Vec<SimpleResult<'a>>] - A vector containing the results of the match, each result includes
-    ///   the word id and the word itself.
+    /// * [`Vec<SimpleResult>`] - A vector of [SimpleResult] structs, each containing the `word_id` and the `word`
+    ///   associated with the matched pattern.
     ///
     /// # Detailed Processing:
     ///
-    /// 1. If the input text is empty, return an empty list of results.
-    /// 2. Initialize a set to track word IDs that have already been matched.
-    /// 3. Initialize a map to keep track of word IDs and their corresponding split bit vectors
-    ///    during processing.
-    /// 4. For each [SimpleMatchType] and its corresponding `SimpleAcTable`:
-    ///     a. Apply the transformation rules defined by the [SimpleMatchType] to process the text.
-    ///     b. Iterate over each processed version of the text.
-    ///     c. Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
-    ///     d. Retrieve the word configuration based on the pattern found.
-    ///     e. Skip if the word ID has already been matched.
-    ///     f. Initialize or update the split bit vector corresponding to the word ID.
-    ///     g. Update the split bit vector by shifting the bit to the right.
-    ///     h. If all shifts have reduced the split bit vector to all zeros, add the word ID to the set
-    ///        and include the result in the result list.
-    ///
-    /// This ensures efficient text matching across transformed versions of the input text using
-    /// SIMD and Aho-Corasick algorithms.
+    /// 1. If the input text is empty, return an empty vector.
+    /// 2. Initialize a map (`word_id_split_bit_map`) to track word configurations during processing.
+    /// 3. Iterate through each `SimpleMatchType` and its corresponding `SimpleAcTable`:
+    ///     a. Apply the transformation rules to the input text.
+    ///     b. For each processed version of the text:
+    ///         i. Use the Aho-Corasick matcher to find overlapping patterns.
+    ///         ii. Retrieve configuration of the matched pattern.
+    ///         iii. Initialize or update the split bit vector corresponding to the word ID.
+    ///         iv. Update the bit according to the configuration.
+    /// 4. Filter patterns that are fully matched based on the split bit vector and create a [SimpleResult] for each.
+    /// 5. Return a vector of [SimpleResult] containing matched patterns.
     fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
-        let mut result_list = Vec::new();
-
         if text.is_empty() {
-            return result_list;
+            return Vec::new();
         }
 
-        let mut word_id_set = IntSet::default();
         let mut word_id_split_bit_map = IntMap::default();
+        let mut not_word_id_set = IntSet::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
             let processed_text_list = reduce_text_process(simple_match_type, text);
@@ -572,7 +561,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     };
                     let word_id = ac_word_conf.0;
 
-                    if word_id_set.contains(&word_id) {
+                    if not_word_id_set.contains(&word_id) {
                         continue;
                     }
 
@@ -595,23 +584,31 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_vec
                             .get_unchecked_mut(ac_word_conf.1)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_add((index < word_conf.not_index) as i32 * -2 + 1);
+                        *bit = bit
+                            .unchecked_add((ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1);
+                        if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
+                            not_word_id_set.insert(word_id);
+                            word_id_split_bit_map.remove(&word_id);
+                        }
                     };
-
-                    if split_bit_vec
-                        .iter()
-                        .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
-                    {
-                        word_id_set.insert(word_id);
-                        result_list.push(SimpleResult {
-                            word_id,
-                            word: Cow::Borrowed(&word_conf.word),
-                        });
-                    }
                 }
             }
         }
 
-        result_list
+        word_id_split_bit_map
+            .into_iter()
+            .filter_map(|(word_id, split_bit_vec)| {
+                split_bit_vec
+                    .into_iter()
+                    .all(|bit_vec| bit_vec.into_iter().any(|bit| bit <= 0))
+                    .then_some(SimpleResult {
+                        word_id,
+                        word: Cow::Borrowed(
+                            &unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() }
+                                .word,
+                        ),
+                    })
+            })
+            .collect()
     }
 }

@@ -78,6 +78,8 @@ mod test_simple {
                 (2, "hello&hello&world"),
                 (3, "hello~world"),
                 (4, "hello~world~world"),
+                (5, "hello&world~word"),
+                (6, "hello&world~word~word"),
             ]),
         )]));
         assert!(simple_matcher.is_match("hello world"));
