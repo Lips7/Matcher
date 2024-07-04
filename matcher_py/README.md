@@ -16,7 +16,7 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
-    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `hello world`
+    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `hello world!`
   - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
     Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
@@ -67,7 +67,7 @@ For each match table, word matching is performed over the `word_list`, and exemp
   * It can handle combination patterns and repeated times sensitive matching, delimited by `&`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
 * `Regex`: Supports regex patterns matching.
   * `SimilarChar`: Supports similar character matching using regex.
-    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld`, `hollowrd`, `hi🌍` ··· any combinations of the words split by `,` in the list.
+    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld!`, `hollowrd?`, `hi🌍~` ··· any combinations of the words split by `,` in the list.
   * `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
     * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
   * `Regex`: Supports regex matching.
@@ -88,7 +88,7 @@ For each match table, word matching is performed over the `word_list`, and exemp
 * `Delete`: Delete all punctuation, special characters and white spaces.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [UPPER_LOWER](../matcher_rs/str_conv_map/UPPER-LOWER.txt), [EN_VARIATION](../matcher_rs/str_conv_map/EN-VARIATION.txt) and [NUM_NORM](../matcher_rs/str_conv_map/NUM-NORM.txt).
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [UPPER_LOWER](../matcher_rs/str_conv_map/UPPER-LOWER.txt), [EN_VARIATION](../matcher_rs/str_conv_map/EN-VARIATION.txt), [NUM_NORM](../matcher_rs/str_conv_map/NUM-NORM.txt) and [CHAR](../matcher_rs/str_conv_map/CHAR.txt).
   * `ℋЀ⒈㈠ϕ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
 * `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv_map/PINYIN.txt).
