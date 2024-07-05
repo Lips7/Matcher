@@ -25,7 +25,7 @@ crate-type = ["rlib"]
 [dependencies]
 ahash = { version = "0.8.11", features = ["serde", "compile-time-rng"] }
 # aho-corasick = "1.1.3"
-aho-corasick-unsafe = { version = "0.0.2", git = "https://github.com/Lips7/aho-corasick" }
+aho-corasick-unsafe = { version = "0.0.3", git = "https://github.com/Lips7/aho-corasick" }
 bitflags = { version = "2.6.0", features = ["serde"] }
 daachorse = "1.0.0"
 fancy-regex = "0.13.0"

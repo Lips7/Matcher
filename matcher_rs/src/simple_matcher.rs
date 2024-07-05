@@ -114,7 +114,7 @@ struct WordConf {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimpleAcTable {
     ac_matcher: AhoCorasick,
-    ac_word_conf_list: Vec<(u32, usize)>,
+    ac_dedup_word_conf_list: Vec<Vec<(u32, usize)>>,
 }
 
 /// [SimpleResult] represents the result of a matching operation.
@@ -200,7 +200,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimpleMatcher {
     simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
-    simple_wordconf_map: IntMap<u32, WordConf>,
+    simple_word_conf_map: IntMap<u32, WordConf>,
 }
 
 impl SimpleMatcher {
@@ -256,7 +256,7 @@ impl SimpleMatcher {
     {
         let mut simple_matcher = SimpleMatcher {
             simple_match_type_ac_table_map: IntMap::default(),
-            simple_wordconf_map: IntMap::default(),
+            simple_word_conf_map: IntMap::default(),
         };
 
         for (simple_match_type, simple_word_map) in simple_match_type_word_map {
@@ -316,8 +316,10 @@ impl SimpleMatcher {
     where
         I: AsRef<str>,
     {
-        let mut ac_wordlist = Vec::new();
-        let mut ac_word_conf_list = Vec::new();
+        let mut ac_dedup_word_id = 0;
+        let mut ac_dedup_word_conf_list = Vec::new();
+        let mut ac_dedup_word_list = Vec::new();
+        let mut ac_dedup_word_id_map = AHashMap::default();
 
         for (&simple_word_id, simple_word) in simple_word_map {
             let mut ac_split_word_and_counter = AHashMap::default();
@@ -374,7 +376,7 @@ impl SimpleMatcher {
                 .chain(ac_split_word_not_counter.values().copied())
                 .collect::<Vec<i32>>();
 
-            self.simple_wordconf_map.insert(
+            self.simple_word_conf_map.insert(
                 simple_word_id,
                 WordConf {
                     word: simple_word.as_ref().to_owned(),
@@ -389,8 +391,17 @@ impl SimpleMatcher {
                 .enumerate()
             {
                 for ac_word in reduce_text_process(simple_match_type, split_word) {
-                    ac_wordlist.push(ac_word);
-                    ac_word_conf_list.push((simple_word_id, offset));
+                    if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
+                        let word_conf_list: &mut Vec<(u32, usize)> = unsafe {
+                            ac_dedup_word_conf_list.get_unchecked_mut(*ac_dedup_word_id as usize)
+                        };
+                        word_conf_list.push((simple_word_id, offset));
+                    } else {
+                        ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
+                        ac_dedup_word_conf_list.push(vec![(simple_word_id, offset)]);
+                        ac_dedup_word_list.push(ac_word);
+                        ac_dedup_word_id += 1;
+                    }
                 }
             }
         }
@@ -400,11 +411,7 @@ impl SimpleMatcher {
             ac_matcher: AhoCorasickBuilder::new()
                 .kind(Some(DFA))
                 .ascii_case_insensitive(true)
-                .build(
-                    ac_wordlist
-                        .iter()
-                        .map(|ac_word| ac_word.as_ref().as_bytes()),
-                )
+                .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
                 .unwrap(),
             #[cfg(feature = "serde")]
             ac_matcher: AhoCorasickBuilder::new()
@@ -417,7 +424,7 @@ impl SimpleMatcher {
                         .map(|ac_word| ac_word.as_ref().as_bytes()),
                 )
                 .unwrap(),
-            ac_word_conf_list,
+            ac_dedup_word_conf_list,
         }
     }
 }
@@ -466,36 +473,36 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
-                for ac_result in simple_ac_table
+                for ac_dedup_result in simple_ac_table
                     .ac_matcher
                     .find_overlapping_iter(processed_text.as_ref())
                 {
-                    let ac_word_id = ac_result.pattern().as_usize();
-                    let ac_word_conf =
-                        unsafe { simple_ac_table.ac_word_conf_list.get_unchecked(ac_word_id) };
+                    for ac_word_conf in unsafe {
+                        simple_ac_table
+                            .ac_dedup_word_conf_list
+                            .get_unchecked(ac_dedup_result.pattern().as_usize())
+                    } {
+                        let word_id = ac_word_conf.0;
+                        let word_conf =
+                            unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
-                    let word_id = ac_word_conf.0;
-                    let word_conf =
-                        unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
+                        let split_bit_vec =
+                            word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                                word_conf
+                                    .split_bit
+                                    .iter()
+                                    .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                    .collect::<Vec<Vec<i32>>>()
+                            });
 
-                    let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                        word_conf
-                            .split_bit
-                            .iter()
-                            .map(|&bit| {
-                                iter::repeat(bit)
-                                    .take(processed_times)
-                                    .collect::<Vec<i32>>()
-                            })
-                            .collect::<Vec<Vec<i32>>>()
-                    });
-
-                    unsafe {
-                        let bit = split_bit_vec
-                            .get_unchecked_mut(ac_word_conf.1)
-                            .get_unchecked_mut(index);
-                        *bit = bit
-                            .unchecked_add((ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1);
+                        unsafe {
+                            let bit = split_bit_vec
+                                .get_unchecked_mut(ac_word_conf.1)
+                                .get_unchecked_mut(index);
+                            *bit = bit.unchecked_add(
+                                (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
+                            );
+                        }
                     }
                 }
             }
@@ -550,47 +557,46 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             let processed_times = processed_text_list.len(); // Get the number of processed versions of the text
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
-                for ac_result in simple_ac_table
+                for ac_dedup_result in simple_ac_table
                     .ac_matcher
                     .find_overlapping_iter(processed_text.as_ref())
                 {
-                    let ac_word_conf = unsafe {
+                    for ac_word_conf in unsafe {
                         simple_ac_table
-                            .ac_word_conf_list
-                            .get_unchecked(ac_result.pattern().as_usize())
-                    };
-                    let word_id = ac_word_conf.0;
+                            .ac_dedup_word_conf_list
+                            .get_unchecked(ac_dedup_result.pattern().as_usize())
+                    } {
+                        let word_id = ac_word_conf.0;
 
-                    if not_word_id_set.contains(&word_id) {
-                        continue;
-                    }
-
-                    let word_conf =
-                        unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() };
-
-                    let split_bit_vec = word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                        word_conf
-                            .split_bit
-                            .iter()
-                            .map(|&bit| {
-                                iter::repeat(bit)
-                                    .take(processed_times)
-                                    .collect::<Vec<i32>>()
-                            })
-                            .collect::<Vec<Vec<i32>>>()
-                    });
-
-                    unsafe {
-                        let bit = split_bit_vec
-                            .get_unchecked_mut(ac_word_conf.1)
-                            .get_unchecked_mut(index);
-                        *bit = bit
-                            .unchecked_add((ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1);
-                        if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
-                            not_word_id_set.insert(word_id);
-                            word_id_split_bit_map.remove(&word_id);
+                        if not_word_id_set.contains(&word_id) {
+                            continue;
                         }
-                    };
+
+                        let word_conf =
+                            unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
+
+                        let split_bit_vec =
+                            word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                                word_conf
+                                    .split_bit
+                                    .iter()
+                                    .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                    .collect::<Vec<Vec<i32>>>()
+                            });
+
+                        unsafe {
+                            let bit = split_bit_vec
+                                .get_unchecked_mut(ac_word_conf.1)
+                                .get_unchecked_mut(index);
+                            *bit = bit.unchecked_add(
+                                (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
+                            );
+                            if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
+                                not_word_id_set.insert(word_id);
+                                word_id_split_bit_map.remove(&word_id);
+                            }
+                        };
+                    }
                 }
             }
         }
@@ -604,7 +610,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     .then_some(SimpleResult {
                         word_id,
                         word: Cow::Borrowed(
-                            &unsafe { self.simple_wordconf_map.get(&word_id).unwrap_unchecked() }
+                            &unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() }
                                 .word,
                         ),
                     })
