@@ -12,7 +12,7 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
   - Similarity-Based Matching
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫艹`
+    Example: `蟲艸` -> `虫草`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
@@ -82,19 +82,19 @@ For each match table, word matching is performed over the `word_list`, and exemp
 #### SimpleMatchType
 
 * `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/str_conv_map/FANJIAN.txt) and [UNICODE](../matcher_rs/str_conv_map/UNICODE.txt).
+* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/str_conv/FANJIAN.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
 * `Delete`: Delete all punctuation, special characters and white spaces.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [UPPER_LOWER](../matcher_rs/str_conv_map/UPPER-LOWER.txt), [EN_VARIATION](../matcher_rs/str_conv_map/EN-VARIATION.txt), [NUM_NORM](../matcher_rs/str_conv_map/NUM-NORM.txt) and [CHAR](../matcher_rs/str_conv_map/CHAR.txt).
-  * `ℋЀ⒈㈠ϕ` -> `he11o`
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [SYMBOL_NORM](../matcher_rs/str_conv/SYMBOL-NORM.txt), [NORM](../matcher_rs/str_conv/NORM.txt) and [NUM_NORM](../matcher_rs/str_conv/NUM-NORM.txt).
+  * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv_map/PINYIN.txt).
+* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv/PINYIN.txt).
   * `你好` -> `␀ni␀␀hao␀`
   * `西安` -> `␀xi␀␀an␀`
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN_CHAR](../matcher_rs/str_conv_map/PINYIN-CHAR.txt).
+* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN_CHAR](../matcher_rs/str_conv/PINYIN-CHAR.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
@@ -103,8 +103,8 @@ You can combine these transformations as needed. Pre-defined combinations like `
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
 `Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe `CN_SPECIAL` and `EN_SPECIAL` are parts of the word, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
-* `WordDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt).
-* `TextDelete`: Delete all patterns in [PUNCTUATION_SPECIAL](../matcher_rs/str_conv_map/PUNCTUATION-SPECIAL.txt), [CN_SPECIAL](../matcher_rs/str_conv_map/CN-SPECIAL.txt), [EN_SPECIAL](../matcher_rs/str_conv_map/EN-SPECIAL.txt).
+* `WordDelete`: Delete all patterns in `WHITE_SPACE`.
+* `TextDelete`: Delete all patterns in [TEXT_DELETE](../matcher_rs/str_conv/TEXT-DELETE.txt).
 
 ### Text Process Usage
 

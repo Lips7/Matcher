@@ -45,7 +45,7 @@ mod test_simple {
             SimpleMatchType::Normalize,
             HashMap::from([(1, "he11o")]),
         )]));
-        assert!(simple_matcher.is_match("ℋЀ⒈㈠ϕ"));
+        assert!(simple_matcher.is_match("ℋЀ⒈㈠Õ"));
     }
 
     #[test]

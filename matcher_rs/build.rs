@@ -8,25 +8,23 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 
-const CHAR: &str = include_str!("./str_conv_map/CHAR.txt");
-const FANJIAN: &str = include_str!("./str_conv_map/FANJIAN.txt");
-const EN_VARIATION: &str = include_str!("./str_conv_map/EN-VARIATION.txt");
-const UNICODE: &str = include_str!("./str_conv_map/UNICODE.txt");
-const NUM_NORM: &str = include_str!("./str_conv_map/NUM-NORM.txt");
-const UPPER_LOWER: &str = include_str!("./str_conv_map/UPPER-LOWER.txt");
-const PINYIN: &str = include_str!("./str_conv_map/PINYIN.txt");
-const PINYIN_CHAR: &str = include_str!("./str_conv_map/PINYIN-CHAR.txt");
+const FANJIAN: &str = include_str!("./str_conv/FANJIAN.txt");
+const SYMBOL_NORM: &str = include_str!("./str_conv/SYMBOL-NORM.txt");
+const NUM_NORM: &str = include_str!("./str_conv/NUM-NORM.txt");
+const NORM: &str = include_str!("./str_conv/NORM.txt");
+const PINYIN: &str = include_str!("./str_conv/PINYIN.txt");
+const PINYIN_CHAR: &str = include_str!("./str_conv/PINYIN-CHAR.txt");
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=str_conv_map");
+    println!("cargo:rerun-if-changed=str_conv");
 
     #[cfg(feature = "prebuilt")]
     {
         let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
-            ("fanjian", vec![FANJIAN, UNICODE]),
-            ("normalize", vec![CHAR, UPPER_LOWER, EN_VARIATION, NUM_NORM]),
+            ("fanjian", vec![FANJIAN]),
+            ("normalize", vec![SYMBOL_NORM, NORM, NUM_NORM]),
             ("pinyin", vec![PINYIN]),
             ("pinyinchar", vec![PINYIN_CHAR]),
         ]);

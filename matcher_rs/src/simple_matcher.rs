@@ -10,7 +10,7 @@ use serde::{Deserializer, Serializer};
 use sonic_rs::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
-use crate::process::process_matcher::reduce_text_process;
+use crate::process::process_matcher::reduce_text_process_emit;
 
 bitflags! {
     /// [SimpleMatchType] is a set of flags used to specify various text transformation rules.
@@ -390,7 +390,7 @@ impl SimpleMatcher {
                 .chain(ac_split_word_not_counter.keys())
                 .enumerate()
             {
-                for ac_word in reduce_text_process(simple_match_type, split_word) {
+                for ac_word in reduce_text_process_emit(simple_match_type, split_word) {
                     if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
                         let word_conf_list: &mut Vec<(u32, usize)> = unsafe {
                             ac_dedup_word_conf_list.get_unchecked_mut(*ac_dedup_word_id as usize)
@@ -469,7 +469,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_split_bit_map = IntMap::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            let processed_text_list = reduce_text_process(simple_match_type, text);
+            let processed_text_list = reduce_text_process_emit(simple_match_type, text);
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
@@ -553,7 +553,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut not_word_id_set = IntSet::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-            let processed_text_list = reduce_text_process(simple_match_type, text);
+            let processed_text_list = reduce_text_process_emit(simple_match_type, text);
             let processed_times = processed_text_list.len(); // Get the number of processed versions of the text
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {

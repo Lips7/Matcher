@@ -72,9 +72,9 @@ def test_normalize():
             }
         )
     )
-    assert simple_matcher.is_match("ℋЀ⒈㈠ϕ")
-    assert simple_matcher.simple_process("ℋЀ⒈㈠ϕ")[0]["word_id"] == 1
-    assert simple_matcher.simple_process("ℋЀ⒈㈠ϕ")[0]["word"] == "he11o"
+    assert simple_matcher.is_match("ℋЀ⒈㈠Õ")
+    assert simple_matcher.simple_process("ℋЀ⒈㈠Õ")[0]["word_id"] == 1
+    assert simple_matcher.simple_process("ℋЀ⒈㈠Õ")[0]["word"] == "he11o"
 
 
 def test_pinyin():

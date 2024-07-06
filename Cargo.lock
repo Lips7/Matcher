@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ahash",
  "aho-corasick-unsafe",
@@ -702,9 +702,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "sonic-rs"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d16b7974db39ac84e6fb1b2aab10d9ef883e5eca1ed2a1bc71d6869e2c4675f"
+checksum = "8e683c86e3ea4a72446733ca7f7dc5acadc70d5a37f272f32a87fe975e90afa9"
 dependencies = [
  "arrayref",
  "bumpalo",
@@ -799,9 +799,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c55115c6fbe2d2bef26eb09ad74bde02d8255476fc0c7b515ef09fbb35742d82"
+checksum = "ce6b6a2fb3a985e99cebfaefa9faa3024743da73304ca1c683a36429613d3d22"
 dependencies = [
  "tinyvec_macros",
 ]

@@ -228,37 +228,25 @@ pub fn get_process_matcher(
             SimpleMatchType::None => {}
 
             SimpleMatchType::Fanjian => {
-                for str_conv_map in [FANJIAN, UNICODE] {
-                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
-                        let mut pair_str_split = pair_str.split('\t');
-                        (
-                            pair_str_split.next().unwrap(),
-                            pair_str_split.next().unwrap(),
-                        )
-                    }));
-                }
+                process_dict.extend(FANJIAN.trim().lines().map(|pair_str| {
+                    let mut pair_str_split = pair_str.split('\t');
+                    (
+                        pair_str_split.next().unwrap(),
+                        pair_str_split.next().unwrap(),
+                    )
+                }));
             }
 
             SimpleMatchType::WordDelete => {
-                process_dict.extend(
-                    PUNCTUATION_SPECIAL
-                        .trim()
-                        .lines()
-                        .map(|pair_str| (pair_str, "")),
-                );
-
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
 
             SimpleMatchType::TextDelete => {
-                for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
-                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| (pair_str, "")));
-                }
-
+                process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
             SimpleMatchType::Normalize => {
-                for str_conv_map in [CHAR, UPPER_LOWER, EN_VARIATION, NUM_NORM] {
+                for str_conv_map in [SYMBOL_NORM, NORM, NUM_NORM] {
                     process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
@@ -395,12 +383,6 @@ pub fn get_process_matcher(
             ),
             SimpleMatchType::WordDelete => {
                 let mut process_dict = AHashMap::new();
-                process_dict.extend(
-                    PUNCTUATION_SPECIAL
-                        .trim()
-                        .lines()
-                        .map(|pair_str| (pair_str, "")),
-                );
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                 process_dict.retain(|&key, &mut value| key != value);
                 let process_list = process_dict
@@ -421,9 +403,7 @@ pub fn get_process_matcher(
             }
             SimpleMatchType::TextDelete => {
                 let mut process_dict = AHashMap::new();
-                for str_conv_map in [PUNCTUATION_SPECIAL, CN_SPECIAL, EN_SPECIAL] {
-                    process_dict.extend(str_conv_map.trim().lines().map(|pair_str| (pair_str, "")));
-                }
+                process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                 process_dict.retain(|&key, &mut value| key != value);
                 let process_list = process_dict
@@ -577,7 +557,6 @@ pub fn text_process(
 ///    b. Borrow the last processed text from the vector using an unsafe operation.
 ///    c. Match the current transformation type and apply the corresponding matcher:
 ///         i.  [SimpleMatchType::None] - Do nothing.
-///         ii. [SimpleMatchType::Fanjian] - Apply the matcher and replace all occurrences.
 ///         iii. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
 ///         iv. Other types - Apply the matcher and replace all occurrences.
 ///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
@@ -597,7 +576,73 @@ pub fn reduce_text_process<'a>(
 
         match (simple_match_type_bit, process_matcher) {
             (SimpleMatchType::None, _) => {}
-            (SimpleMatchType::Fanjian, pm) => {
+            (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+                match pm.delete_all(tmp_processed_text.as_ref()) {
+                    (true, Cow::Owned(pt)) => {
+                        processed_text_list.push(Cow::Owned(pt));
+                    }
+                    (false, _) => {}
+                    (_, _) => unreachable!(),
+                }
+            }
+            (_, pm) => match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+                (true, Cow::Owned(pt)) => {
+                    processed_text_list.push(Cow::Owned(pt));
+                }
+                (false, _) => {}
+                (_, _) => unreachable!(),
+            },
+        }
+    }
+
+    processed_text_list
+}
+
+/// Processes the input text to apply transformations specified by the SimpleMatchType.
+///
+/// This function iterates over the bits of a SimpleMatchType to apply various text transformations.
+/// Depending on the transformation type (e.g., text replace, text delete, etc.), it processes the text
+/// and stores the result in an array of [Cow] (Copy on Write) strings.
+///
+/// # Arguments
+///
+/// * `simple_match_type` - A [SimpleMatchType] bit flags that define specific text transformation rules.
+/// * `text` - A string slice representing the input text to be transformed.
+///
+/// # Returns
+///
+/// * `ArrayVec<[Cow<'a, str>; 8]>` - A fixed-size vector containing the processed versions of the input text.
+///
+/// # Detailed Processing:
+///
+/// 1. Initialize an [ArrayVec] to hold up to 8 versions of the processed text.
+/// 2. Push the original text into the vector as the first entry.
+/// 3. Iterate over each bit in the `simple_match_type`:
+///    a. Retrieve the cached matcher and replacement list for the current bit.
+///    b. Borrow the last processed text from the vector using an unsafe operation.
+///    c. Match the current transformation type and apply the corresponding matcher:
+///         i.  [SimpleMatchType::None] - Do nothing.
+///         ii. [SimpleMatchType::Fanjian] | [SimpleMatchType::Normalize] - Apply the matcher and replace all occurrences.
+///         iii. [SimpleMatchType::TextDelete] | [SimpleMatchType::WordDelete] - Apply the matcher and delete all occurrences.
+///         iv. Other types - Apply the matcher and replace all occurrences.
+///    d. Update the current text entry or append new entries to the vector depending on the transformation result.
+/// 4. Return the populated [ArrayVec] containing all processed text variations.
+#[inline(always)]
+pub fn reduce_text_process_emit<'a>(
+    simple_match_type: SimpleMatchType,
+    text: &'a str,
+) -> ArrayVec<[Cow<'a, str>; 8]> {
+    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+    processed_text_list.push(Cow::Borrowed(text));
+
+    for simple_match_type_bit in simple_match_type.iter() {
+        let cached_result = get_process_matcher(simple_match_type_bit);
+        let (process_replace_list, process_matcher) = cached_result.as_ref();
+        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
+
+        match (simple_match_type_bit, process_matcher) {
+            (SimpleMatchType::None, _) => {}
+            (SimpleMatchType::Fanjian | SimpleMatchType::Normalize, pm) => {
                 match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
                     (true, Cow::Owned(pt)) => {
                         *tmp_processed_text = Cow::Owned(pt);

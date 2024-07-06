@@ -1,5 +1,13 @@
 # Design
 
+## Transformation
+* `FANJIAN`: build from [Unihan_Variants.txt](./data/str_conv/Unihan_Variants.txt) and [EquivalentUnifiedIdeograph.txt](./data/str_conv/EquivalentUnifiedIdeograph.txt).
+* `NUM-NORM`: build from [DerivedNumericValues.txt](./data/str_conv/DerivedNumericValues.txt).
+* `TEXT-DELETE` and `SYMBOL-NORM`: build from [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt).
+* `WHITE-SPACE`: build from [PropList.txt](./data/str_conv/PropList.txt).
+* `PINYIN` and `PINYIN-CHAR`: build from [Unihan_Readings.txt](./data/str_conv/Unihan_Readings.txt).
+* `NORM`: build from [NormalizationTest.txt](./data/str_conv/NormalizationTest.txt).
+
 ## Matcher
 
 ### Overview
