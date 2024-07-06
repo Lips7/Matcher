@@ -98,18 +98,22 @@ struct WordConf {
     not_index: usize,
 }
 
-/// `SimpleAcTable` is a structure that encapsulates the Aho-Corasick matcher and a list of word configurations.
+/// [SimpleAcTable] is a structure that encapsulates an Aho-Corasick matcher and a
+/// deduplicated list of word configurations.
 ///
-/// This structure is used within the [SimpleMatcher] to hold the compiled Aho-Corasick automaton (`ac_matcher`)
-/// and the corresponding configurations for words (`ac_word_conf_list`). The configurations assist in efficient
-/// pattern matching and transformation operations by mapping each pattern to its unique word identifier and offset.
+/// This structure is designed to provide efficient pattern matching using the Aho-Corasick
+/// algorithm, which is particularly suited for matching a large set of patterns in a text.
+/// It includes an Aho-Corasick matcher and a list of deduplicated word configurations,
+/// which are used to manage and optimize the word matching process.
 ///
 /// # Fields
 ///
-/// * `ac_matcher` - An instance of the [AhoCorasick] matcher, which is used to perform efficient pattern matching.
-/// * `ac_word_conf_list` - A vector of tuples, where each tuple contains:
-///     * [u32] - A unique identifier for the word.
-///     * [usize] - An offset representing the position or segment of the word within the matcher.
+/// * `ac_matcher` - An [AhoCorasick] instance that performs the actual pattern matching.
+/// * `ac_dedup_word_conf_list` - A [Vec] of [Vec] containing tuples of a word identifier ([u32])
+///   and its corresponding position ([usize]) in the deduplicated word configuration list.
+///
+/// This structure ensures that matched patterns are processed efficiently and that the word
+/// configurations are kept organized and deduplicated to avoid redundant processing.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimpleAcTable {
@@ -554,7 +558,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
             let processed_text_list = reduce_text_process_emit(simple_match_type, text);
-            let processed_times = processed_text_list.len(); // Get the number of processed versions of the text
+            let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
                 for ac_dedup_result in simple_ac_table

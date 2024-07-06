@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use fancy_regex::Regex;
+use regex::RegexSet;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod serde_regex {
@@ -57,6 +58,33 @@ pub mod serde_regex_list {
     }
 }
 
+pub mod serde_regex_set {
+    use serde::ser::SerializeSeq;
+
+    use super::*;
+
+    pub fn deserialize<'de, D>(d: D) -> Result<RegexSet, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = <Vec<Cow<str>>>::deserialize(d)?;
+        let regex_set = RegexSet::new(s).map_err(D::Error::custom)?;
+
+        Ok(regex_set)
+    }
+
+    pub fn serialize<S>(regex_set: &RegexSet, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(regex_set.len()))?;
+        for e in regex_set.patterns() {
+            seq.serialize_element(e.as_str())?;
+        }
+        seq.end()
+    }
+}
+
 mod test_serde {
     use super::*;
 
@@ -70,6 +98,12 @@ mod test_serde {
     struct B {
         #[serde(with = "serde_regex_list")]
         c: Vec<Regex>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct C {
+        #[serde(with = "serde_regex_set")]
+        d: RegexSet,
     }
 
     #[test]
@@ -94,5 +128,17 @@ mod test_serde {
         let sample_regex_de: B = sonic_rs::from_str(&sample_regex_se).unwrap();
 
         assert_eq!(sample_regex_de.c[0].as_str(), sample);
+    }
+
+    #[test]
+    fn test_serde_regex_set() {
+        let sample = r#"[a-z"\]]+\d{1,10}""#;
+        let sample_regex = C {
+            d: RegexSet::new([sample]).unwrap(),
+        };
+        let sample_regex_se = sonic_rs::to_string(&sample_regex).unwrap();
+        let sample_regex_de: C = sonic_rs::from_str(&sample_regex_se).unwrap();
+
+        assert_eq!(sample_regex_de.d.patterns()[0].as_str(), sample);
     }
 }

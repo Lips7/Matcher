@@ -192,7 +192,7 @@ bench                                               fastest       │ slowest   
 - [x] Try more aho_corasick library to improve performance and reduce memory usage.
   - [x] ~~https://github.com/daac-tools/crawdad (produce char-wise index, not byte-wise index, it's not acceptable)~~
   - [x] https://github.com/daac-tools/daachorse (use it when Fanjian, PinYin or PinYinChar transformation is performed)
-  - [ ] Test char-wise HashMap transformation for Chinese Characters.
+  - [x] ~~Test char-wise HashMap transformation for Chinese Characters. (Too slow)~~
 - [x] Add a new function that can handle single simple match type.
   - [x] `text_process` now is available.
 - [x] More detailed simple match type explanation.
@@ -210,3 +210,4 @@ bench                                               fastest       │ slowest   
   - [x] See https://github.com/Lips7/aho-corasick.
 - [ ] Support iterator.
 - [ ] Optimize NOT logic word-wise.
+- [x] Optimize regex matcher with RegexSet.
