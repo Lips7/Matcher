@@ -88,6 +88,7 @@ pub struct RegexTable<'a> {
 ///
 /// * `SetRegex` - Represents a table that holds a set of compiled regex patterns.
 ///   - `regex_set` ([RegexSet]): A regex set of compiled regex patterns used for matching text.
+///   - `word_list` ([`Vec<String>`]): A list of words corresponding to each regex pattern in `regex_list`.
 ///
 /// # Usage
 ///
@@ -109,6 +110,7 @@ enum RegexType {
     SetRegex {
         #[cfg_attr(feature = "serde", serde(with = "serde_regex_set"))]
         regex_set: RegexSet,
+        word_list: Vec<String>,
     },
 }
 
@@ -310,9 +312,12 @@ impl RegexMatcher {
                     let regex_type = RegexSet::new(pattern_list).map_or(
                         RegexType::ListRegex {
                             regex_list,
+                            word_list: word_list.clone(),
+                        },
+                        |regex_set| RegexType::SetRegex {
+                            regex_set,
                             word_list,
                         },
-                        |regex_set| RegexType::SetRegex { regex_set },
                     );
 
                     regex_pattern_table_list.push(RegexPatternTable {
@@ -340,9 +345,12 @@ impl RegexMatcher {
                     let regex_type = RegexSet::new(&word_list).map_or(
                         RegexType::ListRegex {
                             regex_list,
+                            word_list: word_list.clone(),
+                        },
+                        |regex_set| RegexType::SetRegex {
+                            regex_set,
                             word_list,
                         },
-                        |regex_set| RegexType::SetRegex { regex_set },
                     );
 
                     regex_pattern_table_list.push(RegexPatternTable {
@@ -516,16 +524,16 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                         }
                     }
                 }
-                RegexType::SetRegex { regex_set } => {
-                    let patterns = regex_set.patterns();
-                    result_list.extend(regex_set.matches(text).into_iter().map(|index| {
-                        RegexResult {
-                            word: Cow::Borrowed(patterns[index].as_str()),
-                            table_id: regex_table.table_id,
-                            match_id: regex_table.match_id,
-                        }
-                    }))
-                }
+                RegexType::SetRegex {
+                    regex_set,
+                    word_list,
+                } => result_list.extend(regex_set.matches(text).into_iter().map(|index| {
+                    RegexResult {
+                        word: Cow::Borrowed(&word_list[index]),
+                        table_id: regex_table.table_id,
+                        match_id: regex_table.match_id,
+                    }
+                })),
             }
         }
 
