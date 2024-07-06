@@ -149,8 +149,8 @@ let results = matcher.process(text);
 For more detailed usage examples, please refer to the [test.rs](./tests/test.rs) file.
 
 ## Feature Flags
-* `prebuilt`: By enable prebuilt feature, we could boost matcher and simple_matcher build time, but with package size increasing.
-* `runtime_build`: By enable runtime_build feature, we could build matcher and simple_matcher at runtime, but with build time increasing.
+* `prebuilt`: By enable prebuilt feature, we could boost  process matcher build time, but with package size increasing.
+* `runtime_build`: By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
 * `serde`: By enable serde feature, we could serialize and deserialize matcher and simple_matcher. With serde feature, AhoCorasick's prefilter is disabled, because I don't know how to serialize it correctly, which will lead to performance regression when the patterns size is small (say, less than 100).
 
 Default feature is `prebuilt`, `prebuilt` and `runtime_build` can't be enabled at same time. If you want to make `Matcher` and `SimpleMatcher` serializable, you should enable `serde` feature.
