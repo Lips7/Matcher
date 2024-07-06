@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 - 2024-07-06
+### Changed
+
+- Rebuild Transformation Rules based on Unicode Standard.
+
 ## 0.4.0 - 2024-07-03
 ### Changed
 
