@@ -29,7 +29,8 @@ type ProcessMatcherCache =
     RwLock<IntMap<SimpleMatchType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
 
 lazy_static! {
-    pub static ref PROCESS_MATCHER_CACHE: ProcessMatcherCache = RwLock::new(IntMap::with_capacity(8));
+    pub static ref PROCESS_MATCHER_CACHE: ProcessMatcherCache =
+        RwLock::new(IntMap::with_capacity(8));
 }
 
 /// [ProcessMatcher] is an enum designed to differentiate between matching strategies based on the input text type.

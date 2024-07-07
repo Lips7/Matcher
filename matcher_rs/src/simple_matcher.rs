@@ -477,10 +477,12 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
-                for ac_dedup_result in simple_ac_table
-                    .ac_matcher
-                    .find_overlapping_iter(processed_text.as_ref())
-                {
+                for ac_dedup_result in unsafe {
+                    simple_ac_table
+                        .ac_matcher
+                        .try_find_overlapping_iter(processed_text.as_ref())
+                        .unwrap_unchecked()
+                } {
                     for ac_word_conf in unsafe {
                         simple_ac_table
                             .ac_dedup_word_conf_list
