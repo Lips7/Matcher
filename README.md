@@ -209,5 +209,20 @@ bench                                               fastest       │ slowest   
   - [x] Faster and faster!
   - [x] See https://github.com/Lips7/aho-corasick.
 - [ ] Support iterator.
-- [ ] Optimize NOT logic word-wise.
+- [ ] Optimize NOT logic word-wis
 - [x] Optimize regex matcher with RegexSet.
+- [ ] Optimize simple matcher when multiple simple match types are used.
+  1. Consider if there are multiple simple match types
+   * None
+   * Fanjian
+   * FanjianDelete
+   * FanjianDeleteNormalize
+   * FanjianNormalize
+  2. We can construct a chain of transformations,
+   * None -> Fanjian -> Delete -> Normalize
+   * &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\ -> Normalize.
+  3. Calcuate all possible transformations, and cache the results, so that instead calculating 8 times (Fanjian, Fanjian + Delete, Fanjian + Delete + Normalize, Fanjian + Normalize), we only need to calculate 4 times.
+- [ ] Optimize process matcher when perform reduce text processing.
+  1. Consider we have to perform FanjianDeleteNormalize, we need to perform Fanjian first, then Delete, then Normalize, 3 kinds of Process Matcher are needed to perform replacement or delete, the text has to be scanned 3 times.
+  2. What if we only construct only 1 Process Matcher which's patterns contains all the Fanjian, Delete and Normalize 3 kinds of patterns? We could scan the text only once to get all the positions that should be perform replacement or delete.
+  3. We need to take care of the byte index will change after replacement or delete, so we need to take the offset changes into account.
