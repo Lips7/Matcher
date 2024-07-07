@@ -1,9 +1,14 @@
+#[cfg(feature = "serde")]
 use std::borrow::Cow;
 
+#[cfg(feature = "serde")]
 use fancy_regex::Regex;
+#[cfg(feature = "serde")]
 use regex::RegexSet;
+#[cfg(feature = "serde")]
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(feature = "serde")]
 pub mod serde_regex {
     use super::*;
 
@@ -27,6 +32,7 @@ pub mod serde_regex {
     }
 }
 
+#[cfg(feature = "serde")]
 pub mod serde_regex_list {
     use serde::ser::SerializeSeq;
 
@@ -58,6 +64,7 @@ pub mod serde_regex_list {
     }
 }
 
+#[cfg(feature = "serde")]
 pub mod serde_regex_set {
     use serde::ser::SerializeSeq;
 
@@ -85,6 +92,7 @@ pub mod serde_regex_set {
     }
 }
 
+#[cfg(feature = "serde")]
 mod test_serde {
     use super::*;
 
