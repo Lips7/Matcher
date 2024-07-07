@@ -321,9 +321,9 @@ impl SimpleMatcher {
         I: AsRef<str>,
     {
         let mut ac_dedup_word_id = 0;
-        let mut ac_dedup_word_conf_list = Vec::new();
-        let mut ac_dedup_word_list = Vec::new();
-        let mut ac_dedup_word_id_map = AHashMap::default();
+        let mut ac_dedup_word_conf_list = Vec::with_capacity(simple_word_map.len());
+        let mut ac_dedup_word_list = Vec::with_capacity(simple_word_map.len());
+        let mut ac_dedup_word_id_map = AHashMap::with_capacity(simple_word_map.len());
 
         for (&simple_word_id, simple_word) in simple_word_map {
             let mut ac_split_word_and_counter = AHashMap::default();
