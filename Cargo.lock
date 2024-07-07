@@ -28,8 +28,8 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick-unsafe"
-version = "0.0.3"
-source = "git+https://github.com/Lips7/aho-corasick#59c75e452b2175ef467e435a01c35c037fafb94b"
+version = "0.0.4"
+source = "git+https://github.com/Lips7/aho-corasick#c9364b890c0163f3a8756bd034f1a498fc512311"
 dependencies = [
  "memchr",
  "serde",
@@ -97,9 +97,9 @@ checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
 
 [[package]]
 name = "cc"
-version = "1.0.104"
+version = "1.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74b6a57f98764a267ff415d50a25e6e166f3831a5071af4995296ea97d210490"
+checksum = "5208975e568d83b6b05cc0a063c8e7e9acc2b43bee6da15616a5b73e109d7437"
 
 [[package]]
 name = "cfg-if"
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "ahash",
  "aho-corasick-unsafe",
@@ -683,18 +683,18 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "serde"
-version = "1.0.203"
+version = "1.0.204"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
+checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.203"
+version = "1.0.204"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
+checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -736,9 +736,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.68"
+version = "2.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "901fa70d88b9d6c98022e23b4136f9f3e54e4662c3bc1bd1d84a42a9a0f0c1e9"
+checksum = "201fcda3845c23e8212cd466bfebf0bd20694490fc0356ae8e428e0824a915a6"
 dependencies = [
  "proc-macro2",
  "quote",
