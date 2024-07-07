@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, HashMapExt};
 use aho_corasick_unsafe::{
-    automaton::Automaton, dfa::DFA, Input, MatchKind as AhoCorasickMatchKind,
+    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
 };
 #[cfg(feature = "prebuilt")]
 use daachorse::CharwiseDoubleArrayAhoCorasick;
@@ -39,21 +39,21 @@ lazy_static! {
 /// compared to other types of text. It supports two variants:
 ///
 /// - [Chinese](ProcessMatcher::Chinese): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for Chinese characters.
-/// - [Others](ProcessMatcher::Others): Uses an [DFA] matcher for all other types of text.
+/// - [Others](ProcessMatcher::Others): Uses an [AhoCorasick] matcher for all other types of text.
 ///
 /// By distinguishing between these two categories, [ProcessMatcher] allows for more efficient and accurate pattern
 /// matching tailored to the linguistic properties of the text being processed.
 #[derive(Clone)]
 pub enum ProcessMatcher {
     Chinese(CharwiseDoubleArrayAhoCorasick<u32>),
-    Others(DFA),
+    Others(AhoCorasick),
 }
 
 impl ProcessMatcher {
     /// Replaces all occurrences of patterns in the input text with corresponding replacements from the provided list.
     ///
     /// This function performs a find-and-replace operation on the input text. It searches for patterns using the internal matcher
-    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [DFA] for other text) and replaces each match
+    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [AhoCorasick] for other text) and replaces each match
     /// with the corresponding replacement string from the given `process_replace_list`.
     ///
     /// # Parameters
@@ -91,7 +91,7 @@ impl ProcessMatcher {
                 }
             }
             ProcessMatcher::Others(ac) => {
-                for mat in unsafe { ac.try_find_iter(Input::new(text)).unwrap_unchecked() } {
+                for mat in ac.find_iter(text) {
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.pattern().as_usize())
@@ -112,7 +112,7 @@ impl ProcessMatcher {
     /// Deletes all occurrences of patterns in the input text.
     ///
     /// This function performs a delete operation on the input text. It searches for patterns using the internal matcher
-    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [DFA] for other text) and removes each match
+    /// (either [`CharwiseDoubleArrayAhoCorasick<u32>`] for Chinese text or [AhoCorasick] for other text) and removes each match
     /// from the input.
     ///
     /// # Parameters
@@ -140,7 +140,7 @@ impl ProcessMatcher {
                 }
             }
             ProcessMatcher::Others(ac) => {
-                for mat in unsafe { ac.try_find_iter(Input::new(text)).unwrap_unchecked() } {
+                for mat in ac.find_iter(text) {
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
@@ -169,7 +169,7 @@ impl ProcessMatcher {
 /// string mappings, which are filtered and adjusted based on the given
 /// [SimpleMatchType].
 ///
-/// Finally, the function creates an appropriate matcher ([DFA] for general text
+/// Finally, the function creates an appropriate matcher ([AhoCorasick] for general text
 /// or potentially [CharwiseDoubleArrayAhoCorasick] for specific types, though the latter
 /// is commented out here). It returns a tuple containing a list of replacement strings
 /// and the constructed [ProcessMatcher].
@@ -199,7 +199,7 @@ impl ProcessMatcher {
 ///
 /// - The function assumes that specific datasets like `FANJIAN`, `UNICODE`, `PUNCTUATION_SPECIAL`, etc.,
 ///   are predefined and contain the necessary mappings.
-/// - It uses [DFA] for most match types, but has a commented-out section for
+/// - It uses [AhoCorasick] for most match types, but has a commented-out section for
 ///   [CharwiseDoubleArrayAhoCorasick] for specific types.
 ///
 /// # Safety
@@ -300,7 +300,8 @@ pub fn get_process_matcher(
             ),
             _ => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
-                DFA::builder()
+                AhoCorasickBuilder::new()
+                    .kind(Some(AhoCorasickKind::DFA))
                     .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                     .build(
                         process_dict
@@ -371,7 +372,7 @@ pub fn get_process_matcher(
                 let empty_patterns: Vec<&str> = Vec::new();
                 (
                     Vec::new(),
-                    ProcessMatcher::Others(DFA::new(&empty_patterns).unwrap()),
+                    ProcessMatcher::Others(AhoCorasick::new(&empty_patterns).unwrap()),
                 )
             }
             SimpleMatchType::Fanjian => (
@@ -395,7 +396,8 @@ pub fn get_process_matcher(
                 (
                     Vec::new(),
                     ProcessMatcher::Others(
-                        DFA::builder()
+                        AhoCorasickBuilder::new()
+                            .kind(Some(AhoCorasickKind::DFA))
                             .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                             .build(&process_list)
                             .unwrap(),
@@ -415,7 +417,8 @@ pub fn get_process_matcher(
                 (
                     Vec::new(),
                     ProcessMatcher::Others(
-                        DFA::builder()
+                        AhoCorasickBuilder::new()
+                            .kind(Some(AhoCorasickKind::DFA))
                             .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                             .build(&process_list)
                             .unwrap(),
@@ -425,7 +428,8 @@ pub fn get_process_matcher(
             SimpleMatchType::Normalize => (
                 NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 ProcessMatcher::Others(
-                    DFA::builder()
+                    AhoCorasickBuilder::new()
+                        .kind(Some(AhoCorasickKind::DFA))
                         .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                         .build(NORMALIZE_PROCESS_LIST_STR.lines())
                         .unwrap(),

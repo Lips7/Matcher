@@ -3,7 +3,7 @@ use std::iter;
 use std::{borrow::Cow, collections::HashMap};
 
 use ahash::AHashMap;
-use aho_corasick_unsafe::{automaton::Automaton, dfa::DFA, Input};
+use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use bitflags::bitflags;
 use nohash_hasher::{IntMap, IntSet, IsEnabled};
 use serde::{Deserializer, Serializer};
@@ -108,7 +108,7 @@ struct WordConf {
 ///
 /// # Fields
 ///
-/// * `ac_matcher` - An [DFA] instance that performs the actual pattern matching.
+/// * `ac_matcher` - An [AhoCorasick] instance that performs the actual pattern matching.
 /// * `ac_dedup_word_conf_list` - A [Vec] of [Vec] containing tuples of a word identifier ([u32])
 ///   and its corresponding position ([usize]) in the deduplicated word configuration list.
 ///
@@ -117,7 +117,7 @@ struct WordConf {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimpleAcTable {
-    ac_matcher: DFA,
+    ac_matcher: AhoCorasick,
     ac_dedup_word_conf_list: Vec<Vec<(u32, usize)>>,
 }
 
@@ -412,12 +412,14 @@ impl SimpleMatcher {
 
         SimpleAcTable {
             #[cfg(not(feature = "serde"))]
-            ac_matcher: DFA::builder()
+            ac_matcher: AhoCorasickBuilder::new()
+                .kind(Some(AhoCorasickKind::DFA))
                 .ascii_case_insensitive(true)
                 .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
                 .unwrap(),
             #[cfg(feature = "serde")]
-            ac_matcher: DFA::builder()
+            ac_matcher: AhoCorasickBuilder::new()
+                .kind(Some(DFA))
                 .ascii_case_insensitive(true)
                 .prefilter(false)
                 .build(
@@ -478,7 +480,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                 for ac_dedup_result in unsafe {
                     simple_ac_table
                         .ac_matcher
-                        .try_find_overlapping_iter(Input::new(processed_text.as_ref()))
+                        .try_find_overlapping_iter(processed_text.as_ref())
                         .unwrap_unchecked()
                 } {
                     for ac_word_conf in unsafe {
@@ -564,7 +566,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                 for ac_dedup_result in unsafe {
                     simple_ac_table
                         .ac_matcher
-                        .try_find_overlapping_iter(Input::new(processed_text.as_ref()))
+                        .try_find_overlapping_iter(processed_text.as_ref())
                         .unwrap_unchecked()
                 } {
                     for ac_word_conf in unsafe {
