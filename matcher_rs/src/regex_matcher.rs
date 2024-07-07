@@ -75,18 +75,18 @@ pub struct RegexTable<'a> {
 /// Enum representing different types of regex pattern tables used in the [RegexMatcher].
 ///
 /// The `RegexType` enum is utilized within `RegexPatternTable` to define the structure and behavior of the regex
-/// patterns stored in each table. It supports two types of regex patterns: `StandardRegex` and `ListRegex`.
+/// patterns stored in each table. It supports two types of regex patterns: `Standard` and `List`.
 ///
 /// # Variants
 ///
-/// * `StandardRegex` - Represents a table that holds a single compiled regex pattern.
+/// * `Standard` - Represents a table that holds a single compiled regex pattern.
 ///   - `regex` ([Regex]): The compiled regex pattern used for matching text.
 ///
-/// * `ListRegex` - Represents a table that holds a list of compiled regex patterns and their corresponding words.
+/// * `List` - Represents a table that holds a list of compiled regex patterns and their corresponding words.
 ///   - `regex_list` ([`Vec<Regex>`]): A list of compiled regex patterns used for matching text.
 ///   - `word_list` ([`Vec<String>`]): A list of words corresponding to each regex pattern in `regex_list`.
 ///
-/// * `SetRegex` - Represents a table that holds a set of compiled regex patterns.
+/// * `Set` - Represents a table that holds a set of compiled regex patterns.
 ///   - `regex_set` ([RegexSet]): A regex set of compiled regex patterns used for matching text.
 ///   - `word_list` ([`Vec<String>`]): A list of words corresponding to each regex pattern in `regex_list`.
 ///
@@ -98,16 +98,16 @@ pub struct RegexTable<'a> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 enum RegexType {
-    StandardRegex {
+    Standard {
         #[cfg_attr(feature = "serde", serde(with = "serde_regex"))]
         regex: Regex,
     },
-    ListRegex {
+    List {
         #[cfg_attr(feature = "serde", serde(with = "serde_regex_list"))]
         regex_list: Vec<Regex>,
         word_list: Vec<String>,
     },
-    SetRegex {
+    Set {
         #[cfg_attr(feature = "serde", serde(with = "serde_regex_set"))]
         regex_set: RegexSet,
         word_list: Vec<String>,
@@ -235,14 +235,14 @@ impl RegexMatcher {
     /// The function handles different `RegexMatchType` variants within the [RegexTable]:
     ///
     /// * [SimilarChar](RegexMatchType::SimilarChar) - Constructs a regex pattern where each character in the word list is separated by an optional dot (`.?`).
-    ///   This pattern is then compiled into a single regex and stored in a `RegexPatternTable` with `RegexType::StandardRegex`.
+    ///   This pattern is then compiled into a single regex and stored in a `RegexPatternTable` with `RegexType::Standard`.
     ///
     /// * [Acrostic](RegexMatchType::Acrostic) - Creates regex patterns that match words starting from the beginning or after any punctuation or whitespace.
-    ///   These patterns are compiled into individual regexes and stored in a `RegexPatternTable` with either `RegexType::ListRegex`
-    ///   or `RegexType::SetRegex`, depending on whether a `RegexSet` can be successfully created.
+    ///   These patterns are compiled into individual regexes and stored in a `RegexPatternTable` with either `RegexType::List`
+    ///   or `RegexType::Set`, depending on whether a `RegexSet` can be successfully created.
     ///
     /// * [Regex](RegexMatchType::Regex) - Compiles each word in the word list into individual regexes and stores them in a `RegexPatternTable` with either
-    ///   `RegexType::ListRegex` or `RegexType::SetRegex`, similar to the `Acrostic` type.
+    ///   `RegexType::List` or `RegexType::Set`, similar to the `Acrostic` type.
     ///
     /// Any invalid regex patterns encountered during the creation process are ignored, and a warning message is printed to the console.
     ///
@@ -282,7 +282,7 @@ impl RegexMatcher {
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
-                        regex_type: RegexType::StandardRegex {
+                        regex_type: RegexType::Standard {
                             regex: Regex::new(&pattern).unwrap(),
                         },
                     });
@@ -310,11 +310,11 @@ impl RegexMatcher {
                     }
 
                     let regex_type = RegexSet::new(pattern_list).map_or(
-                        RegexType::ListRegex {
+                        RegexType::List {
                             regex_list,
                             word_list: word_list.clone(),
                         },
-                        |regex_set| RegexType::SetRegex {
+                        |regex_set| RegexType::Set {
                             regex_set,
                             word_list,
                         },
@@ -331,7 +331,7 @@ impl RegexMatcher {
                     let mut regex_list = Vec::with_capacity(size);
 
                     for &word in regex_table.word_list.iter() {
-                        match Regex::new(&word) {
+                        match Regex::new(word) {
                             Ok(regex) => {
                                 regex_list.push(regex);
                                 word_list.push(word.to_owned());
@@ -343,11 +343,11 @@ impl RegexMatcher {
                     }
 
                     let regex_type = RegexSet::new(&word_list).map_or(
-                        RegexType::ListRegex {
+                        RegexType::List {
                             regex_list,
                             word_list: word_list.clone(),
                         },
-                        |regex_set| RegexType::SetRegex {
+                        |regex_set| RegexType::Set {
                             regex_set,
                             word_list,
                         },
@@ -387,13 +387,13 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * `StandardRegex` - Checks if the text matches the single compiled regex pattern stored in the table.
+    /// * `Standard` - Checks if the text matches the single compiled regex pattern stored in the table.
     ///   If a match is found, the function returns `true`.
     ///
-    /// * `ListRegex` - Iterates through the list of compiled regex patterns and checks if the text matches
+    /// * `List` - Iterates through the list of compiled regex patterns and checks if the text matches
     ///   any of them. If a match is found, the function returns `true`.
     ///
-    /// * `SetRegex` - Checks if the text matches the single compiled regex pattern stored in the table.
+    /// * `Set` - Checks if the text matches the single compiled regex pattern stored in the table.
     ///   If a match is found, the function returns `true`.
     ///
     /// If no matches are found after checking all regex patterns in all tables, the function returns `false`.
@@ -419,17 +419,17 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     fn is_match(&self, text: &str) -> bool {
         for regex_table in &self.regex_pattern_table_list {
             match &regex_table.regex_type {
-                RegexType::StandardRegex { regex } => {
+                RegexType::Standard { regex } => {
                     if regex.is_match(text).unwrap() {
                         return true;
                     }
                 }
-                RegexType::ListRegex { regex_list, .. } => {
+                RegexType::List { regex_list, .. } => {
                     if regex_list.iter().any(|regex| regex.is_match(text).unwrap()) {
                         return true;
                     }
                 }
-                RegexType::SetRegex { regex_set, .. } => {
+                RegexType::Set { regex_set, .. } => {
                     if regex_set.is_match(text) {
                         return true;
                     }
@@ -459,14 +459,14 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// The function handles different `RegexType` variants within the `RegexPatternTable`:
     ///
-    /// * `StandardRegex` - Iterates through the captures of the regex for the given text. For each capture
+    /// * `Standard` - Iterates through the captures of the regex for the given text. For each capture
     ///   group (excluding the entire match), it collects the matched substrings, concatenates them, and
     ///   stores the result.
     ///
-    /// * `ListRegex` - Iterates through the list of compiled regex patterns. If the text matches any regex,
+    /// * `List` - Iterates through the list of compiled regex patterns. If the text matches any regex,
     ///   it pushes the associated word from `word_list` and the table/match IDs to the result list.
     ///
-    /// * `SetRegex` - Retrieves the patterns from the regex set. For each matched pattern index, it pushes
+    /// * `Set` - Retrieves the patterns from the regex set. For each matched pattern index, it pushes
     ///   the corresponding pattern and the table/match IDs to the result list.
     ///
     /// # Examples
@@ -496,7 +496,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
 
         for regex_table in &self.regex_pattern_table_list {
             match &regex_table.regex_type {
-                RegexType::StandardRegex { regex } => {
+                RegexType::Standard { regex } => {
                     for caps in regex.captures_iter(text).map(|caps| caps.unwrap()) {
                         result_list.push(RegexResult {
                             word: Cow::Owned(
@@ -510,7 +510,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                         });
                     }
                 }
-                RegexType::ListRegex {
+                RegexType::List {
                     regex_list,
                     word_list,
                 } => {
@@ -524,7 +524,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                         }
                     }
                 }
-                RegexType::SetRegex {
+                RegexType::Set {
                     regex_set,
                     word_list,
                 } => result_list.extend(regex_set.matches(text).into_iter().map(|index| {

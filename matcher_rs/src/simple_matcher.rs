@@ -108,7 +108,7 @@ struct WordConf {
 ///
 /// # Fields
 ///
-/// * `ac_matcher` - An [AhoCorasick] instance that performs the actual pattern matching.
+/// * `ac_matcher` - An [DFA] instance that performs the actual pattern matching.
 /// * `ac_dedup_word_conf_list` - A [Vec] of [Vec] containing tuples of a word identifier ([u32])
 ///   and its corresponding position ([usize]) in the deduplicated word configuration list.
 ///
