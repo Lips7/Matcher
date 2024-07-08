@@ -16,7 +16,7 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
-    Example: `𝜢𝕰𝕃𝙻Ϙ 𝙒ⓞƦℒ𝒟!` -> `hello world!`
+    Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
   - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
     Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
