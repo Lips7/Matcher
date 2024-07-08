@@ -164,62 +164,40 @@ impl ProcessMatcher {
     }
 }
 
-/// Generates a [ProcessMatcher] based on the specified [SimpleMatchType].
+/// Generates a [ProcessMatcher] based on the provided [SimpleMatchType] at runtime.
 ///
-/// This function generates a matcher and a corresponding replacement list
-/// tailored to the given [SimpleMatchType]. The [SimpleMatchType] determines
-/// the kind of text processing and transformation rules that will be applied,
-/// whether it's deleting text, normalizing text, converting between simplified
-/// and traditional Chinese characters, etc.
-///
-/// The function constructs a HashMap (`process_dict`) containing string
-/// transformation rules. These rules are derived from predefined sets of
-/// string mappings, which are filtered and adjusted based on the given
-/// [SimpleMatchType].
-///
-/// Finally, the function creates an appropriate matcher ([AhoCorasick] for general text
-/// or potentially [CharwiseDoubleArrayAhoCorasick] for specific types, though the latter
-/// is commented out here). It returns a tuple containing a list of replacement strings
-/// and the constructed [ProcessMatcher].
+/// This implementation constructs the matcher and replacement list at runtime based on the specified [SimpleMatchType].
+/// The function generates the matcher data and caches it for future use.
 ///
 /// # Parameters
 ///
-/// * `simple_match_type_bit`: The type of matching and processing to be applied, specified
-///   by a [SimpleMatchType] enum value.
+/// - `simple_match_type_bit`: A variant of [SimpleMatchType] which specifies the type of matching operation to be performed.
 ///
 /// # Returns
 ///
-/// A tuple containing:
-/// 1. A vector of replacement strings ([Vec<&'static str>]).
-/// 2. A [ProcessMatcher] which can be used to perform the specified matching and text processing operations.
+/// - An [`Arc`] containing a tuple:
+///   - A vector of replacement patterns ([`Vec<&str>`]).
+///   - A [ProcessMatcher] object configured for the specified match type.
 ///
-/// # Example
+/// # Match Types
 ///
-/// ```
-/// use matcher_rs::{SimpleMatchType, get_process_matcher};
+/// The function supports the following match types:
 ///
-/// let cached_result = get_process_matcher(SimpleMatchType::TextDelete);
-/// let (process_replace_list, matcher) = cached_result.as_ref();
-/// // you can now use `matcher` with `process_replace_list` to perform text replacement or deletion
-/// ```
+/// - [SimpleMatchType::None]: Returns an empty matcher.
+/// - [SimpleMatchType::Fanjian]: Builds a matcher for Fanjian text normalization using runtime construction.
+/// - [SimpleMatchType::WordDelete]: Builds a matcher for deleting whitespace and punctuation.
+/// - [SimpleMatchType::TextDelete]: Builds a matcher for deleting special text characters and whitespace.
+/// - [SimpleMatchType::Normalize]: Builds a matcher for normalizing symbols, text, and numbers.
+/// - [SimpleMatchType::PinYin]: Builds a matcher for converting text to PinYin using runtime construction.
+/// - [SimpleMatchType::PinYinChar]: Builds a matcher for converting text to PinYin characters using runtime construction.
 ///
 /// # Notes
 ///
-/// - The function assumes that specific datasets like `FANJIAN`, `UNICODE`, `PUNCTUATION_SPECIAL`, etc.,
-///   are predefined and contain the necessary mappings.
-/// - It uses [AhoCorasick] for most match types, but has a commented-out section for
-///   [CharwiseDoubleArrayAhoCorasick] for specific types.
+/// - The matcher construction utilizes the Aho-Corasick algorithm for efficient pattern matching.
+/// - The function retains key-value pairs in the replacement dictionary where the key and value are not identical.
+/// - The matcher data is cached to optimize repeated calls with the same match type, improving performance.
 ///
-/// # Safety
-///
-/// The function uses `unwrap()` when accessing elements in the string mapping. It assumes that the
-/// provided datasets are correctly formatted and always provide key-value pairs for transformations.
-///
-/// # Limitations
-///
-/// The commented-out section for [CharwiseDoubleArrayAhoCorasick] implies that it is not yet used in
-/// the current version. Any errors regarding missing or incorrectly formatted string mappings will
-/// result in a panic due to the use of `unwrap()`.
+/// The function may use either the `Chinese` or `Others` variant of the [ProcessMatcher], depending on the [`SimpleMatchType`].
 #[cfg(feature = "runtime_build")]
 pub fn get_process_matcher(
     simple_match_type_bit: SimpleMatchType,
@@ -296,28 +274,32 @@ pub fn get_process_matcher(
         let (process_replace_list, process_matcher) = match simple_match_type_bit {
             SimpleMatchType::Fanjian | SimpleMatchType::PinYin | SimpleMatchType::PinYinChar => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
-                CharwiseDoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build(
-                        process_dict
-                            .iter()
-                            .map(|(&key, _)| key)
-                            .collect::<Vec<&str>>(),
-                    )
-                    .unwrap(),
+                ProcessMatcher::Chinese(
+                    CharwiseDoubleArrayAhoCorasickBuilder::new()
+                        .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                        .build(
+                            process_dict
+                                .iter()
+                                .map(|(&key, _)| key)
+                                .collect::<Vec<&str>>(),
+                        )
+                        .unwrap(),
+                ),
             ),
             _ => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
-                AhoCorasickBuilder::new()
-                    .kind(Some(AhoCorasickKind::DFA))
-                    .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                    .build(
-                        process_dict
-                            .iter()
-                            .map(|(&key, _)| key)
-                            .collect::<Vec<&str>>(),
-                    )
-                    .unwrap(),
+                ProcessMatcher::Others(
+                    AhoCorasickBuilder::new()
+                        .kind(Some(AhoCorasickKind::DFA))
+                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                        .build(
+                            process_dict
+                                .iter()
+                                .map(|(&key, _)| key)
+                                .collect::<Vec<&str>>(),
+                        )
+                        .unwrap(),
+                ),
             ),
         };
 

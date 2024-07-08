@@ -1,19 +1,4 @@
-use std::collections::HashMap;
-use std::env;
-use std::fs::File;
-use std::io::{Result, Write};
-
-use daachorse::{
-    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
-    MatchKind as DoubleArrayAhoCorasickMatchKind,
-};
-
-const FANJIAN: &str = include_str!("./str_conv/FANJIAN.txt");
-const SYMBOL_NORM: &str = include_str!("./str_conv/SYMBOL-NORM.txt");
-const NUM_NORM: &str = include_str!("./str_conv/NUM-NORM.txt");
-const NORM: &str = include_str!("./str_conv/NORM.txt");
-const PINYIN: &str = include_str!("./str_conv/PINYIN.txt");
-const PINYIN_CHAR: &str = include_str!("./str_conv/PINYIN-CHAR.txt");
+use std::io::Result;
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
@@ -21,6 +6,23 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "prebuilt")]
     {
+        use std::collections::HashMap;
+        use std::env;
+        use std::fs::File;
+        use std::io::Write;
+
+        use daachorse::{
+            CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
+            MatchKind as DoubleArrayAhoCorasickMatchKind,
+        };
+
+        const FANJIAN: &str = include_str!("./str_conv/FANJIAN.txt");
+        const SYMBOL_NORM: &str = include_str!("./str_conv/SYMBOL-NORM.txt");
+        const NUM_NORM: &str = include_str!("./str_conv/NUM-NORM.txt");
+        const NORM: &str = include_str!("./str_conv/NORM.txt");
+        const PINYIN: &str = include_str!("./str_conv/PINYIN.txt");
+        const PINYIN_CHAR: &str = include_str!("./str_conv/PINYIN-CHAR.txt");
+
         let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
             ("fanjian", vec![FANJIAN]),

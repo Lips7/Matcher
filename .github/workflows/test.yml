@@ -47,13 +47,16 @@ jobs:
         if: matrix.platform.runner == 'ubuntu-latest' && matrix.platform.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get install gcc-aarch64-linux-gnu
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
           target: ${{ matrix.platform.target }}
-          override: true
-      - name: Test
-        run: cargo test --target ${{ matrix.platform.target }}
+      - name: Test prebuilt
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "prebuilt"
+      - name: Test runtime_build
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "runtime_build"
+      - name: Test serde
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "serde"
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Rename & move
