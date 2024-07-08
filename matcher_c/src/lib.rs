@@ -194,7 +194,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 ///             ).to_bytes()
 ///         )
 ///     },
-///     r#"{"1":[{"table_id":1,"word":"hello"},{"table_id":1,"word":"world"}]}"#
+///     r#"{"1":[{"match_id":1,"table_id":1,"word":"hello"},{"match_id":1,"table_id":1,"word":"world"}]}"#
 /// );
 /// assert_eq!(
 ///     unsafe {

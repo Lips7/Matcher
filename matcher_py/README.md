@@ -47,7 +47,7 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 
 ### Explanation of the configuration
 
-* `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, for each `match_id`, the `table_id` inside **should but isn't required to be unique**.
+* `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, **for each `match_id`, the `table_id` inside is required to be unique**.
 * `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = Dict[SimpleMatchType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable

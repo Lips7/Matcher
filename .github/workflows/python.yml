@@ -26,13 +26,14 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-        python: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -61,13 +62,14 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-        python: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -94,13 +96,14 @@ jobs:
         platform:
           - runner: windows-latest
             target: x64
-        python: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -128,13 +131,14 @@ jobs:
             target: x86_64
           - runner: macos-14
             target: aarch64
-        python: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:

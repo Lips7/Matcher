@@ -12,7 +12,7 @@ readme = "README.md"
 keywords = ["text", "string", "search", "pattern", "multi"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Lips7/Matcher"
-version = "0.4.2"
+version = "0.4.3"
 rust-version = "1.79.0"
 
 [profile.release]

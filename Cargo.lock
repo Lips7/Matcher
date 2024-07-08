@@ -29,7 +29,7 @@ dependencies = [
 [[package]]
 name = "aho-corasick-unsafe"
 version = "0.0.4"
-source = "git+https://github.com/Lips7/aho-corasick#c9364b890c0163f3a8756bd034f1a498fc512311"
+source = "git+https://github.com/Lips7/aho-corasick#408fb70204b00a5d6bcbea2f012a96e9e3fb43d2"
 dependencies = [
  "memchr",
  "serde",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "matcher_rs",
  "numpy",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "ahash",
  "aho-corasick-unsafe",

@@ -424,7 +424,7 @@ impl SimpleMatcher {
                 .unwrap(),
             #[cfg(feature = "serde")]
             ac_matcher: AhoCorasickBuilder::new()
-                .kind(Some(DFA))
+                .kind(Some(AhoCorasickKind::DFA))
                 .ascii_case_insensitive(true)
                 .prefilter(false)
                 .build(

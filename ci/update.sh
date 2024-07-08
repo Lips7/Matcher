@@ -1,2 +1,2 @@
 cargo update --verbose
-cargo upgrade --verbose --recursive true --incompatible
+cargo upgrade --verbose --recursive true

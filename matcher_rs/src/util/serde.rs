@@ -93,6 +93,7 @@ pub mod serde_regex_set {
 }
 
 #[cfg(feature = "serde")]
+#[cfg(test)]
 mod test_serde {
     use super::*;
 

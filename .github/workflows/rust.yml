@@ -34,8 +34,12 @@ jobs:
             default: true
       - name: Build
         run: cargo build --release --verbose
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run tests prebuilt
+        run: cargo test --verbose --features "prebuilt"
+      - name: Run tests runtime_build
+        run: cargo test --verbose --features "runtime_build"
+      - name: Run tests serde
+        run: cargo test --verbose --features "serde"
       - name: Run doc
         run: cargo doc
       - name: Release

@@ -393,7 +393,7 @@ impl Matcher {
     pub fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult>> {
         if !text.is_empty() {
             let mut match_result_dict = HashMap::default();
-            let mut failed_match_id_set = IntSet::default();
+            let mut failed_match_table_id_set = IntSet::default();
 
             if let Some(regex_matcher) = &self.regex_matcher {
                 for regex_result in regex_matcher.process(text) {
@@ -435,28 +435,32 @@ impl Matcher {
                             )
                             .unwrap_unchecked()
                     };
+                    let match_table_id = ((word_table_conf.match_id as u64) << 32)
+                        | (word_table_conf.table_id as u64);
 
-                    if word_table_conf.is_exemption {
-                        failed_match_id_set.insert(word_table_conf.match_id);
-                        match_result_dict.remove(&word_table_conf.match_id);
-                    }
-
-                    if failed_match_id_set.contains(&word_table_conf.match_id) {
+                    if failed_match_table_id_set.contains(&match_table_id) {
                         continue;
                     }
 
                     let result_list = match_result_dict
                         .entry(word_table_conf.match_id)
                         .or_insert(Vec::new());
-
-                    result_list.push(MatchResult {
-                        match_id: word_table_conf.match_id,
-                        table_id: word_table_conf.table_id,
-                        word: simple_result.word,
-                    })
+                    if word_table_conf.is_exemption {
+                        failed_match_table_id_set.insert(match_table_id);
+                        result_list.retain(|match_result| {
+                            match_result.table_id != word_table_conf.table_id
+                        });
+                    } else {
+                        result_list.push(MatchResult {
+                            match_id: word_table_conf.match_id,
+                            table_id: word_table_conf.table_id,
+                            word: simple_result.word,
+                        });
+                    }
                 }
             }
 
+            match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
             match_result_dict
         } else {
             HashMap::default()

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 - 2024-07-08
+### Changed
+
+- Fix exemption word list wrongly reject entire match, not a single table.
+- Add match_id to MatchResult.
+- Reverse DFA structure to AhoCorasick structure.
+- matcher_c use from_utf8_unchecked instead of from_utf8.
+- Build multiple wheels for different python version.
+- Update FANJIAN.txt and NORM.txt.
+
 ## 0.4.2 - 2024-07-07
 ### Changed
 
