@@ -8,9 +8,12 @@ use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexTable};
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimTable};
 use crate::simple_matcher::{SimpleMatchType, SimpleMatcher};
 
-pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a>> {
+pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match(&self, text: &str) -> bool;
     fn process(&'a self, text: &str) -> Vec<T>;
+    fn process_iter(&'a self, text: &str) -> Box<dyn Iterator<Item = T> + 'a> {
+        Box::new(self.process(text).into_iter())
+    }
     fn batch_process(&'a self, text_array: &[&str]) -> Vec<Vec<T>> {
         text_array.iter().map(|&text| self.process(text)).collect()
     }
