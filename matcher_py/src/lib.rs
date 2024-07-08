@@ -97,6 +97,7 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
     /// into a Python dictionary containing the match result data, which can be used
     /// in Python code. The dictionary includes the following key-value pairs:
     ///
+    /// - `"match_id"`: The unique identifier (u32) for the match.
     /// - `"table_id"`: The unique identifier (u32) for the table.
     /// - `"word"`: The matched word as a string slice.
     ///
@@ -114,6 +115,8 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
     fn into_py(self, py: Python<'_>) -> PyObject {
         let dict = PyDict::new_bound(py);
 
+        dict.set_item(intern!(py, "match_id"), self.0.match_id)
+            .unwrap();
         dict.set_item(intern!(py, "table_id"), self.0.table_id)
             .unwrap();
         dict.set_item(intern!(py, "word"), self.0.word.as_ref())

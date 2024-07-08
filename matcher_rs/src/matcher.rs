@@ -144,6 +144,7 @@ struct WordTableConf {
 ///
 /// # Fields
 ///
+/// * `match_id` - A [u32] that uniquely identifies the match within the system.
 /// * `table_id` - A [u32] that uniquely identifies the table in which the match was found.
 /// * `word` - A [Cow<'a, str>] that holds the matched word. The [Cow] type allows the word
 ///    to be either borrowed from the original data or owned, optimizing for efficient memory use.
@@ -154,6 +155,7 @@ struct WordTableConf {
 ///    for the word can be borrowed for efficiency.
 #[derive(Serialize)]
 pub struct MatchResult<'a> {
+    pub match_id: u32,
     pub table_id: u32,
     pub word: Cow<'a, str>,
 }
@@ -400,6 +402,7 @@ impl Matcher {
                         .or_insert(Vec::new());
 
                     result_list.push(MatchResult {
+                        match_id: regex_result.match_id,
                         table_id: regex_result.table_id,
                         word: regex_result.word,
                     })
@@ -413,6 +416,7 @@ impl Matcher {
                         .or_insert(Vec::new());
 
                     result_list.push(MatchResult {
+                        match_id: sim_result.match_id,
                         table_id: sim_result.table_id,
                         word: sim_result.word,
                     })
@@ -446,6 +450,7 @@ impl Matcher {
                         .or_insert(Vec::new());
 
                     result_list.push(MatchResult {
+                        match_id: word_table_conf.match_id,
                         table_id: word_table_conf.table_id,
                         word: simple_result.word,
                     })
