@@ -225,6 +225,7 @@ bench                                               fastest       │ slowest   
 - [x] Support stable rust.
 - [ ] Support iterator.
 - [ ] A real java package.
+- [x] Multiple Python version wheel build.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
