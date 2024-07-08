@@ -83,7 +83,9 @@ impl ProcessMatcher {
         match self {
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
+                    // Guaranteed not failed
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                    // Guaranteed not failed
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.value() as usize)
                     });
@@ -92,7 +94,9 @@ impl ProcessMatcher {
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
+                    // Guaranteed not failed
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                    // Guaranteed not failed
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.pattern().as_usize())
                     });
@@ -102,6 +106,7 @@ impl ProcessMatcher {
         }
 
         if last_end > 0 {
+            // Guaranteed not failed
             result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
@@ -135,12 +140,14 @@ impl ProcessMatcher {
         match self {
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
+                    // Guaranteed not failed
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
+                    // Guaranteed not failed
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
@@ -148,6 +155,7 @@ impl ProcessMatcher {
         }
 
         if last_end > 0 {
+            // Guaranteed not failed
             result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
@@ -377,6 +385,7 @@ pub fn get_process_matcher(
             }
             SimpleMatchType::Fanjian => (
                 FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                // Guaranteed not failed
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         FANJIAN_PROCESS_MATCHER_BYTES,
@@ -437,6 +446,7 @@ pub fn get_process_matcher(
             ),
             SimpleMatchType::PinYin => (
                 PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                // Guaranteed not failed
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
@@ -447,6 +457,7 @@ pub fn get_process_matcher(
 
             SimpleMatchType::PinYinChar => (
                 PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                // Guaranteed not failed
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYINCHAR_PROCESS_MATCHER_BYTES,
@@ -575,6 +586,7 @@ pub fn reduce_text_process<'a>(
     for simple_match_type_bit in simple_match_type.iter() {
         let cached_result = get_process_matcher(simple_match_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
+        // Guaranteed not failed
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
         match (simple_match_type_bit, process_matcher) {
@@ -641,6 +653,7 @@ pub fn reduce_text_process_emit<'a>(
     for simple_match_type_bit in simple_match_type.iter() {
         let cached_result = get_process_matcher(simple_match_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
+        // Guaranteed not failed
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
         match (simple_match_type_bit, process_matcher) {

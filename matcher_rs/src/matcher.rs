@@ -421,6 +421,7 @@ impl Matcher {
 
             if let Some(simple_matcher) = &self.simple_matcher {
                 for simple_result in simple_matcher.process(text) {
+                    // Guaranteed not failed
                     let word_table_conf = unsafe {
                         self.simple_word_table_conf_map
                             .get(

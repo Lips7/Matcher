@@ -336,12 +336,14 @@ impl SimpleMatcher {
             for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
                 if (is_and || start == 0) && start != index {
                     ac_split_word_and_counter
+                        // Guaranteed not failed
                         .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
                         .and_modify(|cnt| *cnt += 1)
                         .or_insert(1);
                 }
                 if is_not && start != index {
                     ac_split_word_not_counter
+                        // Guaranteed not failed
                         .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
                         .and_modify(|cnt| *cnt -= 1)
                         .or_insert(0);
@@ -362,12 +364,14 @@ impl SimpleMatcher {
             }
             if (is_and || start == 0) && start != simple_word.as_ref().len() {
                 ac_split_word_and_counter
+                    // Guaranteed not failed
                     .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                     .and_modify(|cnt| *cnt += 1)
                     .or_insert(1);
             }
             if is_not && start != simple_word.as_ref().len() {
                 ac_split_word_not_counter
+                    // Guaranteed not failed
                     .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                     .and_modify(|cnt| *cnt -= 1)
                     .or_insert(0);
@@ -396,6 +400,7 @@ impl SimpleMatcher {
             {
                 for ac_word in reduce_text_process_emit(simple_match_type, split_word) {
                     if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
+                        // Guaranteed not failed
                         let word_conf_list: &mut Vec<(u32, usize)> = unsafe {
                             ac_dedup_word_conf_list.get_unchecked_mut(*ac_dedup_word_id as usize)
                         };
@@ -477,18 +482,21 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
+                // Guaranteed not failed
                 for ac_dedup_result in unsafe {
                     simple_ac_table
                         .ac_matcher
                         .try_find_overlapping_iter(processed_text.as_ref())
                         .unwrap_unchecked()
                 } {
+                    // Guaranteed not failed
                     for ac_word_conf in unsafe {
                         simple_ac_table
                             .ac_dedup_word_conf_list
                             .get_unchecked(ac_dedup_result.pattern().as_usize())
                     } {
                         let word_id = ac_word_conf.0;
+                        // Guaranteed not failed
                         let word_conf =
                             unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
@@ -501,6 +509,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                                     .collect::<Vec<Vec<i32>>>()
                             });
 
+                        // bit is i32, so it will not overflow almost 100%
                         unsafe {
                             let bit = split_bit_vec
                                 .get_unchecked_mut(ac_word_conf.1)
@@ -563,12 +572,14 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             let processed_times = processed_text_list.len();
 
             for (index, processed_text) in processed_text_list.iter().enumerate() {
+                // Guaranteed not failed
                 for ac_dedup_result in unsafe {
                     simple_ac_table
                         .ac_matcher
                         .try_find_overlapping_iter(processed_text.as_ref())
                         .unwrap_unchecked()
                 } {
+                    // Guaranteed not failed
                     for ac_word_conf in unsafe {
                         simple_ac_table
                             .ac_dedup_word_conf_list
@@ -580,6 +591,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             continue;
                         }
 
+                        // Guaranteed not failed
                         let word_conf =
                             unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
@@ -592,6 +604,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                                     .collect::<Vec<Vec<i32>>>()
                             });
 
+                        // bit is i32, so it will not overflow almost 100%
                         unsafe {
                             let bit = split_bit_vec
                                 .get_unchecked_mut(ac_word_conf.1)
@@ -618,6 +631,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     .then_some(SimpleResult {
                         word_id,
                         word: Cow::Borrowed(
+                            // Guaranteed not failed
                             &unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() }
                                 .word,
                         ),
