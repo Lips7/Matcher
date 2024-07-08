@@ -26,19 +26,26 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
+        python:
+          - version: 3.8
+          - version: 3.9
+          - version: 3.10
+          - version: 3.11
+          - version: 3.12
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python.version }}
+          architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --out dist -i python${{ matrix.python.version }}
           sccache: 'true'
           manylinux: auto
           rust-toolchain: nightly
@@ -60,18 +67,26 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
+        python:
+          - version: 3.8
+          - version: 3.9
+          - version: 3.10
+          - version: 3.11
+          - version: 3.12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python.version }}
+          architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --out dist -i python${{ matrix.python.version }}
           sccache: 'true'
           manylinux: musllinux_1_2
           rust-toolchain: nightly
@@ -91,11 +106,18 @@ jobs:
         platform:
           - runner: windows-latest
             target: x64
+        python:
+          - version: 3.8
+          - version: 3.9
+          - version: 3.10
+          - version: 3.11
+          - version: 3.12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python.version }}
           architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -103,7 +125,7 @@ jobs:
           RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --out dist -i python${{ matrix.python.version }}
           sccache: 'true'
           rust-toolchain: nightly
           working-directory: matcher_py
@@ -124,18 +146,26 @@ jobs:
             target: x86_64
           - runner: macos-14
             target: aarch64
+        python:
+          - version: 3.8
+          - version: 3.9
+          - version: 3.10
+          - version: 3.11
+          - version: 3.12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python.version }}
+          architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist
+          args: --release --out dist -i python${{ matrix.python.version }}
           sccache: 'true'
           rust-toolchain: nightly
           working-directory: matcher_py
