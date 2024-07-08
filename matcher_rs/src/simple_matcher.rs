@@ -476,6 +476,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         }
 
         let mut word_id_split_bit_map = IntMap::default();
+        let mut word_id_set = IntSet::default();
+        let mut not_word_id_set = IntSet::default();
 
         for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
             let processed_text_list = reduce_text_process_emit(simple_match_type, text);
@@ -496,6 +498,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             .get_unchecked(ac_dedup_result.pattern().as_usize())
                     } {
                         let word_id = ac_word_conf.0;
+
+                        if not_word_id_set.contains(&word_id) {
+                            continue;
+                        }
+
                         // Guaranteed not failed
                         let word_conf =
                             unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
@@ -517,17 +524,30 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             *bit = bit.unchecked_add(
                                 (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
                             );
+
+                            if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
+                                not_word_id_set.insert(word_id);
+                                word_id_set.remove(&word_id);
+                                continue;
+                            }
+
+                            if split_bit_vec
+                                .iter()
+                                .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
+                            {
+                                word_id_set.insert(word_id);
+                            }
                         }
                     }
                 }
             }
+
+            if !word_id_set.is_empty() {
+                return true;
+            }
         }
 
-        word_id_split_bit_map.into_iter().any(|(_, split_bit_vec)| {
-            split_bit_vec
-                .into_iter()
-                .all(|bit_vec| bit_vec.into_iter().any(|bit| bit <= 0))
-        })
+        false
     }
 
     /// Processes the input text and returns a vector of [SimpleResult] containing matches found.
@@ -564,6 +584,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             return Vec::new();
         }
 
+        let mut result_list = Vec::new();
         let mut word_id_split_bit_map = IntMap::default();
         let mut not_word_id_set = IntSet::default();
 
@@ -612,9 +633,23 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             *bit = bit.unchecked_add(
                                 (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
                             );
+
                             if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
                                 not_word_id_set.insert(word_id);
-                                word_id_split_bit_map.remove(&word_id);
+                                result_list.retain(|simple_result: &SimpleResult| {
+                                    simple_result.word_id != word_id
+                                });
+                                continue;
+                            }
+
+                            if split_bit_vec
+                                .iter()
+                                .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
+                            {
+                                result_list.push(SimpleResult {
+                                    word_id,
+                                    word: Cow::Borrowed(&word_conf.word),
+                                })
                             }
                         };
                     }
@@ -622,21 +657,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             }
         }
 
-        word_id_split_bit_map
-            .into_iter()
-            .filter_map(|(word_id, split_bit_vec)| {
-                split_bit_vec
-                    .into_iter()
-                    .all(|bit_vec| bit_vec.into_iter().any(|bit| bit <= 0))
-                    .then_some(SimpleResult {
-                        word_id,
-                        word: Cow::Borrowed(
-                            // Guaranteed not failed
-                            &unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() }
-                                .word,
-                        ),
-                    })
-            })
-            .collect()
+        result_list
     }
 }
