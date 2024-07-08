@@ -144,25 +144,25 @@ struct RegexPatternTable {
 ///
 /// # Fields
 ///
-/// * `word` - A [Cow<'a, str>] that holds the matched word or pattern. This field can either be a
-///   borrowed string slice or an owned [String], offering flexibility in how the match result is stored.
+/// * `match_id` - A [u32] that serves as an identifier for the match. This identifier
+///   is used to differentiate between match results originating from different regex tables, allowing
+///   for more detailed and organized match results.
 ///
 /// * `table_id` - A [u32] representing the unique identifier of the regex table that produced the match result.
 ///   This helps in distinguishing which regex table contributed to the result, facilitating organized processing
 ///   and categorization of matches.
 ///
-/// * `match_id` - A [u32] that serves as an identifier for the match. This identifier
-///   is used to differentiate between match results originating from different regex tables, allowing
-///   for more detailed and organized match results.
+/// * `word` - A [Cow<'a, str>] that holds the matched word or pattern. This field can either be a
+///   borrowed string slice or an owned [String], offering flexibility in how the match result is stored.
 ///
 /// This structure is primarily utilized in text matching applications where regex patterns are used
 /// to identify specific words or patterns within the target text, and the results need to be tracked
 /// and processed accordingly.
 #[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
-    pub word: Cow<'a, str>,
-    pub table_id: u32,
     pub match_id: u32,
+    pub table_id: u32,
+    pub word: Cow<'a, str>,
 }
 
 impl MatchResultTrait<'_> for RegexResult<'_> {
@@ -497,41 +497,40 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         for regex_table in &self.regex_pattern_table_list {
             match &regex_table.regex_type {
                 RegexType::Standard { regex } => {
-                    for caps in regex.captures_iter(text).map(|caps| caps.unwrap()) {
-                        result_list.push(RegexResult {
+                    result_list.extend(regex.captures_iter(text).map(|caps| {
+                        RegexResult {
+                            match_id: regex_table.match_id,
+                            table_id: regex_table.table_id,
                             word: Cow::Owned(
-                                caps.iter()
+                                caps.unwrap()
+                                    .iter()
                                     .skip(1)
                                     .filter_map(|m| m.map(|match_char| match_char.as_str()))
                                     .collect::<String>(),
                             ),
-                            table_id: regex_table.table_id,
-                            match_id: regex_table.match_id,
-                        });
-                    }
+                        }
+                    }))
                 }
                 RegexType::List {
                     regex_list,
                     word_list,
-                } => {
-                    for (index, regex) in regex_list.iter().enumerate() {
-                        if regex.is_match(text).unwrap() {
-                            result_list.push(RegexResult {
-                                word: Cow::Borrowed(&word_list[index]),
-                                table_id: regex_table.table_id,
-                                match_id: regex_table.match_id,
-                            });
-                        }
-                    }
-                }
+                } => result_list.extend(regex_list.iter().enumerate().filter_map(
+                    |(index, regex)| {
+                        regex.is_match(text).unwrap().then_some(RegexResult {
+                            match_id: regex_table.match_id,
+                            table_id: regex_table.table_id,
+                            word: Cow::Borrowed(&word_list[index]),
+                        })
+                    },
+                )),
                 RegexType::Set {
                     regex_set,
                     word_list,
                 } => result_list.extend(regex_set.matches(text).into_iter().map(|index| {
                     RegexResult {
-                        word: Cow::Borrowed(&word_list[index]),
-                        table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
+                        table_id: regex_table.table_id,
+                        word: Cow::Borrowed(&word_list[index]),
                     }
                 })),
             }

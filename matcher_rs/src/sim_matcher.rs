@@ -125,17 +125,17 @@ struct SimProcessedTable {
 ///
 /// # Fields
 ///
+/// - `match_id` ([u32]): An ID that serves as an identifier for the match.
+/// - `table_id` ([u32]): The unique identifier of the table where the word was found.
 /// - `word` ([Cow<'a, str>]): The word that was found to be similar. It is stored as a [Cow]
 ///   (clone-on-write) to allow for both owned and borrowed strings.
-/// - `table_id` ([u32]): The unique identifier of the table where the word was found.
-/// - `match_id` ([u32]): An ID that serves as an identifier for the match.
 /// - `similarity` ([f64]): The similarity score computed for the match. This score typically
 ///   ranges from 0.0 to 1.0, with higher values indicating greater similarity.
 #[derive(Debug, Clone)]
 pub struct SimResult<'a> {
-    pub word: Cow<'a, str>,
-    pub table_id: u32,
     pub match_id: u32,
+    pub table_id: u32,
+    pub word: Cow<'a, str>,
     pub similarity: f64,
 }
 
@@ -407,12 +407,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                 .score_cutoff(sim_table.threshold),
                         )
                         .map(|similarity| SimResult {
-                            word: Cow::Borrowed(text),
-                            table_id: sim_table.table_id,
                             match_id: sim_table.match_id,
+                            table_id: sim_table.table_id,
+                            word: Cow::Borrowed(text),
                             similarity,
                         })
-                    }));
+                    }))
                 }
                 SimMatchType::DamerauLevenshtein => {
                     result_list.extend(sim_table.word_list.iter().filter_map(|text| {
@@ -423,12 +423,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                 .score_cutoff(sim_table.threshold),
                         )
                         .map(|similarity| SimResult {
-                            word: Cow::Borrowed(text),
-                            table_id: sim_table.table_id,
                             match_id: sim_table.match_id,
+                            table_id: sim_table.table_id,
+                            word: Cow::Borrowed(text),
                             similarity,
                         })
-                    }));
+                    }))
                 }
                 SimMatchType::Indel => {
                     result_list.extend(sim_table.word_list.iter().filter_map(|text| {
@@ -438,12 +438,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                             &distance::indel::Args::default().score_cutoff(sim_table.threshold),
                         )
                         .map(|similarity| SimResult {
-                            word: Cow::Borrowed(text),
-                            table_id: sim_table.table_id,
                             match_id: sim_table.match_id,
+                            table_id: sim_table.table_id,
+                            word: Cow::Borrowed(text),
                             similarity,
                         })
-                    }));
+                    }))
                 }
                 SimMatchType::Jaro => {
                     result_list.extend(sim_table.word_list.iter().filter_map(|text| {
@@ -453,12 +453,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                             &distance::jaro::Args::default().score_cutoff(sim_table.threshold),
                         )
                         .map(|similarity| SimResult {
-                            word: Cow::Borrowed(text),
-                            table_id: sim_table.table_id,
                             match_id: sim_table.match_id,
+                            table_id: sim_table.table_id,
+                            word: Cow::Borrowed(text),
                             similarity,
                         })
-                    }));
+                    }))
                 }
                 SimMatchType::JaroWinkler => {
                     result_list.extend(sim_table.word_list.iter().filter_map(|text| {
@@ -469,12 +469,12 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                 .score_cutoff(sim_table.threshold),
                         )
                         .map(|similarity| SimResult {
-                            word: Cow::Borrowed(text),
-                            table_id: sim_table.table_id,
                             match_id: sim_table.match_id,
+                            table_id: sim_table.table_id,
+                            word: Cow::Borrowed(text),
                             similarity,
                         })
-                    }));
+                    }))
                 }
             }
         }
