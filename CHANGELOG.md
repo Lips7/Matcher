@@ -9,6 +9,7 @@
 - matcher_c use from_utf8_unchecked instead of from_utf8.
 - Build multiple wheels for different python version.
 - Update FANJIAN.txt and NORM.txt.
+- Fix issues with `runtime_build` feature.
 
 ## 0.4.2 - 2024-07-07
 ### Changed

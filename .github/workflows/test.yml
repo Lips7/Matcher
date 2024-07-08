@@ -52,11 +52,11 @@ jobs:
           toolchain: nightly
           target: ${{ matrix.platform.target }}
       - name: Test prebuilt
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "prebuilt"
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt"
       - name: Test runtime_build
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "runtime_build"
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build"
       - name: Test serde
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --no-default-features --features "serde"
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --features "serde"
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Rename & move
