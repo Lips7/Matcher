@@ -1,6 +1,6 @@
 use std::{
     ffi::{c_char, CStr, CString},
-    str::from_utf8,
+    str,
 };
 
 use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, TextMatcherTrait};
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
         matcher
             .as_ref()
             .unwrap()
-            .is_match(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or(""))
+            .is_match(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes()))
     }
 }
 
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 /// ```
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
-/// use std::str::from_utf8;
+/// use std::str;
 ///
 /// use matcher_c::*;
 /// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
@@ -184,29 +184,29 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 /// let not_match_text_bytes = CString::new("test").unwrap();
 ///
 /// assert_eq!(
-///     from_utf8(
-///         unsafe {
+///     unsafe {
+///         str::from_utf8_unchecked(
 ///             CStr::from_ptr(
 ///                 matcher_word_match(
 ///                     matcher_ptr,
 ///                     match_text_bytes.as_ptr()
 ///                 )
 ///             ).to_bytes()
-///         }
-///     ).unwrap_or(""),
+///         )
+///     },
 ///     r#"{"1":[{"table_id":1,"word":"hello"},{"table_id":1,"word":"world"}]}"#
 /// );
 /// assert_eq!(
-///     from_utf8(
-///         unsafe {
+///     unsafe {
+///         str::from_utf8_unchecked(
 ///             CStr::from_ptr(
 ///                 matcher_word_match(
 ///                     matcher_ptr,
 ///                     not_match_text_bytes.as_ptr()
 ///                 )
 ///             ).to_bytes()
-///         }
-///     ).unwrap_or(""),
+///         )
+///     },
 ///     r#"{}"#
 /// );
 ///
@@ -222,7 +222,7 @@ pub unsafe extern "C" fn matcher_word_match(
             matcher
                 .as_ref()
                 .unwrap()
-                .word_match_as_string(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or("")),
+                .word_match_as_string(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
         )
         .unwrap()
     };
@@ -391,7 +391,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
         simple_matcher
             .as_ref()
             .unwrap()
-            .is_match(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or(""))
+            .is_match(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes()))
     }
 }
 
@@ -419,7 +419,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// ```
 /// use std::collections::HashMap;
 /// use std::ffi::{CStr, CString};
-/// use std::str::from_utf8;
+/// use std::str;
 ///
 /// use matcher_c::*;
 /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
@@ -436,29 +436,29 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// let non_match_text_bytes = CString::new("test").unwrap();
 ///
 /// assert_eq!(
-///     from_utf8(
-///         unsafe {
+///     unsafe {
+///         str::from_utf8_unchecked(
 ///             CStr::from_ptr(
 ///                 simple_matcher_process(
 ///                     simple_matcher_ptr,
 ///                     match_text_bytes.as_ptr()
 ///                 )
 ///             ).to_bytes()
-///         }
-///     ).unwrap_or(""),
+///         )
+///     },
 ///     r#"[{"word_id":1,"word":"hello&world"}]"#
 /// );
 /// assert_eq!(
-///     from_utf8(
-///         unsafe {
+///     unsafe {
+///         str::from_utf8_unchecked(
 ///             CStr::from_ptr(
 ///                 simple_matcher_process(
 ///                     simple_matcher_ptr,
 ///                     non_match_text_bytes.as_ptr()
 ///                 )
 ///             ).to_bytes()
-///         }
-///     ).unwrap_or(""),
+///         )
+///     },
 ///     r#"[]"#
 /// );
 ///
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn simple_matcher_process(
                 &simple_matcher
                     .as_ref()
                     .unwrap()
-                    .process(from_utf8(CStr::from_ptr(text).to_bytes()).unwrap_or("")),
+                    .process(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
             )
             .unwrap(),
         )
