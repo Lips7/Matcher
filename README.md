@@ -226,6 +226,7 @@ bench                                               fastest       │ slowest   
 - [ ] Support iterator.
 - [ ] A real java package.
 - [x] Multiple Python version wheel build.
+- [ ] Customize str conv map.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
