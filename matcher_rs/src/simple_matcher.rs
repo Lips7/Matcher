@@ -492,13 +492,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         .unwrap_unchecked()
                 } {
                     // Guaranteed not failed
-                    for ac_word_conf in unsafe {
+                    for &(word_id, offset) in unsafe {
                         simple_ac_table
                             .ac_dedup_word_conf_list
                             .get_unchecked(ac_dedup_result.pattern().as_usize())
                     } {
-                        let word_id = ac_word_conf.0;
-
                         if not_word_id_set.contains(&word_id) {
                             continue;
                         }
@@ -519,13 +517,12 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         // bit is i32, so it will not overflow almost 100%
                         unsafe {
                             let bit = split_bit_vec
-                                .get_unchecked_mut(ac_word_conf.1)
+                                .get_unchecked_mut(offset)
                                 .get_unchecked_mut(index);
-                            *bit = bit.unchecked_add(
-                                (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
-                            );
+                            *bit =
+                                bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
 
-                            if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
+                            if offset >= word_conf.not_index && *bit > 0 {
                                 not_word_id_set.insert(word_id);
                                 word_id_set.remove(&word_id);
                                 continue;
@@ -601,13 +598,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         .unwrap_unchecked()
                 } {
                     // Guaranteed not failed
-                    for ac_word_conf in unsafe {
+                    for &(word_id, offset) in unsafe {
                         simple_ac_table
                             .ac_dedup_word_conf_list
                             .get_unchecked(ac_dedup_result.pattern().as_usize())
                     } {
-                        let word_id = ac_word_conf.0;
-
                         if not_word_id_set.contains(&word_id) {
                             continue;
                         }
@@ -628,13 +623,12 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         // bit is i32, so it will not overflow almost 100%
                         unsafe {
                             let bit = split_bit_vec
-                                .get_unchecked_mut(ac_word_conf.1)
+                                .get_unchecked_mut(offset)
                                 .get_unchecked_mut(index);
-                            *bit = bit.unchecked_add(
-                                (ac_word_conf.1 < word_conf.not_index) as i32 * -2 + 1,
-                            );
+                            *bit =
+                                bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
 
-                            if ac_word_conf.1 >= word_conf.not_index && *bit > 0 {
+                            if offset >= word_conf.not_index && *bit > 0 {
                                 not_word_id_set.insert(word_id);
                                 result_list.retain(|simple_result: &SimpleResult| {
                                     simple_result.word_id != word_id
