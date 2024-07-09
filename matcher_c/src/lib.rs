@@ -139,6 +139,92 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 ///
 /// # Arguments
 /// * `matcher` - A raw pointer to a [Matcher] instance.
+/// * `text` - A pointer to a null-terminated byte string that represents the text to be processed.
+///
+/// # Returns
+/// * A raw pointer to an [c_char] holding the result of the [process](matcher_rs::Matcher::process) function called on the [Matcher] instance, serialized using [sonic_rs::to_vec].
+///
+/// # Panics
+/// This function will panic if the `matcher` pointer is null.
+///
+/// # Description
+/// This function calls the [process](matcher_rs::Matcher::process) method on a [Matcher] instance, serializes the result using [sonic_rs::to_vec],
+/// and then converts this serialized result to a C-compatible CString.
+/// The resulting CString is then returned as a raw pointer before being returned.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::ffi::{CStr, CString};
+/// use std::str;
+///
+/// use matcher_c::*;
+/// use matcher_rs::{MatchTable, MatchTableType, SimpleMatchType};
+///
+/// let mut match_table_map = HashMap::new();
+/// match_table_map.insert(
+///     1,
+///     vec![
+///         MatchTable {
+///             table_id: 1,
+///             match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
+///             word_list: vec!["hello", "world"],
+///             exemption_simple_match_type: SimpleMatchType::None,
+///             exemption_word_list: vec![],
+///         }
+///     ]
+/// );
+/// let match_table_map_bytes = CString::new(rmp_serde::to_vec_named(&match_table_map).unwrap()).unwrap();
+///
+/// let matcher_ptr = unsafe {init_matcher(match_table_map_bytes.as_ptr())};
+///
+/// let match_text_bytes = CString::new("hello world!").unwrap();
+///
+/// assert_eq!(
+///     unsafe {
+///         str::from_utf8_unchecked(
+///             CStr::from_ptr(
+///                 matcher_process(
+///                     matcher_ptr,
+///                     match_text_bytes.as_ptr()
+///                 )
+///             ).to_bytes()
+///         )
+///     },
+///     r#"[{"match_id":1,"table_id":1,"word":"hello"},{"match_id":1,"table_id":1,"word":"world"}]"#
+/// );
+///
+/// unsafe {drop_matcher(matcher_ptr)};
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn matcher_process(
+    matcher: *mut Matcher,
+    text: *const c_char,
+) -> *mut c_char {
+    let res = unsafe {
+        CString::new(
+            sonic_rs::to_vec(
+                &matcher
+                    .as_ref()
+                    .unwrap()
+                    .process(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
+            )
+            .unwrap_unchecked(),
+        )
+        .unwrap()
+    };
+
+    res.into_raw()
+}
+
+/// # Safety
+/// This function is unsafe because it assumes that the provided `matcher` and `text` pointers are valid.
+/// The `matcher` pointer should point to a valid [Matcher] instance, and the `text` pointer should point to a
+/// null-terminated byte string.
+///
+/// # Arguments
+/// * `matcher` - A raw pointer to a [Matcher] instance.
 /// * `text` - A pointer to a null-terminated byte string that represents the text to be matched.
 ///
 /// # Returns

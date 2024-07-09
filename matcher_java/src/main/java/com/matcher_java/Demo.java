@@ -18,6 +18,8 @@ interface Matcher extends Library {
 
     boolean matcher_is_match(Pointer matcher, byte[] text_bytes);
 
+    Pointer matcher_process(Pointer matcher, byte[] text_bytes);
+
     Pointer matcher_word_match(Pointer matcher, byte[] text_bytes);
 
     void drop_matcher(Pointer matcher);

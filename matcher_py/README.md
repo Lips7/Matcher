@@ -149,7 +149,7 @@ assert not matcher.is_match("hello, word")
 assert matcher.word_match(r"hello, world")[1]
 # Perform word matching as a string
 result = matcher.word_match_as_string("hello")
-assert result == """{1:[{\"table_id\":1,\"word\":\"hello\"}]"}"""
+assert result == """{1:[{\"match_id\":1,\"table_id\":1,\"word\":\"hello\"}]"}"""
 # Perform batch processing as a dict using a list
 text_list = ["hello", "world", "hello,word"]
 batch_results = matcher.batch_word_match(text_list)

@@ -1,5 +1,6 @@
 void* init_matcher(char* match_table_map_bytes);
 bool matcher_is_match(void* matcher, char* text);
+char* matcher_process(void* matcher, char* text);
 char* matcher_word_match(void* matcher, char* text);
 void drop_matcher(void* matcher);
 

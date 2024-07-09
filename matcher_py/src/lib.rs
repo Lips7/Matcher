@@ -584,6 +584,57 @@ impl Matcher {
             .collect()
     }
 
+    /// Processes the given text and returns a list of match results.
+    ///
+    /// This method utilizes the `process` function of the [MatcherRs] instance to analyze
+    /// the input text for matches. The results are collected into a vector of [MatchResult] objects.
+    ///
+    /// # Parameters
+    /// - `self`: The [Matcher] instance.
+    /// - `text`: A string slice representing the text to be processed.
+    ///
+    /// # Returns
+    /// - `Vec<MatchResult<'_>>`: A vector containing the match results as [MatchResult] objects.
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// import msgspec
+    ///
+    /// from matcher_py import Matcher
+    /// from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchType
+    ///
+    /// msgpack_encoder = msgspec.msgpack.Encoder()
+    ///
+    /// matcher = Matcher(
+    ///     msgpack_encoder.encode(
+    ///         {
+    ///             1: [
+    ///                 MatchTable(
+    ///                     table_id=1,
+    ///                     match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
+    ///                     word_list=["hello", "world"],
+    ///                     exemption_simple_match_type=SimpleMatchType.MatchNone,
+    ///                     exemption_word_list=["word"],
+    ///                 )
+    ///             ]
+    ///         }
+    ///     )
+    /// )
+    ///
+    /// # Process the text and get the match results
+    /// result = matcher.process("hello")
+    /// print(result)  # Output: List of MatchResult objects
+    /// ```
+    #[pyo3(signature=(text))]
+    fn process(&self, text: &str) -> Vec<MatchResult<'_>> {
+        self.matcher
+            .process(text)
+            .into_iter()
+            .map(MatchResult)
+            .collect()
+    }
+
     /// Returns the word match results for the given text as a JSON string.
     ///
     /// This method checks if the input `text` is empty. If it is, the method returns an empty JSON object (`{}`)

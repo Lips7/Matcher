@@ -227,6 +227,7 @@ bench                                               fastest       │ slowest   
 - [ ] A real java package.
 - [x] Multiple Python version wheel build.
 - [ ] Customize str conv map.
+- [x] Add Matcher process function to py, c and java.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
