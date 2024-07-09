@@ -557,13 +557,13 @@ pub unsafe extern "C" fn simple_matcher_process(
 ) -> *mut c_char {
     let res = unsafe {
         CString::new(
-            sonic_rs::to_string(
+            sonic_rs::to_vec(
                 &simple_matcher
                     .as_ref()
                     .unwrap()
                     .process(str::from_utf8_unchecked(CStr::from_ptr(text).to_bytes())),
             )
-            .unwrap(),
+            .unwrap_unchecked(),
         )
         .unwrap()
     };
