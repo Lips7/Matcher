@@ -1,41 +1,11 @@
 package com.matcher_java;
 
+import com.sun.jna.Pointer;
+import java.io.IOException;
 import org.msgpack.core.MessageBufferPacker;
 import org.msgpack.core.MessagePack;
 
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-
-import java.io.IOException;
-
-interface Matcher extends Library {
-    Matcher INSTANCE = (Matcher) Native.load(
-            Matcher.class.getResource("/matcher_c.so").getPath(),
-            Matcher.class);
-
-    Pointer init_matcher(byte[] match_table_map_bytes);
-
-    boolean matcher_is_match(Pointer matcher, byte[] text_bytes);
-
-    Pointer matcher_process(Pointer matcher, byte[] text_bytes);
-
-    Pointer matcher_word_match(Pointer matcher, byte[] text_bytes);
-
-    void drop_matcher(Pointer matcher);
-
-    Pointer init_simple_matcher(byte[] simple_match_type_word_map_bytes);
-
-    boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
-
-    Pointer simple_matcher_process(Pointer simple_matcher, byte[] text_bytes);
-
-    void drop_simple_matcher(Pointer simple_matcher);
-
-    void drop_string(Pointer ptr);
-}
-
-public class Demo {
+public class MatcherJavaExample {
     public static void main(String[] args) throws IOException {
         System.out.println("Simple Matcher Test");
         simple_matcher_process_demo();
@@ -57,7 +27,7 @@ public class Demo {
 
         byte[] simple_match_type_word_map_bytes = packer.toByteArray();
 
-        Matcher instance = Matcher.INSTANCE;
+        MatcherJava instance = MatcherJava.INSTANCE;
 
         Pointer simple_matcher = instance.init_simple_matcher(simple_match_type_word_map_bytes);
 
@@ -99,7 +69,7 @@ public class Demo {
         byte[] match_table_map_dict_bytes = packer.toByteArray();
         packer.close();
 
-        Matcher instance = Matcher.INSTANCE;
+        MatcherJava instance = MatcherJava.INSTANCE;
 
         Pointer matcher = instance.init_matcher(match_table_map_dict_bytes);
 
