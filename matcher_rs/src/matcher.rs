@@ -395,7 +395,7 @@ impl Matcher {
     /// If the provided text is empty, the function returns an empty [HashMap].
     pub fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult>> {
         if !text.is_empty() {
-            let mut match_result_dict = HashMap::default();
+            let mut match_result_dict = HashMap::new();
             let mut failed_match_table_id_set = IntSet::default();
 
             if let Some(regex_matcher) = &self.regex_matcher {
@@ -466,7 +466,7 @@ impl Matcher {
             match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
             match_result_dict
         } else {
-            HashMap::default()
+            HashMap::new()
         }
     }
 

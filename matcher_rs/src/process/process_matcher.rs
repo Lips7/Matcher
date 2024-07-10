@@ -376,7 +376,7 @@ pub fn get_process_matcher(
                 }),
             ),
             SimpleMatchType::WordDelete => {
-                let mut process_dict = AHashMap::new();
+                let mut process_dict = AHashMap::default();
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                 process_dict.retain(|&key, &mut value| key != value);
                 let process_list = process_dict
@@ -396,7 +396,7 @@ pub fn get_process_matcher(
                 )
             }
             SimpleMatchType::TextDelete => {
-                let mut process_dict = AHashMap::new();
+                let mut process_dict = AHashMap::default();
                 process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                 process_dict.retain(|&key, &mut value| key != value);
