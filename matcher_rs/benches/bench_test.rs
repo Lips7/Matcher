@@ -29,14 +29,10 @@ fn bench_test_2(bencher: Bencher) {
 
     bencher.bench(|| {
         let mut _s = 0;
-        for x in ac.find_overlapping_iter(black_box(
-            "12321421asddaw你我",
-        )) {
+        for x in ac.find_overlapping_iter(black_box("12321421asddaw你我")) {
             _s += x.pattern().as_usize();
         }
-        for x in ac.find_overlapping_iter(black_box(
-            "12321421asddaw你我",
-        )) {
+        for x in ac.find_overlapping_iter(black_box("12321421asddaw你我")) {
             _s += x.pattern().as_usize();
         }
     })
