@@ -228,6 +228,7 @@ bench                                               fastest       │ slowest   
 - [x] Multiple Python version wheel build.
 - [ ] Customize str conv map.
 - [x] Add Matcher process function to py, c and java.
+- [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
