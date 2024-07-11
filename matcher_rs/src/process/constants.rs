@@ -5,7 +5,6 @@ pub mod runtime_build_feature {
     pub const NUM_NORM: &str = include_str!("../../str_conv/NUM-NORM.txt");
     pub const NORM: &str = include_str!("../../str_conv/NORM.txt");
     pub const PINYIN: &str = include_str!("../../str_conv/PINYIN.txt");
-    pub const PINYIN_CHAR: &str = include_str!("../../str_conv/PINYIN-CHAR.txt");
 
     pub const WHITE_SPACE: &[&str] = &[
         "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}",
