@@ -675,13 +675,13 @@ pub fn reduce_text_process_emit<'a>(
 //     simple_match_type_list: &[SimpleMatchType],
 //     text: &'a str,
 // ) -> (IntMap<SimpleMatchType, ArrayVec<[usize; 8]>>, ArrayVec<[Cow<'a, str>; 8]>) {
-//     let mut simple_match_type_indices_map = IntMap::with_capacity(simple_match_type_list.len());
+//     let mut simple_match_type_indices_map = IntMap::with_capacity(8);
 //     let mut simple_match_type_hit_map = IntMap::with_capacity(8);
 //     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
 //     processed_text_list.push(Cow::Borrowed(text));
 
 //     for simple_match_type in simple_match_type_list {
-//         let mut current_text = Cow::Borrowed(text);
+//         let mut current_text = text;
 //         let mut current_indice = 0;
 
 //         for simple_match_type_bit in simple_match_type.iter() {
@@ -690,17 +690,8 @@ pub fn reduce_text_process_emit<'a>(
 
 //             match (simple_match_type_bit, process_matcher) {
 //                 (SimpleMatchType::None, _) => {}
-//                 (SimpleMatchType::Fanjian | SimpleMatchType::Normalize, pm) => {
-//                     match pm.replace_all(current_text.as_ref(), process_replace_list) {
-//                         (true, Cow::Owned(pt)) => {
-//                             *tmp_processed_text = Cow::Owned(pt);
-//                         }
-//                         (false, _) => {}
-//                         (_, _) => unreachable!(),
-//                     }
-//                 }
 //                 (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
-//                     match pm.delete_all(tmp_processed_text.as_ref()) {
+//                     match pm.delete_all(current_text.as_ref()) {
 //                         (true, Cow::Owned(pt)) => {
 //                             processed_text_list.push(Cow::Owned(pt));
 //                         }
@@ -708,7 +699,7 @@ pub fn reduce_text_process_emit<'a>(
 //                         (_, _) => unreachable!(),
 //                     }
 //                 }
-//                 (_, pm) => match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+//                 (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
 //                     (true, Cow::Owned(pt)) => {
 //                         processed_text_list.push(Cow::Owned(pt));
 //                     }
