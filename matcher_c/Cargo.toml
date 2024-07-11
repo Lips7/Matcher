@@ -18,6 +18,6 @@ name = "matcher_c"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-matcher_rs = { path = "../matcher_rs", version = "0.4.3" }
+matcher_rs = { path = "../matcher_rs", version = "0.4.4" }
 rmp-serde = "1.3.0"
 sonic-rs = "0.3.8"
