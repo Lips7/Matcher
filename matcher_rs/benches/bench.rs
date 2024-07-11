@@ -150,6 +150,8 @@ mod build_cn {
             SimpleMatchType::Fanjian,
             SimpleMatchType::DeleteNormalize,
             SimpleMatchType::FanjianDeleteNormalize,
+            SimpleMatchType::Delete,
+            SimpleMatchType::Normalize,
         ] {
             let simple_word_map = build_simple_word_map(
                 "cn",
@@ -329,6 +331,8 @@ mod search_cn {
             SimpleMatchType::Fanjian,
             SimpleMatchType::DeleteNormalize,
             SimpleMatchType::FanjianDeleteNormalize,
+            SimpleMatchType::Delete,
+            SimpleMatchType::Normalize,
         ] {
             let simple_word_map = build_simple_word_map(
                 "cn",

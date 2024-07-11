@@ -359,7 +359,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Returns
     ///
-    /// - `Vec<SimResult>`: A vector containing `SimResult` instances for each word that meets
+    /// - [`Vec<SimResult>`]: A vector containing `SimResult` instances for each word that meets
     ///   the similarity threshold specified in the corresponding similarity table.
     ///
     /// # Example

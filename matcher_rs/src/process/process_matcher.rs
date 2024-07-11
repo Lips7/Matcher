@@ -13,7 +13,7 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 use lazy_static::lazy_static;
-use nohash_hasher::IntMap;
+use nohash_hasher::{IntMap, IntSet};
 use parking_lot::RwLock;
 use tinyvec::ArrayVec;
 
@@ -469,7 +469,7 @@ pub fn get_process_matcher(
 ///
 /// # Returns
 ///
-/// * `Result<Cow<'_, str>, &'static str>` - The function returns a `Cow` (Copy on Write) string containing
+/// * [`Result<Cow<'_, str>, &'static str>`] - The function returns a `Cow` (Copy on Write) string containing
 ///   the processed text if the transformation is successful or an error message if more than one bit is set.
 ///
 /// # Errors
@@ -541,7 +541,7 @@ pub fn text_process(
 ///
 /// # Returns
 ///
-/// * `ArrayVec<[Cow<'a, str>; 8]>` - A fixed-size vector containing the processed versions of the input text.
+/// * [`ArrayVec<\[Cow<'a, str>; 8\]>`] - A fixed-size vector containing the processed versions of the input text.
 ///
 /// # Detailed Processing:
 ///
@@ -607,7 +607,7 @@ pub fn reduce_text_process<'a>(
 ///
 /// # Returns
 ///
-/// * `ArrayVec<[Cow<'a, str>; 8]>` - A fixed-size vector containing the processed versions of the input text.
+/// * [`ArrayVec<\[Cow<'a, str>; 8\]>`] - A fixed-size vector containing the processed versions of the input text.
 ///
 /// # Detailed Processing:
 ///
@@ -670,108 +670,229 @@ pub fn reduce_text_process_emit<'a>(
     processed_text_list
 }
 
-// struct SimpleMatchTypeBitNode {
-//     simple_match_type_bit: SimpleMatchType,
-//     is_matched: bool,
-//     processed_text_index: usize,
-//     parent: usize,
-//     children: ArrayVec<[usize; 8]>,
-// }
+/// A node representing a bit in the [SimpleMatchType] and its associated processed text index.
+///
+/// `SimpleMatchTypeBitNode` is used to create a hierarchy of match type bits,
+/// allowing each node to have children corresponding to subsequent match type bits.
+///
+/// # Fields
+///
+/// * `simple_match_type_bit` - A bit from the [SimpleMatchType] that defines the specific text transformation rule.
+/// * `processed_text_index` - An index referring to the position of the processed text in a list.
+/// * `children` - An [ArrayVec] containing indices of children `SimpleMatchTypeBitNode`, up to a maximum of 8.
+///
+/// This structure is pivotal in organizing the transformation pipeline for text processing, where each bit in
+/// the [SimpleMatchType] can lead to subsequent transformations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct SimpleMatchTypeBitNode {
+    simple_match_type_bit: SimpleMatchType,
+    processed_text_index: usize,
+    children: ArrayVec<[usize; 8]>,
+}
 
-// #[inline(always)]
-// pub fn reduce_text_process_emit_with_cache<'a>(
+type SimpleMatchTypeIndexSetMap = IntMap<SimpleMatchType, IntSet<usize>>;
+
+// pub fn build_simple_match_type_bit_node_list(
 //     simple_match_type_list: &[SimpleMatchType],
-//     text: &'a str,
-// ) -> (
-//     IntMap<SimpleMatchType, ArrayVec<[usize; 8]>>,
-//     ArrayVec<[Cow<'a, str>; 8]>,
-// ) {
+// ) -> Vec<SimpleMatchTypeBitNode> {
 //     let mut simple_match_type_bit_node_list = Vec::new();
 //     simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
 //         simple_match_type_bit: SimpleMatchType::None,
-//         is_matched: false,
 //         processed_text_index: 0,
-//         parent: 0,
 //         children: ArrayVec::new(),
 //     });
-
-//     let mut simple_match_type_index_list_map = IntMap::with_capacity(8);
-//     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
-//     processed_text_list.push(Cow::Borrowed(text));
-
-//     for simple_match_type in simple_match_type_list {
-//         let mut current_text = text;
-//         let mut current_index = 0;
+//     for simple_match_type in simple_match_type_list.iter() {
 //         let mut current_node_index = 0;
-
-//         let mut parent_index = 0;
-
 //         for simple_match_type_bit in simple_match_type.iter() {
-//             let mut found = false;
-//             let current_node =
-//                 unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) };
-//             for child_index in current_node.children {
+//             let mut is_found = false;
+//             let current_node = simple_match_type_bit_node_list[current_node_index];
+//             for child_node_index in current_node.children {
 //                 if simple_match_type_bit
-//                     == unsafe { simple_match_type_bit_node_list.get_unchecked(child_index) }
-//                         .simple_match_type_bit
+//                     == simple_match_type_bit_node_list[child_node_index].simple_match_type_bit
 //                 {
-//                     current_node_index = child_index;
-//                     found = true;
+//                     current_node_index = child_node_index;
+//                     is_found = true;
 //                     break;
 //                 }
 //             }
 
-//             if found {
-//                 let index_list: &mut ArrayVec<[usize; 8]> = unsafe {
-//                     simple_match_type_index_list_map
-//                         .get_mut(simple_match_type)
-//                         .unwrap_unchecked()
-//                 };
-//                 index_list.push(
-//                     unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
-//                         .processed_text_index,
-//                 );
-//             } else {
-//                 let cached_result = get_process_matcher(simple_match_type_bit);
-//                 let (process_replace_list, process_matcher) = cached_result.as_ref();
-
-//                 match (simple_match_type_bit, process_matcher) {
-//                     (SimpleMatchType::None, _) => {}
-//                     (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
-//                         match pm.delete_all(current_text.as_ref()) {
-//                             (true, Cow::Owned(pt)) => {
-//                                 processed_text_list.push(Cow::Owned(pt));
-//                             }
-//                             (false, _) => {}
-//                             (_, _) => unreachable!(),
-//                         }
-//                     }
-//                     (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
-//                         (true, Cow::Owned(pt)) => {
-//                             processed_text_list.push(Cow::Owned(pt));
-//                         }
-//                         (false, _) => {}
-//                         (_, _) => unreachable!(),
-//                     },
-//                 }
-
-//                 let new_index = simple_match_type_bit_node_list.len();
+//             if !is_found {
 //                 simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
 //                     simple_match_type_bit,
-//                     is_matched: false,
 //                     processed_text_index: 0,
-//                     parent: current_node_index,
 //                     children: ArrayVec::new(),
 //                 });
-//                 let mut children = unsafe {
-//                     simple_match_type_bit_node_list.get_unchecked_mut(current_node_index)
-//                 }
-//                 .children;
-//                 children.push(new_index);
-//                 current_node_index = new_index;
+//                 let new_node_index = simple_match_type_bit_node_list.len() - 1;
+//                 simple_match_type_bit_node_list[current_node_index]
+//                     .children
+//                     .push(new_node_index);
+//                 current_node_index = new_node_index;
 //             }
 //         }
 //     }
-
-//     (simple_match_type_index_list_map, processed_text_list)
+//     simple_match_type_bit_node_list
 // }
+
+/// Reduces the text processing pipeline and maps each [SimpleMatchType] to the indices
+/// of its associated processed texts.
+///
+/// This function processes each [SimpleMatchType] in the given list, applies text
+/// transformations according to the match type bits, and maintains the hierarchy of
+/// transformations in a trie-like structure of nodes. It outputs a map of match types
+/// to sets of processed text indices, and the list of all processed texts.
+///
+/// # Parameters
+///
+/// * `simple_match_type_list`: A slice of [SimpleMatchType] representing the match types
+///   to be processed.
+/// * `text`: A string slice holding the initial text to be transformed.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// * [`IntMap<SimpleMatchType, IntSet<usize>>`]: A map of [SimpleMatchType] to the set of
+///   indices in the processed text list where the transformation results for that type
+///   can be found.
+/// * [`ArrayVec<\[Cow<'a, str>; 8\]>`]: A list of processed texts corresponding to the applied
+///   transformations.
+///
+/// # Safety
+///
+/// This function makes use of some unsafe code to access and manipulate internal data
+/// structures efficiently. Care should be taken when modifying this function to avoid
+/// introducing undefined behavior.
+#[inline(always)]
+pub fn reduce_text_process_emit_with_list<'a>(
+    simple_match_type_list: &[SimpleMatchType],
+    text: &'a str,
+) -> (
+    SimpleMatchTypeIndexSetMap,
+    ArrayVec<[Cow<'a, str>; 8]>,
+) {
+
+    let mut simple_match_type_bit_node_list = Vec::new();
+    simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
+        simple_match_type_bit: SimpleMatchType::None,
+        processed_text_index: 0,
+        children: ArrayVec::new(),
+    });
+
+    let mut simple_match_type_index_list_map = IntMap::with_capacity(8);
+    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+    processed_text_list.push(Cow::Borrowed(text));
+
+    for simple_match_type in simple_match_type_list.iter() {
+        let mut current_text = text;
+        let mut current_index = 0;
+        let mut current_node_index = 0;
+
+        for simple_match_type_bit in simple_match_type.iter() {
+            let mut is_found = false;
+            let current_node =
+                unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) };
+            for child_node_index in current_node.children {
+                if simple_match_type_bit
+                    == unsafe { simple_match_type_bit_node_list.get_unchecked(child_node_index) }
+                        .simple_match_type_bit
+                {
+                    current_node_index = child_node_index;
+                    is_found = true;
+                    break;
+                }
+            }
+
+            if !is_found {
+                let cached_result = get_process_matcher(simple_match_type_bit);
+                let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+                match (simple_match_type_bit, process_matcher) {
+                    (SimpleMatchType::None, _) => {}
+                    (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+                        match pm.delete_all(current_text.as_ref()) {
+                            (true, Cow::Owned(pt)) => {
+                                processed_text_list.push(Cow::Owned(pt));
+                                current_index = processed_text_list.len() - 1;
+                            }
+                            (false, _) => {
+                                current_index = unsafe {
+                                    simple_match_type_bit_node_list
+                                        .get_unchecked(current_node_index)
+                                }
+                                .processed_text_index;
+                            }
+                            (_, _) => unreachable!(),
+                        }
+                    }
+                    (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
+                        (true, Cow::Owned(pt)) => {
+                            processed_text_list.push(Cow::Owned(pt));
+                            current_index = processed_text_list.len() - 1;
+                        }
+                        (false, _) => {
+                            current_index = unsafe {
+                                simple_match_type_bit_node_list.get_unchecked(current_node_index)
+                            }
+                            .processed_text_index;
+                        }
+                        (_, _) => unreachable!(),
+                    },
+                }
+
+                if simple_match_type_bit != SimpleMatchType::None {
+                    simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
+                        simple_match_type_bit,
+                        processed_text_index: current_index,
+                        children: ArrayVec::new(),
+                    });
+                    let new_node_index = simple_match_type_bit_node_list.len() - 1;
+                    let current_node = unsafe {
+                        simple_match_type_bit_node_list.get_unchecked_mut(current_node_index)
+                    };
+                    current_node.children.push(new_node_index);
+                    current_node_index = new_node_index;
+                }
+            } else {
+                current_index =
+                    unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
+                        .processed_text_index;
+            }
+
+            let index_list = simple_match_type_index_list_map
+                .entry(*simple_match_type)
+                .or_insert(IntSet::default());
+            index_list.insert(
+                unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
+                    .processed_text_index,
+            );
+
+            current_text = unsafe { processed_text_list.get_unchecked(current_index) }.as_ref();
+        }
+    }
+
+    (simple_match_type_index_list_map, processed_text_list)
+}
+
+#[cfg(test)]
+mod test_text_process {
+    use super::*;
+
+    #[test]
+    fn test_reduce_text_process_emit_with_list() {
+        let simple_match_type_list = vec![
+            SimpleMatchType::Fanjian | SimpleMatchType::TextDelete,
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::Normalize,
+            SimpleMatchType::Fanjian | SimpleMatchType::Normalize,
+            SimpleMatchType::TextDelete,
+            SimpleMatchType::TextDelete | SimpleMatchType::Normalize,
+        ];
+        let text = "test爽-︻";
+
+        let (simple_match_type_index_list_map, processed_text_list) =
+            reduce_text_process_emit_with_list(&simple_match_type_list, text);
+        println!(
+            "{:?}, {:?}",
+            simple_match_type_index_list_map, processed_text_list
+        );
+    }
+}

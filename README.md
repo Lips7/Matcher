@@ -195,7 +195,7 @@ bench                                               fastest       │ slowest   
   - [x] See https://github.com/Lips7/aho-corasick.
 - [ ] Optimize NOT logic word-wise.
 - [x] Optimize regex matcher using RegexSet.
-- [ ] Optimize simple matcher when multiple simple match types are used.
+- [x] Optimize simple matcher when multiple simple match types are used.
   1. Consider if there are multiple simple match types
    * None
    * Fanjian

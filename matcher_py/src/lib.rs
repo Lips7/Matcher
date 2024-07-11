@@ -138,7 +138,7 @@ impl<'a> IntoPy<PyObject> for MatchResult<'a> {
 /// - `text` (&str): A string slice containing the text to be processed.
 ///
 /// # Returns
-/// - `PyResult<Cow<'_, str>>`: On success, returns a `Cow` string representing the processed text.
+/// - [`PyResult<Cow<'_, str>>`]: On success, returns a `Cow` string representing the processed text.
 ///   On failure, returns a Python exception detailing the error.
 ///
 /// # Errors
@@ -167,7 +167,7 @@ fn text_process(simple_match_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
 /// - `text` (&str): A string slice containing the text to be processed.
 ///
 /// # Returns
-/// - `Vec<Cow<'_, str>>`: A vector of `Cow` strings representing the reduced text fragments.
+/// - [`Vec<Cow<'_, str>>`]: A vector of `Cow` strings representing the reduced text fragments.
 ///
 /// # Errors
 /// This function will default to `SimpleMatchType::None` if the provided byte value does not
@@ -537,7 +537,7 @@ impl Matcher {
     /// - `text`: A string slice representing the text to be checked for matches.
     ///
     /// # Returns
-    /// - `HashMap<u32, Vec<MatchResult<'_>>>`: A dictionary where each key is a match ID (u32),
+    /// - [`HashMap<u32, Vec<MatchResult<'_>>>`]: A dictionary where each key is a match ID (u32),
     ///   and each value is a list of [MatchResult] objects corresponding to the matches found.
     ///
     /// # Example
@@ -594,7 +594,7 @@ impl Matcher {
     /// - `text`: A string slice representing the text to be processed.
     ///
     /// # Returns
-    /// - `Vec<MatchResult<'_>>`: A vector containing the match results as [MatchResult] objects.
+    /// - [`Vec<MatchResult<'_>>`]: A vector containing the match results as [MatchResult] objects.
     ///
     /// # Example
     ///
@@ -697,7 +697,7 @@ impl Matcher {
     /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `PyResult<Vec<HashMap<u32, Vec<MatchResult<'_>>>>>`: A result containing a
+    /// - [`PyResult<Vec<HashMap<u32, Vec<MatchResult<'_>>>>>`]: A result containing a
     ///   vector of dictionaries. Each dictionary has match IDs (u32) as keys and lists
     ///   of [MatchResult] objects as values.
     ///
@@ -759,7 +759,7 @@ impl Matcher {
     /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `PyResult<Vec<String>>`: A result containing a vector of JSON strings. Each string
+    /// - [`PyResult<Vec<String>>`]: A result containing a vector of JSON strings. Each string
     ///   represents the match results for the corresponding input text.
     ///
     /// # Example
@@ -820,7 +820,7 @@ impl Matcher {
     /// - `inplace`: A boolean flag indicating whether to modify the original array in-place.
     ///
     /// # Returns
-    /// - `Option<Py<PyArray1<PyObject>>>`: If `inplace` is `false`, a new `PyArray1` containing
+    /// - [`Option<Py<PyArray1<PyObject>>>`]: If `inplace` is `false`, a new `PyArray1` containing
     ///   the word match results for each text as Python objects. If `inplace` is `true`, returns
     ///   [None] as the original array is modified in-place.
     ///
@@ -908,7 +908,7 @@ impl Matcher {
     /// - `inplace`: A boolean flag indicating whether to modify the original array in-place.
     ///
     /// # Returns
-    /// - `Option<Py<PyArray1<PyObject>>>`: If `inplace` is `false`, a new `PyArray1` containing
+    /// - [`Option<Py<PyArray1<PyObject>>>`]: If `inplace` is `false`, a new `PyArray1` containing
     ///   the word match results as strings for each text as Python objects. If `inplace` is `true`,
     ///   returns [None] as the original array is modified in-place.
     ///
@@ -1250,7 +1250,7 @@ impl SimpleMatcher {
     /// - `text`: A reference to a string slice that will be processed.
     ///
     /// # Returns
-    /// - `Vec<SimpleResult>`: A vector of [SimpleResult] instances representing the results of the simple processing.
+    /// - [`Vec<SimpleResult>`]: A vector of [SimpleResult] instances representing the results of the simple processing.
     ///
     /// # Example
     ///
@@ -1297,7 +1297,7 @@ impl SimpleMatcher {
     /// - `text_array`: A reference to a [PyList] containing texts to be processed.
     ///
     /// # Returns
-    /// - `PyResult<Vec<Vec<SimpleResult>>>`: A vector of vectors containing the simple processing results
+    /// - [`PyResult<Vec<Vec<SimpleResult>>>`]: A vector of vectors containing the simple processing results
     ///   for each text as vectors of [SimpleResult] instances.
     ///
     /// # Example
@@ -1356,7 +1356,7 @@ impl SimpleMatcher {
     ///   in-place. Defaults to `false`.
     ///
     /// # Returns
-    /// - `Option<Py<PyArray1<PyObject>>>`: Returns `None` if `inplace` is `true`.
+    /// - [`Option<Py<PyArray1<PyObject>>>`]: Returns `None` if `inplace` is `true`.
     ///   Otherwise, returns a new NumPy array with the processed results.
     ///
     /// # Example

@@ -41,7 +41,7 @@ pub enum RegexMatchType {
 /// * `table_id` - A unique identifier for the regex table. This field is used to distinguish between different regex tables.
 /// * `match_id` - An identifier that corresponds to the specific match operation associated with this regex table. This helps in tracking and categorizing match results.
 /// * `regex_match_type` - The type of regex match algorithm being used, represented by the [RegexMatchType] enum. This field defines the matching strategy applied by the regex patterns in the table.
-/// * `word_list` - A reference to a vector of string slices (`&'a Vec<&'a str>`) that represents the list of words or patterns that the regex in this table aims to match against. This collection allows the regex operations to process and match text efficiently.
+/// * `word_list` - A reference to a vector of string slices (&'a [`Vec<&'a str>`]) that represents the list of words or patterns that the regex in this table aims to match against. This collection allows the regex operations to process and match text efficiently.
 ///
 /// # Example
 ///
@@ -452,7 +452,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Returns
     ///
-    /// * `Vec<RegexResult<'a>>` - A vector containing the results of regex matches. Each result includes
+    /// * [`Vec<RegexResult<'a>>`] - A vector containing the results of regex matches. Each result includes
     ///   the matched word, table ID, and match ID.
     ///
     /// # Match Processing
