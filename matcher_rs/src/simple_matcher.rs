@@ -505,7 +505,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let word_conf =
                             unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
-                        let split_bit_vec =
+                        let split_bit_matrix =
                             word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                                 word_conf
                                     .split_bit
@@ -516,7 +516,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
                         // bit is i32, so it will not overflow almost 100%
                         unsafe {
-                            let bit = split_bit_vec
+                            let bit = split_bit_matrix
                                 .get_unchecked_mut(offset)
                                 .get_unchecked_mut(index);
                             *bit =
@@ -528,9 +528,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                                 continue;
                             }
 
-                            if split_bit_vec
+                            if split_bit_matrix
                                 .iter()
-                                .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
+                                .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
                             {
                                 word_id_set.insert(word_id);
                             }
@@ -611,7 +611,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let word_conf =
                             unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
-                        let split_bit_vec =
+                        let split_bit_matrix =
                             word_id_split_bit_map.entry(word_id).or_insert_with(|| {
                                 word_conf
                                     .split_bit
@@ -622,7 +622,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
                         // bit is i32, so it will not overflow almost 100%
                         unsafe {
-                            let bit = split_bit_vec
+                            let bit = split_bit_matrix
                                 .get_unchecked_mut(offset)
                                 .get_unchecked_mut(index);
                             *bit =
@@ -636,10 +636,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                                 continue;
                             }
 
-                            if split_bit_vec
-                                .iter()
-                                .all(|bit_vec| bit_vec.iter().any(|&bit| bit <= 0))
-                            {
+                            if split_bit_matrix.iter().all(|split_bit_vec: &Vec<i32>| {
+                                split_bit_vec.iter().any(|&bit| bit <= 0)
+                            }) {
                                 result_list.push(SimpleResult {
                                     word_id,
                                     word: Cow::Borrowed(&word_conf.word),
