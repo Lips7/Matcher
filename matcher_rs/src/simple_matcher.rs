@@ -581,7 +581,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             return Vec::new();
         }
 
-        let mut result_list = Vec::new();
         let mut word_id_split_bit_map = IntMap::default();
         let mut not_word_id_set = IntSet::default();
 
@@ -620,29 +619,17 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                                     .collect::<Vec<Vec<i32>>>()
                             });
 
-                        // bit is i32, so it will not overflow almost 100%
+                        // split_bit is i32, so it will not overflow almost 100%
                         unsafe {
-                            let bit = split_bit_matrix
+                            let split_bit = split_bit_matrix
                                 .get_unchecked_mut(offset)
                                 .get_unchecked_mut(index);
-                            *bit =
-                                bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+                            *split_bit = split_bit
+                                .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
 
-                            if offset >= word_conf.not_index && *bit > 0 {
+                            if offset >= word_conf.not_index && *split_bit > 0 {
                                 not_word_id_set.insert(word_id);
-                                result_list.retain(|simple_result: &SimpleResult| {
-                                    simple_result.word_id != word_id
-                                });
-                                continue;
-                            }
-
-                            if split_bit_matrix.iter().all(|split_bit_vec: &Vec<i32>| {
-                                split_bit_vec.iter().any(|&bit| bit <= 0)
-                            }) {
-                                result_list.push(SimpleResult {
-                                    word_id,
-                                    word: Cow::Borrowed(&word_conf.word),
-                                })
+                                word_id_split_bit_map.remove(&word_id);
                             }
                         };
                     }
@@ -650,6 +637,21 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             }
         }
 
-        result_list
+        word_id_split_bit_map
+            .into_iter()
+            .filter_map(|(word_id, split_bit_matrix)| {
+                split_bit_matrix
+                    .into_iter()
+                    .all(|split_bit_vec| split_bit_vec.into_iter().any(|split_bit| split_bit <= 0))
+                    .then_some(SimpleResult {
+                        word_id,
+                        word: Cow::Borrowed(
+                            // Guaranteed not failed
+                            &unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() }
+                                .word,
+                        ),
+                    })
+            })
+            .collect()
     }
 }

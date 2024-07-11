@@ -12,5 +12,5 @@
 -e file:.
 msgspec==0.18.6
     # via matcher-py
-numpy==1.24.4
+numpy==2.0.0
     # via matcher-py
