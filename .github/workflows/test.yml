@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/matcher_c.so
-          cp ./target/${{ matrix.platform.target }}/release/*matcher_py.${{ matrix.platform.suffix }} matcher_py/matcher_py/matcher_py.so
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_py.${{ matrix.platform.suffix }} matcher_py/python/matcher_py/matcher_py.so
       - name: Install Python
         uses: actions/setup-python@v5
         with:
