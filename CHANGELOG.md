@@ -1,10 +1,13 @@
 # Changelog
 
-## 0.4.4 - Prerelease
+## 0.4.4 - 2024-07-09
 ### Changed
 
 - Merge PINYIN and PINYINCHAR process matcher build.
 - Add `process` function to matcher_py/c/java.
+- Fix simple matcher process function issue.
+- Refactor matcher_py file structure, use `rye` to manage matcher_py.
+- Delete `println!` in matcher_c.
 
 ## 0.4.3 - 2024-07-08
 ### Changed
