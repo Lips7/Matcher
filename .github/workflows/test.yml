@@ -68,8 +68,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
-      - name: Install pytest
-        run: pip install -U pytest msgspec numpy typing_extensions maturin
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -80,8 +78,10 @@ jobs:
           sccache: 'true'
           rust-toolchain: nightly
           working-directory: matcher_py
-      - name: Install wheels
-        run: pip install ./target/wheels/*.whl
       - name: Python Test
+        shell: bash
         if: matrix.platform.runner == 'ubuntu-latest'
-        run: pytest matcher_py/test
+        run: |
+          pip install -U pytest msgspec numpy typing_extensions
+          pip install ./target/wheels/*.whl
+          pytest matcher_py/test
