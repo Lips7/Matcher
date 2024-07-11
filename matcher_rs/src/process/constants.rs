@@ -2,7 +2,6 @@
 pub mod runtime_build_feature {
     pub const FANJIAN: &str = include_str!("../../str_conv/FANJIAN.txt");
     pub const TEXT_DELETE: &str = include_str!("../../str_conv/TEXT-DELETE.txt");
-    pub const SYMBOL_NORM: &str = include_str!("../../str_conv/SYMBOL-NORM.txt");
     pub const NUM_NORM: &str = include_str!("../../str_conv/NUM-NORM.txt");
     pub const NORM: &str = include_str!("../../str_conv/NORM.txt");
     pub const PINYIN: &str = include_str!("../../str_conv/PINYIN.txt");
@@ -35,17 +34,13 @@ pub mod prebuilt_feature {
     ));
     pub const PINYIN_PROCESS_REPLACE_LIST_STR: &str =
         include_str!(concat!(env!("OUT_DIR"), "/pinyin_process_replace_list.bin"));
-    pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/pinyin_daachorse_charwise_u32_matcher.bin"
-    ));
     pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
         env!("OUT_DIR"),
         "/pinyinchar_process_replace_list.bin"
     ));
-    pub const PINYINCHAR_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+    pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/pinyinchar_daachorse_charwise_u32_matcher.bin"
+        "/pinyin_daachorse_charwise_u32_matcher.bin"
     ));
 
     pub const TEXT_DELETE: &str = include_str!("../../str_conv/TEXT-DELETE.txt");

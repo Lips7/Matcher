@@ -235,7 +235,7 @@ pub fn get_process_matcher(
                 process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
             }
             SimpleMatchType::Normalize => {
-                for str_conv_map in [SYMBOL_NORM, NORM, NUM_NORM] {
+                for str_conv_map in [NORM, NUM_NORM] {
                     process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
@@ -257,12 +257,11 @@ pub fn get_process_matcher(
             }
 
             SimpleMatchType::PinYinChar => {
-                process_dict.extend(PINYIN_CHAR.trim().lines().map(|pair_str| {
+                process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
-                        // Each line in the conversion data corresponds to a key-value pair.
                         pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
+                        pair_str_split.next().unwrap().trim_matches('␀'),
                     )
                 }));
             }
@@ -442,7 +441,7 @@ pub fn get_process_matcher(
                 // Guaranteed not failed
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                        PINYINCHAR_PROCESS_MATCHER_BYTES,
+                        PINYIN_PROCESS_MATCHER_BYTES,
                     )
                     .0
                 }),
@@ -670,3 +669,55 @@ pub fn reduce_text_process_emit<'a>(
 
     processed_text_list
 }
+
+// #[inline(always)]
+// pub fn reduce_text_process_emit_with_cache<'a>(
+//     simple_match_type_list: &[SimpleMatchType],
+//     text: &'a str,
+// ) -> (IntMap<SimpleMatchType, ArrayVec<[usize; 8]>>, ArrayVec<[Cow<'a, str>; 8]>) {
+//     let mut simple_match_type_indices_map = IntMap::with_capacity(simple_match_type_list.len());
+//     let mut simple_match_type_hit_map = IntMap::with_capacity(8);
+//     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+//     processed_text_list.push(Cow::Borrowed(text));
+
+//     for simple_match_type in simple_match_type_list {
+//         let mut current_text = Cow::Borrowed(text);
+//         let mut current_indice = 0;
+
+//         for simple_match_type_bit in simple_match_type.iter() {
+//             let cached_result = get_process_matcher(simple_match_type_bit);
+//             let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+//             match (simple_match_type_bit, process_matcher) {
+//                 (SimpleMatchType::None, _) => {}
+//                 (SimpleMatchType::Fanjian | SimpleMatchType::Normalize, pm) => {
+//                     match pm.replace_all(current_text.as_ref(), process_replace_list) {
+//                         (true, Cow::Owned(pt)) => {
+//                             *tmp_processed_text = Cow::Owned(pt);
+//                         }
+//                         (false, _) => {}
+//                         (_, _) => unreachable!(),
+//                     }
+//                 }
+//                 (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+//                     match pm.delete_all(tmp_processed_text.as_ref()) {
+//                         (true, Cow::Owned(pt)) => {
+//                             processed_text_list.push(Cow::Owned(pt));
+//                         }
+//                         (false, _) => {}
+//                         (_, _) => unreachable!(),
+//                     }
+//                 }
+//                 (_, pm) => match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
+//                     (true, Cow::Owned(pt)) => {
+//                         processed_text_list.push(Cow::Owned(pt));
+//                     }
+//                     (false, _) => {}
+//                     (_, _) => unreachable!(),
+//                 },
+//             }
+//         }
+//     }
+
+//     (simple_match_type_indices_map, processed_text_list)
+// }

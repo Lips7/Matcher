@@ -17,21 +17,18 @@ fn main() -> Result<()> {
         };
 
         const FANJIAN: &str = include_str!("./str_conv/FANJIAN.txt");
-        const SYMBOL_NORM: &str = include_str!("./str_conv/SYMBOL-NORM.txt");
         const NUM_NORM: &str = include_str!("./str_conv/NUM-NORM.txt");
         const NORM: &str = include_str!("./str_conv/NORM.txt");
         const PINYIN: &str = include_str!("./str_conv/PINYIN.txt");
-        const PINYIN_CHAR: &str = include_str!("./str_conv/PINYIN-CHAR.txt");
 
         let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
             ("fanjian", vec![FANJIAN]),
-            ("normalize", vec![SYMBOL_NORM, NORM, NUM_NORM]),
+            ("normalize", vec![NORM, NUM_NORM]),
             ("pinyin", vec![PINYIN]),
-            ("pinyinchar", vec![PINYIN_CHAR]),
         ]);
 
-        for simple_match_type_bit_str in ["fanjian", "normalize", "pinyin", "pinyinchar"] {
+        for simple_match_type_bit_str in ["fanjian", "normalize", "pinyin"] {
             let mut process_dict = HashMap::new();
 
             for str_conv_map in process_str_conv_map.get(simple_match_type_bit_str).unwrap() {
@@ -64,7 +61,17 @@ fn main() -> Result<()> {
             ))?;
             process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
 
-            if ["fanjian", "pinyin", "pinyinchar"].contains(&simple_match_type_bit_str) {
+            if simple_match_type_bit_str == "pinyin" {
+                let process_replace_list = process_dict
+                    .iter()
+                    .map(|(_, &val)| val.trim_matches('␀'))
+                    .collect::<Vec<&str>>();
+                let mut process_replace_list_bin =
+                    File::create(format!("{out_dir}/pinyinchar_process_replace_list.bin"))?;
+                process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
+            }
+
+            if ["fanjian", "pinyin"].contains(&simple_match_type_bit_str) {
                 let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
                     CharwiseDoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
