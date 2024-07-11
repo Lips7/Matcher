@@ -670,45 +670,108 @@ pub fn reduce_text_process_emit<'a>(
     processed_text_list
 }
 
+// struct SimpleMatchTypeBitNode {
+//     simple_match_type_bit: SimpleMatchType,
+//     is_matched: bool,
+//     processed_text_index: usize,
+//     parent: usize,
+//     children: ArrayVec<[usize; 8]>,
+// }
+
 // #[inline(always)]
 // pub fn reduce_text_process_emit_with_cache<'a>(
 //     simple_match_type_list: &[SimpleMatchType],
 //     text: &'a str,
-// ) -> (IntMap<SimpleMatchType, ArrayVec<[usize; 8]>>, ArrayVec<[Cow<'a, str>; 8]>) {
-//     let mut simple_match_type_indices_map = IntMap::with_capacity(8);
-//     let mut simple_match_type_hit_map = IntMap::with_capacity(8);
+// ) -> (
+//     IntMap<SimpleMatchType, ArrayVec<[usize; 8]>>,
+//     ArrayVec<[Cow<'a, str>; 8]>,
+// ) {
+//     let mut simple_match_type_bit_node_list = Vec::new();
+//     simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
+//         simple_match_type_bit: SimpleMatchType::None,
+//         is_matched: false,
+//         processed_text_index: 0,
+//         parent: 0,
+//         children: ArrayVec::new(),
+//     });
+
+//     let mut simple_match_type_index_list_map = IntMap::with_capacity(8);
 //     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
 //     processed_text_list.push(Cow::Borrowed(text));
 
 //     for simple_match_type in simple_match_type_list {
 //         let mut current_text = text;
-//         let mut current_indice = 0;
+//         let mut current_index = 0;
+//         let mut current_node_index = 0;
+
+//         let mut parent_index = 0;
 
 //         for simple_match_type_bit in simple_match_type.iter() {
-//             let cached_result = get_process_matcher(simple_match_type_bit);
-//             let (process_replace_list, process_matcher) = cached_result.as_ref();
+//             let mut found = false;
+//             let current_node =
+//                 unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) };
+//             for child_index in current_node.children {
+//                 if simple_match_type_bit
+//                     == unsafe { simple_match_type_bit_node_list.get_unchecked(child_index) }
+//                         .simple_match_type_bit
+//                 {
+//                     current_node_index = child_index;
+//                     found = true;
+//                     break;
+//                 }
+//             }
 
-//             match (simple_match_type_bit, process_matcher) {
-//                 (SimpleMatchType::None, _) => {}
-//                 (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
-//                     match pm.delete_all(current_text.as_ref()) {
+//             if found {
+//                 let index_list: &mut ArrayVec<[usize; 8]> = unsafe {
+//                     simple_match_type_index_list_map
+//                         .get_mut(simple_match_type)
+//                         .unwrap_unchecked()
+//                 };
+//                 index_list.push(
+//                     unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
+//                         .processed_text_index,
+//                 );
+//             } else {
+//                 let cached_result = get_process_matcher(simple_match_type_bit);
+//                 let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+//                 match (simple_match_type_bit, process_matcher) {
+//                     (SimpleMatchType::None, _) => {}
+//                     (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
+//                         match pm.delete_all(current_text.as_ref()) {
+//                             (true, Cow::Owned(pt)) => {
+//                                 processed_text_list.push(Cow::Owned(pt));
+//                             }
+//                             (false, _) => {}
+//                             (_, _) => unreachable!(),
+//                         }
+//                     }
+//                     (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
 //                         (true, Cow::Owned(pt)) => {
 //                             processed_text_list.push(Cow::Owned(pt));
 //                         }
 //                         (false, _) => {}
 //                         (_, _) => unreachable!(),
-//                     }
+//                     },
 //                 }
-//                 (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
-//                     (true, Cow::Owned(pt)) => {
-//                         processed_text_list.push(Cow::Owned(pt));
-//                     }
-//                     (false, _) => {}
-//                     (_, _) => unreachable!(),
-//                 },
+
+//                 let new_index = simple_match_type_bit_node_list.len();
+//                 simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
+//                     simple_match_type_bit,
+//                     is_matched: false,
+//                     processed_text_index: 0,
+//                     parent: current_node_index,
+//                     children: ArrayVec::new(),
+//                 });
+//                 let mut children = unsafe {
+//                     simple_match_type_bit_node_list.get_unchecked_mut(current_node_index)
+//                 }
+//                 .children;
+//                 children.push(new_index);
+//                 current_node_index = new_index;
 //             }
 //         }
 //     }
 
-//     (simple_match_type_indices_map, processed_text_list)
+//     (simple_match_type_index_list_map, processed_text_list)
 // }
