@@ -36,7 +36,7 @@ rapidfuzz = "0.5.0"
 regex = { version = "1.10.5", features = ["perf-dfa-full"] }
 serde = { version = "1.0.204", features = ["derive"] }
 sonic-rs = "0.3.8"
-tinyvec = { version = "1.7.0", features = ["alloc"] }
+tinyvec = { version = "1.8.0", features = ["alloc"] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
 tikv-jemallocator = "0.5.4"

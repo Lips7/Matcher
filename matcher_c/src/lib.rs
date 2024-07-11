@@ -54,7 +54,6 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatchTypeWordMap, SimpleMatcher, 
 #[no_mangle]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
-        println!("{:?}", CStr::from_ptr(match_table_map_bytes).to_bytes());
         let match_table_map: MatchTableMap = match rmp_serde::from_slice(
             CStr::from_ptr(match_table_map_bytes).to_bytes(),
         ) {
