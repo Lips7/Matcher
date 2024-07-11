@@ -150,6 +150,4 @@ cython_debug/
 
 .ruff_cache
 test.ipynb
-matcher_c/matcher_c.so
-matcher_py/matcher_py/matcher_py.so
-matcher_java/src/main/resources/matcher_c.so
+*.so

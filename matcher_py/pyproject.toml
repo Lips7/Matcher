@@ -33,7 +33,12 @@ repository = "https://github.com/Lips7/Matcher"
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
+[tool.rye]
+managed = true
+dev-dependencies = ["pytest>=8.2.2",]
+
 [tool.maturin]
+python-source = "python"
 bindings = "pyo3"
 strip = true
 profile = "release"
