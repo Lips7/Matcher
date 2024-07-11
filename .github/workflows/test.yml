@@ -76,9 +76,8 @@ jobs:
           RUSTFLAGS: "-Z threads=2 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release
+          args: --release -i python3.12
           sccache: 'true'
-          manylinux: auto
           rust-toolchain: nightly
           working-directory: matcher_py
       - name: Install wheels
