@@ -24,7 +24,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 Put the `matcher_c` dynamic library under the `src/main/resources` directory.
 
-Copy the code below or refer to [Demo.java](./src/main/java/com/matcher_java/Demo.java).
+Copy the code below or refer to [MatcherJavaExample.java](./src/test/java/com/matcher_java/MatcherJavaExample.java).
 
 ```java
 package com.matcher_java;

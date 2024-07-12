@@ -12,13 +12,13 @@ Designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_l
   - Similarity-Based Matching
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫草`
+    Example: `蟲艸` -> `虫艹`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
   - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
-    Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
+    Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
   - **PinYinChar**: Convert Chinese characters to Pinyin.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
@@ -92,8 +92,8 @@ For each match table, word matching is performed over the `word_list`, and exemp
   * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
 * `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv/PINYIN.txt).
-  * `你好` -> `␀ni␀␀hao␀`
-  * `西安` -> `␀xi␀␀an␀`
+  * `你好` -> ` ni  hao `
+  * `西安` -> ` xi  an `
 * `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](../matcher_rs/str_conv/PINYIN.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`

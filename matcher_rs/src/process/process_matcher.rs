@@ -261,7 +261,7 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
                     let mut pair_str_split = pair_str.split('\t');
                     (
                         pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap().trim_matches('␀'),
+                        pair_str_split.next().unwrap().trim_matches(' '),
                     )
                 }));
             }

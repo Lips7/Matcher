@@ -62,7 +62,7 @@ fn main() -> Result<()> {
             if smt_bit_str == "pinyin" {
                 let process_replace_list = process_dict
                     .iter()
-                    .map(|(_, &val)| val.trim_matches('␀'))
+                    .map(|(_, &val)| val.trim_matches(' '))
                     .collect::<Vec<&str>>();
                 let mut process_replace_list_bin =
                     File::create(format!("{out_dir}/pinyinchar_process_replace_list.bin"))?;
