@@ -1,7 +1,7 @@
 [project]
 name = "matcher_py"
 description = "Blazingly fast Word Matcher"
-version = "0.4.4"
+version = "0.4.5"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = 'Fuji Guo', email = "f975793771@gmail.com" }]
