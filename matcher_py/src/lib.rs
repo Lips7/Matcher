@@ -972,7 +972,7 @@ impl Matcher {
 /// # Fields
 /// - `simple_matcher`: An instance of the [SimpleMatcherRs] struct which performs
 ///   the core matching logic.
-/// - `simple_match_type_word_map_bytes`: A serialized byte array representing the
+/// - `smt_word_map_bytes`: A serialized byte array representing the
 ///   simple match type word map used for initializing the `simple_matcher` field during
 ///   deserialization.
 ///
@@ -1017,7 +1017,7 @@ impl Matcher {
 #[pyclass(module = "matcher_py")]
 struct SimpleMatcher {
     simple_matcher: SimpleMatcherRs,
-    simple_match_type_word_map_bytes: Vec<u8>,
+    smt_word_map_bytes: Vec<u8>,
 }
 
 #[pymethods]
@@ -1030,10 +1030,10 @@ impl SimpleMatcher {
     ///
     /// # Parameters
     /// - `_py`: The Python interpreter state.
-    /// - `simple_match_type_word_map_bytes`: A byte slice that contains the serialized simple match type word map.
+    /// - `smt_word_map_bytes`: A byte slice that contains the serialized simple match type word map.
     ///
     /// # Errors
-    /// - Returns a [PyValueError] if deserialization of the `simple_match_type_word_map_bytes` fails.
+    /// - Returns a [PyValueError] if deserialization of the `smt_word_map_bytes` fails.
     ///
     /// # Returns
     /// - [`PyResult<SimpleMatcher>`]: An instance of [SimpleMatcher] if deserialization and initialization are successful.
@@ -1047,7 +1047,7 @@ impl SimpleMatcher {
     ///
     /// msgpack_encoder = msgspec.msgpack.Encoder()
     ///
-    /// simple_match_type_word_map = msgpack_encoder.encode(
+    /// smt_word_map = msgpack_encoder.encode(
     ///     {
     ///         SimpleMatchType.MatchNone: {
     ///             1: "example"
@@ -1055,23 +1055,26 @@ impl SimpleMatcher {
     ///     }
     /// )
     ///
-    /// simple_matcher = SimpleMatcher(simple_match_type_word_map)
+    /// simple_matcher = SimpleMatcher(smt_word_map)
     /// print(simple_matcher.simple_matcher)
     /// ```
     #[new]
-    #[pyo3(signature=(simple_match_type_word_map_bytes))]
-    fn new(_py: Python, simple_match_type_word_map_bytes: &[u8]) -> PyResult<SimpleMatcher> {
-        let simple_match_type_word_map: SimpleMatchTypeWordMapRs =
-            match rmp_serde::from_slice(simple_match_type_word_map_bytes) {
-                Ok(simple_match_type_word_map) => simple_match_type_word_map,
-                Err(e) => return Err(PyValueError::new_err(
-                    format!("Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\n Err: {}", e),
-                )),
-            };
+    #[pyo3(signature=(smt_word_map_bytes))]
+    fn new(_py: Python, smt_word_map_bytes: &[u8]) -> PyResult<SimpleMatcher> {
+        let smt_word_map: SimpleMatchTypeWordMapRs = match rmp_serde::from_slice(smt_word_map_bytes)
+        {
+            Ok(smt_word_map) => smt_word_map,
+            Err(e) => {
+                return Err(PyValueError::new_err(format!(
+                    "Deserialize smt_word_map_bytes failed, Please check the input data.\n Err: {}",
+                    e
+                )))
+            }
+        };
 
         Ok(SimpleMatcher {
-            simple_matcher: SimpleMatcherRs::new(&simple_match_type_word_map),
-            simple_match_type_word_map_bytes: Vec::from(simple_match_type_word_map_bytes),
+            simple_matcher: SimpleMatcherRs::new(&smt_word_map),
+            smt_word_map_bytes: Vec::from(smt_word_map_bytes),
         })
     }
 
@@ -1094,7 +1097,7 @@ impl SimpleMatcher {
     ///
     /// msgpack_encoder = msgspec.msgpack.Encoder()
     ///
-    /// simple_match_type_word_map = msgpack_encoder.encode(
+    /// smt_word_map = msgpack_encoder.encode(
     ///     {
     ///         SimpleMatchType.MatchNone: {
     ///             1: "example"
@@ -1102,14 +1105,14 @@ impl SimpleMatcher {
     ///     }
     /// )
     ///
-    /// simple_matcher = SimpleMatcher(simple_match_type_word_map)
+    /// simple_matcher = SimpleMatcher(smt_word_map)
     ///
     /// # Check the args returned for recreating the object
     /// serialized_args = simple_matcher.__getnewargs__()
     /// print(serialized_args)
     /// ```
     fn __getnewargs__(&self) -> (&[u8],) {
-        (&self.simple_match_type_word_map_bytes,)
+        (&self.smt_word_map_bytes,)
     }
 
     /// Serializes the state of the [SimpleMatcher] object for pickling.
@@ -1132,7 +1135,7 @@ impl SimpleMatcher {
     ///
     /// msgpack_encoder = msgspec.msgpack.Encoder()
     ///
-    /// simple_match_type_word_map = msgpack_encoder.encode(
+    /// smt_word_map = msgpack_encoder.encode(
     ///     {
     ///         SimpleMatchType.MatchNone: {
     ///             1: "example"
@@ -1140,14 +1143,14 @@ impl SimpleMatcher {
     ///     }
     /// )
     ///
-    /// simple_matcher = SimpleMatcher(simple_match_type_word_map)
+    /// simple_matcher = SimpleMatcher(smt_word_map)
     ///
     /// # Serialize SimpleMatcher instance to a byte stream using pickle
     /// pickled_data = pickle.dumps(simple_matcher)
     /// print(pickled_data)
     /// ```
     fn __getstate__(&self) -> &[u8] {
-        &self.simple_match_type_word_map_bytes
+        &self.smt_word_map_bytes
     }
 
     /// Restores the state of the [SimpleMatcher] object from the provided serialized data.
@@ -1159,7 +1162,7 @@ impl SimpleMatcher {
     ///
     /// # Parameters
     /// - `self`: The [SimpleMatcher] instance.
-    /// - `simple_match_type_word_map_bytes`: A reference to a byte slice containing the serialized
+    /// - `smt_word_map_bytes`: A reference to a byte slice containing the serialized
     ///    simple match type word map data.
     ///
     /// # Example
@@ -1173,7 +1176,7 @@ impl SimpleMatcher {
     ///
     /// msgpack_encoder = msgspec.msgpack.Encoder()
     ///
-    /// simple_match_type_word_map = msgpack_encoder.encode(
+    /// smt_word_map = msgpack_encoder.encode(
     ///     {
     ///         SimpleMatchType.MatchNone: {
     ///             1: "example"
@@ -1181,7 +1184,7 @@ impl SimpleMatcher {
     ///     }
     /// )
     ///
-    /// simple_matcher = SimpleMatcher(simple_match_type_word_map)
+    /// simple_matcher = SimpleMatcher(smt_word_map)
     ///
     /// # Serialize and deserialize using pickle
     /// pickled_data = pickle.dumps(simple_matcher)
@@ -1190,11 +1193,10 @@ impl SimpleMatcher {
     /// # The deserialized object should have the same state
     /// assert deserialized_matcher.is_match("example")
     /// ```
-    #[pyo3(signature=(simple_match_type_word_map_bytes))]
-    fn __setstate__(&mut self, simple_match_type_word_map_bytes: &[u8]) {
+    #[pyo3(signature=(smt_word_map_bytes))]
+    fn __setstate__(&mut self, smt_word_map_bytes: &[u8]) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(simple_match_type_word_map_bytes)
-                .unwrap(),
+            &rmp_serde::from_slice::<SimpleMatchTypeWordMapRs>(smt_word_map_bytes).unwrap(),
         );
     }
 

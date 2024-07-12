@@ -133,15 +133,15 @@ let results = matcher.word_match(text);
 use std::collections::HashMap;
 use matcher_rs::{SimpleMatchType, SimpleMatcher};
 
-let mut simple_match_type_word_map = HashMap::new();
+let mut smt_word_map = HashMap::new();
 let mut simple_word_map = HashMap::new();
 
 simple_word_map.insert(1, "你好");
 simple_word_map.insert(2, "世界");
 
-simple_match_type_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
+smt_word_map.insert(SimpleMatchType::Fanjian, simple_word_map);
 
-let matcher = SimpleMatcher::new(&simple_match_type_word_map);
+let matcher = SimpleMatcher::new(&smt_word_map);
 let text = "你好，世界！";
 let results = matcher.process(text);
 ```

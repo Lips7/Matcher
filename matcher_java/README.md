@@ -51,7 +51,7 @@ interface Matcher extends Library {
 
     void drop_matcher(Pointer matcher);
 
-    Pointer init_simple_matcher(byte[] simple_match_type_word_map_bytes);
+    Pointer init_simple_matcher(byte[] smt_word_map_bytes);
 
     boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
 
@@ -82,11 +82,11 @@ public class Demo {
         packer.packString("hello&world");
         packer.close();
 
-        byte[] simple_match_type_word_map_bytes = packer.toByteArray();
+        byte[] smt_word_map_bytes = packer.toByteArray();
 
         Matcher instance = Matcher.INSTANCE;
 
-        Pointer simple_matcher = instance.init_simple_matcher(simple_match_type_word_map_bytes);
+        Pointer simple_matcher = instance.init_simple_matcher(smt_word_map_bytes);
 
         byte[] str_bytes = "hello,world".getBytes("utf-8");
         byte[] c_str_bytes = new byte[str_bytes.length + 1];

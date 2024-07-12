@@ -276,8 +276,7 @@ impl Matcher {
         let mut simple_word_table_conf_map = IntMap::default();
         let mut simple_word_table_conf_id_map = IntMap::default();
 
-        let mut simple_match_type_word_map: IntMap<SimpleMatchType, IntMap<u32, &'a str>> =
-            IntMap::default();
+        let mut smt_word_map: IntMap<SimpleMatchType, IntMap<u32, &'a str>> = IntMap::default();
 
         let mut regex_table_list: Vec<RegexTable> = Vec::new();
         let mut sim_table_list: Vec<SimTable> = Vec::new();
@@ -301,9 +300,8 @@ impl Matcher {
                                 },
                             );
 
-                            let simple_word_map = simple_match_type_word_map
-                                .entry(simple_match_type)
-                                .or_default();
+                            let simple_word_map =
+                                smt_word_map.entry(simple_match_type).or_default();
 
                             for word in word_list.iter() {
                                 simple_word_table_conf_id_map.insert(word_id, word_table_conf_id);
@@ -344,7 +342,7 @@ impl Matcher {
                         },
                     );
 
-                    let simple_word_map = simple_match_type_word_map
+                    let simple_word_map = smt_word_map
                         .entry(table.exemption_simple_match_type)
                         .or_default();
 
@@ -362,8 +360,7 @@ impl Matcher {
         Matcher {
             simple_word_table_conf_map,
             simple_word_table_conf_id_map,
-            simple_matcher: (!simple_match_type_word_map.is_empty())
-                .then(|| SimpleMatcher::new(&simple_match_type_word_map)),
+            simple_matcher: (!smt_word_map.is_empty()).then(|| SimpleMatcher::new(&smt_word_map)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
             sim_matcher: (!sim_table_list.is_empty()).then(|| SimMatcher::new(&sim_table_list)),

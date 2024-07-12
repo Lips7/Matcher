@@ -25,11 +25,11 @@ public class MatcherJavaExample {
         packer.packString("hello&world");
         packer.close();
 
-        byte[] simple_match_type_word_map_bytes = packer.toByteArray();
+        byte[] smt_word_map_bytes = packer.toByteArray();
 
         MatcherJava instance = MatcherJava.INSTANCE;
 
-        Pointer simple_matcher = instance.init_simple_matcher(simple_match_type_word_map_bytes);
+        Pointer simple_matcher = instance.init_simple_matcher(smt_word_map_bytes);
 
         byte[] str_bytes = "hello,world".getBytes("utf-8");
         byte[] c_str_bytes = new byte[str_bytes.length + 1];

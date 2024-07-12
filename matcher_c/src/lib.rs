@@ -369,13 +369,13 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// byte string that can be deserialized into a [SimpleMatchTypeWordMap].
 ///
 /// # Arguments
-/// * `simple_match_type_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized [SimpleMatchTypeWordMap].
+/// * `smt_word_map_bytes` - A pointer to a null-terminated byte string that represents a serialized [SimpleMatchTypeWordMap].
 ///
 /// # Returns
 /// * A raw pointer to a new [SimpleMatcher] instance that is created using the deserialized [SimpleMatchTypeWordMap].
 ///
 /// # Panics
-/// This function will panic if the deserialization of `simple_match_type_word_map_bytes` fails.
+/// This function will panic if the deserialization of `smt_word_map_bytes` fails.
 ///
 /// # Description
 /// This function initializes a [SimpleMatcher] instance from the provided serialized [SimpleMatchTypeWordMap] byte string.
@@ -392,32 +392,32 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// use matcher_c::*;
 /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
 ///
-/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut smt_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello&world");
-/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
+/// smt_word_map.insert(SimpleMatchType::None, word_map);
+/// let smt_word_map_bytes = CString::new(rmp_serde::to_vec_named(&smt_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(smt_word_map_bytes.as_ptr())};
 /// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn init_simple_matcher(
-    simple_match_type_word_map_bytes: *const c_char,
+    smt_word_map_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
     unsafe {
-        let simple_match_type_word_map: SimpleMatchTypeWordMap = match rmp_serde::from_slice(
-            CStr::from_ptr(simple_match_type_word_map_bytes).to_bytes(),
-        ) {
-            Ok(simple_match_type_word_map) => simple_match_type_word_map,
-            Err(e) => {
-                panic!(
-                    "Deserialize simple_match_type_word_map_bytes failed, Please check the input data.\nErr: {}", e,
+        let smt_word_map: SimpleMatchTypeWordMap =
+            match rmp_serde::from_slice(CStr::from_ptr(smt_word_map_bytes).to_bytes()) {
+                Ok(smt_word_map) => smt_word_map,
+                Err(e) => {
+                    panic!(
+                    "Deserialize smt_word_map_bytes failed, Please check the input data.\nErr: {}",
+                    e,
                 )
-            }
-        };
+                }
+            };
 
-        Box::into_raw(Box::new(SimpleMatcher::new(&simple_match_type_word_map)))
+        Box::into_raw(Box::new(SimpleMatcher::new(&smt_word_map)))
     }
 }
 
@@ -451,13 +451,13 @@ pub unsafe extern "C" fn init_simple_matcher(
 /// use matcher_c::*;
 /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
 ///
-/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut smt_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello&world");
-/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
+/// smt_word_map.insert(SimpleMatchType::None, word_map);
+/// let smt_word_map_bytes = CString::new(rmp_serde::to_vec_named(&smt_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(smt_word_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let not_match_text_bytes = CString::new("test").unwrap();
@@ -509,13 +509,13 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// use matcher_c::*;
 /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
 ///
-/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut smt_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello&world");
-/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
+/// smt_word_map.insert(SimpleMatchType::None, word_map);
+/// let smt_word_map_bytes = CString::new(rmp_serde::to_vec_named(&smt_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(smt_word_map_bytes.as_ptr())};
 ///
 /// let match_text_bytes = CString::new("hello world!").unwrap();
 /// let non_match_text_bytes = CString::new("test").unwrap();
@@ -594,13 +594,13 @@ pub unsafe extern "C" fn simple_matcher_process(
 /// use matcher_c::*;
 /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
 ///
-/// let mut simple_match_type_word_map = HashMap::new();
+/// let mut smt_word_map = HashMap::new();
 /// let mut word_map = HashMap::new();
 /// word_map.insert(1, "hello&world");
-/// simple_match_type_word_map.insert(SimpleMatchType::None, word_map);
-/// let simple_match_type_word_map_bytes = CString::new(rmp_serde::to_vec_named(&simple_match_type_word_map).unwrap()).unwrap();
+/// smt_word_map.insert(SimpleMatchType::None, word_map);
+/// let smt_word_map_bytes = CString::new(rmp_serde::to_vec_named(&smt_word_map).unwrap()).unwrap();
 ///
-/// let simple_matcher_ptr = unsafe {init_simple_matcher(simple_match_type_word_map_bytes.as_ptr())};
+/// let simple_matcher_ptr = unsafe {init_simple_matcher(smt_word_map_bytes.as_ptr())};
 /// unsafe {drop_simple_matcher(simple_matcher_ptr)};
 /// ```
 #[no_mangle]

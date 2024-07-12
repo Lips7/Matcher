@@ -28,10 +28,10 @@ fn main() -> Result<()> {
             ("pinyin", vec![PINYIN]),
         ]);
 
-        for simple_match_type_bit_str in ["fanjian", "normalize", "pinyin"] {
+        for smt_bit_str in ["fanjian", "normalize", "pinyin"] {
             let mut process_dict = HashMap::new();
 
-            for str_conv_map in process_str_conv_map.get(simple_match_type_bit_str).unwrap() {
+            for str_conv_map in process_str_conv_map.get(smt_bit_str).unwrap() {
                 process_dict.extend(str_conv_map.trim().lines().map(|pair_str| {
                     let mut pair_str_split = pair_str.split('\t');
                     (
@@ -47,21 +47,19 @@ fn main() -> Result<()> {
                 .map(|(&key, _)| key)
                 .collect::<Vec<&str>>();
 
-            let mut process_list_bin = File::create(format!(
-                "{out_dir}/{simple_match_type_bit_str}_process_list.bin"
-            ))?;
+            let mut process_list_bin =
+                File::create(format!("{out_dir}/{smt_bit_str}_process_list.bin"))?;
             process_list_bin.write_all(process_list.join("\n").as_bytes())?;
 
             let process_replace_list = process_dict
                 .iter()
                 .map(|(_, &val)| val)
                 .collect::<Vec<&str>>();
-            let mut process_replace_list_bin = File::create(format!(
-                "{out_dir}/{simple_match_type_bit_str}_process_replace_list.bin"
-            ))?;
+            let mut process_replace_list_bin =
+                File::create(format!("{out_dir}/{smt_bit_str}_process_replace_list.bin"))?;
             process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
 
-            if simple_match_type_bit_str == "pinyin" {
+            if smt_bit_str == "pinyin" {
                 let process_replace_list = process_dict
                     .iter()
                     .map(|(_, &val)| val.trim_matches('␀'))
@@ -71,7 +69,7 @@ fn main() -> Result<()> {
                 process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
             }
 
-            if ["fanjian", "pinyin"].contains(&simple_match_type_bit_str) {
+            if ["fanjian", "pinyin"].contains(&smt_bit_str) {
                 let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
                     CharwiseDoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
@@ -79,7 +77,7 @@ fn main() -> Result<()> {
                         .unwrap();
                 let matcher_bytes = matcher.serialize();
                 let mut matcher_bin = File::create(format!(
-                    "{out_dir}/{simple_match_type_bit_str}_daachorse_charwise_u32_matcher.bin"
+                    "{out_dir}/{smt_bit_str}_daachorse_charwise_u32_matcher.bin"
                 ))?;
                 matcher_bin.write_all(&matcher_bytes)?;
             }

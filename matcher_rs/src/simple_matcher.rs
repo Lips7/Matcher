@@ -11,7 +11,7 @@ use sonic_rs::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
-    reduce_text_process_emit, reduce_text_process_emit_with_list,
+    build_smt_tree, reduce_text_process_emit, reduce_text_process_with_tree, SimpleMatchTypeBitNode,
 };
 
 bitflags! {
@@ -32,7 +32,7 @@ bitflags! {
     /// * [FanjianDeleteNormalize](SimpleMatchType::FanjianDeleteNormalize) (0b00011110) - Combines [Fanjian](SimpleMatchType::Fanjian), [Delete](SimpleMatchType::Delete), and [Normalize](SimpleMatchType::Normalize) transformations.
     /// * [PinYin](SimpleMatchType::PinYin) (0b00100000) - Converts Chinese characters to their Pinyin representation.
     /// * [PinYinChar](SimpleMatchType::PinYinChar) (0b01000000) - Converts individual Chinese characters to their Pinyin representation.
-    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+    #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, Default)]
     pub struct SimpleMatchType: u8 {
         const None = 0b00000001;
         const Fanjian = 0b00000010;
@@ -175,8 +175,8 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///
 /// # Fields
 ///
-/// * `simple_match_type_list` - A vec of [SimpleMatchType].
-/// * `simple_match_type_ac_table_map` - A mapping of [SimpleMatchType] to `SimpleAcTable`, which contains
+/// * `smt_tree` - A vec of `SimpleMatchTypeBitNode`.
+/// * `smt_ac_table_map` - A mapping of [SimpleMatchType] to `SimpleAcTable`, which contains
 ///   the Aho-Corasick matcher and word configurations for efficient text matching.
 /// * `simple_wordconf_map` - A mapping of word IDs to `WordConf` structures, which hold the textual
 ///   representation of a word and a SIMD vector representing the split bits for the word.
@@ -206,8 +206,8 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimpleMatcher {
-    simple_match_type_list: Option<Vec<SimpleMatchType>>,
-    simple_match_type_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
+    smt_tree: Option<Vec<SimpleMatchTypeBitNode>>,
+    smt_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
     simple_word_conf_map: IntMap<u32, WordConf>,
 }
 
@@ -220,10 +220,10 @@ impl SimpleMatcher {
     ///
     /// # Arguments
     ///
-    /// * `simple_match_type_word_map` - A reference to a [HashMap] mapping [SimpleMatchType]
+    /// * `smt_word_map` - A reference to a [HashMap] mapping [SimpleMatchType]
     ///   to another [HashMap] of word identifiers ([u32]) and words. The inner [HashMap] contains:
     ///   * The key: a word identifier ([u32]).
-    ///   * The value: a word that implements [`AsRef<str>``].
+    ///   * The value: a word that implements [`AsRef<str>`].
     ///
     /// # Returns
     ///
@@ -231,7 +231,7 @@ impl SimpleMatcher {
     ///   their associated match types.
     ///
     /// The constructed [SimpleMatcher] will have its match type list and Aho-Corasick tables set up
-    /// based on the provided mappings. If there are at least 4 match types, the `simple_match_type_list`
+    /// based on the provided mappings. If there are at least 4 match types, the `smt_list`
     /// field will be populated with the match types; otherwise, it remains `None`.
     ///
     /// # Example
@@ -240,43 +240,45 @@ impl SimpleMatcher {
     /// use std::collections::HashMap;
     /// use matcher_rs::{SimpleMatcher, SimpleMatchType};
     ///
-    /// let simple_match_type_word_map = HashMap::from([
+    /// let smt_word_map = HashMap::from([
     ///     (SimpleMatchType::Fanjian, HashMap::from([(1, "example1"), (2, "example2")])),
     ///     (SimpleMatchType::Normalize, HashMap::from([(3, "example3"), (4, "example4")])),
     /// ]);
     ///
-    /// let simple_matcher = SimpleMatcher::new(&simple_match_type_word_map);
+    /// let simple_matcher = SimpleMatcher::new(&smt_word_map);
     /// ```
     pub fn new<I, S1, S2>(
-        simple_match_type_word_map: &HashMap<SimpleMatchType, HashMap<u32, I, S1>, S2>,
+        smt_word_map: &HashMap<SimpleMatchType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
     where
         I: AsRef<str>,
     {
         let mut simple_matcher = SimpleMatcher {
-            simple_match_type_list: None,
-            simple_match_type_ac_table_map: IntMap::default(),
+            smt_tree: None,
+            smt_ac_table_map: IntMap::default(),
             simple_word_conf_map: IntMap::default(),
         };
 
-        let mut simple_match_type_list = Vec::new();
-
-        for (&simple_match_type, simple_word_map) in simple_match_type_word_map {
+        for (&simple_match_type, simple_word_map) in smt_word_map {
             let simple_ac_table = simple_matcher.build_simple_ac_table(
                 simple_match_type - SimpleMatchType::TextDelete,
                 simple_word_map,
             );
 
-            simple_matcher.simple_match_type_ac_table_map.insert(
+            simple_matcher.smt_ac_table_map.insert(
                 simple_match_type - SimpleMatchType::WordDelete,
                 simple_ac_table,
             );
-
-            simple_match_type_list.push(simple_match_type);
         }
 
-        if simple_match_type_list.len() >= 4 {
-            simple_matcher.simple_match_type_list = Some(simple_match_type_list);
+        if smt_word_map.len() >= 4 {
+            simple_matcher.smt_tree = Some(build_smt_tree(
+                &simple_matcher
+                    .smt_ac_table_map
+                    .keys()
+                    .copied()
+                    .collect::<Vec<SimpleMatchType>>(),
+            ));
         }
 
         simple_matcher
@@ -446,7 +448,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Checks if the input text matches any of the patterns stored in the matcher.
     ///
     /// This function processes the input text based on each [SimpleMatchType] transformation and
-    /// uses the Aho-Corasick algorithm to determine if any patterns from the `simple_match_type_ac_table_map`
+    /// uses the Aho-Corasick algorithm to determine if any patterns from the `smt_ac_table_map`
     /// are present in the input text. It utilizes a bit vector technique to keep track of matched
     /// patterns and their configurations.
     ///
@@ -483,7 +485,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_set = IntSet::default();
         let mut not_word_id_set = IntSet::default();
 
-        for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
+        for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
             let processed_text_list = reduce_text_process_emit(simple_match_type, text);
             let processed_times = processed_text_list.len();
 
@@ -572,13 +574,13 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// 1. If the input text is empty, return an empty vector.
     /// 2. Initialize a map (`word_id_split_bit_map`) to track word configurations during processing.
-    /// 3. If `simple_match_type_list` is present:
-    ///     a. Process the text using [reduce_text_process_emit_with_list].
+    /// 3. If `smt_tree` is present:
+    ///     a. Process the text using `reduce_text_process_with_tree`.
     ///     b. For each [SimpleMatchType] and corresponding `SimpleAcTable`, process the text.
     ///     c. Use the Aho-Corasick matcher to find overlapping patterns and update the split
     ///        bit matrix based on the configurations.
-    /// 4. If `simple_match_type_list` is not present:
-    ///     a. Process the text using [reduce_text_process_emit].
+    /// 4. If `smt_tree` is not present:
+    ///     a. Process the text using `reduce_text_process_emit`.
     ///     b. For each [SimpleMatchType] and corresponding `SimpleAcTable`, process the text.
     ///     c. Use the Aho-Corasick matcher to find overlapping patterns and update the split
     ///        bit matrix based on the configurations.
@@ -595,16 +597,13 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_split_bit_map = IntMap::default();
         let mut not_word_id_set = IntSet::default();
 
-        if let Some(simple_match_type_list) = &self.simple_match_type_list {
-            let (simple_match_type_index_set_map, processed_text_list) =
-                reduce_text_process_emit_with_list(simple_match_type_list, text);
+        if let Some(smt_tree) = &self.smt_tree {
+            let (smt_index_set_map, processed_text_list) =
+                reduce_text_process_with_tree(smt_tree, text);
 
-            for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
-                let processed_index_set = unsafe {
-                    simple_match_type_index_set_map
-                        .get(&simple_match_type)
-                        .unwrap_unchecked()
-                };
+            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
+                let processed_index_set =
+                    unsafe { smt_index_set_map.get(&simple_match_type).unwrap_unchecked() };
                 let processed_times = processed_index_set.len();
 
                 for (index, &processed_index) in processed_index_set.iter().enumerate() {
@@ -661,7 +660,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                 }
             }
         } else {
-            for (&simple_match_type, simple_ac_table) in &self.simple_match_type_ac_table_map {
+            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
                 let processed_text_list = reduce_text_process_emit(simple_match_type, text);
                 let processed_times = processed_text_list.len();
 

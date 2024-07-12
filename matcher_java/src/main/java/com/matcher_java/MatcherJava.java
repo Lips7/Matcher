@@ -19,7 +19,7 @@ interface MatcherJava extends Library {
 
     void drop_matcher(Pointer matcher);
 
-    Pointer init_simple_matcher(byte[] simple_match_type_word_map_bytes);
+    Pointer init_simple_matcher(byte[] smt_word_map_bytes);
 
     boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
 

@@ -15,6 +15,8 @@ use daachorse::{
 use lazy_static::lazy_static;
 use nohash_hasher::{IntMap, IntSet};
 use parking_lot::RwLock;
+#[cfg(feature = "serde")]
+use sonic_rs::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
 #[cfg(feature = "prebuilt")]
@@ -171,7 +173,7 @@ impl ProcessMatcher {
 ///
 /// # Parameters
 ///
-/// - `simple_match_type_bit`: A variant of [SimpleMatchType] which specifies the type of matching operation to be performed.
+/// - `smt_bit`: A variant of [SimpleMatchType] which specifies the type of matching operation to be performed.
 ///
 /// # Returns
 ///
@@ -197,15 +199,13 @@ impl ProcessMatcher {
 /// - The function retains key-value pairs in the replacement dictionary where the key and value are not identical.
 /// - The matcher data is cached to optimize repeated calls with the same match type, improving performance.
 ///
-/// The function may use either the `Chinese` or `Others` variant of the [ProcessMatcher], depending on the [`SimpleMatchType`].
+/// The function may use either the `Chinese` or `Others` variant of the [ProcessMatcher], depending on the [[SimpleMatchType]].
 #[cfg(feature = "runtime_build")]
-pub fn get_process_matcher(
-    simple_match_type_bit: SimpleMatchType,
-) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
+pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
     {
         let process_matcher_cache = PROCESS_MATCHER_CACHE.read();
 
-        if let Some(cached_result) = process_matcher_cache.get(&simple_match_type_bit) {
+        if let Some(cached_result) = process_matcher_cache.get(&smt_bit) {
             return Arc::clone(cached_result);
         }
     }
@@ -213,7 +213,7 @@ pub fn get_process_matcher(
     {
         let mut process_dict = AHashMap::default();
 
-        match simple_match_type_bit {
+        match smt_bit {
             SimpleMatchType::None => {}
 
             SimpleMatchType::Fanjian => {
@@ -270,7 +270,7 @@ pub fn get_process_matcher(
 
         process_dict.retain(|&key, &mut value| key != value);
 
-        let (process_replace_list, process_matcher) = match simple_match_type_bit {
+        let (process_replace_list, process_matcher) = match smt_bit {
             SimpleMatchType::Fanjian | SimpleMatchType::PinYin | SimpleMatchType::PinYinChar => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
                 ProcessMatcher::Chinese(
@@ -304,7 +304,7 @@ pub fn get_process_matcher(
 
         let uncached_result = Arc::new((process_replace_list, process_matcher));
         let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
-        process_matcher_cache.insert(simple_match_type_bit, Arc::clone(&uncached_result));
+        process_matcher_cache.insert(smt_bit, Arc::clone(&uncached_result));
         uncached_result
     }
 }
@@ -317,7 +317,7 @@ pub fn get_process_matcher(
 ///
 /// # Parameters
 ///
-/// - `simple_match_type_bit`: A variant of [SimpleMatchType] enumerating the various matching strategies.
+/// - `smt_bit`: A variant of [SimpleMatchType] enumerating the various matching strategies.
 ///
 /// # Returns
 ///
@@ -344,19 +344,17 @@ pub fn get_process_matcher(
 ///
 /// This function requires the `prebuilt` feature to be enabled.
 #[cfg(feature = "prebuilt")]
-pub fn get_process_matcher(
-    simple_match_type_bit: SimpleMatchType,
-) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
+pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
     {
         let process_matcher_cache = PROCESS_MATCHER_CACHE.read();
 
-        if let Some(cached_result) = process_matcher_cache.get(&simple_match_type_bit) {
+        if let Some(cached_result) = process_matcher_cache.get(&smt_bit) {
             return Arc::clone(cached_result);
         }
     }
 
     {
-        let (process_replace_list, process_matcher) = match simple_match_type_bit {
+        let (process_replace_list, process_matcher) = match smt_bit {
             SimpleMatchType::None => {
                 let empty_patterns: Vec<&str> = Vec::new();
                 (
@@ -451,20 +449,20 @@ pub fn get_process_matcher(
 
         let uncached_result = Arc::new((process_replace_list, process_matcher));
         let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
-        process_matcher_cache.insert(simple_match_type_bit, Arc::clone(&uncached_result));
+        process_matcher_cache.insert(smt_bit, Arc::clone(&uncached_result));
         uncached_result
     }
 }
 
-/// Processes the input text according to the specified single-bit `SimpleMatchType`.
+/// Processes the input text according to the specified single-bit [SimpleMatchType].
 ///
-/// This function takes a `SimpleMatchType` bit flag and transforms the input text based on the rules
+/// This function takes a [SimpleMatchType] bit flag and transforms the input text based on the rules
 /// associated with that flag. It accepts only a single bit of `simple_match_type` and returns a Result
 /// containing the transformed text or an error.
 ///
 /// # Arguments
 ///
-/// * `simple_match_type_bit` - A single bit of [SimpleMatchType] defining a specific text transformation rule.
+/// * `smt_bit` - A single bit of [SimpleMatchType] defining a specific text transformation rule.
 /// * `text` - A string slice representing the input text to be transformed.
 ///
 /// # Returns
@@ -474,11 +472,11 @@ pub fn get_process_matcher(
 ///
 /// # Errors
 ///
-/// This function will return an error if the `simple_match_type_bit` contains more than one active transformation bit.
+/// This function will return an error if the `smt_bit` contains more than one active transformation bit.
 ///
 /// # Detailed Processing:
 ///
-/// 1. Checks if more than one bit is set in `simple_match_type_bit` and returns an error if true.
+/// 1. Checks if more than one bit is set in `smt_bit` and returns an error if true.
 /// 2. Retrieves the cached matcher and replacement list for the given bit.
 /// 3. Initializes the `result` as a borrowed version of the input `text`.
 /// 4. Matches the transformation type and applies the corresponding matcher:
@@ -488,18 +486,15 @@ pub fn get_process_matcher(
 ///     d. Other types - Apply the matcher and replace all occurrences.
 /// 5. Updates the `result` accordingly and returns it within an `Ok`.
 #[inline(always)]
-pub fn text_process(
-    simple_match_type_bit: SimpleMatchType,
-    text: &str,
-) -> Result<Cow<'_, str>, &'static str> {
-    if simple_match_type_bit.iter().count() > 1 {
+pub fn text_process(smt_bit: SimpleMatchType, text: &str) -> Result<Cow<'_, str>, &'static str> {
+    if smt_bit.iter().count() > 1 {
         return Err("text_process function only accept one bit of simple_match_type");
     }
 
-    let cached_result = get_process_matcher(simple_match_type_bit);
+    let cached_result = get_process_matcher(smt_bit);
     let (process_replace_list, process_matcher) = cached_result.as_ref();
     let mut result = Cow::Borrowed(text);
-    match (simple_match_type_bit, process_matcher) {
+    match (smt_bit, process_matcher) {
         (SimpleMatchType::None, _) => {}
         (SimpleMatchType::Fanjian, pm) => match pm.replace_all(text, process_replace_list) {
             (true, Cow::Owned(pt)) => {
@@ -564,13 +559,13 @@ pub fn reduce_text_process<'a>(
     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
     processed_text_list.push(Cow::Borrowed(text));
 
-    for simple_match_type_bit in simple_match_type.iter() {
-        let cached_result = get_process_matcher(simple_match_type_bit);
+    for smt_bit in simple_match_type.iter() {
+        let cached_result = get_process_matcher(smt_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
         // Guaranteed not failed
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
-        match (simple_match_type_bit, process_matcher) {
+        match (smt_bit, process_matcher) {
             (SimpleMatchType::None, _) => {}
             (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
                 match pm.delete_all(tmp_processed_text.as_ref()) {
@@ -631,13 +626,13 @@ pub fn reduce_text_process_emit<'a>(
     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
     processed_text_list.push(Cow::Borrowed(text));
 
-    for simple_match_type_bit in simple_match_type.iter() {
-        let cached_result = get_process_matcher(simple_match_type_bit);
+    for smt_bit in simple_match_type.iter() {
+        let cached_result = get_process_matcher(smt_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
         // Guaranteed not failed
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
-        match (simple_match_type_bit, process_matcher) {
+        match (smt_bit, process_matcher) {
             (SimpleMatchType::None, _) => {}
             (SimpleMatchType::Fanjian | SimpleMatchType::Normalize, pm) => {
                 match pm.replace_all(tmp_processed_text.as_ref(), process_replace_list) {
@@ -670,68 +665,212 @@ pub fn reduce_text_process_emit<'a>(
     processed_text_list
 }
 
-/// A node representing a bit in the [SimpleMatchType] and its associated processed text index.
+/// A node representing a SimpleMatchType in a tree structure.
 ///
-/// `SimpleMatchTypeBitNode` is used to create a hierarchy of match type bits,
-/// allowing each node to have children corresponding to subsequent match type bits.
+/// This struct is used to build a tree of [SimpleMatchType] transformations, where each node
+/// corresponds to a particular bit (transformation type) and holds a list of [SimpleMatchType]
+/// values, the index of the processed text, and the indices of its child nodes.
 ///
 /// # Fields
 ///
-/// * `simple_match_type_bit` - A bit from the [SimpleMatchType] that defines the specific text transformation rule.
-/// * `processed_text_index` - An index referring to the position of the processed text in a list.
-/// * `children` - An [ArrayVec] containing indices of children `SimpleMatchTypeBitNode`, up to a maximum of 8.
+/// * `smt_list` - An [ArrayVec] holding up to 8 [SimpleMatchType] values that this node represents.
+/// * `smt_bit` - A [SimpleMatchType] value representing the bit for this node.
+/// * `processed_text_index` - An index pointing to the processed text associated with this node.
+/// * `children` - An [ArrayVec] holding up to 8 usize indices pointing to the child nodes in the tree.
 ///
-/// This structure is pivotal in organizing the transformation pipeline for text processing, where each bit in
-/// the [SimpleMatchType] can lead to subsequent transformations.
+/// # Example Usage
+///
+/// The [SimpleMatchTypeBitNode] is primarily used within a tree structure to efficiently manage
+/// and retrieve the various text transformations specified by different [SimpleMatchType] bit flags.
+/// It leverages [ArrayVec] for efficient, fixed-size storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct SimpleMatchTypeBitNode {
-    simple_match_type_bit: SimpleMatchType,
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SimpleMatchTypeBitNode {
+    smt_list: ArrayVec<[SimpleMatchType; 8]>,
+    smt_bit: SimpleMatchType,
     processed_text_index: usize,
     children: ArrayVec<[usize; 8]>,
 }
 
-type SimpleMatchTypeIndexSetMap = IntMap<SimpleMatchType, IntSet<usize>>;
+pub type SimpleMatchTypeIndexSetMap = IntMap<SimpleMatchType, IntSet<usize>>;
 
-// pub fn build_simple_match_type_bit_node_list(
-//     simple_match_type_list: &[SimpleMatchType],
-// ) -> Vec<SimpleMatchTypeBitNode> {
-//     let mut simple_match_type_bit_node_list = Vec::new();
-//     simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
-//         simple_match_type_bit: SimpleMatchType::None,
-//         processed_text_index: 0,
-//         children: ArrayVec::new(),
-//     });
-//     for simple_match_type in simple_match_type_list.iter() {
-//         let mut current_node_index = 0;
-//         for simple_match_type_bit in simple_match_type.iter() {
-//             let mut is_found = false;
-//             let current_node = simple_match_type_bit_node_list[current_node_index];
-//             for child_node_index in current_node.children {
-//                 if simple_match_type_bit
-//                     == simple_match_type_bit_node_list[child_node_index].simple_match_type_bit
-//                 {
-//                     current_node_index = child_node_index;
-//                     is_found = true;
-//                     break;
-//                 }
-//             }
+///
+/// Constructs a tree of [SimpleMatchTypeBitNode] instances based on the given list of [SimpleMatchType] transformations.
+///
+/// This function creates a hierarchy of [SimpleMatchTypeBitNode] nodes representing different transformation types
+/// defined by the provided `smt_list`. Each node in the tree corresponds to a specific bit transformation and may have
+/// child nodes representing subsequent transformations.
+///
+/// # Parameters
+///
+/// * `smt_list`: A slice of [SimpleMatchType] representing the match types to be processed and included in the tree.
+///
+/// # Returns
+///
+/// A [Vec] containing the constructed tree of [SimpleMatchTypeBitNode]'s, where each node represents a different bit
+/// transformation as defined in the `smt_list`.
+///
+/// # Details
+///
+/// The function starts by initializing the root node of the tree with a [SimpleMatchType::None].
+/// It then iterates through each [SimpleMatchType] in the input list and constructs the tree as follows:
+///
+/// 1. For each `simple_match_type`, set the starting node as the root node.
+/// 2. Iterate over each bit in the `simple_match_type`.
+///    - If a child node with the current bit already exists, move to that child node.
+///    - If no such child node exists, create a new child node, update the current node's children, and move to the new node.
+/// 3. Upon finding or creating a node for the current bit, append the `simple_match_type` to the `smt_list` of that node.
+///
+/// # Safety
+///
+/// This function does not use any unsafe code, ensuring type safety and memory correctness.
+///
+pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNode> {
+    let mut smt_tree = Vec::new();
+    let mut root = SimpleMatchTypeBitNode {
+        smt_list: ArrayVec::new(),
+        smt_bit: SimpleMatchType::None,
+        processed_text_index: 0,
+        children: ArrayVec::new(),
+    };
+    root.smt_list.push(SimpleMatchType::None);
+    smt_tree.push(root);
+    for &simple_match_type in smt_list.iter() {
+        let mut current_node_index = 0;
+        for smt_bit in simple_match_type.iter() {
+            let mut is_found = false;
+            let current_node = smt_tree[current_node_index];
+            for child_node_index in current_node.children {
+                if smt_bit == smt_tree[child_node_index].smt_bit {
+                    current_node_index = child_node_index;
+                    is_found = true;
+                    break;
+                }
+            }
 
-//             if !is_found {
-//                 simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
-//                     simple_match_type_bit,
-//                     processed_text_index: 0,
-//                     children: ArrayVec::new(),
-//                 });
-//                 let new_node_index = simple_match_type_bit_node_list.len() - 1;
-//                 simple_match_type_bit_node_list[current_node_index]
-//                     .children
-//                     .push(new_node_index);
-//                 current_node_index = new_node_index;
-//             }
-//         }
-//     }
-//     simple_match_type_bit_node_list
-// }
+            if !is_found {
+                let mut child = SimpleMatchTypeBitNode {
+                    smt_list: ArrayVec::new(),
+                    smt_bit,
+                    processed_text_index: 0,
+                    children: ArrayVec::new(),
+                };
+                child.smt_list.push(simple_match_type);
+                smt_tree.push(child);
+                let new_node_index = smt_tree.len() - 1;
+                smt_tree[current_node_index].children.push(new_node_index);
+                current_node_index = new_node_index;
+            } else {
+                smt_tree[current_node_index]
+                    .smt_list
+                    .push(simple_match_type);
+            }
+        }
+    }
+    smt_tree
+}
+
+/// Processes a given text using a pre-constructed tree of [SimpleMatchTypeBitNode] nodes,
+/// applying transformations associated with each node and mapping each [SimpleMatchType] to
+/// its resulting transformed text indices.
+///
+/// This function traverses the tree of [SimpleMatchTypeBitNode] nodes starting from the root node,
+/// applies text transformations associated with each node, and builds a map of match types to
+/// the set of indices in the processed text list where the transformation results can be found.
+///
+/// # Parameters
+///
+/// * `smt_tree`: A slice of [SimpleMatchTypeBitNode] representing the pre-constructed tree of nodes
+///              to be used for processing the text.
+/// * `text`: A string slice holding the initial text to be transformed.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// * [`IntMap<SimpleMatchType, IntSet<usize>>`]: A map of [SimpleMatchType] to the set of
+///   indices in the processed text list where the transformation results for that type
+///   can be found.
+/// * [`ArrayVec<\[Cow<'a, str>; 8\]>`]: A list of processed texts corresponding to the applied
+///   transformations.
+///
+/// # Safety
+///
+/// This function employs unsafe code to efficiently access and manipulate internal data structures.
+/// Care should be taken when modifying this function to avoid introducing undefined behavior.
+///
+#[inline(always)]
+pub fn reduce_text_process_with_tree<'a>(
+    smt_tree: &[SimpleMatchTypeBitNode],
+    text: &'a str,
+) -> (SimpleMatchTypeIndexSetMap, ArrayVec<[Cow<'a, str>; 8]>) {
+    let mut smt_tree_copied: Vec<SimpleMatchTypeBitNode> = smt_tree.to_vec();
+
+    let mut smt_index_list_map = IntMap::with_capacity(8);
+    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+    processed_text_list.push(Cow::Borrowed(text));
+
+    for (current_node_index, current_node) in smt_tree.iter().enumerate() {
+        let (left_tree, right_tree) =
+            unsafe { smt_tree_copied.split_at_mut_unchecked(current_node_index.unchecked_add(1)) };
+
+        let current_copied_node = unsafe { left_tree.get_unchecked(current_node_index) };
+        let mut current_index = current_copied_node.processed_text_index;
+        let current_text_ptr =
+            unsafe { processed_text_list.get_unchecked(current_index) }.as_ref() as *const str;
+
+        for child_node_index in current_node.children {
+            let child_node = unsafe {
+                right_tree.get_unchecked_mut(
+                    child_node_index
+                        .unchecked_sub(current_node_index)
+                        .unchecked_sub(1),
+                )
+            };
+
+            let cached_result = get_process_matcher(child_node.smt_bit);
+            let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+            match child_node.smt_bit {
+                SimpleMatchType::None => {}
+                SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
+                    match process_matcher.delete_all(unsafe { &*current_text_ptr }) {
+                        (true, Cow::Owned(pt)) => {
+                            processed_text_list.push(Cow::Owned(pt));
+                            current_index = unsafe { processed_text_list.len().unchecked_sub(1) };
+                        }
+                        (false, _) => {
+                            current_index = current_copied_node.processed_text_index;
+                        }
+                        (_, _) => unreachable!(),
+                    }
+                }
+                _ => match process_matcher
+                    .replace_all(unsafe { &*current_text_ptr }, process_replace_list)
+                {
+                    (true, Cow::Owned(pt)) => {
+                        processed_text_list.push(Cow::Owned(pt));
+                        current_index = unsafe { processed_text_list.len().unchecked_sub(1) };
+                    }
+                    (false, _) => {
+                        current_index = current_copied_node.processed_text_index;
+                    }
+                    (_, _) => unreachable!(),
+                },
+            }
+
+            child_node.processed_text_index = current_index;
+
+            for simple_match_type in child_node.smt_list {
+                let index_list = smt_index_list_map
+                    .entry(simple_match_type)
+                    .or_insert_with(IntSet::default);
+                index_list.insert(current_index);
+            }
+        }
+    }
+
+    (smt_index_list_map, processed_text_list)
+}
 
 /// Reduces the text processing pipeline and maps each [SimpleMatchType] to the indices
 /// of its associated processed texts.
@@ -743,7 +882,7 @@ type SimpleMatchTypeIndexSetMap = IntMap<SimpleMatchType, IntSet<usize>>;
 ///
 /// # Parameters
 ///
-/// * `simple_match_type_list`: A slice of [SimpleMatchType] representing the match types
+/// * `smt_list`: A slice of [SimpleMatchType] representing the match types
 ///   to be processed.
 /// * `text`: A string slice holding the initial text to be transformed.
 ///
@@ -762,39 +901,35 @@ type SimpleMatchTypeIndexSetMap = IntMap<SimpleMatchType, IntSet<usize>>;
 /// structures efficiently. Care should be taken when modifying this function to avoid
 /// introducing undefined behavior.
 #[inline(always)]
-pub fn reduce_text_process_emit_with_list<'a>(
-    simple_match_type_list: &[SimpleMatchType],
+#[allow(dead_code)]
+pub fn reduce_text_process_with_list<'a>(
+    smt_list: &[SimpleMatchType],
     text: &'a str,
-) -> (
-    SimpleMatchTypeIndexSetMap,
-    ArrayVec<[Cow<'a, str>; 8]>,
-) {
-
-    let mut simple_match_type_bit_node_list = Vec::new();
-    simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
-        simple_match_type_bit: SimpleMatchType::None,
+) -> (SimpleMatchTypeIndexSetMap, ArrayVec<[Cow<'a, str>; 8]>) {
+    let mut smt_tree = Vec::new();
+    let mut root = SimpleMatchTypeBitNode {
+        smt_list: ArrayVec::new(),
+        smt_bit: SimpleMatchType::None,
         processed_text_index: 0,
         children: ArrayVec::new(),
-    });
+    };
+    root.smt_list.push(SimpleMatchType::None);
+    smt_tree.push(root);
 
-    let mut simple_match_type_index_list_map = IntMap::with_capacity(8);
+    let mut smt_index_list_map = IntMap::with_capacity(8);
     let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
     processed_text_list.push(Cow::Borrowed(text));
 
-    for simple_match_type in simple_match_type_list.iter() {
+    for &simple_match_type in smt_list.iter() {
         let mut current_text = text;
         let mut current_index = 0;
         let mut current_node_index = 0;
 
-        for simple_match_type_bit in simple_match_type.iter() {
+        for smt_bit in simple_match_type.iter() {
             let mut is_found = false;
-            let current_node =
-                unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) };
-            for child_node_index in current_node.children {
-                if simple_match_type_bit
-                    == unsafe { simple_match_type_bit_node_list.get_unchecked(child_node_index) }
-                        .simple_match_type_bit
-                {
+            let current_node = unsafe { smt_tree.get_unchecked(current_node_index) };
+            for &child_node_index in &current_node.children {
+                if smt_bit == unsafe { smt_tree.get_unchecked(child_node_index) }.smt_bit {
                     current_node_index = child_node_index;
                     is_found = true;
                     break;
@@ -802,74 +937,72 @@ pub fn reduce_text_process_emit_with_list<'a>(
             }
 
             if !is_found {
-                let cached_result = get_process_matcher(simple_match_type_bit);
+                let cached_result = get_process_matcher(smt_bit);
                 let (process_replace_list, process_matcher) = cached_result.as_ref();
 
-                match (simple_match_type_bit, process_matcher) {
-                    (SimpleMatchType::None, _) => {}
-                    (SimpleMatchType::TextDelete | SimpleMatchType::WordDelete, pm) => {
-                        match pm.delete_all(current_text.as_ref()) {
+                match smt_bit {
+                    SimpleMatchType::None => {}
+                    SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
+                        match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_list.push(Cow::Owned(pt));
                                 current_index = processed_text_list.len() - 1;
                             }
                             (false, _) => {
-                                current_index = unsafe {
-                                    simple_match_type_bit_node_list
-                                        .get_unchecked(current_node_index)
-                                }
-                                .processed_text_index;
+                                current_index =
+                                    unsafe { smt_tree.get_unchecked(current_node_index) }
+                                        .processed_text_index;
                             }
                             (_, _) => unreachable!(),
                         }
                     }
-                    (_, pm) => match pm.replace_all(current_text.as_ref(), process_replace_list) {
+                    _ => match process_matcher.replace_all(current_text, process_replace_list) {
                         (true, Cow::Owned(pt)) => {
                             processed_text_list.push(Cow::Owned(pt));
                             current_index = processed_text_list.len() - 1;
                         }
                         (false, _) => {
-                            current_index = unsafe {
-                                simple_match_type_bit_node_list.get_unchecked(current_node_index)
-                            }
-                            .processed_text_index;
+                            current_index = unsafe { smt_tree.get_unchecked(current_node_index) }
+                                .processed_text_index;
                         }
                         (_, _) => unreachable!(),
                     },
                 }
 
-                if simple_match_type_bit != SimpleMatchType::None {
-                    simple_match_type_bit_node_list.push(SimpleMatchTypeBitNode {
-                        simple_match_type_bit,
+                if current_node_index != 0 {
+                    let mut child = SimpleMatchTypeBitNode {
+                        smt_list: ArrayVec::new(),
+                        smt_bit,
                         processed_text_index: current_index,
                         children: ArrayVec::new(),
-                    });
-                    let new_node_index = simple_match_type_bit_node_list.len() - 1;
-                    let current_node = unsafe {
-                        simple_match_type_bit_node_list.get_unchecked_mut(current_node_index)
                     };
+                    child.smt_list.push(simple_match_type);
+                    smt_tree.push(child);
+
+                    let new_node_index = smt_tree.len() - 1;
+                    let current_node = unsafe { smt_tree.get_unchecked_mut(current_node_index) };
                     current_node.children.push(new_node_index);
                     current_node_index = new_node_index;
                 }
             } else {
                 current_index =
-                    unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
-                        .processed_text_index;
+                    unsafe { smt_tree.get_unchecked(current_node_index) }.processed_text_index;
+                unsafe { smt_tree.get_unchecked_mut(current_node_index) }
+                    .smt_list
+                    .push(simple_match_type);
             }
 
-            let index_list = simple_match_type_index_list_map
-                .entry(*simple_match_type)
-                .or_insert(IntSet::default());
-            index_list.insert(
-                unsafe { simple_match_type_bit_node_list.get_unchecked(current_node_index) }
-                    .processed_text_index,
-            );
+            let index_list = smt_index_list_map
+                .entry(simple_match_type)
+                .or_insert_with(IntSet::default);
+            index_list
+                .insert(unsafe { smt_tree.get_unchecked(current_node_index) }.processed_text_index);
 
             current_text = unsafe { processed_text_list.get_unchecked(current_index) }.as_ref();
         }
     }
 
-    (simple_match_type_index_list_map, processed_text_list)
+    (smt_index_list_map, processed_text_list)
 }
 
 #[cfg(test)]
@@ -877,8 +1010,58 @@ mod test_text_process {
     use super::*;
 
     #[test]
-    fn test_reduce_text_process_emit_with_list() {
-        let simple_match_type_list = vec![
+    fn test_text_process() {
+        let text = text_process(SimpleMatchType::Fanjian, "躶軆");
+        println!("{:?}", text);
+    }
+
+    #[test]
+    fn test_reduce_text_process() {
+        let text = reduce_text_process(SimpleMatchType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+        println!("{:?}", text);
+    }
+
+    #[test]
+    fn test_reduce_text_process_emit() {
+        let text =
+            reduce_text_process_emit(SimpleMatchType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+        println!("{:?}", text);
+    }
+
+    #[test]
+    fn test_build_smt_tree() {
+        let smt_list = vec![
+            SimpleMatchType::Fanjian | SimpleMatchType::TextDelete,
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::Normalize,
+            SimpleMatchType::Fanjian | SimpleMatchType::Normalize,
+            SimpleMatchType::TextDelete,
+            SimpleMatchType::TextDelete | SimpleMatchType::Normalize,
+        ];
+        let smt_tree = build_smt_tree(&smt_list);
+        println!("{:?}", smt_tree);
+    }
+
+    #[test]
+    fn test_reduce_text_process_with_tree() {
+        let smt_list = vec![
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::DeleteNormalize,
+            SimpleMatchType::FanjianDeleteNormalize,
+            SimpleMatchType::Delete,
+            SimpleMatchType::Normalize,
+        ];
+        let smt_tree = build_smt_tree(&smt_list);
+        let text = "《西游记》";
+
+        let (smt_index_list_map, processed_text_list) =
+            reduce_text_process_with_tree(&smt_tree, text);
+        println!("{:?}, {:?}", smt_index_list_map, processed_text_list);
+    }
+
+    #[test]
+    fn test_reduce_text_process_with_list() {
+        let smt_list = vec![
             SimpleMatchType::Fanjian | SimpleMatchType::TextDelete,
             SimpleMatchType::Fanjian,
             SimpleMatchType::Normalize,
@@ -888,11 +1071,8 @@ mod test_text_process {
         ];
         let text = "test爽-︻";
 
-        let (simple_match_type_index_list_map, processed_text_list) =
-            reduce_text_process_emit_with_list(&simple_match_type_list, text);
-        println!(
-            "{:?}, {:?}",
-            simple_match_type_index_list_map, processed_text_list
-        );
+        let (smt_index_list_map, processed_text_list) =
+            reduce_text_process_with_list(&smt_list, text);
+        println!("{:?}, {:?}", smt_index_list_map, processed_text_list);
     }
 }
