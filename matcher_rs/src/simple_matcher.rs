@@ -421,23 +421,22 @@ impl SimpleMatcher {
             }
         }
 
+        #[cfg(feature = "dfa")]
+        let aho_corasick_kind = AhoCorasickKind::DFA;
+        #[cfg(not(feature = "dfa"))]
+        let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+
+        #[cfg(feature = "serde")]
+        let prefilter = false;
+        #[cfg(not(feature = "serde"))]
+        let prefilter = true;
+
         SimpleAcTable {
-            #[cfg(not(feature = "serde"))]
             ac_matcher: AhoCorasickBuilder::new()
-                .kind(Some(AhoCorasickKind::DFA))
+                .kind(Some(aho_corasick_kind))
                 .ascii_case_insensitive(true)
+                .prefilter(prefilter)
                 .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
-                .unwrap(),
-            #[cfg(feature = "serde")]
-            ac_matcher: AhoCorasickBuilder::new()
-                .kind(Some(AhoCorasickKind::DFA))
-                .ascii_case_insensitive(true)
-                .prefilter(false)
-                .build(
-                    ac_dedup_word_list
-                        .iter()
-                        .map(|ac_word| ac_word.as_ref().as_bytes()),
-                )
                 .unwrap(),
             ac_dedup_word_conf_list,
         }
@@ -554,7 +553,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         }
                     }
                 }
-                
+
                 if !word_id_set.is_empty() {
                     return true;
                 }

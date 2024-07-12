@@ -52,7 +52,7 @@ divan = "0.1.14"
 fastrand = "2.1.0"
 
 [features]
-default = ["prebuilt"]
+default = ["prebuilt", "dfa"]
 # By enable prebuilt feature, we could boost process matcher build time, but with package size increasing.
 prebuilt = []
 # By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
@@ -61,6 +61,8 @@ runtime_build = []
 # With serde feature, AhoCorasick's prefilter is disabled, because I don't know how to serialize it correctly,
 # which will lead to performance regression when the patterns size is small (say, less than 100).
 serde = ["aho-corasick-unsafe/serde"]
+# By enable dfa feature, we could use dfa to perform simple matching, but with significantly incresaing memory consumption.
+dfa = []
 
 [[bench]]
 name = "bench"

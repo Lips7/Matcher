@@ -405,8 +405,15 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
                 (
                     Vec::new(),
                     ProcessMatcher::Others(
+                        #[cfg(feature = "dfa")]
                         AhoCorasickBuilder::new()
                             .kind(Some(AhoCorasickKind::DFA))
+                            .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                            .build(&process_list)
+                            .unwrap(),
+                        #[cfg(not(feature = "dfa"))]
+                        AhoCorasickBuilder::new()
+                            .kind(Some(AhoCorasickKind::ContiguousNFA))
                             .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                             .build(&process_list)
                             .unwrap(),
@@ -416,8 +423,15 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
             SimpleMatchType::Normalize => (
                 NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 ProcessMatcher::Others(
+                    #[cfg(feature = "dfa")]
                     AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
+                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                        .build(NORMALIZE_PROCESS_LIST_STR.lines())
+                        .unwrap(),
+                    #[cfg(not(feature = "dfa"))]
+                    AhoCorasickBuilder::new()
+                        .kind(Some(AhoCorasickKind::ContiguousNFA))
                         .match_kind(AhoCorasickMatchKind::LeftmostLongest)
                         .build(NORMALIZE_PROCESS_LIST_STR.lines())
                         .unwrap(),
