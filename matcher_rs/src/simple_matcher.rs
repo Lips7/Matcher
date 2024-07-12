@@ -485,68 +485,147 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_set = IntSet::default();
         let mut not_word_id_set = IntSet::default();
 
-        for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
-            let processed_text_list = reduce_text_process_emit(simple_match_type, text);
-            let processed_times = processed_text_list.len();
+        if let Some(smt_tree) = &self.smt_tree {
+            let (smt_index_set_map, processed_text_list) =
+                reduce_text_process_with_tree(smt_tree, text);
 
-            for (index, processed_text) in processed_text_list.iter().enumerate() {
-                // Guaranteed not failed
-                for ac_dedup_result in unsafe {
-                    simple_ac_table
-                        .ac_matcher
-                        .try_find_overlapping_iter(processed_text.as_ref())
-                        .unwrap_unchecked()
-                } {
+            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
+                let processed_index_set =
+                    unsafe { smt_index_set_map.get(&simple_match_type).unwrap_unchecked() };
+                let processed_times = processed_index_set.len();
+
+                for (index, &processed_index) in processed_index_set.iter().enumerate() {
                     // Guaranteed not failed
-                    for &(word_id, offset) in unsafe {
+                    for ac_dedup_result in unsafe {
                         simple_ac_table
-                            .ac_dedup_word_conf_list
-                            .get_unchecked(ac_dedup_result.pattern().as_usize())
+                            .ac_matcher
+                            .try_find_overlapping_iter(
+                                processed_text_list.get_unchecked(processed_index).as_ref(),
+                            )
+                            .unwrap_unchecked()
                     } {
-                        if not_word_id_set.contains(&word_id) {
-                            continue;
-                        }
-
                         // Guaranteed not failed
-                        let word_conf =
-                            unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
-
-                        let split_bit_matrix =
-                            word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                                word_conf
-                                    .split_bit
-                                    .iter()
-                                    .map(|&bit| iter::repeat(bit).take(processed_times).collect())
-                                    .collect::<Vec<Vec<i32>>>()
-                            });
-
-                        // bit is i32, so it will not overflow almost 100%
-                        unsafe {
-                            let bit = split_bit_matrix
-                                .get_unchecked_mut(offset)
-                                .get_unchecked_mut(index);
-                            *bit =
-                                bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
-
-                            if offset >= word_conf.not_index && *bit > 0 {
-                                not_word_id_set.insert(word_id);
-                                word_id_set.remove(&word_id);
+                        for &(word_id, offset) in unsafe {
+                            simple_ac_table
+                                .ac_dedup_word_conf_list
+                                .get_unchecked(ac_dedup_result.pattern().as_usize())
+                        } {
+                            if not_word_id_set.contains(&word_id) {
                                 continue;
                             }
 
-                            if split_bit_matrix
-                                .iter()
-                                .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
-                            {
-                                word_id_set.insert(word_id);
+                            // Guaranteed not failed
+                            let word_conf = unsafe {
+                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
+                            };
+
+                            let split_bit_matrix =
+                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                                    word_conf
+                                        .split_bit
+                                        .iter()
+                                        .map(|&bit| {
+                                            iter::repeat(bit).take(processed_times).collect()
+                                        })
+                                        .collect::<Vec<Vec<i32>>>()
+                                });
+
+                            // bit is i32, so it will not overflow almost 100%
+                            unsafe {
+                                let bit = split_bit_matrix
+                                    .get_unchecked_mut(offset)
+                                    .get_unchecked_mut(index);
+                                *bit = bit
+                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+
+                                if offset >= word_conf.not_index && *bit > 0 {
+                                    not_word_id_set.insert(word_id);
+                                    word_id_set.remove(&word_id);
+                                    continue;
+                                }
+
+                                if split_bit_matrix
+                                    .iter()
+                                    .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
+                                {
+                                    word_id_set.insert(word_id);
+                                }
                             }
                         }
                     }
                 }
+                
+                if !word_id_set.is_empty() {
+                    return true;
+                }
             }
+        } else {
+            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
+                let processed_text_list = reduce_text_process_emit(simple_match_type, text);
+                let processed_times = processed_text_list.len();
 
-            if !word_id_set.is_empty() {
-                return true;
+                for (index, processed_text) in processed_text_list.iter().enumerate() {
+                    // Guaranteed not failed
+                    for ac_dedup_result in unsafe {
+                        simple_ac_table
+                            .ac_matcher
+                            .try_find_overlapping_iter(processed_text.as_ref())
+                            .unwrap_unchecked()
+                    } {
+                        // Guaranteed not failed
+                        for &(word_id, offset) in unsafe {
+                            simple_ac_table
+                                .ac_dedup_word_conf_list
+                                .get_unchecked(ac_dedup_result.pattern().as_usize())
+                        } {
+                            if not_word_id_set.contains(&word_id) {
+                                continue;
+                            }
+
+                            // Guaranteed not failed
+                            let word_conf = unsafe {
+                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
+                            };
+
+                            let split_bit_matrix =
+                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                                    word_conf
+                                        .split_bit
+                                        .iter()
+                                        .map(|&bit| {
+                                            iter::repeat(bit).take(processed_times).collect()
+                                        })
+                                        .collect::<Vec<Vec<i32>>>()
+                                });
+
+                            // bit is i32, so it will not overflow almost 100%
+                            unsafe {
+                                let bit = split_bit_matrix
+                                    .get_unchecked_mut(offset)
+                                    .get_unchecked_mut(index);
+                                *bit = bit
+                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+
+                                if offset >= word_conf.not_index && *bit > 0 {
+                                    not_word_id_set.insert(word_id);
+                                    word_id_set.remove(&word_id);
+                                    continue;
+                                }
+
+                                if split_bit_matrix
+                                    .iter()
+                                    .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
+                                {
+                                    word_id_set.insert(word_id);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !word_id_set.is_empty() {
+                    return true;
+                }
             }
         }
 
