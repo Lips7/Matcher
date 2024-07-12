@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.5 - 2024-07-12
+### Changed
+
+- Optimize Simple Matcher `process` function when multiple simple_match_type are used.
+- add `dfa` feature to matcher_rs.
+- shrink `FANJIAN` conversion map.
+
 ## 0.4.4 - 2024-07-09
 ### Changed
 
