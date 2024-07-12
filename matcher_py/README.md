@@ -102,7 +102,7 @@ You can combine these transformations as needed. Pre-defined combinations like `
 
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
-`Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe `CN_SPECIAL` and `EN_SPECIAL` are parts of the word, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
+`Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe special characters are parts of the word, users put them in words deliberately, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
 * `WordDelete`: Delete all patterns in `WHITE_SPACE`.
 * `TextDelete`: Delete all patterns in [TEXT_DELETE](../matcher_rs/str_conv/TEXT-DELETE.txt).
 
