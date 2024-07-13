@@ -33,7 +33,7 @@ It's helpful for
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
   - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
-    Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
+    Example: `西安` -> `/xi//an/`, matches `洗按` -> `/xi//an/`, but not `先` -> `/xian/`
   - **PinYinChar**: Convert Chinese characters to Pinyin.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
@@ -236,3 +236,4 @@ bench                                               fastest       │ slowest   
 - [x] More detailed and rigorous tests.
 - [x] More detailed simple match type explanation.
 - [ ] More detailed [DESIGN](./DESIGN.md).
+- [ ] Write a Chinese README.
