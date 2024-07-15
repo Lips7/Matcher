@@ -1,6 +1,7 @@
 # Design
 
 ## Transformation
+
 * `FANJIAN`: build from [Unihan_Variants.txt](./data/str_conv/Unihan_Variants.txt) and [EquivalentUnifiedIdeograph.txt](./data/str_conv/EquivalentUnifiedIdeograph.txt).
 * `NUM-NORM`: build from [DerivedNumericValues.txt](./data/str_conv/DerivedNumericValues.txt).
 * `TEXT-DELETE` and `SYMBOL-NORM`: build from [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt).
