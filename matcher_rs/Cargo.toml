@@ -29,6 +29,7 @@ aho-corasick-unsafe = { version = "0.0.4", git = "https://github.com/Lips7/aho-c
 bitflags = { version = "2.6.0", features = ["serde"] }
 daachorse = "1.0.0"
 fancy-regex = "0.13.0"
+id-set = "0.2.2"
 lazy_static = "1.5.0"
 nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"]}

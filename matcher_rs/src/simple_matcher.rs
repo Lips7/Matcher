@@ -449,7 +449,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     self.smt_ac_dedup_word_conf_list
                         .get_unchecked(ac_dedup_result.pattern().as_usize())
                 } {
-                    if !smt_set.contains(&match_simple_match_type)
+                    if !smt_set.contains(match_simple_match_type.bits() as usize)
                         || not_word_id_set.contains(&word_id)
                     {
                         continue;
@@ -561,7 +561,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     self.smt_ac_dedup_word_conf_list
                         .get_unchecked(ac_dedup_result.pattern().as_usize())
                 } {
-                    if !smt_set.contains(&match_simple_match_type)
+                    if !smt_set.contains(match_simple_match_type.bits() as usize)
                         || not_word_id_set.contains(&word_id)
                     {
                         continue;

@@ -12,6 +12,7 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
+use id_set::IdSet;
 use lazy_static::lazy_static;
 use nohash_hasher::IntMap;
 use parking_lot::RwLock;
@@ -804,8 +805,8 @@ pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNod
 ///
 /// # Returns
 ///
-/// [`ArrayVec<\[(Cow<'a, str>, Vec<SimpleMatchType>); 16\]>`]: A collection of tuples, where each tuple
-/// contains a transformed version of the text and a list of [SimpleMatchType] transformations that
+/// [`ArrayVec<\[(Cow<'a, str>, IdSet); 16\]>`]: A collection of tuples, where each tuple
+/// contains a transformed version of the text and a set of [SimpleMatchType] transformations that
 /// were applied to generate that version of the text.
 ///
 /// # Details
@@ -834,12 +835,11 @@ pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNod
 pub fn reduce_text_process_with_tree<'a>(
     smt_tree: &[SimpleMatchTypeBitNode],
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, Vec<SimpleMatchType>); 16]> {
+) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
     let mut smt_tree_copied: Vec<SimpleMatchTypeBitNode> = smt_tree.to_vec();
 
-    let mut processed_text_smt_list: ArrayVec<[(Cow<'a, str>, Vec<SimpleMatchType>); 16]> =
-        ArrayVec::new();
-    processed_text_smt_list.push((Cow::Borrowed(text), Vec::new()));
+    let mut processed_text_smt_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> = ArrayVec::new();
+    processed_text_smt_set.push((Cow::Borrowed(text), IdSet::new()));
 
     for (current_node_index, current_node) in smt_tree.iter().enumerate() {
         let (left_tree, right_tree) =
@@ -847,7 +847,7 @@ pub fn reduce_text_process_with_tree<'a>(
 
         let current_copied_node = unsafe { left_tree.get_unchecked(current_node_index) };
         let mut current_index = current_copied_node.processed_text_index;
-        let current_text_ptr = unsafe { processed_text_smt_list.get_unchecked(current_index) }
+        let current_text_ptr = unsafe { processed_text_smt_set.get_unchecked(current_index) }
             .0
             .as_ref() as *const str;
 
@@ -871,10 +871,14 @@ pub fn reduce_text_process_with_tree<'a>(
                     SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
                         match process_matcher.delete_all(unsafe { &*current_text_ptr }) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_smt_list
-                                    .push((Cow::Owned(pt), child_node.smt_list.to_vec()));
+                                processed_text_smt_set.push((
+                                    Cow::Owned(pt),
+                                    IdSet::from_iter(
+                                        child_node.smt_list.iter().map(|smt| smt.bits() as usize),
+                                    ),
+                                ));
                                 current_index =
-                                    unsafe { processed_text_smt_list.len().unchecked_sub(1) };
+                                    unsafe { processed_text_smt_set.len().unchecked_sub(1) };
                             }
                             (false, _) => {
                                 current_index = current_copied_node.processed_text_index;
@@ -886,9 +890,9 @@ pub fn reduce_text_process_with_tree<'a>(
                         .replace_all(unsafe { &*current_text_ptr }, process_replace_list)
                     {
                         (true, Cow::Owned(pt)) => {
-                            processed_text_smt_list.push((Cow::Owned(pt), Vec::new()));
+                            processed_text_smt_set.push((Cow::Owned(pt), IdSet::new()));
                             current_index =
-                                unsafe { processed_text_smt_list.len().unchecked_sub(1) };
+                                unsafe { processed_text_smt_set.len().unchecked_sub(1) };
                         }
                         (false, _) => {
                             current_index = current_copied_node.processed_text_index;
@@ -901,14 +905,14 @@ pub fn reduce_text_process_with_tree<'a>(
 
             child_node.processed_text_index = current_index;
             let processed_text_smt_tuple =
-                unsafe { processed_text_smt_list.get_unchecked_mut(current_index) };
+                unsafe { processed_text_smt_set.get_unchecked_mut(current_index) };
             processed_text_smt_tuple
                 .1
-                .extend(child_node.smt_list.iter());
+                .extend(child_node.smt_list.iter().map(|smt| smt.bits() as usize));
         }
     }
 
-    processed_text_smt_list
+    processed_text_smt_set
 }
 
 #[inline(always)]
@@ -927,8 +931,8 @@ pub fn reduce_text_process_with_tree<'a>(
 ///
 /// # Returns
 ///
-/// [`ArrayVec<\[(Cow<'a, str>, Vec<SimpleMatchType>); 16\]>`]: A collection of tuples, where each tuple
-/// contains a transformed version of the text and a list of [SimpleMatchType] transformations that
+/// [`ArrayVec<\[(Cow<'a, str>, IdSet); 16\]>`]: A collection of tuples, where each tuple
+/// contains a transformed version of the text and a set of [SimpleMatchType] transformations that
 /// were applied to generate that version of the text.
 ///
 /// # Safety
@@ -938,7 +942,7 @@ pub fn reduce_text_process_with_tree<'a>(
 pub fn reduce_text_process_with_list<'a>(
     smt_list: &[SimpleMatchType],
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, Vec<SimpleMatchType>); 16]> {
+) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
     let mut smt_tree = Vec::with_capacity(8);
     let mut root = SimpleMatchTypeBitNode {
         smt_list: ArrayVec::new(),
@@ -950,9 +954,8 @@ pub fn reduce_text_process_with_list<'a>(
     root.smt_list.push(SimpleMatchType::None);
     smt_tree.push(root);
 
-    let mut processed_text_smt_list: ArrayVec<[(Cow<'a, str>, Vec<SimpleMatchType>); 16]> =
-        ArrayVec::new();
-    processed_text_smt_list.push((Cow::Borrowed(text), Vec::new()));
+    let mut processed_text_smt_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> = ArrayVec::new();
+    processed_text_smt_set.push((Cow::Borrowed(text), IdSet::new()));
 
     for &simple_match_type in smt_list.iter() {
         let mut current_text = text;
@@ -984,14 +987,16 @@ pub fn reduce_text_process_with_list<'a>(
                     SimpleMatchType::TextDelete | SimpleMatchType::WordDelete => {
                         match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_smt_list.push((Cow::Owned(pt), Vec::new()));
-                                current_index = processed_text_smt_list.len() - 1;
+                                processed_text_smt_set.push((Cow::Owned(pt), IdSet::new()));
+                                current_index = processed_text_smt_set.len() - 1;
 
                                 let processed_text_smt_tuple = unsafe {
-                                    processed_text_smt_list
+                                    processed_text_smt_set
                                         .get_unchecked_mut(current_node.processed_text_index)
                                 };
-                                processed_text_smt_tuple.1.push(simple_match_type);
+                                processed_text_smt_tuple
+                                    .1
+                                    .insert(simple_match_type.bits() as usize);
                             }
                             (false, _) => {
                                 current_index = current_node.processed_text_index;
@@ -1001,8 +1006,8 @@ pub fn reduce_text_process_with_list<'a>(
                     }
                     _ => match process_matcher.replace_all(current_text, process_replace_list) {
                         (true, Cow::Owned(pt)) => {
-                            processed_text_smt_list.push((Cow::Owned(pt), Vec::new()));
-                            current_index = processed_text_smt_list.len() - 1;
+                            processed_text_smt_set.push((Cow::Owned(pt), IdSet::new()));
+                            current_index = processed_text_smt_set.len() - 1;
                         }
                         (false, _) => {
                             current_index = current_node.processed_text_index;
@@ -1031,15 +1036,17 @@ pub fn reduce_text_process_with_list<'a>(
             }
 
             let processed_text_smt_tuple =
-                unsafe { processed_text_smt_list.get_unchecked_mut(current_index) };
-            processed_text_smt_tuple.1.push(simple_match_type);
-            current_text = unsafe { processed_text_smt_list.get_unchecked(current_index) }
+                unsafe { processed_text_smt_set.get_unchecked_mut(current_index) };
+            processed_text_smt_tuple
+                .1
+                .insert(simple_match_type.bits() as usize);
+            current_text = unsafe { processed_text_smt_set.get_unchecked(current_index) }
                 .0
                 .as_ref();
         }
     }
 
-    processed_text_smt_list
+    processed_text_smt_set
 }
 
 #[cfg(test)]
@@ -1087,8 +1094,8 @@ mod test_text_process {
         let smt_tree = build_smt_tree(&smt_list);
         let text = "test爽-︻";
 
-        let processed_text_smt_list = reduce_text_process_with_tree(&smt_tree, text);
-        println!("{processed_text_smt_list:?}");
+        let processed_text_smt_set = reduce_text_process_with_tree(&smt_tree, text);
+        println!("{processed_text_smt_set:?}");
     }
 
     #[test]
@@ -1102,7 +1109,7 @@ mod test_text_process {
         ];
         let text = "test爽-︻";
 
-        let processed_text_smt_list = reduce_text_process_with_list(&smt_list, text);
-        println!("{processed_text_smt_list:?}");
+        let processed_text_smt_set = reduce_text_process_with_list(&smt_list, text);
+        println!("{processed_text_smt_set:?}");
     }
 }
