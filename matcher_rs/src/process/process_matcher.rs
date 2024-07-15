@@ -839,7 +839,10 @@ pub fn reduce_text_process_with_tree<'a>(
     let mut smt_tree_copied: Vec<SimpleMatchTypeBitNode> = smt_tree.to_vec();
 
     let mut processed_text_smt_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> = ArrayVec::new();
-    processed_text_smt_set.push((Cow::Borrowed(text), IdSet::new()));
+    processed_text_smt_set.push((
+        Cow::Borrowed(text),
+        IdSet::from_iter([SimpleMatchType::None.bits() as usize]),
+    ));
 
     for (current_node_index, current_node) in smt_tree.iter().enumerate() {
         let (left_tree, right_tree) =
@@ -955,7 +958,10 @@ pub fn reduce_text_process_with_list<'a>(
     smt_tree.push(root);
 
     let mut processed_text_smt_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> = ArrayVec::new();
-    processed_text_smt_set.push((Cow::Borrowed(text), IdSet::new()));
+    processed_text_smt_set.push((
+        Cow::Borrowed(text),
+        IdSet::from_iter([SimpleMatchType::None.bits() as usize]),
+    ));
 
     for &simple_match_type in smt_list.iter() {
         let mut current_text = text;
@@ -1084,13 +1090,7 @@ mod test_text_process {
 
     #[test]
     fn test_reduce_text_process_with_tree() {
-        let smt_list = vec![
-            SimpleMatchType::Fanjian,
-            SimpleMatchType::DeleteNormalize - SimpleMatchType::WordDelete,
-            SimpleMatchType::FanjianDeleteNormalize - SimpleMatchType::WordDelete,
-            SimpleMatchType::TextDelete,
-            SimpleMatchType::Normalize,
-        ];
+        let smt_list = vec![SimpleMatchType::None];
         let smt_tree = build_smt_tree(&smt_list);
         let text = "test爽-︻";
 

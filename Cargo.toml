@@ -33,7 +33,6 @@ strip = "none"
 debug-assertions = false
 overflow-checks = false
 lto = false
-panic = 'unwind'
 incremental = false
 codegen-units = 16
 rpath = false

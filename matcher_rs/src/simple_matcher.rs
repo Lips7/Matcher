@@ -510,7 +510,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Returns
     ///
     /// * [`Vec<SimpleResult>`] - A vector containing [SimpleResult] objects, each containing a `word_id` and `word`
-    /// indicating a valid match found within the input text.
+    ///   indicating a valid match found within the input text.
     ///
     /// # Detailed Processing:
     ///
