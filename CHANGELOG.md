@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.6 - 2024-07-15
+### Performance
+
+- Optimize performance.
+
 ## 0.4.5 - 2024-07-12
 ### Changed
 
