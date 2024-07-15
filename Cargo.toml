@@ -25,3 +25,15 @@ debug = false
 debug-assertions = false
 overflow-checks = false
 # panic = "abort"
+
+[profile.bench]
+opt-level = 3
+debug = true
+strip = "none"
+debug-assertions = false
+overflow-checks = false
+lto = false
+panic = 'unwind'
+incremental = false
+codegen-units = 16
+rpath = false

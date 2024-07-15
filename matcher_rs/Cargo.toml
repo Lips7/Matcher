@@ -39,7 +39,7 @@ sonic-rs = "0.3.8"
 tinyvec = { version = "1.8.0", features = ["alloc", "serde"] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
-tikv-jemallocator = "0.5.4"
+tikv-jemallocator = "0.6.0"
 
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
 mimalloc = "0.1.43"
@@ -66,8 +66,4 @@ dfa = []
 
 [[bench]]
 name = "bench"
-harness = false
-
-[[bench]]
-name = "bench_test"
 harness = false

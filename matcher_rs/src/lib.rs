@@ -15,7 +15,10 @@ mod util;
 pub use util::word::SimpleWord;
 
 mod process;
-pub use process::process_matcher::{reduce_text_process, text_process};
+pub use process::process_matcher::{
+    build_smt_tree, reduce_text_process, reduce_text_process_with_list,
+    reduce_text_process_with_tree, text_process,
+};
 
 mod simple_matcher;
 pub use simple_matcher::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher, SimpleResult};

@@ -100,29 +100,6 @@ struct WordConf {
     not_index: usize,
 }
 
-/// [SimpleAcTable] is a structure that encapsulates an Aho-Corasick matcher and a
-/// deduplicated list of word configurations.
-///
-/// This structure is designed to provide efficient pattern matching using the Aho-Corasick
-/// algorithm, which is particularly suited for matching a large set of patterns in a text.
-/// It includes an Aho-Corasick matcher and a list of deduplicated word configurations,
-/// which are used to manage and optimize the word matching process.
-///
-/// # Fields
-///
-/// * `ac_matcher` - An [AhoCorasick] instance that performs the actual pattern matching.
-/// * `ac_dedup_word_conf_list` - A [Vec] of [Vec] containing tuples of a word identifier ([u32])
-///   and its corresponding position ([usize]) in the deduplicated word configuration list.
-///
-/// This structure ensures that matched patterns are processed efficiently and that the word
-/// configurations are kept organized and deduplicated to avoid redundant processing.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-struct SimpleAcTable {
-    ac_matcher: AhoCorasick,
-    ac_dedup_word_conf_list: Vec<Vec<(u32, usize)>>,
-}
-
 /// [SimpleResult] represents the result of a matching operation.
 ///
 /// This structure is used to store the outcome of a text matching operation performed
@@ -165,21 +142,26 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
 }
 
-/// [SimpleMatcher] is a structure that encapsulates the logic for text matching and transformation
-/// based on various [SimpleMatchType] rules.
+/// [SimpleMatcher] is a structure designed for efficient pattern matching and text transformations.
 ///
-/// This structure holds mappings and configurations for text processing, enabling efficient
-/// pattern matching and transformation operations. It includes a mapping of [SimpleMatchType]
-/// to process mappings, a mapping of [SimpleMatchType] to Aho-Corasick tables, and a mapping
-/// of word IDs to word configurations.
+/// The [SimpleMatcher] structure encapsulates various configurations, matchers, and nodes needed to
+/// perform text matching operations efficiently. It uses different matching rules defined by the
+/// [SimpleMatchType] and builds necessary data structures for pattern matching, including an Aho-Corasick
+/// automaton for fast multi-pattern matching.
 ///
 /// # Fields
 ///
-/// * `smt_tree` - A vec of `SimpleMatchTypeBitNode`.
-/// * `smt_ac_table_map` - A mapping of [SimpleMatchType] to `SimpleAcTable`, which contains
-///   the Aho-Corasick matcher and word configurations for efficient text matching.
-/// * `simple_wordconf_map` - A mapping of word IDs to `WordConf` structures, which hold the textual
-///   representation of a word and a SIMD vector representing the split bits for the word.
+/// * `smt_tree` - A [Vec] of [SimpleMatchTypeBitNode] that represents the match type tree for hierarchical
+///   or complex match type relationships.
+/// * `smt_matcher` - An [AhoCorasick] matcher that facilitates the multi-pattern matching based on the configured
+///   match types and word patterns.
+/// * `smt_ac_dedup_word_conf_list` - A [Vec] of lists containing tuples of [SimpleMatchType], word ID [u32], and
+///   a size [usize] that helps in deduplication of word configurations for the matcher.
+/// * `simple_word_conf_map` - An [IntMap] that maps word IDs [u32] to their corresponding `WordConf` structures,
+///   providing configuration details for each word.
+///
+/// The [SimpleMatcher] is typically initialized and configured using the provided word maps and match types,
+/// and it is used to perform fast and reliable text matching operations in various applications.
 ///
 /// # Example
 ///
@@ -203,36 +185,41 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 /// // Process the input text and return a list of matching results.
 /// let results = simple_matcher.process(text);
 /// ```
+///
+/// # See also:
+///
+/// * [SimpleMatchType] - Enum defining various match types and their respective flags.
+/// * [SimpleMatcher::new] - Method to initialize a new `SimpleMatcher` instance.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimpleMatcher {
-    smt_tree: Option<Vec<SimpleMatchTypeBitNode>>,
-    smt_ac_table_map: IntMap<SimpleMatchType, SimpleAcTable>,
+    smt_tree: Vec<SimpleMatchTypeBitNode>,
+    smt_matcher: AhoCorasick,
+    smt_ac_dedup_word_conf_list: Vec<Vec<(SimpleMatchType, u32, usize)>>,
     simple_word_conf_map: IntMap<u32, WordConf>,
 }
 
 impl SimpleMatcher {
-    /// Constructs a new [SimpleMatcher] from a provided map of [SimpleMatchType] to word maps.
+    /// Constructs a new `SimpleMatcher` instance from a provided map of `SimpleMatchType` to word maps.
     ///
-    /// This function initializes a [SimpleMatcher] by creating `SimpleAcTable` instances for
-    /// each [SimpleMatchType] based on the provided word maps. It processes the word maps to
-    /// generate efficient Aho-Corasick tables for pattern matching.
+    /// This function initializes a `SimpleMatcher` with mappings and configurations needed for efficient
+    /// text matching based on the provided `SimpleMatchType` rules. It creates the necessary structures for
+    /// pattern matching, including Aho-Corasick tables and word configuration mappings.
     ///
     /// # Arguments
     ///
-    /// * `smt_word_map` - A reference to a [HashMap] mapping [SimpleMatchType]
-    ///   to another [HashMap] of word identifiers ([u32]) and words. The inner [HashMap] contains:
-    ///   * The key: a word identifier ([u32]).
-    ///   * The value: a word that implements [`AsRef<str>`].
+    /// * `smt_word_map` - A reference to a `HashMap` where keys are `SimpleMatchType` and values
+    ///   are `HashMap` of word IDs to their corresponding words.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `I` - A type that can be referenced as a string slice. This represents the type of the words in the map.
+    /// * `S1` - A hasher for the inner `HashMap` keys (word IDs).
+    /// * `S2` - A hasher for the outer `HashMap` keys (`SimpleMatchType`).
     ///
     /// # Returns
     ///
-    /// * [SimpleMatcher] - A new [SimpleMatcher] instance initialized with the provided word maps and
-    ///   their associated match types.
-    ///
-    /// The constructed [SimpleMatcher] will have its match type list and Aho-Corasick tables set up
-    /// based on the provided mappings. If there are at least 4 match types, the `smt_list`
-    /// field will be populated with the match types; otherwise, it remains `None`.
+    /// * `SimpleMatcher` - A configured `SimpleMatcher` instance ready for pattern matching.
     ///
     /// # Example
     ///
@@ -247,175 +234,134 @@ impl SimpleMatcher {
     ///
     /// let simple_matcher = SimpleMatcher::new(&smt_word_map);
     /// ```
+    ///
+    /// # Detailed Processing:
+    ///
+    /// 1. Collects and copies the keys from `smt_word_map` to create `smt_list`.
+    /// 2. If the length of `smt_word_map` is 4 or more, builds the `smt_tree` using `build_smt_tree`.
+    /// 3. Initializes empty vectors and maps for storing configurations and deduplication.
+    /// 4. Iterates over each `SimpleMatchType` and its corresponding word map:
+    ///     a. For each word, splits it based on '&' and '~' characters to separate the included and excluded parts.
+    ///     b. Processes the split words and updates counters for both included and excluded parts.
+    ///     c. Inserts the word configurations into `simple_word_conf_map`.
+    ///     d. Processes and reduces the text for the Aho-Corasick matcher, updating the deduplication maps.
+    /// 5. Chooses the Aho-Corasick matcher kind and prefilter settings based on feature flags.
+    /// 6. Builds the Aho-Corasick matcher using the processed and reduced text words.
+    /// 7. Returns a new `SimpleMatcher` instance with the initialized structures.
+    ///
     pub fn new<I, S1, S2>(
         smt_word_map: &HashMap<SimpleMatchType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
     where
         I: AsRef<str>,
     {
-        let mut simple_matcher = SimpleMatcher {
-            smt_tree: None,
-            smt_ac_table_map: IntMap::default(),
-            simple_word_conf_map: IntMap::default(),
-        };
+        let smt_tree = build_smt_tree(
+            &smt_word_map
+                .keys()
+                .copied()
+                .map(|smt| smt - SimpleMatchType::WordDelete)
+                .collect::<Vec<SimpleMatchType>>(),
+        );
+
+        let mut smt_ac_dedup_word_conf_list = Vec::new();
+        let mut simple_word_conf_map = IntMap::default();
+
+        let mut ac_dedup_word_id = 0;
+        let mut ac_dedup_word_list = Vec::new();
+        let mut ac_dedup_word_id_map = AHashMap::new();
 
         for (&simple_match_type, simple_word_map) in smt_word_map {
-            let simple_ac_table = simple_matcher.build_simple_ac_table(
-                simple_match_type - SimpleMatchType::TextDelete,
-                simple_word_map,
-            );
+            for (&simple_word_id, simple_word) in simple_word_map {
+                let mut ac_split_word_and_counter = AHashMap::default();
+                let mut ac_split_word_not_counter = AHashMap::default();
 
-            simple_matcher.smt_ac_table_map.insert(
-                simple_match_type - SimpleMatchType::WordDelete,
-                simple_ac_table,
-            );
-        }
+                let mut start = 0;
+                let mut is_and = false;
+                let mut is_not = false;
 
-        if smt_word_map.len() >= 4 {
-            simple_matcher.smt_tree = Some(build_smt_tree(
-                &simple_matcher
-                    .smt_ac_table_map
-                    .keys()
-                    .copied()
-                    .collect::<Vec<SimpleMatchType>>(),
-            ));
-        }
-
-        simple_matcher
-    }
-
-    /// Builds a `SimpleAcTable` for a given [SimpleMatchType] and a word map.
-    ///
-    /// This function generates an Aho-Corasick table structured for efficient pattern matching,
-    /// based on the specified [SimpleMatchType] and a supplied mapping of words. It processes
-    /// the word map to split words into sub-patterns based on specified delimiters ('&' and '~'),
-    /// constructs the Aho-Corasick matcher, and sets up the internal configuration for each word.
-    ///
-    /// # Arguments
-    ///
-    /// * `simple_match_type` - The [SimpleMatchType] specifying the type of text transformation/matching rule to apply.
-    /// * `simple_word_map` - A reference to a [`HashMap<u32, I, S2>`] where:
-    ///   * The key is a word identifier ([u32]).
-    ///   * The value is a word itself, which is a type that implements [`AsRef<str>`].
-    ///
-    /// # Returns
-    ///
-    /// * `SimpleAcTable` - The constructed Aho-Corasick table for the given match type and word map.
-    ///
-    /// # Detailed Processing:
-    ///
-    /// 1. Initialize empty vectors for `ac_wordlist` and `ac_word_conf_list`.
-    /// 2. For each word in `simple_word_map`:
-    ///     a. Split the word into sub-patterns based on '&' and '~' delimiters.
-    ///     b. Track sub-patterns that should be counted positively ('&') or negatively ('~').
-    ///     c. Construct split bit vectors combining positive and negative counts.
-    ///     d. Store word configuration (`WordConf`) with its split bit vector and special index.
-    /// 3. For each sub-pattern, apply text processing based on `simple_match_type`.
-    /// 4. Add processed sub-patterns to `ac_wordlist` and their configurations to `ac_word_conf_list`.
-    /// 5. Build and return a `SimpleAcTable` with the constructed Aho-Corasick matcher and configurations.
-    ///
-    /// # Safety
-    ///
-    /// Unsafe code is used for unchecked slice accesses and integer operations to maximize performance.
-    /// Ensure input data complies with expected formats and types to avoid undefined behavior.
-    fn build_simple_ac_table<I, S2>(
-        &mut self,
-        simple_match_type: SimpleMatchType,
-        simple_word_map: &HashMap<u32, I, S2>,
-    ) -> SimpleAcTable
-    where
-        I: AsRef<str>,
-    {
-        let mut ac_dedup_word_id = 0;
-        let mut ac_dedup_word_conf_list = Vec::with_capacity(simple_word_map.len());
-        let mut ac_dedup_word_list = Vec::with_capacity(simple_word_map.len());
-        let mut ac_dedup_word_id_map = AHashMap::with_capacity(simple_word_map.len());
-
-        for (&simple_word_id, simple_word) in simple_word_map {
-            let mut ac_split_word_and_counter = AHashMap::default();
-            let mut ac_split_word_not_counter = AHashMap::default();
-
-            let mut start = 0;
-            let mut is_and = false;
-            let mut is_not = false;
-
-            for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
-                if (is_and || start == 0) && start != index {
+                for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
+                    if (is_and || start == 0) && start != index {
+                        ac_split_word_and_counter
+                            // Guaranteed not failed
+                            .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                            .and_modify(|cnt| *cnt += 1)
+                            .or_insert(1);
+                    }
+                    if is_not && start != index {
+                        ac_split_word_not_counter
+                            // Guaranteed not failed
+                            .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                            .and_modify(|cnt| *cnt -= 1)
+                            .or_insert(0);
+                    }
+                    match char {
+                        "&" => {
+                            is_and = true;
+                            is_not = false;
+                            start = index + 1;
+                        }
+                        "~" => {
+                            is_and = false;
+                            is_not = true;
+                            start = index + 1
+                        }
+                        _ => {}
+                    }
+                }
+                if (is_and || start == 0) && start != simple_word.as_ref().len() {
                     ac_split_word_and_counter
                         // Guaranteed not failed
-                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                         .and_modify(|cnt| *cnt += 1)
                         .or_insert(1);
                 }
-                if is_not && start != index {
+                if is_not && start != simple_word.as_ref().len() {
                     ac_split_word_not_counter
                         // Guaranteed not failed
-                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                         .and_modify(|cnt| *cnt -= 1)
                         .or_insert(0);
                 }
-                match char {
-                    "&" => {
-                        is_and = true;
-                        is_not = false;
-                        start = index + 1;
-                    }
-                    "~" => {
-                        is_and = false;
-                        is_not = true;
-                        start = index + 1
-                    }
-                    _ => {}
-                }
-            }
-            if (is_and || start == 0) && start != simple_word.as_ref().len() {
-                ac_split_word_and_counter
-                    // Guaranteed not failed
-                    .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
-                    .and_modify(|cnt| *cnt += 1)
-                    .or_insert(1);
-            }
-            if is_not && start != simple_word.as_ref().len() {
-                ac_split_word_not_counter
-                    // Guaranteed not failed
-                    .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
-                    .and_modify(|cnt| *cnt -= 1)
-                    .or_insert(0);
-            }
 
-            let not_index = ac_split_word_and_counter.len();
-            let split_bit = ac_split_word_and_counter
-                .values()
-                .copied()
-                .chain(ac_split_word_not_counter.values().copied())
-                .collect::<Vec<i32>>();
+                let not_index = ac_split_word_and_counter.len();
+                let split_bit = ac_split_word_and_counter
+                    .values()
+                    .copied()
+                    .chain(ac_split_word_not_counter.values().copied())
+                    .collect::<Vec<i32>>();
 
-            self.simple_word_conf_map.insert(
-                simple_word_id,
-                WordConf {
-                    word: simple_word.as_ref().to_owned(),
-                    split_bit,
-                    not_index,
-                },
-            );
+                simple_word_conf_map.insert(
+                    simple_word_id,
+                    WordConf {
+                        word: simple_word.as_ref().to_owned(),
+                        split_bit,
+                        not_index,
+                    },
+                );
 
-            for (offset, &split_word) in ac_split_word_and_counter
-                .keys()
-                .chain(ac_split_word_not_counter.keys())
-                .enumerate()
-            {
-                for ac_word in reduce_text_process_emit(simple_match_type, split_word) {
-                    if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
-                        // Guaranteed not failed
-                        let word_conf_list: &mut Vec<(u32, usize)> = unsafe {
-                            ac_dedup_word_conf_list.get_unchecked_mut(*ac_dedup_word_id as usize)
-                        };
-                        word_conf_list.push((simple_word_id, offset));
-                    } else {
-                        ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
-                        ac_dedup_word_conf_list.push(vec![(simple_word_id, offset)]);
-                        ac_dedup_word_list.push(ac_word);
-                        ac_dedup_word_id += 1;
+                for (offset, &split_word) in ac_split_word_and_counter
+                    .keys()
+                    .chain(ac_split_word_not_counter.keys())
+                    .enumerate()
+                {
+                    for ac_word in reduce_text_process_emit(simple_match_type, split_word) {
+                        if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
+                            // Guaranteed not failed
+                            let word_conf_list: &mut Vec<(SimpleMatchType, u32, usize)> = unsafe {
+                                smt_ac_dedup_word_conf_list
+                                    .get_unchecked_mut(*ac_dedup_word_id as usize)
+                            };
+                            word_conf_list.push((simple_match_type, simple_word_id, offset));
+                        } else {
+                            ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
+                            smt_ac_dedup_word_conf_list.push(vec![(
+                                simple_match_type,
+                                simple_word_id,
+                                offset,
+                            )]);
+                            ac_dedup_word_list.push(ac_word);
+                            ac_dedup_word_id += 1;
+                        }
                     }
                 }
             }
@@ -431,25 +377,29 @@ impl SimpleMatcher {
         #[cfg(not(feature = "serde"))]
         let prefilter = true;
 
-        SimpleAcTable {
-            ac_matcher: AhoCorasickBuilder::new()
-                .kind(Some(aho_corasick_kind))
-                .ascii_case_insensitive(true)
-                .prefilter(prefilter)
-                .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
-                .unwrap(),
-            ac_dedup_word_conf_list,
+        let smt_matcher = AhoCorasickBuilder::new()
+            .kind(Some(aho_corasick_kind))
+            .ascii_case_insensitive(true)
+            .prefilter(prefilter)
+            .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
+            .unwrap();
+
+        SimpleMatcher {
+            smt_tree,
+            smt_matcher,
+            smt_ac_dedup_word_conf_list,
+            simple_word_conf_map,
         }
     }
 }
 
 impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
-    /// Checks if the input text matches any of the patterns stored in the matcher.
+    /// Checks if the input text contains any matches based on the patterns stored in the matcher.
     ///
-    /// This function processes the input text based on each [SimpleMatchType] transformation and
-    /// uses the Aho-Corasick algorithm to determine if any patterns from the `smt_ac_table_map`
-    /// are present in the input text. It utilizes a bit vector technique to keep track of matched
-    /// patterns and their configurations.
+    /// This function returns a boolean indicating whether any patterns are found within the input text.
+    /// It processes the input text according to transformations defined by each [SimpleMatchType],
+    /// and utilizes the Aho-Corasick algorithm to find overlapping patterns. If at least one match is found
+    /// according to the configurations, the function returns `true`.
     ///
     /// # Arguments
     ///
@@ -457,24 +407,24 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * `bool` - Returns `true` if any of the patterns match the input text, otherwise returns `false`.
+    /// * `bool` - `true` if at least one match is found, `false` otherwise.
     ///
     /// # Detailed Processing:
     ///
     /// 1. If the input text is empty, return `false`.
-    /// 2. Initialize a map (`word_id_split_bit_map`) to track word configurations during processing.
-    /// 3. For each [SimpleMatchType] and its corresponding `SimpleAcTable`:
-    ///     a. Apply the transformation rules defined by the [SimpleMatchType] to process the text.
-    ///     b. Iterate over each processed version of the text.
-    ///     c. Use the Aho-Corasick matcher to find overlapping patterns in the processed text.
-    ///     d. Retrieve the word configuration based on the pattern found.
-    ///     e. Initialize or update the split bit vector corresponding to the word ID.
-    ///     f. Update the split bit vector by shifting the bit to the right.
-    /// 4. Check if any entry in `word_id_split_bit_map` contains a bit vector where all bits are zero
-    ///    after processing. If such an entry exists, return `true`.
-    ///
-    /// This function ensures efficient pattern matching using Aho-Corasick algorithms across
-    /// transformed versions of the input text.
+    /// 2. Initialize maps and sets to track word configurations during processing, including:
+    ///     * `word_id_split_bit_map`: A map to track the bit matrices for word configurations.
+    ///     * `word_id_set`: A set to track word IDs that have a valid match.
+    ///     * `not_word_id_set`: A set to track word IDs that should be excluded.
+    /// 3. Process the input text using `reduce_text_process_with_tree` to get transformed versions
+    ///    and corresponding [SimpleMatchType] sets.
+    /// 4. Iterate through the processed text and corresponding sets:
+    ///     a. Use the Aho-Corasick matcher to find overlapping patterns.
+    ///     b. For each match, update the bit matrices according to the configurations.
+    ///     c. Check if the match should be excluded based on the not set or existing configurations.
+    ///     d. If a valid match is found according to the bit matrices, add it to the `word_id_set`.
+    /// 5. If `word_id_set` is not empty after processing, return `true`.
+    /// 6. Return `false` if no valid matches are found.
     fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -484,160 +434,74 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_set = IntSet::default();
         let mut not_word_id_set = IntSet::default();
 
-        if let Some(smt_tree) = &self.smt_tree {
-            let (smt_index_set_map, processed_text_list) =
-                reduce_text_process_with_tree(smt_tree, text);
+        let processed_text_smt_list = reduce_text_process_with_tree(&self.smt_tree, text);
+        let processed_times = processed_text_smt_list.len();
 
-            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
-                let processed_index_set =
-                    unsafe { smt_index_set_map.get(&simple_match_type).unwrap_unchecked() };
-                let processed_times = processed_index_set.len();
+        for (index, (processed_text, smt_set)) in processed_text_smt_list.iter().enumerate() {
+            // Guaranteed not failed
+            for ac_dedup_result in unsafe {
+                self.smt_matcher
+                    .try_find_overlapping_iter(processed_text.as_ref())
+                    .unwrap_unchecked()
+            } {
+                // Guaranteed not failed
+                for &(match_simple_match_type, word_id, offset) in unsafe {
+                    self.smt_ac_dedup_word_conf_list
+                        .get_unchecked(ac_dedup_result.pattern().as_usize())
+                } {
+                    if !smt_set.contains(&match_simple_match_type)
+                        || not_word_id_set.contains(&word_id)
+                    {
+                        continue;
+                    }
 
-                for (index, &processed_index) in processed_index_set.iter().enumerate() {
                     // Guaranteed not failed
-                    for ac_dedup_result in unsafe {
-                        simple_ac_table
-                            .ac_matcher
-                            .try_find_overlapping_iter(
-                                processed_text_list.get_unchecked(processed_index).as_ref(),
-                            )
-                            .unwrap_unchecked()
-                    } {
-                        // Guaranteed not failed
-                        for &(word_id, offset) in unsafe {
-                            simple_ac_table
-                                .ac_dedup_word_conf_list
-                                .get_unchecked(ac_dedup_result.pattern().as_usize())
-                        } {
-                            if not_word_id_set.contains(&word_id) {
-                                continue;
-                            }
+                    let word_conf =
+                        unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
-                            // Guaranteed not failed
-                            let word_conf = unsafe {
-                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
-                            };
+                    let split_bit_matrix =
+                        word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                            word_conf
+                                .split_bit
+                                .iter()
+                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                .collect::<Vec<Vec<i32>>>()
+                        });
 
-                            let split_bit_matrix =
-                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                                    word_conf
-                                        .split_bit
-                                        .iter()
-                                        .map(|&bit| {
-                                            iter::repeat(bit).take(processed_times).collect()
-                                        })
-                                        .collect::<Vec<Vec<i32>>>()
-                                });
+                    // bit is i32, so it will not overflow almost 100%
+                    unsafe {
+                        let bit = split_bit_matrix
+                            .get_unchecked_mut(offset)
+                            .get_unchecked_mut(index);
+                        *bit = bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
 
-                            // bit is i32, so it will not overflow almost 100%
-                            unsafe {
-                                let bit = split_bit_matrix
-                                    .get_unchecked_mut(offset)
-                                    .get_unchecked_mut(index);
-                                *bit = bit
-                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+                        if offset >= word_conf.not_index && *bit > 0 {
+                            not_word_id_set.insert(word_id);
+                            word_id_set.remove(&word_id);
+                            continue;
+                        }
 
-                                if offset >= word_conf.not_index && *bit > 0 {
-                                    not_word_id_set.insert(word_id);
-                                    word_id_set.remove(&word_id);
-                                    continue;
-                                }
-
-                                if split_bit_matrix
-                                    .iter()
-                                    .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
-                                {
-                                    word_id_set.insert(word_id);
-                                }
-                            }
+                        if split_bit_matrix
+                            .iter()
+                            .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
+                        {
+                            word_id_set.insert(word_id);
                         }
                     }
-                }
-
-                if !word_id_set.is_empty() {
-                    return true;
                 }
             }
-        } else {
-            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
-                let processed_text_list = reduce_text_process_emit(simple_match_type, text);
-                let processed_times = processed_text_list.len();
-
-                for (index, processed_text) in processed_text_list.iter().enumerate() {
-                    // Guaranteed not failed
-                    for ac_dedup_result in unsafe {
-                        simple_ac_table
-                            .ac_matcher
-                            .try_find_overlapping_iter(processed_text.as_ref())
-                            .unwrap_unchecked()
-                    } {
-                        // Guaranteed not failed
-                        for &(word_id, offset) in unsafe {
-                            simple_ac_table
-                                .ac_dedup_word_conf_list
-                                .get_unchecked(ac_dedup_result.pattern().as_usize())
-                        } {
-                            if not_word_id_set.contains(&word_id) {
-                                continue;
-                            }
-
-                            // Guaranteed not failed
-                            let word_conf = unsafe {
-                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
-                            };
-
-                            let split_bit_matrix =
-                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                                    word_conf
-                                        .split_bit
-                                        .iter()
-                                        .map(|&bit| {
-                                            iter::repeat(bit).take(processed_times).collect()
-                                        })
-                                        .collect::<Vec<Vec<i32>>>()
-                                });
-
-                            // bit is i32, so it will not overflow almost 100%
-                            unsafe {
-                                let bit = split_bit_matrix
-                                    .get_unchecked_mut(offset)
-                                    .get_unchecked_mut(index);
-                                *bit = bit
-                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
-
-                                if offset >= word_conf.not_index && *bit > 0 {
-                                    not_word_id_set.insert(word_id);
-                                    word_id_set.remove(&word_id);
-                                    continue;
-                                }
-
-                                if split_bit_matrix
-                                    .iter()
-                                    .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
-                                {
-                                    word_id_set.insert(word_id);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if !word_id_set.is_empty() {
-                    return true;
-                }
+            if !word_id_set.is_empty() {
+                return true;
             }
         }
 
         false
     }
 
-    /// Processes the input text to find matches based on the patterns stored in the matcher.
     ///
-    /// This function works similarly to the `is_match` method but provides detailed match
-    /// information in the form of `SimpleResult` instances. It processes the input text
-    /// according to the transformations defined by each [SimpleMatchType] and utilizes
-    /// the Aho-Corasick algorithm to find overlapping patterns. The matched patterns
-    /// are checked against defined word configurations to form the resulting matches.
+    /// This function processes the input text and returns a vector of [SimpleResult] containing word matches
+    /// found within the text. It utilizes transformations defined by each [SimpleMatchType] and utilizes
+    /// the Aho-Corasick algorithm to identify overlapping patterns.
     ///
     /// # Arguments
     ///
@@ -645,28 +509,35 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * [`Vec<SimpleResult<'a>>`] - A vector of results, where each result contains the matched
-    ///   word ID and the matched word.
+    /// * [`Vec<SimpleResult>`] - A vector containing [SimpleResult] objects, each containing a `word_id` and `word`
+    /// indicating a valid match found within the input text.
     ///
     /// # Detailed Processing:
     ///
     /// 1. If the input text is empty, return an empty vector.
-    /// 2. Initialize a map (`word_id_split_bit_map`) to track word configurations during processing.
-    /// 3. If `smt_tree` is present:
-    ///     a. Process the text using `reduce_text_process_with_tree`.
-    ///     b. For each [SimpleMatchType] and corresponding `SimpleAcTable`, process the text.
-    ///     c. Use the Aho-Corasick matcher to find overlapping patterns and update the split
-    ///        bit matrix based on the configurations.
-    /// 4. If `smt_tree` is not present:
-    ///     a. Process the text using `reduce_text_process_emit`.
-    ///     b. For each [SimpleMatchType] and corresponding `SimpleAcTable`, process the text.
-    ///     c. Use the Aho-Corasick matcher to find overlapping patterns and update the split
-    ///        bit matrix based on the configurations.
-    /// 5. Convert the `word_id_split_bit_map` into a vector of [SimpleResult] instances by filtering
-    ///    the results based on the split bit matrix.
+    /// 2. Initialize maps and sets to track word configurations during processing, including:
+    ///     * `word_id_split_bit_map`: A map to track the bit matrices for word configurations.
+    ///     * `not_word_id_set`: A set to track word IDs that should be excluded.
+    /// 3. Process the input text using `reduce_text_process_with_tree` to get transformed versions
+    ///    and corresponding [SimpleMatchType] sets.
+    /// 4. Iterate through the processed text and corresponding sets:
+    ///     a. Use the Aho-Corasick matcher to find overlapping patterns.
+    ///     b. For each match, update the bit matrices according to the configurations.
+    ///     c. Check if the match should be excluded based on the not set or existing configurations.
+    /// 5. Filter out and collect valid matches into a vector of [SimpleResult]:
+    ///     * A match is considered valid if it satisfies the bit matrix configurations and
+    ///       is not present in the `not_word_id_set`.
     ///
-    /// This function ensures detailed and efficient pattern matching using Aho-Corasick algorithms
-    /// across transformed versions of the input text and returns precise matching results.
+    /// # Safety
+    ///
+    /// The function uses several `unsafe` blocks for performance reasons, assuming that:
+    /// * The iterator over the processed text will not fail.
+    /// * The configurations for word ID and bit matrices are valid and properly aligned.
+    /// * Accessing elements in maps and vectors using unchecked indexing will not lead to out-of-bound errors.
+    ///
+    /// Use of these `unsafe` blocks is carefully justified to ensure efficient processing and is based
+    /// on guarantees provided either by the input text and configuration maps or the logical structure
+    /// of the program.
     fn process(&'a self, text: &str) -> Vec<SimpleResult<'a>> {
         if text.is_empty() {
             return Vec::new();
@@ -675,120 +546,51 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let mut word_id_split_bit_map = IntMap::default();
         let mut not_word_id_set = IntSet::default();
 
-        if let Some(smt_tree) = &self.smt_tree {
-            let (smt_index_set_map, processed_text_list) =
-                reduce_text_process_with_tree(smt_tree, text);
+        let processed_text_smt_list = reduce_text_process_with_tree(&self.smt_tree, text);
+        let processed_times = processed_text_smt_list.len();
 
-            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
-                let processed_index_set =
-                    unsafe { smt_index_set_map.get(&simple_match_type).unwrap_unchecked() };
-                let processed_times = processed_index_set.len();
-
-                for (index, &processed_index) in processed_index_set.iter().enumerate() {
-                    // Guaranteed not failed
-                    for ac_dedup_result in unsafe {
-                        simple_ac_table
-                            .ac_matcher
-                            .try_find_overlapping_iter(
-                                processed_text_list.get_unchecked(processed_index).as_ref(),
-                            )
-                            .unwrap_unchecked()
-                    } {
-                        // Guaranteed not failed
-                        for &(word_id, offset) in unsafe {
-                            simple_ac_table
-                                .ac_dedup_word_conf_list
-                                .get_unchecked(ac_dedup_result.pattern().as_usize())
-                        } {
-                            if not_word_id_set.contains(&word_id) {
-                                continue;
-                            }
-
-                            // Guaranteed not failed
-                            let word_conf = unsafe {
-                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
-                            };
-
-                            let split_bit_matrix =
-                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                                    word_conf
-                                        .split_bit
-                                        .iter()
-                                        .map(|&bit| {
-                                            iter::repeat(bit).take(processed_times).collect()
-                                        })
-                                        .collect::<Vec<Vec<i32>>>()
-                                });
-
-                            // split_bit is i32, so it will not overflow almost 100%
-                            unsafe {
-                                let split_bit = split_bit_matrix
-                                    .get_unchecked_mut(offset)
-                                    .get_unchecked_mut(index);
-                                *split_bit = split_bit
-                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
-
-                                if offset >= word_conf.not_index && *split_bit > 0 {
-                                    not_word_id_set.insert(word_id);
-                                    word_id_split_bit_map.remove(&word_id);
-                                }
-                            };
-                        }
+        for (index, (processed_text, smt_set)) in processed_text_smt_list.iter().enumerate() {
+            // Guaranteed not failed
+            for ac_dedup_result in unsafe {
+                self.smt_matcher
+                    .try_find_overlapping_iter(processed_text.as_ref())
+                    .unwrap_unchecked()
+            } {
+                // Guaranteed not failed
+                for &(match_simple_match_type, word_id, offset) in unsafe {
+                    self.smt_ac_dedup_word_conf_list
+                        .get_unchecked(ac_dedup_result.pattern().as_usize())
+                } {
+                    if !smt_set.contains(&match_simple_match_type)
+                        || not_word_id_set.contains(&word_id)
+                    {
+                        continue;
                     }
-                }
-            }
-        } else {
-            for (&simple_match_type, simple_ac_table) in &self.smt_ac_table_map {
-                let processed_text_list = reduce_text_process_emit(simple_match_type, text);
-                let processed_times = processed_text_list.len();
 
-                for (index, processed_text) in processed_text_list.iter().enumerate() {
                     // Guaranteed not failed
-                    for ac_dedup_result in unsafe {
-                        simple_ac_table
-                            .ac_matcher
-                            .try_find_overlapping_iter(processed_text.as_ref())
-                            .unwrap_unchecked()
-                    } {
-                        // Guaranteed not failed
-                        for &(word_id, offset) in unsafe {
-                            simple_ac_table
-                                .ac_dedup_word_conf_list
-                                .get_unchecked(ac_dedup_result.pattern().as_usize())
-                        } {
-                            if not_word_id_set.contains(&word_id) {
-                                continue;
-                            }
+                    let word_conf =
+                        unsafe { self.simple_word_conf_map.get(&word_id).unwrap_unchecked() };
 
-                            // Guaranteed not failed
-                            let word_conf = unsafe {
-                                self.simple_word_conf_map.get(&word_id).unwrap_unchecked()
-                            };
+                    let split_bit_matrix =
+                        word_id_split_bit_map.entry(word_id).or_insert_with(|| {
+                            word_conf
+                                .split_bit
+                                .iter()
+                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                .collect::<Vec<Vec<i32>>>()
+                        });
 
-                            let split_bit_matrix =
-                                word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                                    word_conf
-                                        .split_bit
-                                        .iter()
-                                        .map(|&bit| {
-                                            iter::repeat(bit).take(processed_times).collect()
-                                        })
-                                        .collect::<Vec<Vec<i32>>>()
-                                });
+                    // split_bit is i32, so it will not overflow almost 100%
+                    unsafe {
+                        let split_bit = split_bit_matrix
+                            .get_unchecked_mut(offset)
+                            .get_unchecked_mut(index);
+                        *split_bit =
+                            split_bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
 
-                            // split_bit is i32, so it will not overflow almost 100%
-                            unsafe {
-                                let split_bit = split_bit_matrix
-                                    .get_unchecked_mut(offset)
-                                    .get_unchecked_mut(index);
-                                *split_bit = split_bit
-                                    .unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
-
-                                if offset >= word_conf.not_index && *split_bit > 0 {
-                                    not_word_id_set.insert(word_id);
-                                    word_id_split_bit_map.remove(&word_id);
-                                }
-                            };
+                        if offset >= word_conf.not_index && *split_bit > 0 {
+                            not_word_id_set.insert(word_id);
+                            word_id_split_bit_map.remove(&word_id);
                         }
                     }
                 }

@@ -1,43 +1,28 @@
-use aho_corasick_unsafe::{AhoCorasickBuilder, AhoCorasickKind, MatchKind};
-use divan::{black_box, Bencher};
+#![feature(test)]
 
-#[divan::bench]
-fn bench_test_1(bencher: Bencher) {
-    let ac = AhoCorasickBuilder::new()
-        .kind(Some(AhoCorasickKind::DFA))
-        .match_kind(MatchKind::Standard)
-        .ascii_case_insensitive(true)
-        .build(["我", "我", "我", "我"])
-        .unwrap();
+extern crate test;
+use test::Bencher;
 
-    bencher.bench(|| {
-        let mut _s = 0;
-        for x in ac.find_overlapping_iter(black_box("12321421asddaw你我")) {
-            _s += x.pattern().as_usize();
+use matcher_rs::{build_smt_tree, reduce_text_process_with_tree, SimpleMatchType};
+
+#[bench]
+fn bench_test(b: &mut Bencher) {
+    let smt_list = [
+        SimpleMatchType::Fanjian,
+        SimpleMatchType::DeleteNormalize - SimpleMatchType::WordDelete,
+        SimpleMatchType::FanjianDeleteNormalize - SimpleMatchType::WordDelete,
+        SimpleMatchType::Delete - SimpleMatchType::WordDelete,
+        SimpleMatchType::Normalize,
+    ];
+    let smt_tree = build_smt_tree(&smt_list);
+
+    reduce_text_process_with_tree(&smt_tree, "你好，我是中国人");
+
+    b.iter(|| {
+        for _ in 0..1000 {
+            reduce_text_process_with_tree(&smt_tree, "你好，我是中国人");
         }
-    })
+    });
 }
 
-#[divan::bench]
-fn bench_test_2(bencher: Bencher) {
-    let ac = AhoCorasickBuilder::new()
-        .kind(Some(AhoCorasickKind::DFA))
-        .match_kind(MatchKind::Standard)
-        .ascii_case_insensitive(true)
-        .build(["我", "我"])
-        .unwrap();
-
-    bencher.bench(|| {
-        let mut _s = 0;
-        for x in ac.find_overlapping_iter(black_box("12321421asddaw你我")) {
-            _s += x.pattern().as_usize();
-        }
-        for x in ac.find_overlapping_iter(black_box("12321421asddaw你我")) {
-            _s += x.pattern().as_usize();
-        }
-    })
-}
-
-fn main() {
-    divan::main()
-}
+fn main() {}

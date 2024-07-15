@@ -433,7 +433,7 @@ mod search_en {
             SimpleMatchType::DeleteNormalize,
         ] {
             let simple_word_map = build_simple_word_map(
-                "cn",
+                "en",
                 DEFAULT_SIMPLE_WORD_MAP_SIZE,
                 DEFAULT_COMBINED_TIMES,
                 &mut global_word_id,
