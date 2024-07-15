@@ -255,14 +255,7 @@ impl SimpleMatcher {
     where
         I: AsRef<str>,
     {
-        let smt_tree = build_smt_tree(
-            &smt_word_map
-                .keys()
-                .copied()
-                .map(|smt| smt - SimpleMatchType::WordDelete)
-                .collect::<Vec<SimpleMatchType>>(),
-        );
-
+        let mut smt_list = Vec::new();
         let mut smt_ac_dedup_word_conf_list = Vec::new();
         let mut simple_word_conf_map = IntMap::default();
 
@@ -271,6 +264,11 @@ impl SimpleMatcher {
         let mut ac_dedup_word_id_map = AHashMap::new();
 
         for (&simple_match_type, simple_word_map) in smt_word_map {
+            let word_simple_match_type = simple_match_type - SimpleMatchType::TextDelete;
+            let text_simple_match_type = simple_match_type - SimpleMatchType::WordDelete;
+
+            smt_list.push(text_simple_match_type);
+
             for (&simple_word_id, simple_word) in simple_word_map {
                 let mut ac_split_word_and_counter = AHashMap::default();
                 let mut ac_split_word_not_counter = AHashMap::default();
@@ -344,18 +342,18 @@ impl SimpleMatcher {
                     .chain(ac_split_word_not_counter.keys())
                     .enumerate()
                 {
-                    for ac_word in reduce_text_process_emit(simple_match_type, split_word) {
+                    for ac_word in reduce_text_process_emit(word_simple_match_type, split_word) {
                         if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
                             // Guaranteed not failed
                             let word_conf_list: &mut Vec<(SimpleMatchType, u32, usize)> = unsafe {
                                 smt_ac_dedup_word_conf_list
                                     .get_unchecked_mut(*ac_dedup_word_id as usize)
                             };
-                            word_conf_list.push((simple_match_type, simple_word_id, offset));
+                            word_conf_list.push((text_simple_match_type, simple_word_id, offset));
                         } else {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
                             smt_ac_dedup_word_conf_list.push(vec![(
-                                simple_match_type,
+                                text_simple_match_type,
                                 simple_word_id,
                                 offset,
                             )]);
@@ -366,6 +364,8 @@ impl SimpleMatcher {
                 }
             }
         }
+
+        let smt_tree = build_smt_tree(&smt_list);
 
         #[cfg(feature = "dfa")]
         let aho_corasick_kind = AhoCorasickKind::DFA;

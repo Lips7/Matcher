@@ -174,94 +174,94 @@ Timer precision: 41 ns
 bench                                               fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ build_cn                                                       │               │               │               │         │
 │  ├─ build_cn_by_combined_times                                  │               │               │               │         │
-│  │  ├─ 1                                          2.445 ms      │ 3.004 ms      │ 2.516 ms      │ 2.536 ms      │ 100     │ 100
-│  │  ├─ 2                                          5.24 ms       │ 5.606 ms      │ 5.294 ms      │ 5.3 ms        │ 100     │ 100
-│  │  ├─ 3                                          8.127 ms      │ 9.515 ms      │ 8.398 ms      │ 8.456 ms      │ 100     │ 100
-│  │  ├─ 4                                          10.51 ms      │ 50.54 ms      │ 11.27 ms      │ 11.74 ms      │ 100     │ 100
-│  │  ╰─ 5                                          13.22 ms      │ 25.06 ms      │ 13.65 ms      │ 13.88 ms      │ 100     │ 100
-│  ├─ build_cn_by_multiple_simple_match_type        27.99 ms      │ 38.42 ms      │ 28.58 ms      │ 28.74 ms      │ 100     │ 100
+│  │  ├─ 1                                          2.468 ms      │ 3.355 ms      │ 2.506 ms      │ 2.536 ms      │ 100     │ 100
+│  │  ├─ 2                                          5.303 ms      │ 5.765 ms      │ 5.402 ms      │ 5.41 ms       │ 100     │ 100
+│  │  ├─ 3                                          7.912 ms      │ 10.16 ms      │ 7.986 ms      │ 8.081 ms      │ 100     │ 100
+│  │  ├─ 4                                          10.59 ms      │ 11.31 ms      │ 10.73 ms      │ 10.75 ms      │ 100     │ 100
+│  │  ╰─ 5                                          13.03 ms      │ 14.1 ms       │ 13.13 ms      │ 13.21 ms      │ 100     │ 100
+│  ├─ build_cn_by_multiple_simple_match_type        26.63 ms      │ 40.81 ms      │ 26.99 ms      │ 27.23 ms      │ 100     │ 100
 │  ├─ build_cn_by_simple_match_type                               │               │               │               │         │
-│  │  ├─ "fanjian"                                  5.313 ms      │ 5.726 ms      │ 5.445 ms      │ 5.464 ms      │ 100     │ 100
-│  │  ├─ "fanjian_worddelete_textdelete_normalize"  5.528 ms      │ 5.912 ms      │ 5.607 ms      │ 5.612 ms      │ 100     │ 100
-│  │  ├─ "none"                                     5.28 ms       │ 5.844 ms      │ 5.515 ms      │ 5.503 ms      │ 100     │ 100
-│  │  ├─ "normalize"                                5.453 ms      │ 5.965 ms      │ 5.653 ms      │ 5.667 ms      │ 100     │ 100
-│  │  ├─ "pinyin"                                   16.39 ms      │ 27.83 ms      │ 16.81 ms      │ 17.01 ms      │ 100     │ 100
-│  │  ├─ "pinyinchar"                               16.25 ms      │ 18.55 ms      │ 16.75 ms      │ 16.86 ms      │ 100     │ 100
-│  │  ├─ "worddelete_textdelete"                    5.383 ms      │ 9.107 ms      │ 5.529 ms      │ 5.572 ms      │ 100     │ 100
-│  │  ╰─ "worddelete_textdelete_normalize"          5.488 ms      │ 5.976 ms      │ 5.675 ms      │ 5.672 ms      │ 100     │ 100
+│  │  ├─ "fanjian"                                  5.296 ms      │ 6.12 ms       │ 5.348 ms      │ 5.398 ms      │ 100     │ 100
+│  │  ├─ "fanjian_worddelete_textdelete_normalize"  5.43 ms       │ 5.937 ms      │ 5.47 ms       │ 5.491 ms      │ 100     │ 100
+│  │  ├─ "none"                                     5.268 ms      │ 5.667 ms      │ 5.375 ms      │ 5.379 ms      │ 100     │ 100
+│  │  ├─ "normalize"                                5.373 ms      │ 5.827 ms      │ 5.423 ms      │ 5.437 ms      │ 100     │ 100
+│  │  ├─ "pinyin"                                   16.02 ms      │ 24.52 ms      │ 16.15 ms      │ 16.34 ms      │ 100     │ 100
+│  │  ├─ "pinyinchar"                               15.81 ms      │ 41.81 ms      │ 16.29 ms      │ 16.99 ms      │ 100     │ 100
+│  │  ├─ "worddelete_textdelete"                    5.291 ms      │ 6.192 ms      │ 5.409 ms      │ 5.556 ms      │ 100     │ 100
+│  │  ╰─ "worddelete_textdelete_normalize"          5.38 ms       │ 6.311 ms      │ 5.897 ms      │ 5.866 ms      │ 100     │ 100
 │  ╰─ build_cn_by_simple_word_map_size                            │               │               │               │         │
-│     ├─ 100                                        487.4 µs      │ 774 µs        │ 535 µs        │ 537.1 µs      │ 100     │ 100
-│     ├─ 1000                                       5.203 ms      │ 6.004 ms      │ 5.31 ms       │ 5.363 ms      │ 100     │ 100
-│     ├─ 10000                                      50.44 ms      │ 65.39 ms      │ 51.55 ms      │ 52.07 ms      │ 97      │ 97
-│     ╰─ 50000                                      194 ms        │ 212.4 ms      │ 201 ms        │ 201 ms        │ 25      │ 25
+│     ├─ 100                                        501.2 µs      │ 838.9 µs      │ 545.2 µs      │ 559.5 µs      │ 100     │ 100
+│     ├─ 1000                                       5.383 ms      │ 18.63 ms      │ 5.669 ms      │ 5.88 ms       │ 100     │ 100
+│     ├─ 10000                                      49.97 ms      │ 99.73 ms      │ 53.03 ms      │ 54.13 ms      │ 93      │ 93
+│     ╰─ 50000                                      194.1 ms      │ 366.2 ms      │ 204.9 ms      │ 212.6 ms      │ 24      │ 24
 ├─ build_en                                                       │               │               │               │         │
 │  ├─ build_en_by_combined_times                                  │               │               │               │         │
-│  │  ├─ 1                                          5.496 ms      │ 27.82 ms      │ 5.798 ms      │ 6.405 ms      │ 100     │ 100
-│  │  ├─ 2                                          12.63 ms      │ 14.09 ms      │ 13.29 ms      │ 13.25 ms      │ 100     │ 100
-│  │  ├─ 3                                          21.94 ms      │ 23.56 ms      │ 22.2 ms       │ 22.3 ms       │ 100     │ 100
-│  │  ├─ 4                                          29.54 ms      │ 73.17 ms      │ 30.67 ms      │ 31.6 ms       │ 100     │ 100
-│  │  ╰─ 5                                          38.82 ms      │ 90.39 ms      │ 39.5 ms       │ 40.09 ms      │ 100     │ 100
-│  ├─ build_en_by_multiple_simple_match_type        16.46 ms      │ 18.91 ms      │ 17.06 ms      │ 17.17 ms      │ 100     │ 100
+│  │  ├─ 1                                          5.43 ms       │ 6.427 ms      │ 5.84 ms       │ 5.907 ms      │ 100     │ 100
+│  │  ├─ 2                                          12.9 ms       │ 21.5 ms       │ 13.6 ms       │ 13.83 ms      │ 100     │ 100
+│  │  ├─ 3                                          21.99 ms      │ 24.19 ms      │ 22.89 ms      │ 22.8 ms       │ 100     │ 100
+│  │  ├─ 4                                          29.3 ms       │ 50.2 ms       │ 30.84 ms      │ 31.27 ms      │ 100     │ 100
+│  │  ╰─ 5                                          38.12 ms      │ 40.88 ms      │ 38.44 ms      │ 38.58 ms      │ 100     │ 100
+│  ├─ build_en_by_multiple_simple_match_type        16.43 ms      │ 19 ms         │ 16.79 ms      │ 16.95 ms      │ 100     │ 100
 │  ├─ build_en_by_simple_match_type                               │               │               │               │         │
-│  │  ├─ "none"                                     13.43 ms      │ 25.77 ms      │ 13.97 ms      │ 14.12 ms      │ 100     │ 100
-│  │  ├─ "normalize"                                11.52 ms      │ 13.47 ms      │ 12.39 ms      │ 12.36 ms      │ 100     │ 100
-│  │  ├─ "worddelete_textdelete"                    12.53 ms      │ 13.46 ms      │ 13.03 ms      │ 13.02 ms      │ 100     │ 100
-│  │  ╰─ "worddelete_textdelete_normalize"          11.91 ms      │ 54.05 ms      │ 12.59 ms      │ 13.07 ms      │ 100     │ 100
+│  │  ├─ "none"                                     13.97 ms      │ 15.1 ms       │ 14.56 ms      │ 14.58 ms      │ 100     │ 100
+│  │  ├─ "normalize"                                12.35 ms      │ 17.97 ms      │ 13.05 ms      │ 13.13 ms      │ 100     │ 100
+│  │  ├─ "worddelete_textdelete"                    13.5 ms       │ 14.87 ms      │ 13.96 ms      │ 13.97 ms      │ 100     │ 100
+│  │  ╰─ "worddelete_textdelete_normalize"          11.83 ms      │ 13.31 ms      │ 12.46 ms      │ 12.54 ms      │ 100     │ 100
 │  ╰─ build_en_by_simple_word_map_size                            │               │               │               │         │
-│     ├─ 100                                        942.8 µs      │ 1.234 ms      │ 978.4 µs      │ 999.1 µs      │ 100     │ 100
-│     ├─ 1000                                       12.08 ms      │ 13.42 ms      │ 12.7 ms       │ 12.65 ms      │ 100     │ 100
-│     ├─ 10000                                      173.4 ms      │ 228.4 ms      │ 178.9 ms      │ 182.9 ms      │ 28      │ 28
-│     ╰─ 50000                                      749.1 ms      │ 797.2 ms      │ 764.6 ms      │ 768.4 ms      │ 7       │ 7
+│     ├─ 100                                        848.1 µs      │ 1.286 ms      │ 925.4 µs      │ 929 µs        │ 100     │ 100
+│     ├─ 1000                                       12.57 ms      │ 16.46 ms      │ 13.38 ms      │ 13.38 ms      │ 100     │ 100
+│     ├─ 10000                                      178.1 ms      │ 192.3 ms      │ 182.2 ms      │ 183.7 ms      │ 28      │ 28
+│     ╰─ 50000                                      743.3 ms      │ 884.1 ms      │ 752.2 ms      │ 776.2 ms      │ 7       │ 7
 ├─ search_cn                                                      │               │               │               │         │
 │  ├─ search_cn_baseline                                          │               │               │               │         │
-│  │  ├─ 100                                        3.019 ms      │ 3.274 ms      │ 3.037 ms      │ 3.045 ms      │ 100     │ 100
-│  │  ├─ 1000                                       2.958 ms      │ 3.402 ms      │ 2.992 ms      │ 3.011 ms      │ 100     │ 100
-│  │  ├─ 10000                                      9.016 ms      │ 10.35 ms      │ 9.186 ms      │ 9.25 ms       │ 100     │ 100
-│  │  ╰─ 50000                                      32.66 ms      │ 50.9 ms       │ 33.31 ms      │ 33.75 ms      │ 100     │ 100
+│  │  ├─ 100                                        2.907 ms      │ 11.87 ms      │ 3.068 ms      │ 3.359 ms      │ 100     │ 100
+│  │  ├─ 1000                                       2.99 ms       │ 3.422 ms      │ 3.006 ms      │ 3.033 ms      │ 100     │ 100
+│  │  ├─ 10000                                      5.197 ms      │ 5.801 ms      │ 5.269 ms      │ 5.294 ms      │ 100     │ 100
+│  │  ╰─ 50000                                      12.44 ms      │ 16.52 ms      │ 14.2 ms       │ 13.89 ms      │ 100     │ 100
 │  ├─ search_cn_by_combined_times                                 │               │               │               │         │
-│  │  ├─ 1                                          4.082 ms      │ 4.815 ms      │ 4.146 ms      │ 4.247 ms      │ 100     │ 100
-│  │  ├─ 2                                          5.25 ms       │ 6.151 ms      │ 5.614 ms      │ 5.578 ms      │ 100     │ 100
-│  │  ├─ 3                                          6.923 ms      │ 49.44 ms      │ 7.129 ms      │ 7.772 ms      │ 100     │ 100
-│  │  ├─ 4                                          7.52 ms       │ 8.945 ms      │ 8.005 ms      │ 8.005 ms      │ 100     │ 100
-│  │  ╰─ 5                                          7.892 ms      │ 9.423 ms      │ 8.139 ms      │ 8.32 ms       │ 100     │ 100
-│  ├─ search_cn_by_multiple_simple_match_type       71.63 ms      │ 92.02 ms      │ 75.63 ms      │ 76.22 ms      │ 100     │ 100
+│  │  ├─ 1                                          3.702 ms      │ 4.091 ms      │ 3.728 ms      │ 3.749 ms      │ 100     │ 100
+│  │  ├─ 2                                          4.442 ms      │ 4.826 ms      │ 4.458 ms      │ 4.467 ms      │ 100     │ 100
+│  │  ├─ 3                                          5.054 ms      │ 5.595 ms      │ 5.078 ms      │ 5.093 ms      │ 100     │ 100
+│  │  ├─ 4                                          6.136 ms      │ 6.777 ms      │ 6.159 ms      │ 6.177 ms      │ 100     │ 100
+│  │  ╰─ 5                                          6.235 ms      │ 11.38 ms      │ 6.396 ms      │ 6.51 ms       │ 100     │ 100
+│  ├─ search_cn_by_multiple_simple_match_type       64.81 ms      │ 80.83 ms      │ 66.49 ms      │ 66.75 ms      │ 100     │ 100
 │  ├─ search_cn_by_simple_match_type                              │               │               │               │         │
-│  │  ├─ "fanjian"                                  7.002 ms      │ 7.41 ms       │ 7.182 ms      │ 7.187 ms      │ 100     │ 100
-│  │  ├─ "fanjian_worddelete_textdelete_normalize"  17.77 ms      │ 28.42 ms      │ 18.42 ms      │ 18.61 ms      │ 100     │ 100
-│  │  ├─ "none"                                     5.39 ms       │ 5.743 ms      │ 5.514 ms      │ 5.526 ms      │ 100     │ 100
-│  │  ├─ "normalize"                                10.78 ms      │ 43.1 ms       │ 11.01 ms      │ 11.47 ms      │ 100     │ 100
-│  │  ├─ "pinyin"                                   53.95 ms      │ 69.5 ms       │ 54.88 ms      │ 55.33 ms      │ 91      │ 91
-│  │  ├─ "pinyinchar"                               62.93 ms      │ 74.38 ms      │ 63.95 ms      │ 64.9 ms       │ 78      │ 78
-│  │  ├─ "worddelete_textdelete"                    13.98 ms      │ 24.26 ms      │ 14.75 ms      │ 14.9 ms       │ 100     │ 100
-│  │  ╰─ "worddelete_textdelete_normalize"          17.1 ms       │ 22.19 ms      │ 18.14 ms      │ 18.09 ms      │ 100     │ 100
+│  │  ├─ "fanjian"                                  6.781 ms      │ 7.486 ms      │ 6.841 ms      │ 6.927 ms      │ 100     │ 100
+│  │  ├─ "fanjian_worddelete_textdelete_normalize"  21.47 ms      │ 45.61 ms      │ 21.82 ms      │ 22.33 ms      │ 100     │ 100
+│  │  ├─ "none"                                     4.684 ms      │ 5.198 ms      │ 4.705 ms      │ 4.731 ms      │ 100     │ 100
+│  │  ├─ "normalize"                                14.62 ms      │ 15.81 ms      │ 15.5 ms       │ 15.28 ms      │ 100     │ 100
+│  │  ├─ "pinyin"                                   57.98 ms      │ 63.66 ms      │ 60.31 ms      │ 59.92 ms      │ 84      │ 84
+│  │  ├─ "pinyinchar"                               63.8 ms       │ 74.02 ms      │ 65.47 ms      │ 66.22 ms      │ 76      │ 76
+│  │  ├─ "worddelete_textdelete"                    13.2 ms       │ 14.62 ms      │ 13.43 ms      │ 13.65 ms      │ 100     │ 100
+│  │  ╰─ "worddelete_textdelete_normalize"          18.97 ms      │ 21.06 ms      │ 19.73 ms      │ 19.83 ms      │ 100     │ 100
 │  ╰─ search_cn_by_simple_word_map_size                           │               │               │               │         │
-│     ├─ 100                                        2.964 ms      │ 3.463 ms      │ 3.031 ms      │ 3.055 ms      │ 100     │ 100
-│     ├─ 1000                                       5.459 ms      │ 5.778 ms      │ 5.494 ms      │ 5.512 ms      │ 100     │ 100
-│     ├─ 10000                                      19.03 ms      │ 21.74 ms      │ 19.42 ms      │ 19.55 ms      │ 100     │ 100
-│     ╰─ 50000                                      74.22 ms      │ 87.68 ms      │ 76.62 ms      │ 77.09 ms      │ 65      │ 65
+│     ├─ 100                                        3.031 ms      │ 3.491 ms      │ 3.082 ms      │ 3.104 ms      │ 100     │ 100
+│     ├─ 1000                                       4.793 ms      │ 5.205 ms      │ 4.997 ms      │ 5.001 ms      │ 100     │ 100
+│     ├─ 10000                                      10.12 ms      │ 12.74 ms      │ 10.7 ms       │ 10.66 ms      │ 100     │ 100
+│     ╰─ 50000                                      21.12 ms      │ 27.96 ms      │ 21.77 ms      │ 23.13 ms      │ 100     │ 100
 ╰─ search_en                                                      │               │               │               │         │
    ├─ search_en_baseline                                          │               │               │               │         │
-   │  ├─ 100                                        231.5 µs      │ 363.1 µs      │ 252.2 µs      │ 257.4 µs      │ 100     │ 100
-   │  ├─ 1000                                       250.8 µs      │ 381.1 µs      │ 277.6 µs      │ 281.6 µs      │ 100     │ 100
-   │  ├─ 10000                                      869.7 µs      │ 1.041 ms      │ 932.4 µs      │ 936.6 µs      │ 100     │ 100
-   │  ╰─ 50000                                      925.5 µs      │ 972.9 µs      │ 930.2 µs      │ 933.2 µs      │ 100     │ 100
+   │  ├─ 100                                        328.3 µs      │ 1.576 ms      │ 343.1 µs      │ 364.5 µs      │ 100     │ 100
+   │  ├─ 1000                                       343.6 µs      │ 472.4 µs      │ 369.9 µs      │ 369.1 µs      │ 100     │ 100
+   │  ├─ 10000                                      1.169 ms      │ 1.248 ms      │ 1.197 ms      │ 1.199 ms      │ 100     │ 100
+   │  ╰─ 50000                                      1.193 ms      │ 1.304 ms      │ 1.199 ms      │ 1.205 ms      │ 100     │ 100
    ├─ search_en_by_combined_times                                 │               │               │               │         │
-   │  ├─ 1                                          1.307 ms      │ 1.568 ms      │ 1.404 ms      │ 1.383 ms      │ 100     │ 100
-   │  ├─ 2                                          1.648 ms      │ 1.914 ms      │ 1.722 ms      │ 1.74 ms       │ 100     │ 100
-   │  ├─ 3                                          2.299 ms      │ 2.662 ms      │ 2.47 ms       │ 2.438 ms      │ 100     │ 100
-   │  ├─ 4                                          2.339 ms      │ 2.949 ms      │ 2.4 ms        │ 2.43 ms       │ 100     │ 100
-   │  ╰─ 5                                          2.436 ms      │ 3.159 ms      │ 2.631 ms      │ 2.616 ms      │ 100     │ 100
-   ├─ search_en_by_multiple_simple_match_type       12.74 ms      │ 18.66 ms      │ 12.82 ms      │ 12.97 ms      │ 100     │ 100
+   │  ├─ 1                                          1.682 ms      │ 4.053 ms      │ 1.692 ms      │ 1.727 ms      │ 100     │ 100
+   │  ├─ 2                                          2.481 ms      │ 2.682 ms      │ 2.502 ms      │ 2.506 ms      │ 100     │ 100
+   │  ├─ 3                                          2.585 ms      │ 2.979 ms      │ 2.678 ms      │ 2.69 ms       │ 100     │ 100
+   │  ├─ 4                                          2.654 ms      │ 3.265 ms      │ 2.761 ms      │ 2.764 ms      │ 100     │ 100
+   │  ╰─ 5                                          2.74 ms       │ 3.242 ms      │ 2.752 ms      │ 2.761 ms      │ 100     │ 100
+   ├─ search_en_by_multiple_simple_match_type       9.173 ms      │ 10.27 ms      │ 9.351 ms      │ 9.481 ms      │ 100     │ 100
    ├─ search_en_by_simple_match_type                              │               │               │               │         │
-   │  ├─ "none"                                     1.691 ms      │ 14.03 ms      │ 1.812 ms      │ 2.207 ms      │ 100     │ 100
-   │  ├─ "normalize"                                2.829 ms      │ 4.028 ms      │ 3.045 ms      │ 3.071 ms      │ 100     │ 100
-   │  ├─ "worddelete_textdelete"                    5.648 ms      │ 35.35 ms      │ 6.115 ms      │ 6.561 ms      │ 100     │ 100
-   │  ╰─ "worddelete_textdelete_normalize"          6.221 ms      │ 7.296 ms      │ 6.641 ms      │ 6.655 ms      │ 100     │ 100
+   │  ├─ "none"                                     1.99 ms       │ 2.286 ms      │ 2.006 ms      │ 2.049 ms      │ 100     │ 100
+   │  ├─ "normalize"                                3.992 ms      │ 4.064 ms      │ 4.009 ms      │ 4.012 ms      │ 100     │ 100
+   │  ├─ "worddelete_textdelete"                    6.198 ms      │ 7.005 ms      │ 6.225 ms      │ 6.253 ms      │ 100     │ 100
+   │  ╰─ "worddelete_textdelete_normalize"          10.51 ms      │ 32.63 ms      │ 11.1 ms       │ 11.41 ms      │ 100     │ 100
    ╰─ search_en_by_simple_word_map_size                           │               │               │               │         │
-      ├─ 100                                        1.008 ms      │ 1.192 ms      │ 1.076 ms      │ 1.079 ms      │ 100     │ 100
-      ├─ 1000                                       2.197 ms      │ 2.384 ms      │ 2.22 ms       │ 2.224 ms      │ 100     │ 100
-      ├─ 10000                                      3.211 ms      │ 4.464 ms      │ 3.23 ms       │ 3.244 ms      │ 100     │ 100
-      ╰─ 50000                                      4.971 ms      │ 7.22 ms       │ 5.065 ms      │ 5.081 ms      │ 100     │ 100
+      ├─ 100                                        1.384 ms      │ 1.616 ms      │ 1.458 ms      │ 1.471 ms      │ 100     │ 100
+      ├─ 1000                                       2.395 ms      │ 2.587 ms      │ 2.427 ms      │ 2.432 ms      │ 100     │ 100
+      ├─ 10000                                      3.091 ms      │ 4.291 ms      │ 3.113 ms      │ 3.127 ms      │ 100     │ 100
+      ╰─ 50000                                      3.668 ms      │ 5.738 ms      │ 3.831 ms      │ 3.853 ms      │ 100     │ 100
 ```
 
 ## Contributing
