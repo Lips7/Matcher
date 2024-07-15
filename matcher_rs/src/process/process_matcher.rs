@@ -918,8 +918,6 @@ pub fn reduce_text_process_with_tree<'a>(
     processed_text_smt_set
 }
 
-#[inline(always)]
-#[allow(dead_code)]
 /// Processes the given text through a list of specified [SimpleMatchType] transformations.
 ///
 /// This function builds a tree structure from the list of [SimpleMatchType] transformations
@@ -942,6 +940,7 @@ pub fn reduce_text_process_with_tree<'a>(
 ///
 /// This function employs `unsafe` code to efficiently access and manipulate internal data structures.
 /// Care should be taken when modifying this function to avoid introducing undefined behavior.
+#[inline(always)]
 pub fn reduce_text_process_with_list<'a>(
     smt_list: &[SimpleMatchType],
     text: &'a str,
@@ -1081,8 +1080,11 @@ mod test_text_process {
     #[test]
     fn test_build_smt_tree() {
         let smt_list = vec![
-            SimpleMatchType::None,
-            SimpleMatchType::Fanjian | SimpleMatchType::None,
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::DeleteNormalize - SimpleMatchType::WordDelete,
+            SimpleMatchType::FanjianDeleteNormalize - SimpleMatchType::WordDelete,
+            SimpleMatchType::TextDelete,
+            SimpleMatchType::Normalize,
         ];
         let smt_tree = build_smt_tree(&smt_list);
         println!("{:?}", smt_tree);
@@ -1090,7 +1092,13 @@ mod test_text_process {
 
     #[test]
     fn test_reduce_text_process_with_tree() {
-        let smt_list = vec![SimpleMatchType::None];
+        let smt_list = vec![
+            SimpleMatchType::Fanjian,
+            SimpleMatchType::DeleteNormalize - SimpleMatchType::WordDelete,
+            SimpleMatchType::FanjianDeleteNormalize - SimpleMatchType::WordDelete,
+            SimpleMatchType::TextDelete,
+            SimpleMatchType::Normalize,
+        ];
         let smt_tree = build_smt_tree(&smt_list);
         let text = "test爽-︻";
 
