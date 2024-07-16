@@ -151,7 +151,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///
 /// # Fields
 ///
-/// * `smt_tree` - A [Vec] of [SimpleMatchTypeBitNode] that represents the match type tree for hierarchical
+/// * `smt_tree` - A [Vec] of `SimpleMatchTypeBitNode` that represents the match type tree for hierarchical
 ///   or complex match type relationships.
 /// * `smt_matcher` - An [AhoCorasick] matcher that facilitates the multi-pattern matching based on the configured
 ///   match types and word patterns.

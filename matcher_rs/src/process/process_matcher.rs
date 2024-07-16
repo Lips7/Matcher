@@ -41,7 +41,6 @@ lazy_static! {
 /// This enum is used as part of the text processing framework, allowing for specialized handling of Chinese text
 /// compared to other types of text. It supports two variants:
 ///
-/// - [LeftMost](ProcessMatcher::LeftMost): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for leftmost search mechanics.
 /// - [Chinese](ProcessMatcher::Chinese): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for Chinese characters.
 /// - [Others](ProcessMatcher::Others): Uses an [AhoCorasick] matcher for all other types of text.
 ///
@@ -767,10 +766,9 @@ pub struct SimpleMatchTypeBitNode {
     children: ArrayVec<[usize; 8]>,
 }
 
+/// Constructs a tree of `SimpleMatchTypeBitNode`` instances based on the given list of [SimpleMatchType] transformations.
 ///
-/// Constructs a tree of [SimpleMatchTypeBitNode] instances based on the given list of [SimpleMatchType] transformations.
-///
-/// This function creates a hierarchy of [SimpleMatchTypeBitNode] nodes representing different transformation types
+/// This function creates a hierarchy of `SimpleMatchTypeBitNode`` nodes representing different transformation types
 /// defined by the provided `smt_list`. Each node in the tree corresponds to a specific bit transformation and may have
 /// child nodes representing subsequent transformations.
 ///
@@ -780,7 +778,7 @@ pub struct SimpleMatchTypeBitNode {
 ///
 /// # Returns
 ///
-/// A [Vec] containing the constructed tree of [SimpleMatchTypeBitNode]'s, where each node represents a different bit
+/// A [Vec] containing the constructed tree of `SimpleMatchTypeBitNode`'s, where each node represents a different bit
 /// transformation as defined in the `smt_list`.
 ///
 /// # Details
@@ -848,7 +846,7 @@ pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNod
     smt_tree
 }
 
-/// Reduces and processes the given text through a pre-built tree of [SimpleMatchTypeBitNode].
+/// Reduces and processes the given text through a pre-built tree of `SimpleMatchTypeBitNode`.
 ///
 /// This function applies text transformations specified in a tree structure to the input text,
 /// producing various transformed versions along with their associated match types.
@@ -857,7 +855,7 @@ pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNod
 ///
 /// # Parameters
 ///
-/// * `smt_tree`: A slice of [SimpleMatchTypeBitNode] representing a pre-built tree structure
+/// * `smt_tree`: A slice of `SimpleMatchTypeBitNode` representing a pre-built tree structure
 ///               containing text transformation rules.
 /// * `text`: A string slice holding the initial text to be transformed.
 ///
@@ -888,7 +886,6 @@ pub fn build_smt_tree(smt_list: &[SimpleMatchType]) -> Vec<SimpleMatchTypeBitNod
 /// This function uses `unsafe` blocks to access elements in the vectors and arrays directly,
 /// assuming that all necessary bounds checks and precautions are performed implicitly. Care should be
 /// taken when modifying this function to avoid introducing undefined behavior.
-/// ```
 #[inline(always)]
 pub fn reduce_text_process_with_tree<'a>(
     smt_tree: &[SimpleMatchTypeBitNode],
