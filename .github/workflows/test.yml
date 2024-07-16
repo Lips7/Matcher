@@ -53,6 +53,8 @@ jobs:
         with:
           toolchain: nightly
           target: ${{ matrix.platform.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Test prebuilt
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt"
       - name: Test runtime_build
@@ -63,8 +65,8 @@ jobs:
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa"
       - name: Test serde
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa,serde"
-      - name: Build
-        run: cargo build --release --target ${{ matrix.platform.target }}
+      - name: Run doc
+        run: cargo doc
       - name: Rename & move
         shell: bash
         run: |
