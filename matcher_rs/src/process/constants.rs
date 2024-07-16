@@ -16,8 +16,14 @@ pub mod runtime_build_feature {
 
 #[cfg(feature = "prebuilt")]
 pub mod prebuilt_feature {
+    #[cfg(feature = "dfa")]
     pub const NORMALIZE_PROCESS_LIST_STR: &str =
         include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
+    #[cfg(not(feature = "dfa"))]
+    pub const NORMALIZE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/normalize_daachorse_charwise_u32_matcher.bin"
+    ));
     pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
         env!("OUT_DIR"),
         "/normalize_process_replace_list.bin"
@@ -42,7 +48,13 @@ pub mod prebuilt_feature {
         "/pinyin_daachorse_charwise_u32_matcher.bin"
     ));
 
+    #[cfg(feature = "dfa")]
     pub const TEXT_DELETE: &str = include_str!("../../str_conv/TEXT-DELETE.txt");
+    #[cfg(not(feature = "dfa"))]
+    pub const TEXT_DELETE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/text_delete_daachorse_charwise_u32_matcher.bin"
+    ));
 
     pub const WHITE_SPACE: &[&str] = &[
         "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}",

@@ -41,6 +41,7 @@ lazy_static! {
 /// This enum is used as part of the text processing framework, allowing for specialized handling of Chinese text
 /// compared to other types of text. It supports two variants:
 ///
+/// - [LeftMost](ProcessMatcher::LeftMost): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for leftmost search mechanics.
 /// - [Chinese](ProcessMatcher::Chinese): Utilizes a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher optimized for Chinese characters.
 /// - [Others](ProcessMatcher::Others): Uses an [AhoCorasick] matcher for all other types of text.
 ///
@@ -48,6 +49,8 @@ lazy_static! {
 /// matching tailored to the linguistic properties of the text being processed.
 #[derive(Clone)]
 pub enum ProcessMatcher {
+    #[cfg(not(feature = "dfa"))]
+    LeftMost(CharwiseDoubleArrayAhoCorasick<u32>),
     Chinese(CharwiseDoubleArrayAhoCorasick<u32>),
     Others(AhoCorasick),
 }
@@ -84,6 +87,18 @@ impl ProcessMatcher {
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0;
         match self {
+            #[cfg(not(feature = "dfa"))]
+            ProcessMatcher::LeftMost(ac) => {
+                for mat in ac.leftmost_find_iter(text) {
+                    // Guaranteed not failed
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                    // Guaranteed not failed
+                    result.push_str(unsafe {
+                        process_replace_list.get_unchecked(mat.value() as usize)
+                    });
+                    last_end = mat.end();
+                }
+            }
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
                     // Guaranteed not failed
@@ -141,6 +156,14 @@ impl ProcessMatcher {
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0;
         match self {
+            #[cfg(not(feature = "dfa"))]
+            ProcessMatcher::LeftMost(ac) => {
+                for mat in ac.leftmost_find_iter(text) {
+                    // Guaranteed not failed
+                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                    last_end = mat.end();
+                }
+            }
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
                     // Guaranteed not failed
@@ -286,6 +309,21 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
                         .unwrap(),
                 ),
             ),
+            #[cfg(not(feature = "dfa"))]
+            SimpleMatchType::TextDelete | SimpleMatchType::TextDelete => (
+                process_dict.iter().map(|(_, &val)| val).collect(),
+                ProcessMatcher::Chinese(
+                    CharwiseDoubleArrayAhoCorasickBuilder::new()
+                        .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
+                        .build(
+                            process_dict
+                                .iter()
+                                .map(|(&key, _)| key)
+                                .collect::<Vec<&str>>(),
+                        )
+                        .unwrap(),
+                ),
+            ),
             _ => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
                 ProcessMatcher::Others(
@@ -394,50 +432,70 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
                 )
             }
             SimpleMatchType::TextDelete => {
-                let mut process_dict = AHashMap::default();
-                process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
-                process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-                process_dict.retain(|&key, &mut value| key != value);
-                let process_list = process_dict
-                    .iter()
-                    .map(|(&key, _)| key)
-                    .collect::<Vec<&str>>();
+                #[cfg(feature = "dfa")]
+                {
+                    let mut process_dict = AHashMap::default();
+                    process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
+                    process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+                    process_dict.retain(|&key, &mut value| key != value);
+                    let process_list = process_dict
+                        .iter()
+                        .map(|(&key, _)| key)
+                        .collect::<Vec<&str>>();
 
-                (
-                    Vec::new(),
-                    ProcessMatcher::Others(
-                        #[cfg(feature = "dfa")]
-                        AhoCorasickBuilder::new()
-                            .kind(Some(AhoCorasickKind::DFA))
-                            .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                            .build(&process_list)
-                            .unwrap(),
-                        #[cfg(not(feature = "dfa"))]
-                        AhoCorasickBuilder::new()
-                            .kind(Some(AhoCorasickKind::ContiguousNFA))
-                            .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                            .build(&process_list)
-                            .unwrap(),
-                    ),
-                )
+                    (
+                        Vec::new(),
+                        ProcessMatcher::Others(
+                            AhoCorasickBuilder::new()
+                                .kind(Some(AhoCorasickKind::DFA))
+                                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                                .build(&process_list)
+                                .unwrap(),
+                        ),
+                    )
+                }
+
+                #[cfg(not(feature = "dfa"))]
+                {
+                    (
+                        Vec::new(),
+                        ProcessMatcher::LeftMost(unsafe {
+                            CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                                TEXT_DELETE_PROCESS_MATCHER_BYTES,
+                            )
+                            .0
+                        }),
+                    )
+                }
             }
-            SimpleMatchType::Normalize => (
-                NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                ProcessMatcher::Others(
-                    #[cfg(feature = "dfa")]
-                    AhoCorasickBuilder::new()
-                        .kind(Some(AhoCorasickKind::DFA))
-                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                        .build(NORMALIZE_PROCESS_LIST_STR.lines())
-                        .unwrap(),
-                    #[cfg(not(feature = "dfa"))]
-                    AhoCorasickBuilder::new()
-                        .kind(Some(AhoCorasickKind::ContiguousNFA))
-                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                        .build(NORMALIZE_PROCESS_LIST_STR.lines())
-                        .unwrap(),
-                ),
-            ),
+            SimpleMatchType::Normalize => {
+                #[cfg(feature = "dfa")]
+                {
+                    (
+                        NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                        ProcessMatcher::Others(
+                            AhoCorasickBuilder::new()
+                                .kind(Some(AhoCorasickKind::DFA))
+                                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                                .build(NORMALIZE_PROCESS_LIST_STR.lines())
+                                .unwrap(),
+                        ),
+                    )
+                }
+
+                #[cfg(not(feature = "dfa"))]
+                {
+                    (
+                        NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                        ProcessMatcher::LeftMost(unsafe {
+                            CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                                NORMALIZE_PROCESS_MATCHER_BYTES,
+                            )
+                            .0
+                        }),
+                    )
+                }
+            }
             SimpleMatchType::PinYin => (
                 PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
                 // Guaranteed not failed

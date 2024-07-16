@@ -7,6 +7,8 @@ fn main() -> Result<()> {
     #[cfg(feature = "prebuilt")]
     {
         use std::collections::HashMap;
+        #[cfg(not(feature = "dfa"))]
+        use std::collections::HashSet;
         use std::env;
         use std::fs::File;
         use std::io::Write;
@@ -20,12 +22,16 @@ fn main() -> Result<()> {
         const NUM_NORM: &str = include_str!("./str_conv/NUM-NORM.txt");
         const NORM: &str = include_str!("./str_conv/NORM.txt");
         const PINYIN: &str = include_str!("./str_conv/PINYIN.txt");
+        #[cfg(not(feature = "dfa"))]
+        const TEXT_DELETE: &str = include_str!("./str_conv/TEXT-DELETE.txt");
 
         let out_dir = env::var("OUT_DIR").unwrap();
         let process_str_conv_map = HashMap::from([
             ("fanjian", vec![FANJIAN]),
             ("normalize", vec![NORM, NUM_NORM]),
             ("pinyin", vec![PINYIN]),
+            #[cfg(not(feature = "dfa"))]
+            ("text_delete", vec![TEXT_DELETE]),
         ]);
 
         for smt_bit_str in ["fanjian", "normalize", "pinyin"] {
@@ -81,6 +87,46 @@ fn main() -> Result<()> {
                 ))?;
                 matcher_bin.write_all(&matcher_bytes)?;
             }
+
+            #[cfg(not(feature = "dfa"))]
+            if smt_bit_str == "normalize" {
+                let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
+                    CharwiseDoubleArrayAhoCorasickBuilder::new()
+                        .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
+                        .build(&process_list)
+                        .unwrap();
+                let matcher_bytes = matcher.serialize();
+                let mut matcher_bin = File::create(format!(
+                    "{out_dir}/{smt_bit_str}_daachorse_charwise_u32_matcher.bin"
+                ))?;
+                matcher_bin.write_all(&matcher_bytes)?;
+            }
+        }
+
+        #[cfg(not(feature = "dfa"))]
+        for smt_bit_str in ["text_delete"] {
+            let mut process_set = HashSet::new();
+
+            for str_conv_map in process_str_conv_map.get(smt_bit_str).unwrap() {
+                process_set.extend(str_conv_map.trim().lines().map(|line| line));
+            }
+
+            let process_list = process_set.iter().map(|&s| s).collect::<Vec<&str>>();
+
+            let mut process_list_bin =
+                File::create(format!("{out_dir}/{smt_bit_str}_process_list.bin"))?;
+            process_list_bin.write_all(process_list.join("\n").as_bytes())?;
+
+            let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
+                CharwiseDoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
+                    .build(&process_list)
+                    .unwrap();
+            let matcher_bytes = matcher.serialize();
+            let mut matcher_bin = File::create(format!(
+                "{out_dir}/{smt_bit_str}_daachorse_charwise_u32_matcher.bin"
+            ))?;
+            matcher_bin.write_all(&matcher_bytes)?;
         }
     }
 
