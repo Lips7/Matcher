@@ -194,9 +194,9 @@ bench                                               fastest       │ slowest   
 - [x] Make aho-corasick unsafe.
   - [x] See https://github.com/Lips7/aho-corasick.
 - [ ] Optimize NOT logic word-wise.
-- [x] Optimize regex matcher using RegexSet.
-- [x] Optimize simple matcher when multiple simple match types are used.
-  1. Consider if there are multiple simple match types
+- [x] Optimize `RegexMatcher` using `RegexSet`.
+- [x] Optimize `SimpleMatcher` when multiple `SimpleMatchType` are used.
+  1. Consider if there are multiple `SimpleMatchType`
    * None
    * Fanjian
    * FanjianDelete
@@ -205,23 +205,23 @@ bench                                               fastest       │ slowest   
   2. We can construct a chain of transformations,
    * None -> Fanjian -> Delete -> Normalize
    * &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\ -> Normalize.
-  3. Calcuate all possible transformations, and cache the results, so that instead calculating 8 times (Fanjian, Fanjian + Delete, Fanjian + Delete + Normalize, Fanjian + Normalize), we only need to calculate 4 times.
+  3. Calcuate all possible transformations, and cache the results, so that instead calculating 8 times (Fanjian, Fanjian + Delete, Fanjian + Delete + Normalize, Fanjian + Normalize), we only need to calculate 4 times (Fanjian, Delete, Normalize, Normalize).
 - [x] ~~Optimize process matcher when perform reduce text processing.~~
   1. Consider we have to perform FanjianDeleteNormalize, we need to perform Fanjian first, then Delete, then Normalize, 3 kinds of Process Matcher are needed to perform replacement or delete, the text has to be scanned 3 times.
   2. What if we only construct only 1 Process Matcher which's patterns contains all the Fanjian, Delete and Normalize 3 kinds of patterns? We could scan the text only once to get all the positions that should be perform replacement or delete.
   3. We need to take care of the byte index will change after replacement or delete, so we need to take the offset changes into account.
-- [x] Merge multiple aho-corasick matcher into one when multiple simple match types are used.
+- [x] Merge multiple aho-corasick matcher into one when multiple `SimpleMatchType` are used.
 - [x] When `dfa` feature is disabled, use daachorse to perform text processing.
-  - [x] Do not use it for simple process, too slow to build.
+  - [x] Do not use it for simple process function, too slow to build.
 
 ### Flexibility
-- [x] Cache get_process_matcher results globally, instead of caching result inside SimpleMatcher.
-- [x] Expose reduce_process_text to Python.
+- [x] Cache `get_process_matcher` results globally, instead of caching result inside SimpleMatcher.
+- [x] Expose `reduce_process_text` to Python.
 - [x] Add a new function that can handle single simple match type.
   - [x] `text_process` now is available.
 - [x] Add fuzzy matcher, https://github.com/lotabout/fuzzy-matcher.
   - [x] Use `rapidfuzz` instead.
-- [x] Make SimpleMatcher and Matcher serializable.
+- [x] Make `SimpleMatcher` and `Matcher` serializable.
   - [x] Make aho-corasick serializable.
   - [x] See https://github.com/Lips7/aho-corasick.
 - [x] Implement NOT logic word-wise.
@@ -232,6 +232,7 @@ bench                                               fastest       │ slowest   
 - [ ] Customize str conversion map.
 - [x] Add Matcher process function to py, c and java.
 - [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
+- [ ] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
