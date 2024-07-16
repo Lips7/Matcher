@@ -211,7 +211,8 @@ bench                                               fastest       │ slowest   
   2. What if we only construct only 1 Process Matcher which's patterns contains all the Fanjian, Delete and Normalize 3 kinds of patterns? We could scan the text only once to get all the positions that should be perform replacement or delete.
   3. We need to take care of the byte index will change after replacement or delete, so we need to take the offset changes into account.
 - [x] Merge multiple aho-corasick matcher into one when multiple simple match types are used.
-- [ ] When `dfa` feature is disabled, use daachorse to perform match.
+- [x] When `dfa` feature is disabled, use daachorse to perform text processing.
+  - [x] Do not use it for simple process, too slow to build.
 
 ### Flexibility
 - [x] Cache get_process_matcher results globally, instead of caching result inside SimpleMatcher.
