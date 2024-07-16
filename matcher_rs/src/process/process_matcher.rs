@@ -310,7 +310,7 @@ pub fn get_process_matcher(smt_bit: SimpleMatchType) -> Arc<(Vec<&'static str>, 
                 ),
             ),
             #[cfg(not(feature = "dfa"))]
-            SimpleMatchType::TextDelete | SimpleMatchType::TextDelete => (
+            SimpleMatchType::TextDelete | SimpleMatchType::Normalize => (
                 process_dict.iter().map(|(_, &val)| val).collect(),
                 ProcessMatcher::Chinese(
                     CharwiseDoubleArrayAhoCorasickBuilder::new()

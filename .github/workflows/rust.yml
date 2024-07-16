@@ -35,8 +35,12 @@ jobs:
         run: cargo test -p matcher_rs --verbose --no-default-features --features "prebuilt"
       - name: Run tests runtime_build
         run: cargo test -p matcher_rs --verbose --no-default-features --features "runtime_build"
+      - name: Run tests prebuilt and dfa
+        run: cargo test -p matcher_rs --verbose --no-default-features --features "prebuilt,dfa"
+      - name: Run tests runtime_build and dfa
+        run: cargo test -p matcher_rs --verbose --no-default-features --features "runtime_build,dfa"
       - name: Run tests serde
-        run: cargo test -p matcher_rs --verbose --features "serde"
+        run: cargo test -p matcher_rs --verbose --no-default-features --features "prebuilt,dfa,serde"
       - name: Run doc
         run: cargo doc
       - name: Release
