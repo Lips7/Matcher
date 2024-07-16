@@ -2,15 +2,8 @@ name: python
 
 on:
   push:
-    paths:
-      - 'matcher_py/src/**'
-      - 'matcher_rs/src/**'
-      - '.github/workflows/python.yml'
-  pull_request:
-    paths:
-      - 'matcher_py/src/**'
-      - 'matcher_rs/src/**'
-      - '.github/workflows/python.yml'
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -173,7 +166,6 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     needs: [linux, musllinux, windows, macos, sdist]
     steps:
       - name: Download artifact

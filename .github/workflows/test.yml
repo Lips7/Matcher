@@ -27,8 +27,8 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: so
-          # - runner: ubuntu-latest
-          #   target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
           - runner: macos-12
             target: x86_64-apple-darwin
             suffix: dylib
@@ -55,8 +55,12 @@ jobs:
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt"
       - name: Test runtime_build
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build"
+      - name: Test prebuilt and dfa
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt,dfa"
+      - name: Test runtime_build and dfa
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa"
       - name: Test serde
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --features "serde"
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa,serde"
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Rename & move
