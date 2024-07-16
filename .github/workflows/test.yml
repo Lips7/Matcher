@@ -7,12 +7,14 @@ on:
       - 'matcher_rs/src/**'
       - 'matcher_c/src/**'
       - '.github/workflows/test.yml'
+      - '.cargo/config.toml'
   pull_request:
     paths:
       - 'matcher_py/src/**'
       - 'matcher_rs/src/**'
       - 'matcher_c/src/**'
       - '.github/workflows/test.yml'
+      - '.cargo/config.toml'
 
 permissions:
   contents: read
