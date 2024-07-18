@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 - 2024-07-19
+### Performance
+- Use FxHash to speed up simple matcher process.
+
+### Flexibility
+- Remove unnecessary dependencies.
+
 ## 0.5.0 - 2024-07-18
 ### Changed
 - A bunch of changes and I don't want to explain one by one.
