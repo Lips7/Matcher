@@ -1,7 +1,8 @@
+use std::iter;
 use std::{borrow::Cow, collections::HashMap};
 
+use fxhash::FxHashMap;
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
-use ahash::AHashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use sonic_rs::{Deserialize, Serialize};
@@ -210,15 +211,15 @@ impl SimpleMatcher {
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::new();
-        let mut ac_dedup_word_id_map = AHashMap::new();
+        let mut ac_dedup_word_id_map = FxHashMap::default();
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
             process_type_list.push(process_type);
 
             for (&simple_word_id, simple_word) in simple_word_map {
-                let mut ac_split_word_and_counter = AHashMap::new();
-                let mut ac_split_word_not_counter = AHashMap::new();
+                let mut ac_split_word_and_counter = FxHashMap::default();
+                let mut ac_split_word_not_counter = FxHashMap::default();
 
                 let mut start = 0;
                 let mut is_and = false;
@@ -402,7 +403,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool {
-        let mut word_id_split_bit_map = AHashMap::new();
+        let mut word_id_split_bit_map = FxHashMap::default();
         let mut word_id_set = IdSet::new();
         let mut not_word_id_set = IdSet::new();
 
@@ -436,7 +437,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             word_conf
                                 .split_bit
                                 .iter()
-                                .map(|&bit| vec![bit; processed_times])
+                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
                                 .collect::<Vec<Vec<i32>>>()
                         });
 
@@ -534,7 +535,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimpleResult<'a>> {
-        let mut word_id_split_bit_map = AHashMap::new();
+        let mut word_id_split_bit_map = FxHashMap::default();
         let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();
@@ -567,7 +568,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             word_conf
                                 .split_bit
                                 .iter()
-                                .map(|&bit| vec![bit; processed_times])
+                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
                                 .collect::<Vec<Vec<i32>>>()
                         });
 
