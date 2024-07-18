@@ -1,2 +1,2 @@
-cargo update --verbose
-cargo upgrade --verbose --recursive true
+cargo update --verbose --recursive --breaking -Z unstable-options
+cargo upgrade --verbose --recursive

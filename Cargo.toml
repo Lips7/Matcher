@@ -24,15 +24,13 @@ incremental = false
 debug = false
 debug-assertions = false
 overflow-checks = false
-# panic = "abort"
 
 [profile.bench]
-opt-level = 3
-debug = true
 strip = "none"
+opt-level = 3
+lto = true
+codegen-units = 1
+incremental = false
+debug = true
 debug-assertions = false
 overflow-checks = false
-lto = false
-incremental = false
-codegen-units = 16
-rpath = false
