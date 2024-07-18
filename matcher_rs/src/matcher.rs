@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use id_set::IdSet;
 use nohash_hasher::IntMap;
-use sonic_rs::{to_string, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::process::process_matcher::{
     build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
@@ -681,36 +681,6 @@ impl Matcher {
 
         match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
         match_result_dict
-    }
-
-    /// Matches text and returns the match results as a JSON string.
-    ///
-    /// This function takes a text string as input, processes it using various
-    /// match tables configured in the [Matcher] instance (simple, regex, and similarity
-    /// match tables), and then converts the match results into a JSON-formatted string.
-    ///
-    /// If the input text is empty, the function returns an empty JSON object as a string.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A reference to the input text string to be matched.
-    ///
-    /// # Returns
-    ///
-    /// * [String] - A JSON-formatted string representation of the match results. If no
-    ///   matches are found, the function returns "{}".
-    ///
-    /// # Safety
-    ///
-    /// This function uses unsafe code to convert the match results to a JSON string
-    /// without error handling. Ensure that the match results can always be safely
-    /// converted to a string when modifying the underlying logic.
-    pub fn word_match_as_string(&self, text: &str) -> String {
-        if text.is_empty() {
-            return String::from("{}");
-        }
-
-        unsafe { to_string(&self.word_match(text)).unwrap_unchecked() }
     }
 }
 

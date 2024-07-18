@@ -58,9 +58,6 @@ name = "bitflags"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bumpalo"
@@ -266,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "matcher_rs",
  "rmp-serde",
@@ -275,17 +272,18 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "matcher_rs",
  "pyo3",
  "pyo3-build-config",
  "rmp-serde",
+ "sonic-rs",
 ]
 
 [[package]]
 name = "matcher_rs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "aho-corasick-unsafe",
  "bitflags",
@@ -302,7 +300,6 @@ dependencies = [
  "rapidfuzz",
  "regex",
  "serde",
- "sonic-rs",
  "tikv-jemallocator",
  "tinyvec",
 ]
@@ -702,14 +699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "445e881f4f6d382d5f27c034e25eb92edd7c784ceab92a0937db7f2e9471b938"
 dependencies = [
  "serde",
- "tinyvec_macros",
 ]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "unicode-ident"

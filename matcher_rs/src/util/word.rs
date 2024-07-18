@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display};
 
-use sonic_rs::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// A struct representing a simple word.
 ///

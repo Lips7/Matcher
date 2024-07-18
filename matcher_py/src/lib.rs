@@ -317,7 +317,7 @@ impl Matcher {
     ///
     /// This function uses the internal `matcher` to identify patterns in the given `text` and
     /// returns a string that represents the match results. The format of the string will depend
-    /// on the internal implementation of the `word_match_as_string` method in the matcher.
+    /// on the internal implementation of the `word_match` method in the matcher.
     ///
     /// # Parameters
     /// - `text` (&str): The input text to be checked against the match patterns.
@@ -326,7 +326,7 @@ impl Matcher {
     /// - `String`: A string representation of the match results found in the text.
     #[pyo3(signature=(text))]
     fn word_match_as_string(&self, text: &str) -> String {
-        self.matcher.word_match_as_string(text)
+        unsafe { sonic_rs::to_string(&self.matcher.word_match(text)).unwrap_unchecked() }
     }
 }
 

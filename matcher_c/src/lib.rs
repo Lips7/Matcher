@@ -133,7 +133,9 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
     unsafe {
         let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
         let res = match text {
-            Ok(text) => matcher.as_ref().unwrap().word_match_as_string(text),
+            Ok(text) => {
+                sonic_rs::to_string(&matcher.as_ref().unwrap().word_match(text)).unwrap_unchecked()
+            }
             Err(_) => {
                 panic!("Input is not a valid utf-8 string");
             }

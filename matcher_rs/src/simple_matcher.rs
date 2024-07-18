@@ -1,11 +1,11 @@
 use std::iter;
 use std::{borrow::Cow, collections::HashMap};
 
-use fxhash::FxHashMap;
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use fxhash::FxHashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
-use sonic_rs::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{

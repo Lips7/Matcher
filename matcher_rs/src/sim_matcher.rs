@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use id_set::IdSet;
 use rapidfuzz::distance;
-use sonic_rs::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
@@ -20,20 +20,6 @@ use crate::{
 /// * [SimMatchType::Levenshtein] - Represents the Levenshtein distance algorithm, a string metric for measuring the difference between two sequences.
 ///
 /// The enum variants are serialized and deserialized using the `snake_case` naming convention.
-///
-/// # Examples
-///
-/// ```
-/// use matcher_rs::SimMatchType;
-/// use sonic_rs;
-///
-/// let match_type = SimMatchType::Levenshtein;
-/// let serialized = sonic_rs::to_string(&match_type).unwrap();
-/// assert_eq!(serialized, "\"levenshtein\"");
-///
-/// let deserialized: SimMatchType = sonic_rs::from_str(&serialized).unwrap();
-/// assert_eq!(deserialized, SimMatchType::Levenshtein);
-/// ```
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SimMatchType {
@@ -357,7 +343,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                     SimMatchType::Levenshtein => {
                         for (index, text) in sim_processed_table.word_list.iter().enumerate() {
                             let table_id_index =
-                                ((sim_processed_table.table_id as usize) << 32) | (index as usize);
+                                ((sim_processed_table.table_id as usize) << 32) | index;
 
                             if table_id_index_set.insert(table_id_index) {
                                 if let Some(similarity) =

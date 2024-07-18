@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use fancy_regex::{escape, Regex};
 use id_set::IdSet;
 use regex::RegexSet;
-use sonic_rs::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "serde")]
 use crate::util::serde::{serde_regex, serde_regex_list, serde_regex_set};
@@ -478,7 +478,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                     } => {
                         for (index, regex) in regex_list.iter().enumerate() {
                             let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | (index as usize);
+                                ((regex_pattern_table.table_id as usize) << 32) | index;
 
                             if table_id_index_set.insert(table_id_index) {
                                 if let Ok(is_match) = regex.is_match(processed_text) {
@@ -500,7 +500,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                     } => {
                         for index in regex_set.matches(processed_text) {
                             let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | (index as usize);
+                                ((regex_pattern_table.table_id as usize) << 32) | index;
 
                             if table_id_index_set.insert(table_id_index) {
                                 result_list.push(RegexResult {

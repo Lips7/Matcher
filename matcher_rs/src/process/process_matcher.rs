@@ -2,8 +2,6 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
 
-#[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use fxhash::FxHashMap;
 use aho_corasick_unsafe::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
 use aho_corasick_unsafe::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
@@ -15,12 +13,13 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
+#[cfg(any(feature = "runtime_build", feature = "dfa"))]
+use fxhash::FxHashMap;
 use id_set::IdSet;
 use lazy_static::lazy_static;
 use nohash_hasher::{IntMap, IsEnabled};
 use parking_lot::RwLock;
-use serde::{Deserializer, Serializer};
-use sonic_rs::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tinyvec::ArrayVec;
 
 use crate::process::constants::*;
@@ -83,18 +82,6 @@ impl Serialize for ProcessType {
     /// # Returns
     ///
     /// This method returns a result containing either the serialized value ([Serializer::Ok]) or an error ([Serializer::Error]).
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use sonic_rs;
-    ///
-    /// use matcher_rs::ProcessType;
-    ///
-    /// let process = ProcessType::Fanjian | ProcessType::Delete;
-    /// let serialized = sonic_rs::to_string(&process).unwrap();
-    /// assert_eq!(serialized, "6"); // bit representation of Fanjian (2) | Delete (4) is 6
-    /// ```
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -118,20 +105,6 @@ impl<'de> Deserialize<'de> for ProcessType {
     ///
     /// This method returns a [Result] containing either the deserialized [ProcessType] instance
     /// (Ok([ProcessType])) or an error ([Deserializer::Error]).
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use sonic_rs;
-    ///
-    /// use matcher_rs::ProcessType;
-    ///
-    /// let serialized = "6"; // bit representation of Fanjian (2) | Delete (4)
-    /// let process: ProcessType = sonic_rs::from_str(serialized).unwrap();
-    ///
-    /// assert!(process.contains(ProcessType::Fanjian));
-    /// assert!(process.contains(ProcessType::Delete));
-    /// ```
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
