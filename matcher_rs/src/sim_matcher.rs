@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use id_set::IdSet;
-use nohash_hasher::IntSet;
 use rapidfuzz::distance;
 use sonic_rs::{Deserialize, Serialize};
 
@@ -341,13 +340,13 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// - `similarity`: The similarity score of the match.
     ///
     /// The function ensures that only unique matches are included in the result list by maintaining
-    /// an [IntSet] to track already processed table ID and word index combinations.
+    /// an [IdSet] to track already processed table ID and word index combinations.
     fn _process_with_processed_text_process_type_set(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IntSet::default();
+        let mut table_id_index_set = IdSet::default();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {
@@ -358,7 +357,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                     SimMatchType::Levenshtein => {
                         for (index, text) in sim_processed_table.word_list.iter().enumerate() {
                             let table_id_index =
-                                ((sim_processed_table.table_id as u64) << 32) | (index as u64);
+                                ((sim_processed_table.table_id as usize) << 32) | (index as usize);
 
                             if table_id_index_set.insert(table_id_index) {
                                 if let Some(similarity) =

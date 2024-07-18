@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use id_set::IdSet;
-use nohash_hasher::{IntMap, IntSet};
+use nohash_hasher::IntMap;
 use sonic_rs::{to_string, Deserialize, Serialize};
 
 use crate::process::process_matcher::{
@@ -613,7 +613,7 @@ impl Matcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> HashMap<u32, Vec<MatchResult>> {
         let mut match_result_dict = HashMap::new();
-        let mut failed_match_table_id_set = IntSet::default();
+        let mut failed_match_table_id_set = IdSet::default();
 
         if let Some(regex_matcher) = &self.regex_matcher {
             for regex_result in regex_matcher
@@ -651,10 +651,10 @@ impl Matcher {
                             .get_unchecked(simple_result.word_id as usize),
                     )
                 };
-                let match_table_id =
-                    ((word_table_conf.match_id as u64) << 32) | (word_table_conf.table_id as u64);
+                let match_table_id = ((word_table_conf.match_id as usize) << 32)
+                    | (word_table_conf.table_id as usize);
 
-                if failed_match_table_id_set.contains(&match_table_id) {
+                if failed_match_table_id_set.contains(match_table_id) {
                     continue;
                 }
 

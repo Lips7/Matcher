@@ -2,9 +2,6 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
 
-#[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use ahash::AHashMap;
-use ahash::HashMapExt;
 use aho_corasick_unsafe::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
 use aho_corasick_unsafe::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
@@ -16,6 +13,9 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
+#[cfg(any(feature = "runtime_build", feature = "dfa"))]
+use gxhash::HashMap as GxHashMap;
+use gxhash::HashMapExt;
 use id_set::IdSet;
 use lazy_static::lazy_static;
 use nohash_hasher::{IntMap, IsEnabled};
@@ -405,7 +405,7 @@ pub fn get_process_matcher(
 
     #[cfg(feature = "runtime_build")]
     {
-        let mut process_dict = AHashMap::default();
+        let mut process_dict = GxHashMap::default();
 
         match process_type_bit {
             ProcessType::None => {}
@@ -531,7 +531,7 @@ pub fn get_process_matcher(
             ProcessType::Delete => {
                 #[cfg(feature = "dfa")]
                 {
-                    let mut process_dict = AHashMap::default();
+                    let mut process_dict = GxHashMap::default();
                     process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                     process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                     process_dict.retain(|&key, &mut value| key != value);

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use fancy_regex::{escape, Regex};
 use id_set::IdSet;
-use nohash_hasher::IntSet;
 use regex::RegexSet;
 use sonic_rs::{Deserialize, Serialize};
 
@@ -448,7 +447,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IntSet::default();
+        let mut table_id_index_set = IdSet::default();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
@@ -457,7 +456,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                 }
                 match &regex_pattern_table.regex_type {
                     RegexType::Standard { regex } => {
-                        if table_id_index_set.insert(regex_pattern_table.table_id as u64) {
+                        if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
                             for caps in regex.captures_iter(processed_text).flatten() {
                                 result_list.push(RegexResult {
                                     match_id: regex_pattern_table.match_id,
@@ -479,7 +478,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                     } => {
                         for (index, regex) in regex_list.iter().enumerate() {
                             let table_id_index =
-                                ((regex_pattern_table.table_id as u64) << 32) | (index as u64);
+                                ((regex_pattern_table.table_id as usize) << 32) | (index as usize);
 
                             if table_id_index_set.insert(table_id_index) {
                                 if let Ok(is_match) = regex.is_match(processed_text) {
@@ -501,7 +500,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                     } => {
                         for index in regex_set.matches(processed_text) {
                             let table_id_index =
-                                ((regex_pattern_table.table_id as u64) << 32) | (index as u64);
+                                ((regex_pattern_table.table_id as usize) << 32) | (index as usize);
 
                             if table_id_index_set.insert(table_id_index) {
                                 result_list.push(RegexResult {
