@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 - 2024-07-18
+### Changed
+- A bunch of changes and I don't want to explain one by one.
+
 ## 0.4.6 - 2024-07-15
 ### Performance
 

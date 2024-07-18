@@ -12,6 +12,17 @@ use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 pub mod serde_regex {
     use super::*;
 
+    /// Deserialize and serialize functions for `Regex` type.
+    ///
+    /// This module provides custom serialization and deserialization
+    /// for the `Regex` type from the `fancy_regex` crate using Serde.
+    /// The regex is serialized as a string and deserialized back into a `Regex` object.
+    ///
+    /// To use the custom serialization and deserialization, the field in the struct must
+    /// be annotated with `#[serde(with = "serde_regex")]`.
+    ///
+    /// The provided methods ensure that regex patterns are correctly handled during
+    /// serialization and deserialization processes without losing the actual regex functionalities.
     pub fn deserialize<'de, D>(d: D) -> Result<Regex, D::Error>
     where
         D: Deserializer<'de>,
@@ -38,6 +49,17 @@ pub mod serde_regex_list {
 
     use super::*;
 
+    /// Deserialize and serialize functions for a list of `Regex` types.
+    ///
+    /// This module provides custom serialization and deserialization
+    /// for lists of the `Regex` type from the `fancy_regex` crate using Serde.
+    /// Each regex in the list is serialized as a string and deserialized back into a `Regex` object.
+    ///
+    /// To use the custom serialization and deserialization, the field in the struct must
+    /// be annotated with `#[serde(with = "serde_regex_list")]`.
+    ///
+    /// These methods ensure that lists of regex patterns are correctly handled during
+    /// serialization and deserialization processes without losing the actual regex functionalities.
     pub fn deserialize<'de, D>(d: D) -> Result<Vec<Regex>, D::Error>
     where
         D: Deserializer<'de>,
@@ -70,6 +92,17 @@ pub mod serde_regex_set {
 
     use super::*;
 
+    /// Deserialize and serialize functions for `RegexSet` type.
+    ///
+    /// This module provides custom serialization and deserialization
+    /// for the `RegexSet` type from the `regex` crate using Serde.
+    /// The regex set is serialized as a list of strings and deserialized back into a `RegexSet` object.
+    ///
+    /// To use the custom serialization and deserialization, the field in the struct must
+    /// be annotated with `#[serde(with = "serde_regex_set")]`.
+    ///
+    /// These methods ensure that regex set patterns are correctly handled during
+    /// serialization and deserialization processes without losing the actual regex functionalities.
     pub fn deserialize<'de, D>(d: D) -> Result<RegexSet, D::Error>
     where
         D: Deserializer<'de>,

@@ -128,7 +128,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [ ] Customize str conversion map.
 - [x] Add Matcher process function to py, c and java.
 - [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
-- [ ] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
+- [x] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
 
 ### Readability
 - [x] More precise and convenient MatchTable.

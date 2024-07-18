@@ -55,16 +55,14 @@ jobs:
           target: ${{ matrix.platform.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
-      - name: Test prebuilt
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt"
-      - name: Test runtime_build
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build"
-      - name: Test prebuilt and dfa
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "prebuilt,dfa"
+      - name: Test
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features
+      - name: Test dfa
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "dfa"
       - name: Test runtime_build and dfa
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa"
-      - name: Test serde
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa,serde"
+      - name: Test serde and dfa
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "serde,dfa"
       - name: Run doc
         run: cargo doc
       - name: Rename & move

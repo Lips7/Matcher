@@ -164,8 +164,7 @@ fn main() -> Result<()> {
 
             let process_list = process_set.iter().map(|&s| s).collect::<Vec<&str>>();
 
-            let mut process_list_bin =
-                File::create(format!("{out_dir}/{process_type_bit_str}_process_list.bin"))?;
+            let mut process_list_bin = File::create(format!("{out_dir}/delete_process_list.bin"))?;
             process_list_bin.write_all(process_list.join("\n").as_bytes())?;
 
             let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
@@ -175,7 +174,7 @@ fn main() -> Result<()> {
                     .unwrap();
             let matcher_bytes = matcher.serialize();
             let mut matcher_bin = File::create(format!(
-                "{out_dir}/{process_type_bit_str}_daachorse_charwise_u32_matcher.bin"
+                "{out_dir}/delete_daachorse_charwise_u32_matcher.bin"
             ))?;
             matcher_bin.write_all(&matcher_bytes)?;
         }
