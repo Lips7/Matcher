@@ -573,7 +573,7 @@ impl Matcher {
     /// If the input text is empty, the function returns an empty [HashMap].
     pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult>> {
         if text.is_empty() {
-            return HashMap::default();
+            return HashMap::new();
         }
 
         let processed_text_process_type_set =
@@ -613,7 +613,7 @@ impl Matcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> HashMap<u32, Vec<MatchResult>> {
         let mut match_result_dict = HashMap::new();
-        let mut failed_match_table_id_set = IdSet::default();
+        let mut failed_match_table_id_set = IdSet::new();
 
         if let Some(regex_matcher) = &self.regex_matcher {
             for regex_result in regex_matcher

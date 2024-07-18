@@ -346,7 +346,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::default();
+        let mut table_id_index_set = IdSet::new();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {

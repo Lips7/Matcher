@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
-use hashbrown::HashMap as BrownHashMap;
+use ahash::AHashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use sonic_rs::{Deserialize, Serialize};
@@ -210,15 +210,15 @@ impl SimpleMatcher {
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::new();
-        let mut ac_dedup_word_id_map = BrownHashMap::new();
+        let mut ac_dedup_word_id_map = AHashMap::new();
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
             process_type_list.push(process_type);
 
             for (&simple_word_id, simple_word) in simple_word_map {
-                let mut ac_split_word_and_counter = BrownHashMap::new();
-                let mut ac_split_word_not_counter = BrownHashMap::new();
+                let mut ac_split_word_and_counter = AHashMap::new();
+                let mut ac_split_word_not_counter = AHashMap::new();
 
                 let mut start = 0;
                 let mut is_and = false;
@@ -402,9 +402,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool {
-        let mut word_id_split_bit_map = BrownHashMap::new();
-        let mut word_id_set = IdSet::default();
-        let mut not_word_id_set = IdSet::default();
+        let mut word_id_split_bit_map = AHashMap::new();
+        let mut word_id_set = IdSet::new();
+        let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();
 
@@ -534,8 +534,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimpleResult<'a>> {
-        let mut word_id_split_bit_map = BrownHashMap::new();
-        let mut not_word_id_set = IdSet::default();
+        let mut word_id_split_bit_map = AHashMap::new();
+        let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();
 

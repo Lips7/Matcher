@@ -447,7 +447,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::default();
+        let mut table_id_index_set = IdSet::new();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {

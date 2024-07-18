@@ -14,7 +14,7 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use hashbrown::HashMap as BrownHashMap;
+use ahash::AHashMap;
 use id_set::IdSet;
 use lazy_static::lazy_static;
 use nohash_hasher::{IntMap, IsEnabled};
@@ -404,7 +404,7 @@ pub fn get_process_matcher(
 
     #[cfg(feature = "runtime_build")]
     {
-        let mut process_dict = BrownHashMap::default();
+        let mut process_dict = AHashMap::new();
 
         match process_type_bit {
             ProcessType::None => {}
@@ -530,7 +530,7 @@ pub fn get_process_matcher(
             ProcessType::Delete => {
                 #[cfg(feature = "dfa")]
                 {
-                    let mut process_dict = BrownHashMap::new();
+                    let mut process_dict = AHashMap::new();
                     process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                     process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                     process_dict.retain(|&key, &mut value| key != value);
