@@ -1,171 +1,96 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use id_set::IdSet;
 use nohash_hasher::{IntMap, IntSet};
 use sonic_rs::{to_string, Deserialize, Serialize};
 
-use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexTable};
-use crate::sim_matcher::{SimMatchType, SimMatcher, SimTable};
-use crate::simple_matcher::{SimpleMatchType, SimpleMatcher};
+use crate::process::process_matcher::{
+    build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+};
+use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
+use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
+use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
-    fn is_match(&self, text: &str) -> bool;
-    fn process(&'a self, text: &str) -> Vec<T>;
-    fn process_iter(&'a self, text: &str) -> Box<dyn Iterator<Item = T> + 'a> {
+    fn is_match(&'a self, text: &'a str) -> bool;
+    fn _is_match_with_processed_text_process_type_set(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> bool;
+    fn process(&'a self, text: &'a str) -> Vec<T>;
+    fn _process_with_processed_text_process_type_set(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> Vec<T>;
+    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = T> + 'a> {
         Box::new(self.process(text).into_iter())
     }
-    fn batch_process(&'a self, text_array: &[&str]) -> Vec<Vec<T>> {
+    fn batch_process(&'a self, text_array: &[&'a str]) -> Vec<Vec<T>> {
         text_array.iter().map(|&text| self.process(text)).collect()
     }
 }
 
 pub trait MatchResultTrait<'a> {
-    fn word_id(&self) -> u32 {
-        0
-    }
-    fn table_id(&self) -> u32 {
-        0
-    }
+    fn match_id(&self) -> u32;
+    fn table_id(&self) -> u32;
+    fn word_id(&self) -> u32;
     fn word(&self) -> &str;
-    fn similarity(&self) -> f64 {
-        1.0
-    }
+    fn similarity(&self) -> f64;
 }
 
-/// An enumeration representing the different types of matching strategies available for a match table.
-///
-/// This enum defines the various strategies that can be applied when attempting to match text
-/// within a table. Each variant encapsulates the specific configuration required for that type of matching.
-///
-/// # Variants
-///
-/// * `Simple { simple_match_type }` - Indicates the use of a simple matching strategy. Contains a `simple_match_type` field of type [SimpleMatchType].
-/// * `Regex { regex_match_type }` - Indicates the use of a regular expression matching strategy. Contains a `regex_match_type` field of type [RegexMatchType].
-/// * `Similar { sim_match_type, threshold }` - Indicates the use of a similarity-based matching strategy. Contains a `sim_match_type` field of type [SimMatchType] and a `threshold` field of type [f64].
-///
-/// # Serde Attributes
-///
-/// The `snake_case` renaming strategy is used for serialization and deserialization to ensure
-/// that the field names in the serialized output conform to the snake_case convention.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{MatchTableType, SimpleMatchType, RegexMatchType, SimMatchType};
-///
-/// let simple_match = MatchTableType::Simple {
-///     simple_match_type: SimpleMatchType::None,
-/// };
-///
-/// let regex_match = MatchTableType::Regex {
-///     regex_match_type: RegexMatchType::Regex,
-/// };
-///
-/// let similar_match = MatchTableType::Similar {
-///     sim_match_type: SimMatchType::Levenshtein,
-///     threshold: 0.8,
-/// };
-/// ```
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
 pub enum MatchTableType {
     Simple {
-        simple_match_type: SimpleMatchType,
+        process_type: ProcessType,
     },
     Regex {
         regex_match_type: RegexMatchType,
+        process_type: ProcessType,
     },
     Similar {
         sim_match_type: SimMatchType,
         threshold: f64,
+        process_type: ProcessType,
     },
 }
 
-/// A structure representing a match table configuration used for text matching operations.
-///
-/// This structure defines the necessary fields and types required for configuring a match
-/// table. Each match table has an associated matching strategy, a list of words to be matched,
-/// and a list of exemptions. The match table configuration is essential for initializing matchers
-/// and performing text matching processes.
-///
-/// The structure supports serialization and deserialization through the `serde` library,
-/// allowing it to be easily converted to and from various data formats like JSON.
-///
-/// # Fields
-///
-/// * `table_id` - A [u32] that uniquely identifies the match table in the system.
-/// * `match_table_type` - A [MatchTableType] enumeration that specifies the matching strategy to be used.
-/// * `word_list` - A [`Vec<&'a str>`] containing the list of words for matching. The use of `&'a str`
-///   allows the words to be borrowed, which can optimize memory usage.
-/// * `exemption_simple_match_type` - A [SimpleMatchType] indicating the matching strategy for the exemption words.
-/// * `exemption_word_list` - A [`Vec<&'a str>`] containing the list of words to be exempted from matching. Like `word_list`,
-///   this is also a borrowed vector to allow efficient memory use.
-///
-/// # Lifetimes
-///
-/// * `'a` - The lifetime associated with the `word_list` and `exemption_word_list` fields, ensuring that the data
-///   for the words can be borrowed for efficiency.
-///
-/// # Serde Attributes
-///
-/// The `borrow` attribute on `word_list` and `exemption_word_list` fields ensures that the deserialized
-/// data can borrow from the input data, providing better performance by avoiding unnecessary allocations.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
     #[serde(borrow)]
     pub word_list: Vec<&'a str>,
-    pub exemption_simple_match_type: SimpleMatchType,
+    pub exemption_process_type: ProcessType,
     #[serde(borrow)]
     pub exemption_word_list: Vec<&'a str>,
 }
 
-/// A structure representing the configuration of a word table used in text matching.
-///
-/// This structure holds the details of a specific word table and its configuration within
-/// the text matching system. It includes a unique identifier for the match, the table's
-/// identifier, and a flag indicating whether the word table represents an exemption.
-///
-/// # Fields
-///
-/// * `match_id` - A [u32] representing the identifier of the match within the system.
-/// * `table_id` - A [u32] representing the identifier of the table within the system.
-/// * `is_exemption` - A [bool] flag that indicates whether the word table is an exemption.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct WordTableConf {
     match_id: u32,
     table_id: u32,
+    offset: u32,
     is_exemption: bool,
 }
 
-/// A structure representing the result of a matching operation.
-///
-/// This structure contains details about an individual matching result,
-/// including the identifier of the matching table and the matched word itself.
-///
-/// # Fields
-///
-/// * `match_id` - A [u32] that uniquely identifies the match within the system.
-/// * `table_id` - A [u32] that uniquely identifies the table in which the match was found.
-/// * `word` - A [Cow<'a, str>] that holds the matched word. The [Cow] type allows the word
-///    to be either borrowed from the original data or owned, optimizing for efficient memory use.
-///
-/// # Lifetimes
-///
-/// * `'a` - The lifetime associated with the `word` field, ensuring that the data
-///    for the word can be borrowed for efficiency.
 #[derive(Serialize)]
 pub struct MatchResult<'a> {
     pub match_id: u32,
     pub table_id: u32,
+    pub word_id: u32,
     pub word: Cow<'a, str>,
+    pub similarity: f64,
 }
 
 impl MatchResultTrait<'_> for MatchResult<'_> {
+    fn match_id(&self) -> u32 {
+        self.match_id
+    }
     fn word_id(&self) -> u32 {
-        0
+        self.word_id
     }
     fn table_id(&self) -> u32 {
         self.table_id
@@ -173,113 +98,60 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
     fn word(&self) -> &str {
         self.word.as_ref()
     }
+    fn similarity(&self) -> f64 {
+        self.similarity
+    }
+}
+
+impl<'a, 'b: 'a> From<SimResult<'b>> for MatchResult<'a> {
+    fn from(sim_result: SimResult<'b>) -> Self {
+        MatchResult {
+            match_id: sim_result.match_id,
+            table_id: sim_result.table_id,
+            word_id: sim_result.word_id,
+            word: sim_result.word,
+            similarity: sim_result.similarity,
+        }
+    }
+}
+
+impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
+    fn from(regex_result: RegexResult<'b>) -> Self {
+        MatchResult {
+            match_id: regex_result.match_id,
+            table_id: regex_result.table_id,
+            word_id: regex_result.word_id,
+            word: regex_result.word,
+            similarity: 1.0,
+        }
+    }
 }
 
 pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
-/// The [Matcher] struct encapsulates various matching strategies and their configurations used for text processing.
-///
-/// This structure holds configurations for simple, regex, and similarity-based matchers. It manages
-/// different maps and matchers necessary to perform text matching operations.
-///
-/// # Fields
-///
-/// * `simple_word_table_conf_map` - An [IntMap<u32, WordTableConf>] that maps word table configuration IDs to their configurations.
-/// * `simple_word_table_conf_id_map` - An [IntMap<u32, u32>] that maps word IDs to their corresponding word table configuration IDs.
-/// * `simple_matcher` - An [`Option<SimpleMatcher>`] that holds the simple matcher if it exists.
-/// * `regex_matcher` - An [`Option<RegexMatcher>`] that holds the regex matcher if it exists.
-/// * `sim_matcher` - An [`Option<SimMatcher>`] that holds the similarity matcher if it exists.
-///
-/// The [Matcher] struct is typically instantiated through the [new](Matcher::new) method, which processes an input map of match tables
-/// and initializes the appropriate matchers and data structures.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{Matcher, MatchTable, MatchTableType, SimpleMatchType};
-/// use std::collections::HashMap;
-///
-/// let mut match_table_map = HashMap::new();
-/// match_table_map.insert(
-///     1,
-///     vec![MatchTable {
-///         table_id: 1,
-///         match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
-///         word_list: vec!["apple", "banana"],
-///         exemption_simple_match_type: SimpleMatchType::None,
-///         exemption_word_list: vec!["orange"],
-///     }],
-/// );
-///
-/// let matcher = Matcher::new(&match_table_map);
-/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Matcher {
-    simple_word_table_conf_map: IntMap<u32, WordTableConf>,
-    simple_word_table_conf_id_map: IntMap<u32, u32>,
+    process_type_tree: Vec<ProcessTypeBitNode>,
+    simple_word_table_conf_list: Vec<WordTableConf>,
+    simple_word_table_conf_index_list: Vec<usize>,
     simple_matcher: Option<SimpleMatcher>,
     regex_matcher: Option<RegexMatcher>,
     sim_matcher: Option<SimMatcher>,
 }
 
 impl Matcher {
-    /// Creates a new [Matcher] instance from the provided match table map.
-    ///
-    /// This function processes the input map of match tables to initialize the various
-    /// components of the [Matcher] including simple, regex, and similarity-based matchers.
-    ///
-    /// # Arguments
-    ///
-    /// * `match_table_map` - A reference to a [HashMap] where the keys are [u32] identifiers
-    ///   and the values are vectors of [MatchTable] instances representing different types of match tables.
-    ///
-    /// # Returns
-    ///
-    /// A [Matcher] instance initialized with the configurations derived from the provided match table map.
-    ///
-    /// The construction process involves:
-    ///
-    /// 1. Iterating through the provided match table map.
-    /// 2. Extracting table configurations and populating the corresponding matcher-specific data structures:
-    ///     - Simple match type word map
-    ///     - Regex table list
-    ///     - Similarity table list
-    /// 3. Handling exemptions by updating the word table configurations.
-    ///
-    /// The word and table identifiers are incremented as new entries are processed and added.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use matcher_rs::{Matcher, MatchTable, MatchTableType, SimpleMatchType};
-    /// use std::collections::HashMap;
-    ///
-    /// let mut match_table_map = HashMap::new();
-    /// match_table_map.insert(
-    ///     1,
-    ///     vec![MatchTable {
-    ///         table_id: 1,
-    ///         match_table_type: MatchTableType::Simple { simple_match_type: SimpleMatchType::None },
-    ///         word_list: vec!["apple", "banana"],
-    ///         exemption_simple_match_type: SimpleMatchType::None,
-    ///         exemption_word_list: vec!["orange"],
-    ///     }],
-    /// );
-    ///
-    /// let matcher = Matcher::new(&match_table_map);
-    /// ```
-    pub fn new<'a, S>(match_table_map: &HashMap<u32, Vec<MatchTable<'a>>, S>) -> Matcher {
-        let mut word_id: u32 = 0;
-        let mut word_table_conf_id: u32 = 0;
+    pub fn new<S>(match_table_map: &HashMap<u32, Vec<MatchTable<'_>>, S>) -> Matcher {
+        let mut process_type_list = Vec::new();
 
-        let mut simple_word_table_conf_map = IntMap::default();
-        let mut simple_word_table_conf_id_map = IntMap::default();
+        let mut simple_word_id = 0;
+        let mut simple_word_table_conf_id = 0;
+        let mut simple_word_table_conf_list = Vec::new();
+        let mut simple_word_table_conf_index_list = Vec::new();
+        let mut simple_table: SimpleTable = IntMap::default();
 
-        let mut smt_word_map: IntMap<SimpleMatchType, IntMap<u32, &'a str>> = IntMap::default();
-
-        let mut regex_table_list: Vec<RegexTable> = Vec::new();
-        let mut sim_table_list: Vec<SimTable> = Vec::new();
+        let mut regex_table_list = Vec::new();
+        let mut sim_table_list = Vec::new();
 
         for (&match_id, table_list) in match_table_map {
             for table in table_list {
@@ -290,41 +162,49 @@ impl Matcher {
 
                 if !word_list.is_empty() {
                     match match_table_type {
-                        MatchTableType::Simple { simple_match_type } => {
-                            simple_word_table_conf_map.insert(
-                                word_table_conf_id,
-                                WordTableConf {
-                                    match_id,
-                                    table_id,
-                                    is_exemption: false,
-                                },
-                            );
+                        MatchTableType::Simple { process_type } => {
+                            process_type_list.push(process_type);
+                            simple_word_table_conf_list.push(WordTableConf {
+                                match_id,
+                                table_id,
+                                offset: simple_word_id,
+                                is_exemption: false,
+                            });
 
-                            let simple_word_map =
-                                smt_word_map.entry(simple_match_type).or_default();
+                            let simple_word_map = simple_table.entry(process_type).or_default();
 
                             for word in word_list.iter() {
-                                simple_word_table_conf_id_map.insert(word_id, word_table_conf_id);
-                                simple_word_map.insert(word_id, word);
-                                word_id += 1;
+                                simple_word_table_conf_index_list.push(simple_word_table_conf_id);
+                                simple_word_map.insert(simple_word_id, word);
+                                simple_word_id += 1;
                             }
 
-                            word_table_conf_id += 1
+                            simple_word_table_conf_id += 1
                         }
                         MatchTableType::Similar {
+                            process_type,
                             sim_match_type,
                             threshold,
-                        } => sim_table_list.push(SimTable {
-                            table_id,
-                            match_id,
-                            sim_match_type,
-                            word_list,
-                            threshold,
-                        }),
-                        MatchTableType::Regex { regex_match_type } => {
+                        } => {
+                            process_type_list.push(process_type);
+                            sim_table_list.push(SimTable {
+                                table_id,
+                                match_id,
+                                process_type,
+                                sim_match_type,
+                                word_list,
+                                threshold,
+                            })
+                        }
+                        MatchTableType::Regex {
+                            process_type,
+                            regex_match_type,
+                        } => {
+                            process_type_list.push(process_type);
                             regex_table_list.push(RegexTable {
                                 table_id,
                                 match_id,
+                                process_type,
                                 regex_match_type,
                                 word_list,
                             })
@@ -333,186 +213,184 @@ impl Matcher {
                 }
 
                 if !exemption_word_list.is_empty() {
-                    simple_word_table_conf_map.insert(
-                        word_table_conf_id,
-                        WordTableConf {
-                            match_id,
-                            table_id,
-                            is_exemption: true,
-                        },
-                    );
+                    process_type_list.push(table.exemption_process_type);
+                    simple_word_table_conf_list.push(WordTableConf {
+                        match_id,
+                        table_id,
+                        offset: simple_word_id,
+                        is_exemption: true,
+                    });
 
-                    let simple_word_map = smt_word_map
-                        .entry(table.exemption_simple_match_type)
+                    let simple_word_map = simple_table
+                        .entry(table.exemption_process_type)
                         .or_default();
 
                     for exemption_word in exemption_word_list.iter() {
-                        simple_word_table_conf_id_map.insert(word_id, word_table_conf_id);
-                        simple_word_map.insert(word_id, exemption_word);
-                        word_id += 1;
+                        simple_word_table_conf_index_list.push(simple_word_table_conf_id);
+                        simple_word_map.insert(simple_word_id, exemption_word);
+                        simple_word_id += 1;
                     }
 
-                    word_table_conf_id += 1
+                    simple_word_table_conf_id += 1
                 }
             }
         }
 
+        let process_type_tree = build_process_type_tree(&process_type_list);
+
         Matcher {
-            simple_word_table_conf_map,
-            simple_word_table_conf_id_map,
-            simple_matcher: (!smt_word_map.is_empty()).then(|| SimpleMatcher::new(&smt_word_map)),
+            process_type_tree,
+            simple_word_table_conf_list,
+            simple_word_table_conf_index_list,
+            simple_matcher: (!simple_table.is_empty()).then(|| SimpleMatcher::new(&simple_table)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
             sim_matcher: (!sim_table_list.is_empty()).then(|| SimMatcher::new(&sim_table_list)),
         }
     }
 
-    /// Matches the provided text and returns the raw results as a [HashMap] with match identifiers and vectors of [MatchResult]s.
-    ///
-    /// This function takes a string slice representing the text to be matched and processes it using the available
-    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a [HashMap] where
-    /// the keys are match identifiers and the values are vectors of [MatchResult] instances.
-    ///
-    /// The function proceeds through the following steps:
-    ///
-    /// 1. **Regex Matching**: If a regex matcher is available, processes the text with it and collects the results.
-    /// 2. **Similarity Matching**: If a similarity matcher is available, processes the text with it and collects the results.
-    /// 3. **Simple Matching**: If a simple matcher is available, processes the text with it. It also checks for exemptions
-    ///    and updates the match results accordingly.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A string slice representing the text to be matched.
-    ///
-    /// # Returns
-    ///
-    /// A [`HashMap<u32, Vec<MatchResult>>`] where the keys are match identifiers and the values are vectors of [MatchResult]
-    /// instances containing the matching results for each identifier.
-    ///
-    /// If the provided text is empty, the function returns an empty [HashMap].
-    pub fn word_match(&self, text: &str) -> HashMap<u32, Vec<MatchResult>> {
-        if !text.is_empty() {
-            let mut match_result_dict = HashMap::new();
-            let mut failed_match_table_id_set = IntSet::default();
-
-            if let Some(regex_matcher) = &self.regex_matcher {
-                for regex_result in regex_matcher.process(text) {
-                    let result_list = match_result_dict
-                        .entry(regex_result.match_id)
-                        .or_insert(Vec::new());
-
-                    result_list.push(MatchResult {
-                        match_id: regex_result.match_id,
-                        table_id: regex_result.table_id,
-                        word: regex_result.word,
-                    })
-                }
-            }
-
-            if let Some(sim_matcher) = &self.sim_matcher {
-                for sim_result in sim_matcher.process(text) {
-                    let result_list = match_result_dict
-                        .entry(sim_result.match_id)
-                        .or_insert(Vec::new());
-
-                    result_list.push(MatchResult {
-                        match_id: sim_result.match_id,
-                        table_id: sim_result.table_id,
-                        word: sim_result.word,
-                    })
-                }
-            }
-
-            if let Some(simple_matcher) = &self.simple_matcher {
-                for simple_result in simple_matcher.process(text) {
-                    // Guaranteed not failed
-                    let word_table_conf = unsafe {
-                        self.simple_word_table_conf_map
-                            .get(
-                                self.simple_word_table_conf_id_map
-                                    .get(&simple_result.word_id)
-                                    .unwrap_unchecked(),
-                            )
-                            .unwrap_unchecked()
-                    };
-                    let match_table_id = ((word_table_conf.match_id as u64) << 32)
-                        | (word_table_conf.table_id as u64);
-
-                    if failed_match_table_id_set.contains(&match_table_id) {
-                        continue;
-                    }
-
-                    let result_list = match_result_dict
-                        .entry(word_table_conf.match_id)
-                        .or_insert(Vec::new());
-                    if word_table_conf.is_exemption {
-                        failed_match_table_id_set.insert(match_table_id);
-                        result_list.retain(|match_result| {
-                            match_result.table_id != word_table_conf.table_id
-                        });
-                    } else {
-                        result_list.push(MatchResult {
-                            match_id: word_table_conf.match_id,
-                            table_id: word_table_conf.table_id,
-                            word: simple_result.word,
-                        });
-                    }
-                }
-            }
-
-            match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
-            match_result_dict
-        } else {
-            HashMap::new()
+    pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult>> {
+        if text.is_empty() {
+            return HashMap::default();
         }
+
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
     }
 
-    /// Matches the provided text and returns the raw results as a serialized JSON string.
-    ///
-    /// This function takes a string slice representing the text to be matched and processes it using the available
-    /// matchers (simple, regex, and similarity matchers). It gathers the matching results into a [HashMap] where
-    /// the keys are match identifiers and the values are vectors of [MatchResult] instances. The results are then
-    /// serialized into a JSON string using the [to_string] function from the [sonic_rs] crate.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A string slice representing the text to be matched.
-    ///
-    /// # Returns
-    ///
-    /// A [String] containing the serialized JSON representation of the raw matching results.
-    ///
-    /// # Safety
-    ///
-    /// The function uses an `unsafe` block to call [unwrap_unchecked](Result::unwrap_unchecked) on the [to_string] function, which skips
-    /// the error checking for performance optimization. It is important to ensure that the serialization process
-    /// does not fail, as [unwrap_unchecked](Result::unwrap_unchecked) will cause undefined behavior if an error occurs.
+    fn _word_match_with_processed_text_process_type_set<'a>(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> HashMap<u32, Vec<MatchResult>> {
+        let mut match_result_dict = HashMap::new();
+        let mut failed_match_table_id_set = IntSet::default();
+
+        if let Some(regex_matcher) = &self.regex_matcher {
+            for regex_result in regex_matcher
+                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
+            {
+                let result_list: &mut Vec<MatchResult> = match_result_dict
+                    .entry(regex_result.match_id)
+                    .or_insert(Vec::new());
+
+                result_list.push(regex_result.into());
+            }
+        }
+
+        if let Some(sim_matcher) = &self.sim_matcher {
+            for sim_result in sim_matcher
+                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
+            {
+                let result_list = match_result_dict
+                    .entry(sim_result.match_id)
+                    .or_insert(Vec::new());
+
+                result_list.push(sim_result.into());
+            }
+        }
+
+        if let Some(simple_matcher) = &self.simple_matcher {
+            for simple_result in simple_matcher
+                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
+            {
+                // Guaranteed not failed
+                let word_table_conf = unsafe {
+                    self.simple_word_table_conf_list.get_unchecked(
+                        *self
+                            .simple_word_table_conf_index_list
+                            .get_unchecked(simple_result.word_id as usize),
+                    )
+                };
+                let match_table_id =
+                    ((word_table_conf.match_id as u64) << 32) | (word_table_conf.table_id as u64);
+
+                if failed_match_table_id_set.contains(&match_table_id) {
+                    continue;
+                }
+
+                let result_list = match_result_dict
+                    .entry(word_table_conf.match_id)
+                    .or_insert(Vec::new());
+                if word_table_conf.is_exemption {
+                    failed_match_table_id_set.insert(match_table_id);
+                    result_list
+                        .retain(|match_result| match_result.table_id != word_table_conf.table_id);
+                } else {
+                    result_list.push(MatchResult {
+                        match_id: word_table_conf.match_id,
+                        table_id: word_table_conf.table_id,
+                        word_id: unsafe {
+                            simple_result.word_id.unchecked_sub(word_table_conf.offset)
+                        },
+                        word: simple_result.word,
+                        similarity: 1.0,
+                    });
+                }
+            }
+        }
+
+        match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
+        match_result_dict
+    }
+
     pub fn word_match_as_string(&self, text: &str) -> String {
+        if text.is_empty() {
+            return String::from("{}");
+        }
         unsafe { to_string(&self.word_match(text)).unwrap_unchecked() }
     }
 }
 
 impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     fn is_match(&self, text: &str) -> bool {
-        !self.word_match(text).is_empty()
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
     }
 
-    /// Processes the provided text and returns a vector of [MatchResult] instances.
-    ///
-    /// This function takes a string slice representing the text to be processed and matches it using the available
-    /// matchers (simple, regex, and similarity matchers). It gathers the matching results and organizes them
-    /// by their respective match identifiers. The results for each match identifier are then flattened into a single
-    /// vector of [MatchResult] instances.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A string slice representing the text to be processed.
-    ///
-    /// # Returns
-    ///
-    /// A [Vec] of [MatchResult] instances containing the matching results for all match identifiers.
-    fn process(&'a self, text: &str) -> Vec<MatchResult<'a>> {
-        self.word_match(text)
+    fn _is_match_with_processed_text_process_type_set(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> bool {
+        match &self.simple_matcher {
+            Some(_) => !self
+                ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
+                .is_empty(),
+            None => {
+                if let Some(regex_matcher) = &self.regex_matcher {
+                    if regex_matcher._is_match_with_processed_text_process_type_set(
+                        processed_text_process_type_set,
+                    ) {
+                        return true;
+                    }
+                }
+                if let Some(sim_matcher) = &self.sim_matcher {
+                    if sim_matcher._is_match_with_processed_text_process_type_set(
+                        processed_text_process_type_set,
+                    ) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    fn process(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
+    }
+
+    fn _process_with_processed_text_process_type_set(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> Vec<MatchResult<'a>> {
+        self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
             .into_iter()
             .flat_map(|(_, result_list)| result_list) // Flatten the result lists from all match IDs into a single iterator.
             .collect()

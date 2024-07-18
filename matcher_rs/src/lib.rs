@@ -1,8 +1,3 @@
-#[cfg(all(feature = "prebuilt", feature = "runtime_build"))]
-compile_error!(
-    "feature \"prebuilt\" and feature \"runtime_build\" cannot be enabled at the same time"
-);
-
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -16,12 +11,12 @@ pub use util::word::SimpleWord;
 
 mod process;
 pub use process::process_matcher::{
-    build_smt_tree, reduce_text_process, reduce_text_process_with_list,
-    reduce_text_process_with_tree, text_process,
+    build_process_type_tree, reduce_text_process, reduce_text_process_emit,
+    reduce_text_process_with_list, reduce_text_process_with_tree, text_process, ProcessType,
 };
 
 mod simple_matcher;
-pub use simple_matcher::{SimpleMatchType, SimpleMatchTypeWordMap, SimpleMatcher, SimpleResult};
+pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable};
 
 mod regex_matcher;
 pub use regex_matcher::{RegexMatchType, RegexMatcher, RegexTable};

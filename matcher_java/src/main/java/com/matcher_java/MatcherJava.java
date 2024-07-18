@@ -13,17 +13,17 @@ interface MatcherJava extends Library {
 
     boolean matcher_is_match(Pointer matcher, byte[] text_bytes);
 
-    Pointer matcher_process(Pointer matcher, byte[] text_bytes);
+    Pointer matcher_process_as_string(Pointer matcher, byte[] text_bytes);
 
-    Pointer matcher_word_match(Pointer matcher, byte[] text_bytes);
+    Pointer matcher_word_match_as_string(Pointer matcher, byte[] text_bytes);
 
     void drop_matcher(Pointer matcher);
 
-    Pointer init_simple_matcher(byte[] smt_word_map_bytes);
+    Pointer init_simple_matcher(byte[] simple_table_bytes);
 
     boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
 
-    Pointer simple_matcher_process(Pointer simple_matcher, byte[] text_bytes);
+    Pointer simple_matcher_process_as_string(Pointer simple_matcher, byte[] text_bytes);
 
     void drop_simple_matcher(Pointer simple_matcher);
 

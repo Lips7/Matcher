@@ -48,23 +48,22 @@ The `msgspec` library is recommended for serializing the matcher configuration d
 ### Explanation of the configuration
 
 * `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, **for each `match_id`, the `table_id` inside is required to be unique**.
-* `SimpleMatcher`'s configuration is defined by the `SimpleMatchTableMap = Dict[SimpleMatchType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
+* `SimpleMatcher`'s configuration is defined by the `SimpleTable = Dict[ProcessType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
 #### MatchTable
 
 * `table_id`: The unique ID of the match table.
 * `match_table_type`: The type of the match table.
 * `word_list`: The word list of the match table.
-* `exemption_simple_match_type`: The type of the exemption simple match.
+* `exemption_process_type`: The type of the exemption simple match.
 * `exemption_word_list`: The exemption word list of the match table.
 
 For each match table, word matching is performed over the `word_list`, and exemption word matching is performed over the `exemption_word_list`. If the exemption word matching result is True, the word matching result will be False.
 
 #### MatchTableType
 
-* `Simple`: Supports simple multiple patterns matching with text normalization defined by `simple_match_type`.
-  * We offer transformation methods for text normalization, including `Fanjian`, `Normalize`, `PinYin` ···.
-  * It can handle combination patterns and repeated times sensitive matching, delimited by `&`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
+* `Simple`: Supports simple multiple patterns matching with text normalization defined by `process_type`.
+  * It can handle combination patterns and repeated times sensitive matching, delimited by `&` and `~`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
 * `Regex`: Supports regex patterns matching.
   * `SimilarChar`: Supports similar character matching using regex.
     * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld!`, `hollowrd?`, `hi🌍~` ··· any combinations of the words split by `,` in the list.
@@ -74,27 +73,23 @@ For each match table, word matching is performed over the `word_list`, and exemp
     * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
 * `Similar`: Supports similar text matching based on distance and threshold.
   * `Levenshtein`: Supports similar text matching based on Levenshtein distance.
-  * `DamerauLevenshtein`: Supports similar text matching based on Damerau-Levenshtein distance.
-  * `Indel`: Supports similar text matching based on Indel distance.
-  * `Jaro`: Supports similar text matching based on Jaro distance.
-  * `JaroWinkler`: Supports similar text matching based on Jaro-Winkler distance.
 
-#### SimpleMatchType
+#### ProcessType
 
 * `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/str_conv/FANJIAN.txt).
+* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](./process_map/FANJIAN.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `Delete`: Delete all punctuation, special characters and white spaces.
+* `Delete`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](./process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [SYMBOL_NORM](../matcher_rs/str_conv/SYMBOL-NORM.txt), [NORM](../matcher_rs/str_conv/NORM.txt) and [NUM_NORM](../matcher_rs/str_conv/NUM-NORM.txt).
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [SYMBOL_NORM](./process_map/SYMBOL-NORM.txt), [NORM](./process_map/NORM.txt) and [NUM_NORM](./process_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/str_conv/PINYIN.txt).
+* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
   * `你好` -> ` ni  hao `
   * `西安` -> ` xi  an `
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](../matcher_rs/str_conv/PINYIN.txt).
+* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
@@ -102,20 +97,16 @@ You can combine these transformations as needed. Pre-defined combinations like `
 
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
-`Delete` is technologically a combination of `TextDelete` and `WordDelete`, we implement different delete methods for text and word. 'Cause we believe special characters are parts of the word, users put them in words deliberately, but not for text. For `text_process` and `reduce_text_process` functions, users should use `TextDelete` instead of `WordDelete`.
-* `WordDelete`: Delete all patterns in `WHITE_SPACE`.
-* `TextDelete`: Delete all patterns in [TEXT_DELETE](../matcher_rs/str_conv/TEXT-DELETE.txt).
-
 ### Text Process Usage
 
 Here’s an example of how to use the `reduce_text_process` and `text_process` functions:
 
 ```python
 from matcher_py import reduce_text_process, text_process
-from matcher_py.extension_types import SimpleMatchType
+from matcher_py.extension_types import ProcessType
 
-print(reduce_text_process(SimpleMatchType.MatchTextDelete | SimpleMatchType.MatchNormalize, "hello, world!"))
-print(text_process(SimpleMatchType.MatchTextDelete, "hello, world!"))
+print(reduce_text_process(ProcessType.MatchTextDelete | ProcessType.MatchNormalize, "hello, world!"))
+print(text_process(ProcessType.MatchTextDelete, "hello, world!"))
 ```
 
 ### Matcher Basic Usage
@@ -124,9 +115,9 @@ Here’s an example of how to use the `Matcher`:
 
 ```python
 import msgspec
-import numpy as np
+
 from matcher_py import Matcher
-from matcher_py.extension_types import MatchTable, MatchTableType, SimpleMatchType
+from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 matcher = Matcher(
@@ -134,9 +125,9 @@ matcher = Matcher(
         1: [
             MatchTable(
                 table_id=1,
-                match_table_type=MatchTableType.Simple(simple_match_type = SimpleMatchType.MatchFanjianDeleteNormalize),
+                match_table_type=MatchTableType.Simple(process_type = ProcessType.MatchFanjianDeleteNormalize),
                 word_list=["hello", "world"],
-                exemption_simple_match_type=SimpleMatchType.MatchNone,
+                exemption_process_type=ProcessType.MatchNone,
                 exemption_word_list=["word"],
             )
         ]
@@ -145,27 +136,14 @@ matcher = Matcher(
 # Check if a text matches
 assert matcher.is_match("hello")
 assert not matcher.is_match("hello, word")
+# Perform process as a list
+result = matcher.proces("hello")
+assert result == "[{\"match_id\":1,\"table_id\":1,\"word_id\":1,\"word\":\"hello\",\"similarity\":1}]"
 # Perform word matching as a dict
 assert matcher.word_match(r"hello, world")[1]
 # Perform word matching as a string
 result = matcher.word_match_as_string("hello")
-assert result == """{1:[{\"match_id\":1,\"table_id\":1,\"word\":\"hello\"}]"}"""
-# Perform batch processing as a dict using a list
-text_list = ["hello", "world", "hello,word"]
-batch_results = matcher.batch_word_match(text_list)
-print(batch_results)
-# Perform batch processing as a string using a list
-text_list = ["hello", "world", "hello,word"]
-batch_results = matcher.batch_word_match_as_string(text_list)
-print(batch_results)
-# Perform batch processing as a dict using a numpy array
-text_array = np.array(["hello", "world", "hello,word"], dtype=np.dtype("object"))
-numpy_results = matcher.numpy_word_match(text_array)
-print(numpy_results)
-# Perform batch processing as a string using a numpy array
-text_array = np.array(["hello", "world", "hello,word"], dtype=np.dtype("object"))
-numpy_results = matcher.numpy_word_match_as_string(text_array)
-print(numpy_results)
+assert result == """{1:[{\"match_id\":1,\"table_id\":1,\"word_id\":1,\"word\":\"hello\",\"similarity\":1}]}"""
 ```
 
 ### Simple Matcher Basic Usage
@@ -176,25 +154,17 @@ Here’s an example of how to use the `SimpleMatcher`:
 import msgspec
 import numpy as np
 from matcher_py import SimpleMatcher
-from matcher_py.extension_types import SimpleMatchType
+from matcher_py.extension_types import ProcessType
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 simple_matcher = SimpleMatcher(
-    msgpack_encoder.encode({SimpleMatchType.MatchNone: {1: "example"}})
+    msgpack_encoder.encode({ProcessType.MatchNone: {1: "example"}})
 )
 # Check if a text matches
 assert simple_matcher.is_match("example")
 # Perform simple processing
-results = simple_matcher.simple_process("example")
-print(results)
-# Perform batch processing using a list
-text_list = ["example", "test", "example test"]
-batch_results = simple_matcher.batch_simple_process(text_list)
-print(batch_results)
-# Perform batch processing using a NumPy array
-text_array = np.array(["example", "test", "example test"], dtype=np.dtype("object"))
-numpy_results = simple_matcher.numpy_simple_process(text_array)
-print(numpy_results)
+result = simple_matcher.process("example")
+assert result == "[{\"word_id\":1,\"word\":\"hello\"}]"
 ```
 
 ## Contributing

@@ -27,7 +27,7 @@ import msgspec
 
 from cffi import FFI
 
-from extension_types import MatchTableType, SimpleMatchType, MatchTable
+from extension_types import MatchTableType, ProcessType, MatchTable
 
 ## define ffi
 ffi = FFI()
@@ -40,9 +40,11 @@ matcher = lib.init_matcher(
         1: [
             MatchTable(
                 table_id=1,
-                match_table_type=MatchTableType.Simple(simple_match_type=SimpleMatchType.MatchNone),
-                word_list=["hello&world", "hello", "world"],
-                exemption_simple_match_type=SimpleMatchType.MatchNone,
+                match_table_type=MatchTableType.Simple(
+                    process_type=ProcessType.MatchNone
+                ),
+                word_list=["hello,world", "hello", "world"],
+                exemption_process_type=ProcessType.MatchNone,
                 exemption_word_list=[],
             )
         ]
@@ -50,11 +52,18 @@ matcher = lib.init_matcher(
 )
 
 # check is match
-lib.matcher_is_match(matcher, "hello".encode("utf-8")) # True
+lib.matcher_is_match(matcher, "hello".encode("utf-8"))  # True
 
-# match word, output json string
-res = lib.matcher_word_match(matcher, "hello,world".encode("utf-8")) # {1:[{"match_id":1,"table_id":1,"word":"hello"},{"match_id":1,"table_id":1,"word":"hello&world"},{"match_id":1,"table_id":1,"word":"world"}]"}
-print(ffi.string(res).decode("utf-8")) #
+# match as list
+res = lib.matcher_process_as_string(matcher, "hello,world".encode("utf-8"))
+print(ffi.string(res).decode("utf-8"))
+# [{"match_id":1,"table_id":1,"word_id":0,"word":"hello,world","similarity":1.0},{"match_id":1,"table_id":1,"word_id":1,"word":"hello","similarity":1.0},{"match_id":1,"table_id":1,"word_id":2,"word":"world","similarity":1.0}]
+lib.drop_string(res)
+
+# match as dict
+res = lib.matcher_word_match_as_string(matcher, "hello,world".encode("utf-8"))
+print(ffi.string(res).decode("utf-8"))
+# {"1":[{"match_id":1,"table_id":1,"word_id":0,"word":"hello,world","similarity":1.0},{"match_id":1,"table_id":1,"word_id":1,"word":"hello","similarity":1.0},{"match_id":1,"table_id":1,"word_id":2,"word":"world","similarity":1.0}]}
 lib.drop_string(res)
 
 # drop matcher
@@ -63,19 +72,22 @@ lib.drop_matcher(matcher)
 # init simple matcher
 simple_matcher = lib.init_simple_matcher(
     msgspec.msgpack.encode(({
-        SimpleMatchType.MatchFanjianDeleteNormalize | SimpleMatchType.MatchPinYinChar: {
+        ProcessType.MatchFanjianDeleteNormalize | ProcessType.MatchPinYinChar: {
             1: "妳好&世界",
-            2: "hello"
+            2: "hello",
         }
     }))
 )
 
 # check is match
-lib.simple_matcher_is_match(simple_matcher, "你好世界".encode("utf-8")) # True
+lib.simple_matcher_is_match(simple_matcher, "你好世界".encode("utf-8"))  # True
 
-# match word, output json string
-res = lib.simple_matcher_process(simple_matcher, "nihaoshijie!hello!world!".encode("utf-8")) # [{"word_id":1,"word":"妳好,世界"},{"word_id":2,"word":"hello"}]
+# match as list
+res = lib.simple_matcher_process_as_string(
+    simple_matcher, "nihaoshijie!hello!world!".encode("utf-8")
+)
 print(ffi.string(res).decode("utf-8"))
+# [{"word_id":1,"word":"妳好&世界"},{"word_id":2,"word":"hello"}]
 lib.drop_string(res)
 
 # drop simple matcher

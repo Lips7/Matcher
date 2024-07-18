@@ -2,12 +2,12 @@
 
 ## Transformation
 
-* `FANJIAN`: build from [Unihan_Variants.txt](./data/str_conv/Unihan_Variants.txt) and [EquivalentUnifiedIdeograph.txt](./data/str_conv/EquivalentUnifiedIdeograph.txt).
-* `NUM-NORM`: build from [DerivedNumericValues.txt](./data/str_conv/DerivedNumericValues.txt).
-* `TEXT-DELETE` and `SYMBOL-NORM`: build from [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt).
-* `WHITE-SPACE`: build from [PropList.txt](./data/str_conv/PropList.txt).
-* `PINYIN` and `PINYIN-CHAR`: build from [Unihan_Readings.txt](./data/str_conv/Unihan_Readings.txt).
-* `NORM`: build from [NormalizationTest.txt](./data/str_conv/NormalizationTest.txt).
+* `FANJIAN`: build from [Unihan_Variants.txt](./data/process_map/Unihan_Variants.txt) and [EquivalentUnifiedIdeograph.txt](./data/process_map/EquivalentUnifiedIdeograph.txt).
+* `NUM-NORM`: build from [DerivedNumericValues.txt](./data/process_map/DerivedNumericValues.txt).
+* `TEXT-DELETE` and `SYMBOL-NORM`: build from [DerivedGeneralCategory.txt](./data/process_map/DerivedGeneralCategory.txt).
+* `WHITE-SPACE`: build from [PropList.txt](./data/process_map/PropList.txt).
+* `PINYIN` and `PINYIN-CHAR`: build from [Unihan_Readings.txt](./data/process_map/Unihan_Readings.txt).
+* `NORM`: build from [NormalizationTest.txt](./data/process_map/NormalizationTest.txt).
 
 ## Matcher
 
@@ -29,9 +29,9 @@ The `Matcher` utilizes a JSON structure to define matches and tables. Below is a
     "777": [
         {
             "table_id": 45,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["hello", "world"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
         // other tables
@@ -65,18 +65,18 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["hello", "world"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
     ],
     "2": [
         {
             "table_id": 2,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["你", "好"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
     ],
@@ -92,16 +92,16 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["hello", "world"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         },
         {
             "table_id": 2,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["你", "好"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
     ]
@@ -117,18 +117,18 @@ Input:
     "1": [
         {
             "table_id": 1,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["hello", "world"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
     ],
     "2": [
         {
             "table_id": 2,
-            "match_table_type": {"simple_match_type": "MatchNone"},
+            "match_table_type": {"process_type": "MatchNone"},
             "word_list": ["你", "好"],
-            "exemption_simple_match_type": "MatchNone",
+            "exemption_process_type": "MatchNone",
             "exemption_word_list": []
         }
     ],
@@ -153,7 +153,7 @@ The `SimpleMatcher` uses a mapping structure to define words and their IDs based
 
 ```json
 {
-    "SimpleMatchType.None": {
+    "ProcessType.None": {
         "1": "hello&world",
         "2": "你好"
         // other words
@@ -170,7 +170,7 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 
 ### Logical Operations
 
-- **OR Logic (between different `simple_match_type` and words in the same `simple_match_type`)**: The `simple_matcher` is considered matched if any word in the map is matched.
+- **OR Logic (between different `process_type` and words in the same `process_type`)**: The `simple_matcher` is considered matched if any word in the map is matched.
 - **AND Logic (between words separated by `&` within a `WordID`)**: All words separated by `&` must be matched for the word to be considered as matched.
 - **NOT Logic (between words separated by `~` within a `WordID`)**: All words separated by `~` must not be matched for the word to be considered as matched.
 
@@ -180,7 +180,7 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 ```json
 Input:
 {
-    "SimpleMatchType.None": {
+    "ProcessType.None": {
         "1": "word1&word2"
     }
 }
@@ -192,7 +192,7 @@ Output: Check if `word_id` 1 is matched.
 ```json
 Input:
 {
-    "SimpleMatchType.None": {
+    "ProcessType.None": {
         "1": "word1",
         "2": "word2"
     }
@@ -205,7 +205,7 @@ Output: Check if `word_id` 1 or 2 is matched.
 ```json
 Input:
 {
-    "SimpleMatchType.None": {
+    "ProcessType.None": {
         "1": "word1~word2",
     }
 }

@@ -1,10 +1,10 @@
 import pytest
 
 import msgspec
-import numpy as np
+
 from matcher_py.matcher_py import Matcher
 from matcher_py.extension_types import (
-    SimpleMatchType,
+    ProcessType,
     MatchTable,
     MatchTableType,
     RegexMatchType,
@@ -43,10 +43,10 @@ def test_init_with_empty_map():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple(
-                            SimpleMatchType.MatchNone
+                            process_type=ProcessType.MatchNone
                         ),
                         word_list=[],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=[],
                     )
                 ]
@@ -70,10 +70,11 @@ def test_regex():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Regex(
-                            RegexMatchType.MatchRegex
+                            process_type=ProcessType.MatchNone,
+                            regex_match_type=RegexMatchType.MatchRegex,
                         ),
                         word_list=["h[aeiou]llo", "w[aeiou]rd"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=[],
                     )
                 ]
@@ -94,10 +95,11 @@ def test_similar_char():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Regex(
-                            RegexMatchType.MatchSimilarChar
+                            process_type=ProcessType.MatchNone,
+                            regex_match_type=RegexMatchType.MatchSimilarChar,
                         ),
                         word_list=["hello,hi,H,你好", "world,word,🌍,世界"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=[],
                     )
                 ]
@@ -118,10 +120,12 @@ def test_similar_text_levenshtein():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Similar(
-                            SimMatchType.MatchLevenshtein, 0.8
+                            process_type=ProcessType.MatchNone,
+                            sim_match_type=SimMatchType.MatchLevenshtein,
+                            threshold=0.8,
                         ),
                         word_list=["helloworld"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=[],
                     )
                 ]
@@ -144,10 +148,11 @@ def test_acrostic():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Regex(
-                            RegexMatchType.MatchAcrostic
+                            process_type=ProcessType.MatchNone,
+                            regex_match_type=RegexMatchType.MatchAcrostic,
                         ),
                         word_list=["h,e,l,l,o", "你,好"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=[],
                     )
                 ]
@@ -175,10 +180,10 @@ def test_exemption():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple(
-                            SimpleMatchType.MatchNone
+                            process_type=ProcessType.MatchNone
                         ),
                         word_list=["helloworld"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=["worldwide"],
                     )
                 ]
@@ -195,19 +200,20 @@ def test_exemption():
                     MatchTable(
                         table_id=1,
                         match_table_type=MatchTableType.Simple(
-                            SimpleMatchType.MatchNone
+                            process_type=ProcessType.MatchNone
                         ),
                         word_list=["helloworld"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=["worldwide"],
                     ),
                     MatchTable(
-                        table_id=1,
+                        table_id=2,
                         match_table_type=MatchTableType.Regex(
-                            RegexMatchType.MatchRegex
+                            process_type=ProcessType.MatchNone,
+                            regex_match_type=RegexMatchType.MatchRegex,
                         ),
                         word_list=["hello"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
+                        exemption_process_type=ProcessType.MatchNone,
                         exemption_word_list=["worldwide"],
                     ),
                 ]
@@ -216,44 +222,3 @@ def test_exemption():
     )
     assert matcher.is_match("helloworld")
     assert not matcher.is_match("helloworldwide")
-
-
-@pytest.fixture(scope="module")
-def matcher():
-    return Matcher(
-        msgpack_encoder.encode(
-            {
-                1: [
-                    MatchTable(
-                        table_id=1,
-                        match_table_type=MatchTableType.Simple(
-                            SimpleMatchType.MatchNone
-                        ),
-                        word_list=["helloworld"],
-                        exemption_simple_match_type=SimpleMatchType.MatchNone,
-                        exemption_word_list=[],
-                    )
-                ]
-            }
-        )
-    )
-
-
-def test_batch_word_match(matcher):
-    assert len(matcher.batch_word_match(["helloworld"])) == 1
-
-
-def test_batch_word_match_as_string(matcher):
-    assert len(matcher.batch_word_match_as_string(["helloworld"])) == 1
-
-
-def test_numpy_word_match(matcher):
-    text_array = np.array(["helloworld"] * 1000, dtype=np.dtype("object"))
-    matcher.numpy_word_match(text_array)
-    matcher.numpy_word_match(text_array, inplace=True)
-
-
-def test_numpy_word_match_as_string(matcher):
-    text_array = np.array(["helloworld"] * 1000, dtype=np.dtype("object"))
-    matcher.numpy_word_match_as_string(text_array)
-    matcher.numpy_word_match_as_string(text_array, inplace=True)

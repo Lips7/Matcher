@@ -19,17 +19,17 @@ public class MatcherJavaExample {
     public static void simple_matcher_process_demo() throws IOException {
         MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
         packer.packMapHeader(1);
-        packer.packInt(30); // 30 = FanjianDeleteNormalize
+        packer.packInt(1); // 1 = None
         packer.packMapHeader(1);
         packer.packInt(1);
         packer.packString("hello&world");
         packer.close();
 
-        byte[] smt_word_map_bytes = packer.toByteArray();
+        byte[] simple_table_bytes = packer.toByteArray();
 
         MatcherJava instance = MatcherJava.INSTANCE;
 
-        Pointer simple_matcher = instance.init_simple_matcher(smt_word_map_bytes);
+        Pointer simple_matcher = instance.init_simple_matcher(simple_table_bytes);
 
         byte[] str_bytes = "hello,world".getBytes("utf-8");
         byte[] c_str_bytes = new byte[str_bytes.length + 1];
@@ -38,7 +38,7 @@ public class MatcherJavaExample {
         boolean is_match = instance.simple_matcher_is_match(simple_matcher, c_str_bytes);
         System.out.printf("is_match: %s\n", is_match);
 
-        Pointer match_res_ptr = instance.simple_matcher_process(simple_matcher, c_str_bytes);
+        Pointer match_res_ptr = instance.simple_matcher_process_as_string(simple_matcher, c_str_bytes);
         String match_res = match_res_ptr.getString(0, "utf-8");
         System.out.printf("match_res: %s\n", match_res);
         instance.drop_string(match_res_ptr);
@@ -57,12 +57,12 @@ public class MatcherJavaExample {
         packer.packInt(1);
         packer.packString("match_table_type");
         packer.packMapHeader(1);
-        packer.packString("simple_match_type");
-        packer.packInt(30); // 30 = FanjianDeleteNormalize
+        packer.packString("process_type");
+        packer.packInt(1); // 1 = None
         packer.packString("word_list");
         packer.packArrayHeader(1);
         packer.packString("hello&world");
-        packer.packString("exemption_simple_match_type");
+        packer.packString("exemption_process_type");
         packer.packInt(1); // 1 = None
         packer.packString("exemption_word_list");
         packer.packArrayHeader(0);
@@ -80,10 +80,15 @@ public class MatcherJavaExample {
         boolean is_match = instance.matcher_is_match(matcher, c_str_bytes);
         System.out.printf("is_match: %s\n", is_match);
 
-        Pointer match_res_ptr = instance.matcher_word_match(matcher, c_str_bytes);
-        String match_res = match_res_ptr.getString(0, "utf-8");
-        System.out.printf("match_res: %s\n", match_res);
-        instance.drop_string(match_res_ptr);
+        Pointer match_res_ptr_1 = instance.matcher_process_as_string(matcher, c_str_bytes);
+        String match_res_1 = match_res_ptr_1.getString(0, "utf-8");
+        System.out.printf("match_res: %s\n", match_res_1);
+        instance.drop_string(match_res_ptr_1);
+
+        Pointer match_res_ptr_2 = instance.matcher_word_match_as_string(matcher, c_str_bytes);
+        String match_res_2 = match_res_ptr_2.getString(0, "utf-8");
+        System.out.printf("match_res: %s\n", match_res_2);
+        instance.drop_string(match_res_ptr_2);
 
         instance.drop_matcher(matcher);
     }

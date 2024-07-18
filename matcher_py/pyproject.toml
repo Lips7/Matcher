@@ -5,7 +5,6 @@ version = "0.4.6"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = 'Fuji Guo', email = "f975793771@gmail.com" }]
-dependencies = ["numpy>=1.16", "msgspec"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -36,8 +35,11 @@ build-backend = "maturin"
 [tool.rye]
 managed = true
 dev-dependencies = [
-    "pytest>=8.2.2",
-    "pip>=24.1.2",
+    "cffi",
+    "ipykernel",
+    "msgspec",
+    "pytest",
+    "pip",
 ]
 
 [tool.maturin]
