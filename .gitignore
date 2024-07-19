@@ -150,3 +150,4 @@ cython_debug/
 
 .ruff_cache
 test.ipynb
+profile.json
