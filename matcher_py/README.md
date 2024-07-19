@@ -105,8 +105,8 @@ Here’s an example of how to use the `reduce_text_process` and `text_process` f
 from matcher_py import reduce_text_process, text_process
 from matcher_py.extension_types import ProcessType
 
-print(reduce_text_process(ProcessType.MatchTextDelete | ProcessType.MatchNormalize, "hello, world!"))
-print(text_process(ProcessType.MatchTextDelete, "hello, world!"))
+print(reduce_text_process(MatchDeleteNormalize, "hello, world!"))
+print(text_process(ProcessType.MatchDelete, "hello, world!"))
 ```
 
 ### Matcher Basic Usage
@@ -117,7 +117,7 @@ Here’s an example of how to use the `Matcher`:
 import msgspec
 
 from matcher_py import Matcher
-from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType
+from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType, RegexMatchType, SimMatchType
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 matcher = Matcher(
@@ -129,21 +129,72 @@ matcher = Matcher(
                 word_list=["hello", "world"],
                 exemption_process_type=ProcessType.MatchNone,
                 exemption_word_list=["word"],
+            ),
+            MatchTable(
+                table_id=2,
+                match_table_type=MatchTableType.Regex(
+                  process_type = ProcessType.MatchFanjianDeleteNormalize,
+                  regex_match_type=RegexMatchType.Regex
+                ),
+                word_list=["h[aeiou]llo"],
+                exemption_process_type=ProcessType.MatchNone,
+                exemption_word_list=[],
+            )
+        ],
+        2: [
+            MatchTable(
+                table_id=3,
+                match_table_type=MatchTableType.Similar(
+                  process_type = ProcessType.MatchFanjianDeleteNormalize,
+                  sim_match_type=SimMatchType.MatchLevenshtein,
+                  threshold=0.5
+                ),
+                word_list=["halxo"],
+                exemption_process_type=ProcessType.MatchNone,
+                exemption_word_list=[],
             )
         ]
     })
 )
 # Check if a text matches
 assert matcher.is_match("hello")
-assert not matcher.is_match("hello, word")
+assert not matcher.is_match("word")
 # Perform process as a list
-result = matcher.proces("hello")
-assert result == "[{\"match_id\":1,\"table_id\":1,\"word_id\":1,\"word\":\"hello\",\"similarity\":1}]"
+result = matcher.process("hello")
+assert result == [{'match_id': 1,
+  'table_id': 2,
+  'word_id': 0,
+  'word': 'h[aeiou]llo',
+  'similarity': 1.0},
+ {'match_id': 1,
+  'table_id': 1,
+  'word_id': 0,
+  'word': 'hello',
+  'similarity': 1.0},
+ {'match_id': 2,
+  'table_id': 3,
+  'word_id': 0,
+  'word': 'halxo',
+  'similarity': 0.6}]
 # Perform word matching as a dict
-assert matcher.word_match(r"hello, world")[1]
+assert matcher.word_match(r"hello, world")[1] == [{'match_id': 1,
+  'table_id': 2,
+  'word_id': 0,
+  'word': 'h[aeiou]llo',
+  'similarity': 1.0},
+ {'match_id': 1,
+  'table_id': 1,
+  'word_id': 0,
+  'word': 'hello',
+  'similarity': 1.0},
+ {'match_id': 1,
+  'table_id': 1,
+  'word_id': 1,
+  'word': 'world',
+  'similarity': 1.0}]
 # Perform word matching as a string
 result = matcher.word_match_as_string("hello")
-assert result == """{1:[{\"match_id\":1,\"table_id\":1,\"word_id\":1,\"word\":\"hello\",\"similarity\":1}]}"""
+assert result == """{"2":[{"match_id":2,"table_id":3,"word_id":0,"word":"halxo","similarity":0.6}],"1":[{"match_id":1,"table_id":2,"word_id":0,"word":"h[aeiou]llo","similarity":1.0},{"match_id":1,"table_id":1,"word_id":0,"word":"hello","similarity":1.0}]}"""
 ```
 
 ### Simple Matcher Basic Usage
@@ -152,19 +203,29 @@ Here’s an example of how to use the `SimpleMatcher`:
 
 ```python
 import msgspec
-import numpy as np
+
 from matcher_py import SimpleMatcher
 from matcher_py.extension_types import ProcessType
 
 msgpack_encoder = msgspec.msgpack.Encoder()
 simple_matcher = SimpleMatcher(
-    msgpack_encoder.encode({ProcessType.MatchNone: {1: "example"}})
+    msgpack_encoder.encode(
+        {
+            ProcessType.MatchNone: {
+                1: "hello&world",
+                2: "word&word~hello"
+            },
+            ProcessType.MatchDelete: {
+                3: "hallo"
+            }
+        }
+    )
 )
 # Check if a text matches
-assert simple_matcher.is_match("example")
+assert simple_matcher.is_match("hello^&!#*#&!^#*()world")
 # Perform simple processing
-result = simple_matcher.process("example")
-assert result == "[{\"word_id\":1,\"word\":\"hello\"}]"
+result = simple_matcher.process("hello,world,word,word,hallo")
+assert result == [{'word_id': 1, 'word': 'hello&world'}, {'word_id': 3, 'word': 'hallo'}]
 ```
 
 ## Contributing

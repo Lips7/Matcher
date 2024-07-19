@@ -111,7 +111,7 @@ let match_table_map: MatchTableMap = HashMap::from_iter(vec![
         table_id: 1,
         match_table_type: MatchTableType::Simple { process_type: ProcessType::FanjianDeleteNormalize},
         word_list: vec!["example", "test"],
-        exemption_process_type: ProcessType::FanjianDeleteNormalize,
+        exemption_process_type: ProcessType::None,
         exemption_word_list: vec![],
     }]),
 ]);
