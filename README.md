@@ -130,6 +130,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Add Matcher process function to py, c and java.
 - [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
 - [x] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
+- [ ] Try to replace msgpack.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
