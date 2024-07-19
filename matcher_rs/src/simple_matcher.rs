@@ -48,12 +48,12 @@ pub type SimpleTable<'a> = IntMap<ProcessType, IntMap<u32, &'a str>>;
 /// - `word`: The original word as a String.
 /// - `split_bit`: A vector of integers representing the logical splits of the word. Positive integers indicate
 ///   multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
-/// - `not_index`: The index in `split_bit` that indicates the start of the 'NOT' split parts.
+/// - `not_offset`: The index in `split_bit` that indicates the start of the 'NOT' split parts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WordConf {
     word: String,
     split_bit: Vec<i32>,
-    not_index: usize,
+    not_offset: usize,
 }
 
 /// Represents a simple result for matching words in the SimpleMatcher.
@@ -205,13 +205,16 @@ impl SimpleMatcher {
     where
         I: AsRef<str>,
     {
-        let mut process_type_list = Vec::new();
-        let mut ac_dedup_word_conf_list = Vec::new();
-        let mut word_conf_map = IntMap::default();
+        let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
+
+        let mut process_type_list = Vec::with_capacity(process_type_word_map.len());
+        let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
+        let mut word_conf_map = IntMap::with_capacity_and_hasher(word_size, Default::default());
 
         let mut ac_dedup_word_id = 0;
-        let mut ac_dedup_word_list = Vec::new();
-        let mut ac_dedup_word_id_map = FxHashMap::default();
+        let mut ac_dedup_word_list = Vec::with_capacity(word_size);
+        let mut ac_dedup_word_id_map =
+            FxHashMap::with_capacity_and_hasher(word_size, Default::default());
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
@@ -269,7 +272,7 @@ impl SimpleMatcher {
                         .or_insert(0);
                 }
 
-                let not_index = ac_split_word_and_counter.len();
+                let not_offset = ac_split_word_and_counter.len();
                 let split_bit = ac_split_word_and_counter
                     .values()
                     .copied()
@@ -281,7 +284,7 @@ impl SimpleMatcher {
                     WordConf {
                         word: simple_word.as_ref().to_owned(),
                         split_bit,
-                        not_index,
+                        not_offset,
                     },
                 );
 
@@ -403,7 +406,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool {
-        let mut word_id_split_bit_map = FxHashMap::default();
+        let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
         let mut word_id_set = IdSet::new();
         let mut not_word_id_set = IdSet::new();
 
@@ -446,9 +449,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_matrix
                             .get_unchecked_mut(offset)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+                        *bit = bit.unchecked_add((offset < word_conf.not_offset) as i32 * -2 + 1);
 
-                        if offset >= word_conf.not_index && *bit > 0 {
+                        if offset >= word_conf.not_offset && *bit > 0 {
                             not_word_id_set.insert(word_id as usize);
                             word_id_set.remove(word_id as usize);
                             continue;
@@ -535,7 +538,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimpleResult<'a>> {
-        let mut word_id_split_bit_map = FxHashMap::default();
+        let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
         let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();
@@ -577,10 +580,10 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let split_bit = split_bit_matrix
                             .get_unchecked_mut(offset)
                             .get_unchecked_mut(index);
-                        *split_bit =
-                            split_bit.unchecked_add((offset < word_conf.not_index) as i32 * -2 + 1);
+                        *split_bit = split_bit
+                            .unchecked_add((offset < word_conf.not_offset) as i32 * -2 + 1);
 
-                        if offset >= word_conf.not_index && *split_bit > 0 {
+                        if offset >= word_conf.not_offset && *split_bit > 0 {
                             not_word_id_set.insert(word_id as usize);
                             word_id_split_bit_map.remove(&word_id);
                         }

@@ -109,6 +109,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Merge multiple aho-corasick matcher into one when multiple `ProcessType` are used.
 - [x] When `dfa` feature is disabled, use daachorse to perform text processing.
   - [x] Do not use it for simple process function, too slow to build.
+- [ ] Use more regex set to optimize regex matcher.
 
 ### Flexibility
 - [x] Cache `get_process_matcher` results globally, instead of caching result inside SimpleMatcher.
