@@ -359,8 +359,6 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 /// ```
 pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// The [Matcher] struct is responsible for managing and facilitating various types of matching operations
 /// utilizing different word processing strategies and match table configurations.
 ///
@@ -387,6 +385,8 @@ pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 ///
 /// The [Matcher] struct is designed to be serialized and deserialized conditionally by leveraging the `serde`
 /// feature, ensuring flexibility in its usage and integration with various systems and data transfer scenarios.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Matcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     simple_word_table_conf_list: Vec<WordTableConf>,
