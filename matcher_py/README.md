@@ -43,7 +43,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 ## Usage
 
-The `msgspec` library is recommended for serializing the matcher configuration due to its performance benefits. You can also use other msgpack serialization libraries like `ormsgpack`. All relevant types are defined in [extension_types.py](./matcher_py/extension_types.py).
+The `msgspec` library is recommended for serializing the matcher configuration due to its performance benefits. You can also use other msgpack serialization libraries like `ormsgpack`. All relevant types are defined in [extension_types.py](./python/matcher_py/extension_types.py).
 
 ### Explanation of the configuration
 
@@ -77,19 +77,19 @@ For each match table, word matching is performed over the `word_list`, and exemp
 #### ProcessType
 
 * `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](./process_map/FANJIAN.txt).
+* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/process_map/FANJIAN.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `Delete`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](./process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
+* `Delete`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](../matcher_rs/process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [SYMBOL_NORM](./process_map/SYMBOL-NORM.txt), [NORM](./process_map/NORM.txt) and [NUM_NORM](./process_map/NUM-NORM.txt).
+* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [NORM](../matcher_rs//process_map/NORM.txt) and [NUM_NORM](../matcher_rs//process_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
+* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
   * `你好` -> ` ni  hao `
   * `西安` -> ` xi  an `
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
+* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
