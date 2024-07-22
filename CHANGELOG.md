@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 - 2024-07-22
+### Flexibility
+- Remove msgpack, now non-rust users should use json to serialize input of Matcher and SimpleMatcher.
+- Refactor Java code.
+
 ## 0.5.1 - 2024-07-19
 ### Performance
 - Use FxHash to speed up simple matcher process.
