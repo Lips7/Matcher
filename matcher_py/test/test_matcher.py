@@ -11,7 +11,6 @@ from matcher_py.extension_types import (
     SimMatchType,
 )
 
-msgpack_encoder = msgspec.msgpack.Encoder()
 json_encoder = msgspec.json.Encoder()
 json_decoder = msgspec.json.Decoder()
 
@@ -34,10 +33,10 @@ def test_init_with_invalid_bytes():
 
 
 def test_init_with_empty_map():
-    Matcher(msgpack_encoder.encode({}))
-    Matcher(msgpack_encoder.encode({1: []}))
+    Matcher(json_encoder.encode({}))
+    Matcher(json_encoder.encode({1: []}))
     Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -57,14 +56,14 @@ def test_init_with_empty_map():
 
 def test_init_with_invalid_map():
     with pytest.raises(ValueError):
-        Matcher(msgpack_encoder.encode({"a": 1}))
-        Matcher(msgpack_encoder.encode({"a": {"b": 1}}))
-        Matcher(msgpack_encoder.encode({"c": {}}))
+        Matcher(json_encoder.encode({"a": 1}))
+        Matcher(json_encoder.encode({"a": {"b": 1}}))
+        Matcher(json_encoder.encode({"c": {}}))
 
 
 def test_regex():
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -89,7 +88,7 @@ def test_regex():
 
 def test_similar_char():
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -114,7 +113,7 @@ def test_similar_char():
 
 def test_similar_text_levenshtein():
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -142,7 +141,7 @@ def test_similar_text_levenshtein():
 
 def test_acrostic():
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -174,7 +173,7 @@ def test_acrostic():
 
 def test_exemption():
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(
@@ -194,7 +193,7 @@ def test_exemption():
     assert not matcher.is_match("helloworldwide")
 
     matcher = Matcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 1: [
                     MatchTable(

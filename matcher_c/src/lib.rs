@@ -3,7 +3,10 @@ use std::{
     str,
 };
 
-use matcher_rs::{MatchTableMap, Matcher, SimpleMatcher, SimpleTable, TextMatcherTrait};
+use matcher_rs::{
+    MatchTableMapSerde as MatchTableMap, Matcher, SimpleMatcher, SimpleTableSerde as SimpleTable,
+    TextMatcherTrait,
+};
 
 /// Initializes a `Matcher` from a serialized `MatchTableMap` in MessagePack format.
 ///
@@ -24,7 +27,7 @@ use matcher_rs::{MatchTableMap, Matcher, SimpleMatcher, SimpleTable, TextMatcher
 #[no_mangle]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     unsafe {
-        let match_table_map: MatchTableMap = match rmp_serde::from_slice(
+        let match_table_map: MatchTableMap = match sonic_rs::from_slice(
             CStr::from_ptr(match_table_map_bytes).to_bytes(),
         ) {
             Ok(match_table_map) => match_table_map,
@@ -183,7 +186,7 @@ pub unsafe extern "C" fn init_simple_matcher(
 ) -> *mut SimpleMatcher {
     unsafe {
         let simple_table: SimpleTable =
-            match rmp_serde::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
+            match sonic_rs::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
                 Ok(simple_table) => simple_table,
                 Err(e) => {
                     panic!(

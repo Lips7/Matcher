@@ -36,7 +36,7 @@ pub enum SimMatchType {
 /// * `match_id` - A unique identifier for the matching process.
 /// * `process_type` - The type of processing to be applied, represented by the [ProcessType] enum.
 /// * `sim_match_type` - The type of similarity matching algorithm to be used, represented by the [SimMatchType] enum.
-/// * `word_list` - A list of words to be used in the matching process. This is a reference to a vector of string slices.
+/// * `word_list` - A list of words to be used in the matching process.
 /// * `threshold` - A float value representing the similarity threshold for matching.
 #[derive(Debug, Clone)]
 pub struct SimTable<'a> {
@@ -44,7 +44,7 @@ pub struct SimTable<'a> {
     pub match_id: u32,
     pub process_type: ProcessType,
     pub sim_match_type: SimMatchType,
-    pub word_list: &'a Vec<&'a str>,
+    pub word_list: Vec<&'a str>,
     pub threshold: f64,
 }
 
@@ -132,13 +132,12 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// use matcher_rs::{SimMatcher, SimTable, SimMatchType, ProcessType};
 ///
 /// // Create a list of `SimTable` with the required properties
-/// let word_list = vec!["example", "test"];
 /// let sim_table_list = vec![SimTable {
 ///     table_id: 1,
 ///     match_id: 1,
 ///     process_type: ProcessType::None,
 ///     sim_match_type: SimMatchType::Levenshtein,
-///     word_list: &word_list,
+///     word_list: vec!["example", "test"],
 ///     threshold: 0.8,
 /// }];
 ///

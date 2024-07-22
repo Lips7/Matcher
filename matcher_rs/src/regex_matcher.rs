@@ -46,7 +46,7 @@ pub struct RegexTable<'a> {
     pub match_id: u32,
     pub process_type: ProcessType,
     pub regex_match_type: RegexMatchType,
-    pub word_list: &'a Vec<&'a str>,
+    pub word_list: Vec<&'a str>,
 }
 
 /// Enum representing different types of regex patterns used in the regex matcher.
@@ -162,7 +162,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 ///     match_id: 1,
 ///     process_type: ProcessType::None,
 ///     regex_match_type: RegexMatchType::Regex,
-///     word_list: &vec!["^hello", "^world"],
+///     word_list: vec!["^hello", "^world"],
 /// };
 ///
 /// // Initialize RegexMatcher with a list of RegexTable

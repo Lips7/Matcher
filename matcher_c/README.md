@@ -36,7 +36,7 @@ lib = ffi.dlopen("./matcher_c.so")
 
 # init matcher
 matcher = lib.init_matcher(
-    msgspec.msgpack.encode({
+    msgspec.json.encode({
         1: [
             MatchTable(
                 table_id=1,
@@ -71,7 +71,7 @@ lib.drop_matcher(matcher)
 
 # init simple matcher
 simple_matcher = lib.init_simple_matcher(
-    msgspec.msgpack.encode(({
+    msgspec.json.encode(({
         ProcessType.MatchFanjianDeleteNormalize | ProcessType.MatchPinYinChar: {
             1: "妳好&世界",
             2: "hello",

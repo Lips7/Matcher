@@ -104,7 +104,7 @@ mod test_regex {
             match_id: 1,
             process_type: ProcessType::None,
             regex_match_type: RegexMatchType::Regex,
-            word_list: &vec!["h[aeiou]llo", "w[aeiou]rd"],
+            word_list: vec!["h[aeiou]llo", "w[aeiou]rd"],
         }]);
 
         assert!(regex_matcher.is_match("hallo"));
@@ -118,7 +118,7 @@ mod test_regex {
             match_id: 1,
             process_type: ProcessType::None,
             regex_match_type: RegexMatchType::Acrostic,
-            word_list: &vec!["h,e,l,l,o", "你,好"],
+            word_list: vec!["h,e,l,l,o", "你,好"],
         }]);
 
         assert!(regex_matcher.is_match("hope, endures, love, lasts, onward."));
@@ -133,7 +133,7 @@ mod test_regex {
             match_id: 1,
             process_type: ProcessType::None,
             regex_match_type: RegexMatchType::SimilarChar,
-            word_list: &vec!["hello,hi,H,你好", "world,word,🌍,世界"],
+            word_list: vec!["hello,hi,H,你好", "world,word,🌍,世界"],
         }]);
 
         assert!(regex_matcher.is_match("helloworld"));
@@ -151,7 +151,7 @@ mod test_sim {
             match_id: 1,
             process_type: ProcessType::None,
             sim_match_type: SimMatchType::Levenshtein,
-            word_list: &vec!["helloworld"],
+            word_list: vec!["helloworld"],
             threshold: 0.8,
         }]);
 
@@ -169,7 +169,6 @@ mod test_matcher {
 
     #[test]
     fn matcher_init() {
-        let _ = Matcher::new(&HashMap::from([(1, vec![])]));
         let _ = Matcher::new(&HashMap::from([(
             1,
             vec![MatchTable {

@@ -145,6 +145,35 @@ pub enum MatchTableType {
     },
 }
 
+/// A trait that specifies the required methods for accessing match table configurations.
+///
+/// This trait is designed to provide a consistent interface for any match table type, allowing
+/// access to essential properties such as table IDs, match table types, word lists, and exemption
+/// word lists. By implementing this trait, different match table structures can be used
+/// interchangeably within the text matching operations.
+///
+/// # Type Parameters
+///
+/// - `S`: A type that implements `AsRef<str>`, ensuring the trait can be used with various string-like types.
+///
+/// # Required Methods
+///
+/// - `table_id(&self) -> u32`: Returns the unique identifier for the match table.
+/// - `match_table_type(&self) -> MatchTableType`: Returns the type of matching strategy used by the table.
+/// - `word_list(&self) -> &Vec<S>`: Returns a reference to the vector of words used for matching operations.
+/// - `exemption_process_type(&self) -> ProcessType`: Returns the type of text processing applied to the exemption words.
+/// - `exemption_word_list(&self) -> &Vec<S>`: Returns a reference to the vector of words exempted from matching operations.
+///
+/// By implementing this trait, any custom match table structure can ensure compatibility with the
+/// text matching system, providing the necessary access to its configuration details.
+pub trait MatchTableTrait<S: AsRef<str>> {
+    fn table_id(&self) -> u32;
+    fn match_table_type(&self) -> MatchTableType;
+    fn word_list(&self) -> &Vec<S>;
+    fn exemption_process_type(&self) -> ProcessType;
+    fn exemption_word_list(&self) -> &Vec<S>;
+}
+
 /// A structure representing a match table configuration.
 ///
 /// Match tables are used to define different matching strategies along with associated words and
@@ -205,6 +234,53 @@ pub struct MatchTable<'a> {
     pub exemption_process_type: ProcessType,
     #[serde(borrow)]
     pub exemption_word_list: Vec<&'a str>,
+}
+
+impl<'a> MatchTableTrait<&'a str> for MatchTable<'a> {
+    fn table_id(&self) -> u32 {
+        self.table_id
+    }
+    fn match_table_type(&self) -> MatchTableType {
+        self.match_table_type
+    }
+    fn word_list(&self) -> &Vec<&'a str> {
+        &self.word_list
+    }
+    fn exemption_process_type(&self) -> ProcessType {
+        self.exemption_process_type
+    }
+    fn exemption_word_list(&self) -> &Vec<&'a str> {
+        &self.exemption_word_list
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MatchTableSerde<'a> {
+    pub table_id: u32,
+    pub match_table_type: MatchTableType,
+    #[serde(borrow)]
+    pub word_list: Vec<Cow<'a, str>>,
+    pub exemption_process_type: ProcessType,
+    #[serde(borrow)]
+    pub exemption_word_list: Vec<Cow<'a, str>>,
+}
+
+impl<'a> MatchTableTrait<Cow<'a, str>> for MatchTableSerde<'a> {
+    fn table_id(&self) -> u32 {
+        self.table_id
+    }
+    fn match_table_type(&self) -> MatchTableType {
+        self.match_table_type
+    }
+    fn word_list(&self) -> &Vec<Cow<'a, str>> {
+        &self.word_list
+    }
+    fn exemption_process_type(&self) -> ProcessType {
+        self.exemption_process_type
+    }
+    fn exemption_word_list(&self) -> &Vec<Cow<'a, str>> {
+        &self.exemption_word_list
+    }
 }
 
 /// A configuration structure representing a word table entry.
@@ -359,6 +435,8 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 /// ```
 pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
+pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
+
 /// The [Matcher] struct is responsible for managing and facilitating various types of matching operations
 /// utilizing different word processing strategies and match table configurations.
 ///
@@ -444,7 +522,11 @@ impl Matcher {
     ///
     /// let matcher = Matcher::new(&match_table_map);
     /// ```
-    pub fn new<S>(match_table_map: &HashMap<u32, Vec<MatchTable<'_>>, S>) -> Matcher {
+    pub fn new<S, M, T>(match_table_map: &HashMap<u32, Vec<M>, S>) -> Matcher
+    where
+        M: MatchTableTrait<T>,
+        T: AsRef<str>,
+    {
         let mut process_type_list = Vec::new();
 
         let mut simple_word_id = 0;
@@ -458,10 +540,19 @@ impl Matcher {
 
         for (&match_id, table_list) in match_table_map {
             for table in table_list {
-                let table_id = table.table_id;
-                let match_table_type = table.match_table_type;
-                let word_list = &table.word_list;
-                let exemption_word_list = &table.exemption_word_list;
+                let table_id = table.table_id();
+                let match_table_type = table.match_table_type();
+                let word_list = table
+                    .word_list()
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect::<Vec<&str>>();
+                let exemption_process_type = table.exemption_process_type();
+                let exemption_word_list = table
+                    .exemption_word_list()
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect::<Vec<&str>>();
 
                 if !word_list.is_empty() {
                     match match_table_type {
@@ -476,7 +567,7 @@ impl Matcher {
 
                             let simple_word_map = simple_table.entry(process_type).or_default();
 
-                            for word in word_list.iter() {
+                            for word in word_list {
                                 simple_word_table_conf_index_list.push(simple_word_table_conf_id);
                                 simple_word_map.insert(simple_word_id, word);
                                 simple_word_id += 1;
@@ -516,7 +607,7 @@ impl Matcher {
                 }
 
                 if !exemption_word_list.is_empty() {
-                    process_type_list.push(table.exemption_process_type);
+                    process_type_list.push(exemption_process_type);
                     simple_word_table_conf_list.push(WordTableConf {
                         match_id,
                         table_id,
@@ -524,9 +615,7 @@ impl Matcher {
                         is_exemption: true,
                     });
 
-                    let simple_word_map = simple_table
-                        .entry(table.exemption_process_type)
-                        .or_default();
+                    let simple_word_map = simple_table.entry(exemption_process_type).or_default();
 
                     for exemption_word in exemption_word_list.iter() {
                         simple_word_table_conf_index_list.push(simple_word_table_conf_id);

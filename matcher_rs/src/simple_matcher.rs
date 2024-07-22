@@ -38,6 +38,8 @@ use crate::process::process_matcher::{
 /// and then adds a mapping from an integer key to a string slice within that inner map.
 pub type SimpleTable<'a> = IntMap<ProcessType, IntMap<u32, &'a str>>;
 
+pub type SimpleTableSerde<'a> = IntMap<ProcessType, IntMap<u32, Cow<'a, str>>>;
+
 /// Represents the configuration for a word within the SimpleMatcher.
 ///
 /// [WordConf] contains the word as a string, the split bits indicating logical operators ('&' for AND, '~' for NOT),

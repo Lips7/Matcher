@@ -5,7 +5,6 @@ import msgspec
 from matcher_py.matcher_py import SimpleMatcher
 from matcher_py.extension_types import ProcessType
 
-msgpack_encoder = msgspec.msgpack.Encoder()
 json_encoder = msgspec.json.Encoder()
 json_decoder = msgspec.json.Decoder()
 
@@ -28,27 +27,34 @@ def test_init_with_invalid_bytes():
 
 
 def test_init_with_empty_map():
-    SimpleMatcher(msgpack_encoder.encode({}))
-    SimpleMatcher(msgpack_encoder.encode({1: {}}))
+    SimpleMatcher(json_encoder.encode({}))
+    SimpleMatcher(json_encoder.encode({1: {}}))
 
 
 def test_init_with_invalid_map():
     with pytest.raises(ValueError):
-        SimpleMatcher(msgpack_encoder.encode({"a": 1}))
-        SimpleMatcher(msgpack_encoder.encode({"a": {"b": 1}}))
-        SimpleMatcher(msgpack_encoder.encode({1: []}))
+        SimpleMatcher(json_encoder.encode({"a": 1}))
+        SimpleMatcher(json_encoder.encode({"a": {"b": 1}}))
+        SimpleMatcher(json_encoder.encode({1: []}))
+
+def test_backslashes():
+    simple_matcher = SimpleMatcher(
+        json_encoder.encode({ProcessType.MatchNone: {1: "It's /\/\y duty"}})
+    )
+    assert simple_matcher.is_match("It's /\/\y duty")
+    assert simple_matcher.process("It's /\/\y duty")[0]["word"] == "It's /\/\y duty"
 
 
 def test_fanjian():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode({ProcessType.MatchFanjian: {1: "你好"}})
+        json_encoder.encode({ProcessType.MatchFanjian: {1: "你好"}})
     )
     assert simple_matcher.is_match("妳好")
     assert simple_matcher.process("你好")[0]["word_id"] == 1
     assert simple_matcher.process("你好")[0]["word"] == "你好"
 
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode({ProcessType.MatchFanjian: {1: "妳好"}})
+        json_encoder.encode({ProcessType.MatchFanjian: {1: "妳好"}})
     )
     assert simple_matcher.is_match("你好")
     assert simple_matcher.process("你好")[0]["word_id"] == 1
@@ -57,7 +63,7 @@ def test_fanjian():
 
 def test_delete():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode({ProcessType.MatchDelete: {1: "你好"}})
+        json_encoder.encode({ProcessType.MatchDelete: {1: "你好"}})
     )
     assert simple_matcher.is_match("你！好")
     assert len(simple_matcher.process("你！好")) == 1
@@ -65,7 +71,7 @@ def test_delete():
 
 def test_normalize():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 ProcessType.MatchNormalize: {
                     1: "he11o",
@@ -80,7 +86,7 @@ def test_normalize():
 
 def test_pinyin():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 ProcessType.MatchPinYin: {
                     1: "西安",
@@ -94,7 +100,7 @@ def test_pinyin():
 
 def test_pinyinchar():
     simple_matcher = SimpleMatcher(
-        msgpack_encoder.encode(
+        json_encoder.encode(
             {
                 ProcessType.MatchPinYinChar: {
                     1: "西安",

@@ -43,7 +43,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 ## Usage
 
-The `msgspec` library is recommended for serializing the matcher configuration due to its performance benefits. You can also use other msgpack serialization libraries like `ormsgpack`. All relevant types are defined in [extension_types.py](./python/matcher_py/extension_types.py).
+All relevant types are defined in [extension_types.py](./python/matcher_py/extension_types.py).
 
 ### Explanation of the configuration
 
@@ -119,9 +119,9 @@ import msgspec
 from matcher_py import Matcher
 from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType, RegexMatchType, SimMatchType
 
-msgpack_encoder = msgspec.msgpack.Encoder()
+json_encoder = msgspec.json.Encoder()
 matcher = Matcher(
-    msgpack_encoder.encode({
+    json_encoder.encode({
         1: [
             MatchTable(
                 table_id=1,
@@ -207,9 +207,9 @@ import msgspec
 from matcher_py import SimpleMatcher
 from matcher_py.extension_types import ProcessType
 
-msgpack_encoder = msgspec.msgpack.Encoder()
+json_encoder = msgspec.json.Encoder()
 simple_matcher = SimpleMatcher(
-    msgpack_encoder.encode(
+    json_encoder.encode(
         {
             ProcessType.MatchNone: {
                 1: "hello&world",

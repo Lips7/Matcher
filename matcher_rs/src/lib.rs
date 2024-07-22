@@ -16,7 +16,7 @@ pub use process::process_matcher::{
 };
 
 mod simple_matcher;
-pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable};
+pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};
 
 mod regex_matcher;
 pub use regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
@@ -26,6 +26,6 @@ pub use sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
 
 mod matcher;
 pub use matcher::{
-    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableType, Matcher,
-    TextMatcherTrait,
+    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableMapSerde, MatchTableType,
+    Matcher, TextMatcherTrait,
 };

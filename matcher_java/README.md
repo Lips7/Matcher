@@ -29,10 +29,19 @@ Copy the code below or refer to [MatcherJavaExample.java](./src/test/java/com/ma
 ```java
 package com.matcher_java;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.serializer.SerializeConfig;
+import com.matcher_java.extension_types.MatchTable;
+import com.matcher_java.extension_types.MatchTableType;
+import com.matcher_java.extension_types.ProcessType;
+import com.matcher_java.extension_types.ProcessTypeSerializer;
 import com.sun.jna.Pointer;
+
 import java.io.IOException;
-import org.msgpack.core.MessageBufferPacker;
-import org.msgpack.core.MessagePack;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class MatcherJavaExample {
     public static void main(String[] args) throws IOException {
@@ -46,78 +55,73 @@ public class MatcherJavaExample {
     }
 
     public static void simple_matcher_process_demo() throws IOException {
-        MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
-        packer.packMapHeader(1);
-        packer.packInt(1); // 1 = None
-        packer.packMapHeader(1);
-        packer.packInt(1);
-        packer.packString("hello&world");
-        packer.close();
+        SerializeConfig serializeConfig = new SerializeConfig();
+        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
 
-        byte[] simple_table_bytes = packer.toByteArray();
+        Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
+        Map<String, String> wordMap = new HashMap<>();
+        wordMap.put("1", "hello&world");
+        simpleTable.put(ProcessType.MatchNone, wordMap);
+
+        String simpleTableStr = JSON.toJSONString(simpleTable, serializeConfig);
+        System.out.printf("simple_table: %s\n", simpleTableStr);
+
+        byte[] simpleTableBytes = JSON.toJSONBytes(simpleTable, serializeConfig);
 
         MatcherJava instance = MatcherJava.INSTANCE;
 
-        Pointer simple_matcher = instance.init_simple_matcher(simple_table_bytes);
+        Pointer simpleMatcher = instance.init_simple_matcher(simpleTableBytes);
 
-        byte[] str_bytes = "hello,world".getBytes("utf-8");
-        byte[] c_str_bytes = new byte[str_bytes.length + 1];
-        System.arraycopy(str_bytes, 0, c_str_bytes, 0, str_bytes.length);
+        byte[] strBytes = "hello,world".getBytes("utf-8");
+        byte[] cStrBytes = new byte[strBytes.length + 1];
+        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
 
-        boolean is_match = instance.simple_matcher_is_match(simple_matcher, c_str_bytes);
-        System.out.printf("is_match: %s\n", is_match);
+        boolean isMatch = instance.simple_matcher_is_match(simpleMatcher, cStrBytes);
+        System.out.printf("isMatch: %s\n", isMatch);
 
-        Pointer match_res_ptr = instance.simple_matcher_process_as_string(simple_matcher, c_str_bytes);
-        String match_res = match_res_ptr.getString(0, "utf-8");
-        System.out.printf("match_res: %s\n", match_res);
-        instance.drop_string(match_res_ptr);
+        Pointer matchResPtr = instance.simple_matcher_process_as_string(simpleMatcher, cStrBytes);
+        String matchRes = matchResPtr.getString(0, "utf-8");
+        System.out.printf("matchRes: %s\n", matchRes);
+        instance.drop_string(matchResPtr);
 
-        instance.drop_simple_matcher(simple_matcher);
+        instance.drop_simple_matcher(simpleMatcher);
     }
 
     public static void matcher_process_demo() throws IOException {
-        MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+        SerializeConfig serializeConfig = new SerializeConfig();
+        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
 
-        packer.packMapHeader(1);
-        packer.packInt(1);
-        packer.packArrayHeader(1);
-        packer.packMapHeader(5);
-        packer.packString("table_id");
-        packer.packInt(1);
-        packer.packString("match_table_type");
-        packer.packMapHeader(1);
-        packer.packString("process_type");
-        packer.packInt(1); // 1 = None
-        packer.packString("word_list");
-        packer.packArrayHeader(1);
-        packer.packString("hello&world");
-        packer.packString("exemption_process_type");
-        packer.packInt(1); // 1 = None
-        packer.packString("exemption_word_list");
-        packer.packArrayHeader(0);
-        byte[] match_table_map_dict_bytes = packer.toByteArray();
-        packer.close();
+        Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
+        List<MatchTable> matchTableList = new ArrayList<>();
+        MatchTable matchTable = new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of());
+        matchTableList.add(matchTable);
+        matchTableMap.put("1", matchTableList);
+
+        String matchTableMapStr = JSON.toJSONString(matchTableMap, serializeConfig);
+        System.out.printf("match_table_map: %s\n", matchTableMapStr);
+
+        byte[] matchTableMapBytes = JSON.toJSONBytes(matchTableMap, serializeConfig);
 
         MatcherJava instance = MatcherJava.INSTANCE;
 
-        Pointer matcher = instance.init_matcher(match_table_map_dict_bytes);
+        Pointer matcher = instance.init_matcher(matchTableMapBytes);
 
-        byte[] str_bytes = "hello,world".getBytes("utf-8");
-        byte[] c_str_bytes = new byte[str_bytes.length + 1];
-        System.arraycopy(str_bytes, 0, c_str_bytes, 0, str_bytes.length);
+        byte[] strBytes = "hello,world".getBytes("utf-8");
+        byte[] cStrBytes = new byte[strBytes.length + 1];
+        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
 
-        boolean is_match = instance.matcher_is_match(matcher, c_str_bytes);
-        System.out.printf("is_match: %s\n", is_match);
+        boolean isMatch = instance.matcher_is_match(matcher, cStrBytes);
+        System.out.printf("isMatch: %s\n", isMatch);
 
-        Pointer match_res_ptr_1 = instance.matcher_process_as_string(matcher, c_str_bytes);
-        String match_res_1 = match_res_ptr_1.getString(0, "utf-8");
-        System.out.printf("match_res: %s\n", match_res_1);
-        instance.drop_string(match_res_ptr_1);
+        Pointer matchResPtr1 = instance.matcher_process_as_string(matcher, cStrBytes);
+        String matchRes1 = matchResPtr1.getString(0, "utf-8");
+        System.out.printf("matchRes: %s\n", matchRes1);
+        instance.drop_string(matchResPtr1);
 
-        Pointer match_res_ptr_2 = instance.matcher_word_match_as_string(matcher, c_str_bytes);
-        String match_res_2 = match_res_ptr_2.getString(0, "utf-8");
-        System.out.printf("match_res: %s\n", match_res_2);
-        instance.drop_string(match_res_ptr_2);
+        Pointer matchResPtr2 = instance.matcher_word_match_as_string(matcher, cStrBytes);
+        String matchRes2 = matchResPtr2.getString(0, "utf-8");
+        System.out.printf("matchRes: %s\n", matchRes2);
+        instance.drop_string(matchResPtr2);
 
         instance.drop_matcher(matcher);
     }
@@ -126,5 +130,4 @@ public class MatcherJavaExample {
 
 ## Important Notes
 
-1. The `org.msgpack` is not required, you can use anything else to pack the data to msgpack format.
-2. Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` after initializing and processing to avoid memory leaks.
+Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` after initializing and processing to avoid memory leaks.

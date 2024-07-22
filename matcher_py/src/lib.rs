@@ -10,9 +10,9 @@ use pyo3::{intern, pyfunction, Bound, IntoPy};
 
 use matcher_rs::{
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
-    MatchResult as MatchResultRs, MatchTableMap as MatchTableMapRs, Matcher as MatcherRs,
+    MatchResult as MatchResultRs, MatchTableMapSerde as MatchTableMapRs, Matcher as MatcherRs,
     ProcessType, SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs,
-    SimpleTable as SimpleTableRs, TextMatcherTrait,
+    SimpleTableSerde as SimpleTableRs, TextMatcherTrait,
 };
 
 /// A structure representing a simple result from the SimpleMatcher.
@@ -175,7 +175,7 @@ impl Matcher {
     /// Creates a new instance of the [Matcher] class using the provided match table map bytes.
     ///
     /// This function initializes a new [Matcher] by deserializing the provided byte slice into
-    /// a [MatchTableMapRs] object using the `rmp_serde` library. The resulting map is then used
+    /// a [MatchTableMapRs] object using the `sonic_rs` library. The resulting map is then used
     /// to instantiate the actual [MatcherRs] object.
     ///
     /// # Parameters
@@ -191,7 +191,7 @@ impl Matcher {
     #[new]
     #[pyo3(signature=(match_table_map_bytes))]
     fn new(match_table_map_bytes: &[u8]) -> PyResult<Matcher> {
-        let match_table_map: MatchTableMapRs = match rmp_serde::from_slice(match_table_map_bytes) {
+        let match_table_map: MatchTableMapRs = match sonic_rs::from_slice(match_table_map_bytes) {
             Ok(match_table_map) => match_table_map,
             Err(e) => {
                 return Err(PyValueError::new_err(format!(
@@ -247,7 +247,7 @@ impl Matcher {
     #[pyo3(signature=(match_table_map_bytes))]
     fn __setstate__(&mut self, match_table_map_bytes: &[u8]) {
         self.matcher = MatcherRs::new(
-            &rmp_serde::from_slice::<MatchTableMapRs>(match_table_map_bytes).unwrap(),
+            &sonic_rs::from_slice::<MatchTableMapRs>(match_table_map_bytes).unwrap(),
         );
         self.match_table_map_bytes = match_table_map_bytes.to_vec();
     }
@@ -373,7 +373,7 @@ impl SimpleMatcher {
     #[new]
     #[pyo3(signature=(simple_table_bytes))]
     fn new(_py: Python, simple_table_bytes: &[u8]) -> PyResult<SimpleMatcher> {
-        let simple_table: SimpleTableRs = match rmp_serde::from_slice(simple_table_bytes) {
+        let simple_table: SimpleTableRs = match sonic_rs::from_slice(simple_table_bytes) {
             Ok(simple_table) => simple_table,
             Err(e) => {
                 return Err(PyValueError::new_err(format!(
@@ -428,7 +428,7 @@ impl SimpleMatcher {
     #[pyo3(signature=(simple_table_bytes))]
     fn __setstate__(&mut self, simple_table_bytes: &[u8]) {
         self.simple_matcher = SimpleMatcherRs::new(
-            &rmp_serde::from_slice::<SimpleTableRs>(simple_table_bytes).unwrap(),
+            &sonic_rs::from_slice::<SimpleTableRs>(simple_table_bytes).unwrap(),
         );
         self.simple_table_bytes = simple_table_bytes.to_vec();
     }

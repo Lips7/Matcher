@@ -44,11 +44,6 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
 - **Customizable Exemption Lists**: Exclude specific words from matching.
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
-## Usage
-
-Non-Rust users must use **msgpack** for serializing matcher configurations to bytes. **Msgpack** handles backslashes better and is faster than JSON.
-  - Example issue with JSON: `It's /\/\y duty` is processed incorrectly.
-
 ### Rust Users
 
 See the [Rust README](./matcher_rs/README.md).
@@ -130,7 +125,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Add Matcher process function to py, c and java.
 - [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
 - [x] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
-- [ ] Try to replace msgpack.
+- [x] Try to replace msgpack.
 
 ### Readability
 - [x] More precise and convenient MatchTable.
