@@ -13,12 +13,12 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-#[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use fxhash::FxHashMap;
 use id_set::IdSet;
 use lazy_static::lazy_static;
 use nohash_hasher::{IntMap, IsEnabled};
 use parking_lot::RwLock;
+#[cfg(any(feature = "runtime_build", feature = "dfa"))]
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tinyvec::ArrayVec;
 

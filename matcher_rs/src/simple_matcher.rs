@@ -2,9 +2,9 @@ use std::iter;
 use std::{borrow::Cow, collections::HashMap};
 
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
-use fxhash::FxHashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
