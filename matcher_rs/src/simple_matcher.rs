@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::iter;
-use std::{borrow::Cow, collections::HashMap};
 
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use id_set::IdSet;
@@ -409,7 +410,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool {
         let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
-        let mut word_id_set = IdSet::new();
         let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();
@@ -455,25 +455,18 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
                         if offset >= word_conf.not_offset && *bit > 0 {
                             not_word_id_set.insert(word_id as usize);
-                            word_id_set.remove(word_id as usize);
-                            continue;
-                        }
-
-                        if split_bit_matrix
-                            .iter()
-                            .all(|split_bit_vec| split_bit_vec.iter().any(|&bit| bit <= 0))
-                        {
-                            word_id_set.insert(word_id as usize);
+                            word_id_split_bit_map.remove(&word_id);
                         }
                     }
                 }
             }
-            if !word_id_set.is_empty() {
-                return true;
-            }
         }
 
-        false
+        word_id_split_bit_map.values().any(|split_bit_matrix| {
+            split_bit_matrix
+                .into_iter()
+                .all(|split_bit_vec| split_bit_vec.into_iter().any(|&split_bit| split_bit <= 0))
+        })
     }
 
     /// Processes the given text and returns a vector of matching results.
