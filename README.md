@@ -133,4 +133,4 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] More detailed and rigorous tests.
 - [x] More detailed simple match type explanation.
 - [ ] More detailed [DESIGN](./DESIGN.md).
-- [ ] Write a Chinese README.
+- [x] Write a Chinese README.
