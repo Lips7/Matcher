@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_c"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "matcher_rs",
  "sonic-rs",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "matcher_rs",
  "pyo3",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "aho-corasick-unsafe",
  "bitflags",

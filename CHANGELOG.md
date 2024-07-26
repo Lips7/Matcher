@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 - 2024-07-26
+### Bug fixes
+- Fix simple matcher is_match function.
+
 ## 0.5.2 - 2024-07-22
 ### Flexibility
 - Remove msgpack, now non-rust users should use json to serialize input of Matcher and SimpleMatcher.
