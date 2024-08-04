@@ -105,7 +105,7 @@ Here’s an example of how to use the `reduce_text_process` and `text_process` f
 from matcher_py import reduce_text_process, text_process
 from matcher_py.extension_types import ProcessType
 
-print(reduce_text_process(MatchDeleteNormalize, "hello, world!"))
+print(reduce_text_process(ProcessType.MatchDeleteNormalize, "hello, world!"))
 print(text_process(ProcessType.MatchDelete, "hello, world!"))
 ```
 
