@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 [dependencies]
 matcher_rs = { path = "../matcher_rs", version = "0.5.3" }
 pyo3 = { version = "0.22.2", features = ["extension-module"] }
-sonic-rs = "0.3.9"
+sonic-rs = "0.3.10"
 
 [build-dependencies]
 pyo3-build-config = "0.22.2"
