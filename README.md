@@ -123,7 +123,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Multiple Python version wheel build.
 - [ ] Customize str conversion map.
 - [x] Add Matcher process function to py, c and java.
-- [ ] For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex.
+- [x] ~~For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex. (Keep it simple and efficient)~~
 - [x] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
 - [x] Try to replace msgpack.
 
