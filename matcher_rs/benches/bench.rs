@@ -1,3 +1,5 @@
+use std::hint::black_box;
+
 use divan::Bencher;
 use matcher_rs::{ProcessType, SimpleMatcher, TextMatcherTrait};
 use nohash_hasher::IntMap;
@@ -80,6 +82,39 @@ fn build_simple_word_map_baseline(
         simple_word_map.insert(global_word_id, word.to_owned());
     }
     simple_word_map
+}
+
+mod single_line {
+    use super::*;
+
+    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
+    fn search_cn_single_line(bencher: Bencher, simple_word_map_size: usize) {
+        let mut simple_table = IntMap::default();
+        let simple_word_map = build_simple_word_map_baseline("cn", simple_word_map_size);
+        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_table);
+
+        bencher.bench(|| {
+            simple_matcher.process(black_box("　　从传回的影像上看，在剩下的三秒钟时间里，章北海转向东方延绪方向，竟笑了一下，说出了几个字：“没关系的，都一样。”"));
+        });
+    }
+
+    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
+    fn search_en_single_line(bencher: Bencher, simple_word_map_size: usize) {
+        let mut simple_table = IntMap::default();
+        let simple_word_map = build_simple_word_map_baseline("en", simple_word_map_size);
+        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_table);
+
+        bencher.bench(|| {
+            simple_matcher.process(black_box(
+                r#""You will excuse this mask," continued our strange visitor. "The
+august person who employs me wishes his agent to be unknown to
+you, and I may confess at once that the title by which I have
+just called myself is not exactly my own.""#,
+            ));
+        });
+    }
 }
 
 mod build_cn {
