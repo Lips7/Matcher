@@ -37,12 +37,13 @@ def test_init_with_invalid_map():
         SimpleMatcher(json_encoder.encode({"a": {"b": 1}}))
         SimpleMatcher(json_encoder.encode({1: []}))
 
+
 def test_backslashes():
     simple_matcher = SimpleMatcher(
-        json_encoder.encode({ProcessType.MatchNone: {1: "It's /\/\y duty"}})
+        json_encoder.encode({ProcessType.MatchNone: {1: r"It's /\/\y duty"}})
     )
-    assert simple_matcher.is_match("It's /\/\y duty")
-    assert simple_matcher.process("It's /\/\y duty")[0]["word"] == "It's /\/\y duty"
+    assert simple_matcher.is_match(r"It's /\/\y duty")
+    assert simple_matcher.process(r"It's /\/\y duty")[0]["word"] == r"It's /\/\y duty"
 
 
 def test_fanjian():

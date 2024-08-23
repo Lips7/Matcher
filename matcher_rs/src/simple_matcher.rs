@@ -464,8 +464,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
         word_id_split_bit_map.values().any(|split_bit_matrix| {
             split_bit_matrix
-                .into_iter()
-                .all(|split_bit_vec| split_bit_vec.into_iter().any(|&split_bit| split_bit <= 0))
+                .iter()
+                .all(|split_bit_vec| split_bit_vec.iter().any(|&split_bit| split_bit <= 0))
         })
     }
 
