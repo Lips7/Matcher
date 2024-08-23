@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4 - 2024-08-23
+### Readability
+- Fix typo and cargo clippy warnings.
+- Add single line benchmark.
+
 ## 0.5.3 - 2024-07-26
 ### Bug fixes
 - Fix simple matcher is_match function.

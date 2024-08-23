@@ -2,7 +2,7 @@
 
 ## Overview
 
-Matcher is a high-performance matching library implemented in Rust, providing C FFI bindings for seamless integration with other programming languages. This library is designed for various matching tasks, including simple and complex match types with normalization and deletion capabilities.
+A high-performance matcher designed to solve **LOGICAL and TEXT VARIATIONS** problems in word matching, implemented in Rust.
 
 ## Installation
 

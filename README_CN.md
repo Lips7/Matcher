@@ -8,7 +8,7 @@
 
 ![PyPI - Version](https://img.shields.io/pypi/v/matcher_py)![PyPI - Python Version](https://img.shields.io/pypi/pyversions/matcher_py)![PyPI - Downloads](https://img.shields.io/pypi/dm/matcher_py)
 
-一个高性能文本匹配器，旨在解决**与或非**和**文本变体**问题中的词/词列表匹配。
+一个高性能文本匹配器，旨在解决**逻辑**和**文本变体**的词匹配问题。
 
 它对以下方面非常有帮助：
 - **内容过滤**：检测和攻击性或敏感词语。

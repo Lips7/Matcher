@@ -8,7 +8,7 @@
 
 ![PyPI - Version](https://img.shields.io/pypi/v/matcher_py)![PyPI - Python Version](https://img.shields.io/pypi/pyversions/matcher_py)![PyPI - Downloads](https://img.shields.io/pypi/dm/matcher_py)
 
-A high-performance matcher designed to solve **AND OR NOT** and **TEXT VARIATIONS** problems in word/word_list matching.
+A high-performance matcher designed to solve **LOGICAL and TEXT VARIATIONS** problems in word matching, implemented in Rust.
 
 It's helpful for
 - **Content Filtering**: Detecting and filtering out offensive or sensitive words.
