@@ -8,9 +8,10 @@
 
 ![PyPI - Version](https://img.shields.io/pypi/v/matcher_py)![PyPI - Python Version](https://img.shields.io/pypi/pyversions/matcher_py)![PyPI - Downloads](https://img.shields.io/pypi/dm/matcher_py)
 
-一个高性能文本匹配器，旨在解决**逻辑**和**文本变体**的词匹配问题。
+一个高性能文本匹配器，旨在解决**逻辑**和**文本变体**的词匹配问题，以Rust实现。
 
 它对以下方面非常有帮助：
+- **精确率与召回率**：文本匹配是一个召回过程，逻辑匹配提高精确率，文本变体匹配提高召回率。
 - **内容过滤**：检测和攻击性或敏感词语。
 - **搜索引擎**：通过识别相关关键词来改进搜索结果。
 - **文本分析**：从大量文本中提取特定信息。

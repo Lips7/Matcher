@@ -1,6 +1,6 @@
 # Matcher Rust Implementation with PyO3 Binding
 
-A high-performance matcher designed to solve **LOGICAL and TEXT VARIATIONS** problems in word matching, implemented in Rust.
+A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust.
 
 For detailed implementation, see the [Design Document](../DESIGN.md).
 
