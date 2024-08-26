@@ -11,7 +11,7 @@
 A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust.
 
 It's helpful for
-- **Precision and Recall**: Word matching is a retrieval process, LOGICAL match improves precision while TEXT VARIATIONS match improve recall.
+- **Precision and Recall**: Word matching is a retrieval process, LOGICAL match improves precision while TEXT VARIATIONS match improves recall.
 - **Content Filtering**: Detecting and filtering out offensive or sensitive words.
 - **Search Engines**: Improving search results by identifying relevant keywords.
 - **Text Analysis**: Extracting specific information from large volumes of text.
