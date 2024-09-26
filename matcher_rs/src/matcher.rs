@@ -660,7 +660,7 @@ impl Matcher {
     ///   information about a match found in the input text.
     ///
     /// If the input text is empty, the function returns an empty [HashMap].
-    pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult>> {
+    pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
         if text.is_empty() {
             return HashMap::new();
         }
@@ -700,7 +700,7 @@ impl Matcher {
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
-    ) -> HashMap<u32, Vec<MatchResult>> {
+    ) -> HashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = HashMap::new();
         let mut failed_match_table_id_set = IdSet::new();
 

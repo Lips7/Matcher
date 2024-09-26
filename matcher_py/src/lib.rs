@@ -279,7 +279,7 @@ impl Matcher {
     /// - [`Vec<MatchResult<'_>>`]: A vector of [MatchResult] instances, where each entry
     ///   indicates a match found within the text according to the patterns defined within the matcher.
     #[pyo3(signature=(text))]
-    fn process<'a>(&'a self, text: &'a str) -> Vec<MatchResult<'_>> {
+    fn process<'a>(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
         self.matcher
             .process(text)
             .into_iter()
@@ -300,7 +300,7 @@ impl Matcher {
     /// - [`HashMap<u32, Vec<MatchResult<'_>>>`]: A mapping of match IDs to lists of match results,
     ///   indicating all patterns found in the text.
     #[pyo3(signature=(text))]
-    fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'_>>> {
+    fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
         self.matcher
             .word_match(text)
             .into_iter()
@@ -461,7 +461,7 @@ impl SimpleMatcher {
     /// - `Vec<SimpleResult>`: A vector of `SimpleResult` instances, each encapsulating
     ///   a match found in the text.
     #[pyo3(signature=(text))]
-    fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult> {
+    fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         self.simple_matcher
             .process(text)
             .into_iter()
