@@ -114,14 +114,13 @@ print(text_process(ProcessType.MatchDelete, "hello, world!"))
 Here’s an example of how to use the `Matcher`:
 
 ```python
-import msgspec
+import json
 
 from matcher_py import Matcher
 from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType, RegexMatchType, SimMatchType
 
-json_encoder = msgspec.json.Encoder()
 matcher = Matcher(
-    json_encoder.encode({
+    json.dumps({
         1: [
             MatchTable(
                 table_id=1,
@@ -154,7 +153,7 @@ matcher = Matcher(
                 exemption_word_list=[],
             )
         ]
-    })
+    }).encode()
 )
 # Check if a text matches
 assert matcher.is_match("hello")
@@ -202,14 +201,13 @@ assert result == """{"2":[{"match_id":2,"table_id":3,"word_id":0,"word":"halxo",
 Here’s an example of how to use the `SimpleMatcher`:
 
 ```python
-import msgspec
+import json
 
 from matcher_py import SimpleMatcher
 from matcher_py.extension_types import ProcessType
 
-json_encoder = msgspec.json.Encoder()
 simple_matcher = SimpleMatcher(
-    json_encoder.encode(
+    json.dumps(
         {
             ProcessType.MatchNone: {
                 1: "hello&world",
@@ -219,7 +217,7 @@ simple_matcher = SimpleMatcher(
                 3: "hallo"
             }
         }
-    )
+    ).encode
 )
 # Check if a text matches
 assert simple_matcher.is_match("hello^&!#*#&!^#*()world")

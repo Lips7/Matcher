@@ -28,7 +28,7 @@ class ProcessType(IntFlag):
     MatchPinYinChar = 0b00100000
 
 
-class RegexMatchType(Enum):
+class RegexMatchType(str, Enum):
     """
     An enumeration representing various types of regex matching operations.
 
@@ -43,7 +43,7 @@ class RegexMatchType(Enum):
     MatchRegex = "regex"
 
 
-class SimMatchType(Enum):
+class SimMatchType(str, Enum):
     """
     An enumeration representing various types of similarity matching operations.
 

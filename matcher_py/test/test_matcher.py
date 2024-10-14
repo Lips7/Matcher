@@ -1,6 +1,5 @@
+import json
 import pytest
-
-import msgspec
 
 from matcher_py.matcher_py import Matcher
 from matcher_py.extension_types import (
@@ -10,10 +9,6 @@ from matcher_py.extension_types import (
     RegexMatchType,
     SimMatchType,
 )
-
-json_encoder = msgspec.json.Encoder()
-json_decoder = msgspec.json.Decoder()
-
 
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
@@ -33,37 +28,35 @@ def test_init_with_invalid_bytes():
 
 
 def test_init_with_empty_map():
-    Matcher(json_encoder.encode({}))
-    Matcher(json_encoder.encode({1: []}))
+    Matcher(json.dumps({}).encode())
+    Matcher(json.dumps({1: []}).encode())
     Matcher(
-        json_encoder.encode(
-            {
-                1: [
-                    MatchTable(
-                        table_id=1,
-                        match_table_type=MatchTableType.Simple(
-                            process_type=ProcessType.MatchNone
-                        ),
-                        word_list=[],
-                        exemption_process_type=ProcessType.MatchNone,
-                        exemption_word_list=[],
-                    )
-                ]
-            }
-        )
+        json.dumps({
+            1: [
+                MatchTable(
+                    table_id=1,
+                    match_table_type=MatchTableType.Simple(
+                        process_type=ProcessType.MatchNone
+                    ),
+                    word_list=[],
+                    exemption_process_type=ProcessType.MatchNone,
+                    exemption_word_list=[],
+                )
+            ]
+        }).encode()
     )
 
 
 def test_init_with_invalid_map():
     with pytest.raises(ValueError):
-        Matcher(json_encoder.encode({"a": 1}))
-        Matcher(json_encoder.encode({"a": {"b": 1}}))
-        Matcher(json_encoder.encode({"c": {}}))
+        Matcher(json.dumps({"a": 1}).encode())
+        Matcher(json.dumps({"a": {"b": 1}}).encode())
+        Matcher(json.dumps({"c": {}}).encode())
 
 
 def test_regex():
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -78,7 +71,7 @@ def test_regex():
                     )
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("hallo")
     assert matcher.is_match("ward")
@@ -88,7 +81,7 @@ def test_regex():
 
 def test_similar_char():
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -103,7 +96,7 @@ def test_similar_char():
                     )
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("helloworld")
     assert matcher.is_match("hi世界")
@@ -113,7 +106,7 @@ def test_similar_char():
 
 def test_similar_text_levenshtein():
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -129,7 +122,7 @@ def test_similar_text_levenshtein():
                     )
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("helloworl")
     assert matcher.is_match("halloworld")
@@ -141,7 +134,7 @@ def test_similar_text_levenshtein():
 
 def test_acrostic():
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -156,7 +149,7 @@ def test_acrostic():
                     )
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("hope, endures, love, lasts, onward.")
     assert matcher.is_match(
@@ -173,7 +166,7 @@ def test_acrostic():
 
 def test_exemption():
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -187,13 +180,13 @@ def test_exemption():
                     )
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("helloworld")
     assert not matcher.is_match("helloworldwide")
 
     matcher = Matcher(
-        json_encoder.encode(
+        json.dumps(
             {
                 1: [
                     MatchTable(
@@ -217,7 +210,7 @@ def test_exemption():
                     ),
                 ]
             }
-        )
+        ).encode()
     )
     assert matcher.is_match("helloworld")
     assert not matcher.is_match("helloworldwide")

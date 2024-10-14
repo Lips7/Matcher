@@ -23,7 +23,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 ## Python usage example
 
 ```Python
-import msgspec
+import json
 
 from cffi import FFI
 
@@ -36,7 +36,7 @@ lib = ffi.dlopen("./matcher_c.so")
 
 # init matcher
 matcher = lib.init_matcher(
-    msgspec.json.encode({
+    json.dumps({
         1: [
             MatchTable(
                 table_id=1,
@@ -48,7 +48,7 @@ matcher = lib.init_matcher(
                 exemption_word_list=[],
             )
         ]
-    })
+    }).encode()
 )
 
 # check is match
@@ -71,12 +71,12 @@ lib.drop_matcher(matcher)
 
 # init simple matcher
 simple_matcher = lib.init_simple_matcher(
-    msgspec.json.encode(({
+    json.dumps(({
         ProcessType.MatchFanjianDeleteNormalize | ProcessType.MatchPinYinChar: {
             1: "妳好&世界",
             2: "hello",
         }
-    }))
+    })).encode()
 )
 
 # check is match
