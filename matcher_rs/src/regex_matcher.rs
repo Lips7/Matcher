@@ -409,7 +409,6 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// # Returns
     ///
     /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the text.
-
     fn process(&'a self, text: &'a str) -> Vec<RegexResult<'a>> {
         if text.is_empty() {
             return Vec::new();

@@ -24,7 +24,7 @@ use matcher_rs::{
 /// the data it references.
 pub struct SimpleResult<'a>(SimpleResultRs<'a>);
 
-impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
+impl IntoPy<PyObject> for SimpleResult<'_> {
     /// Converts a [SimpleResult] instance into a Python dictionary ([PyObject]).
     ///
     /// This implementation of [IntoPy] enables [SimpleResult] to be translated
@@ -60,7 +60,7 @@ impl<'a> IntoPy<PyObject> for SimpleResult<'a> {
 /// the data it references.
 pub struct MatchResult<'a>(MatchResultRs<'a>);
 
-impl<'a> IntoPy<PyObject> for MatchResult<'a> {
+impl IntoPy<PyObject> for MatchResult<'_> {
     /// Converts a [MatchResult] instance into a Python dictionary ([PyObject]).
     ///
     /// This implementation of [IntoPy] enables [MatchResult] to be translated
