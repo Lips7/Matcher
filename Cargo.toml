@@ -3,7 +3,7 @@ resolver = "2"
 members = ["matcher_rs", "matcher_py", "matcher_c"]
 
 [workspace.package]
-authors = ["Fuji Guo <f975793771@gmail.com>"]
+authors = ["Foster Guo <f975793771@gmail.com>"]
 categories = ["text-processing"]
 description = "A high-performance matcher designed to solve LOGICAL and TEXT VARIATIONS problems in word matching, implemented in Rust."
 edition = "2021"
