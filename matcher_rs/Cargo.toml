@@ -30,6 +30,7 @@ daachorse = "1.0.0"
 fancy-regex = "0.13.0"
 id-set = "0.2.2"
 lazy_static = "1.5.0"
+micromap = "0.0.15"
 nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"]}
 rapidfuzz = "0.5.0"

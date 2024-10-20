@@ -273,6 +273,7 @@ dependencies = [
  "fastrand",
  "id-set",
  "lazy_static",
+ "micromap",
  "mimalloc",
  "nohash-hasher",
  "parking_lot",
@@ -298,6 +299,12 @@ checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "micromap"
+version = "0.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5b72ada413a5bd6bc65d6eef149fdc5138298f3bb89653d1a521f0fea7f9c73"
 
 [[package]]
 name = "mimalloc"
@@ -551,9 +558,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "sonic-rs"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f9cdf20a8b31379ec230f2b266adfa917a33e7f13d9e9eac596ce0aa7368e11"
+checksum = "95e200c991ecfca73485d451fb0ae48c605f60ed7e27e4fcd5b8510f131a7c84"
 dependencies = [
  "bumpalo",
  "bytes",
