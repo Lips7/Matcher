@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::iter;
 
 use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use id_set::IdSet;
@@ -442,7 +441,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             word_conf
                                 .split_bit
                                 .iter()
-                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                .map(|&bit| vec![bit; processed_times])
                                 .collect::<Vec<Vec<i32>>>()
                         });
 
@@ -566,7 +565,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                             word_conf
                                 .split_bit
                                 .iter()
-                                .map(|&bit| iter::repeat(bit).take(processed_times).collect())
+                                .map(|&bit| vec![bit; processed_times])
                                 .collect::<Vec<Vec<i32>>>()
                         });
 
