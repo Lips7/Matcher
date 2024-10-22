@@ -206,7 +206,7 @@ mod test_process {
     use id_set::IdSet;
     use matcher_rs::{
         build_process_type_tree, reduce_text_process, reduce_text_process_emit,
-        reduce_text_process_with_list, reduce_text_process_with_tree, text_process, ProcessType,
+        reduce_text_process_with_set, reduce_text_process_with_tree, text_process, ProcessType,
     };
 
     #[test]
@@ -258,18 +258,17 @@ mod test_process {
     }
 
     #[test]
-    fn test_reduce_text_process_with_list() {
-        let process_type_list = vec![
-            ProcessType::Fanjian,
-            ProcessType::DeleteNormalize,
-            ProcessType::FanjianDeleteNormalize,
-            ProcessType::Delete,
-            ProcessType::Normalize,
-        ];
+    fn test_reduce_text_process_with_set() {
+        let process_type_set = IdSet::from_iter([
+            ProcessType::Fanjian.bits() as usize,
+            ProcessType::DeleteNormalize.bits() as usize,
+            ProcessType::FanjianDeleteNormalize.bits() as usize,
+            ProcessType::Delete.bits() as usize,
+            ProcessType::Normalize.bits() as usize,
+        ]);
         let text = "test爽-︻";
 
-        let processed_text_process_type_set =
-            reduce_text_process_with_list(&process_type_list, text);
+        let processed_text_process_type_set = reduce_text_process_with_set(&process_type_set, text);
         println!("{processed_text_process_type_set:?}");
     }
 }

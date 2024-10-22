@@ -12,7 +12,7 @@ pub use util::word::SimpleWord;
 mod process;
 pub use process::process_matcher::{
     build_process_type_tree, get_process_matcher, reduce_text_process, reduce_text_process_emit,
-    reduce_text_process_with_list, reduce_text_process_with_tree, text_process, ProcessType,
+    reduce_text_process_with_set, reduce_text_process_with_tree, text_process, ProcessType,
 };
 
 mod simple_matcher;

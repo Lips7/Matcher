@@ -127,7 +127,7 @@ impl Display for ProcessType {
 
 /// Implements the [IsEnabled] trait for the [ProcessType] struct.
 ///
-/// This trait allows for [ProcessType] to be used in [IntMap].
+/// This trait allows for [ProcessType] to be used in [Map].
 impl IsEnabled for ProcessType {}
 
 type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>, 8>>;
@@ -1067,24 +1067,9 @@ pub fn reduce_text_process_with_tree<'a>(
 /// An [ArrayVec] containing tuples where each tuple consists of:
 /// - A [Cow<'a, str>] representing the processed text.
 /// - An [IdSet] containing the identifiers of the process types applied.
-///
-/// # Examples
-///
-/// ```rust
-/// use matcher_rs::{reduce_text_process_with_list, ProcessType};
-///
-/// let process_type_list = vec![ProcessType::Delete, ProcessType::Normalize];
-/// let text = "example text";
-///
-/// let result = reduce_text_process_with_list(&process_type_list, text);
-///
-/// for (processed_text, id_set) in result.iter() {
-///     println!("Processed text: {}, IdSet: {:?}", processed_text, id_set);
-/// }
-/// ```
 #[inline(always)]
-pub fn reduce_text_process_with_list<'a>(
-    process_type_list: &[ProcessType],
+pub fn reduce_text_process_with_set<'a>(
+    process_type_set: &IdSet,
     text: &'a str,
 ) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
     let mut process_type_tree = Vec::with_capacity(8);
@@ -1105,7 +1090,8 @@ pub fn reduce_text_process_with_list<'a>(
         IdSet::from_iter([ProcessType::None.bits() as usize]),
     ));
 
-    for &process_type in process_type_list.iter() {
+    for process_type_usize in process_type_set.iter() {
+        let process_type = ProcessType::from_bits(process_type_usize as u8).unwrap();
         let mut current_text = text;
         let mut current_index = 0;
         let mut current_node_index = 0;
