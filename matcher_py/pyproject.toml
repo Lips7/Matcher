@@ -38,6 +38,7 @@ build-backend = "maturin"
 managed = true
 dev-dependencies = [
     "pytest",
+    "pip"
 ]
 
 [tool.maturin]
