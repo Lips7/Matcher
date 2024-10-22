@@ -856,24 +856,9 @@ pub struct ProcessTypeBitNode {
 ///
 /// A [Vec] containing `ProcessTypeBitNode`s that represent the processing type tree.
 ///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{build_process_type_tree, ProcessType};
-///
-/// let process_type_list = &[
-///     ProcessType::Delete,
-///     ProcessType::PinYin,
-///     ProcessType::Delete | ProcessType::PinYin,
-/// ];
-///
-/// let process_type_tree = build_process_type_tree(process_type_list);
-/// // Use the `process_type_tree` for further processing...
-/// ```
-///
 /// # Details
 ///
-/// The tree is constructed by traversing each [ProcessType] in the input list and building a chain
+/// The tree is constructed by traversing each [ProcessType] in the input set and building a chain
 /// of nodes for each bit in the [ProcessType]. If a node for a specific bit already exists, it reuses
 /// the node; otherwise, it creates a new node. Each node maintains a list of process types and its children,
 /// ensuring efficient lookups and updates.
@@ -887,7 +872,7 @@ pub struct ProcessTypeBitNode {
 /// # Safety
 ///
 /// The function does not involve any unsafe operations.
-pub fn build_process_type_tree(process_type_list: &[ProcessType]) -> Vec<ProcessTypeBitNode> {
+pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
         process_type_list: ArrayVec::new(),
@@ -897,9 +882,10 @@ pub fn build_process_type_tree(process_type_list: &[ProcessType]) -> Vec<Process
         children: ArrayVec::new(),
     };
     process_type_tree.push(root);
-    for &process_type in process_type_list.iter() {
+    for process_type_usize in process_type_set.iter() {
+        let process_type = ProcessType::from_bits(process_type_usize as u8).unwrap();
         let mut current_node_index = 0;
-        for process_type_bit in process_type.iter() {
+        for process_type_bit in process_type.into_iter() {
             let current_node = process_type_tree[current_node_index];
             if current_node.process_type_bit == process_type_bit {
                 continue;
@@ -965,26 +951,6 @@ pub fn build_process_type_tree(process_type_list: &[ProcessType]) -> Vec<Process
 /// used for unchecked access to slices and indices, which is safe as long as the assumptions
 /// about the data structures hold. Ensure that the provided `process_type_tree` is well-formed
 /// and the indices are valid.
-///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{build_process_type_tree, reduce_text_process_with_tree, ProcessType};
-///
-/// let process_type_list = &[
-///     ProcessType::Delete,
-///     ProcessType::PinYin,
-///     ProcessType::Delete | ProcessType::PinYin,
-/// ];
-///
-/// let process_type_tree = build_process_type_tree(process_type_list);
-/// let text = "example text";
-///
-/// let result = reduce_text_process_with_tree(&process_type_tree, text);
-/// for (processed_text, id_set) in result.iter() {
-///     println!("Processed text: {}, IdSet: {:?}", processed_text, id_set);
-/// }
-/// ```
 ///
 /// # Panics
 ///

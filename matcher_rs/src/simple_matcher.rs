@@ -209,7 +209,7 @@ impl SimpleMatcher {
     {
         let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
-        let mut process_type_list = Vec::with_capacity(process_type_word_map.len());
+        let mut process_type_set = IdSet::with_capacity(process_type_word_map.len());
         let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
         let mut word_conf_map = IntMap::with_capacity_and_hasher(word_size, Default::default());
 
@@ -220,7 +220,7 @@ impl SimpleMatcher {
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
-            process_type_list.push(process_type);
+            process_type_set.insert(process_type.bits() as usize);
 
             for (&simple_word_id, simple_word) in simple_word_map {
                 let mut ac_split_word_and_counter = FxHashMap::default();
@@ -318,7 +318,7 @@ impl SimpleMatcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_list);
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         #[cfg(feature = "dfa")]
         let aho_corasick_kind = AhoCorasickKind::DFA;

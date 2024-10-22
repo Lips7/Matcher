@@ -173,11 +173,11 @@ impl SimMatcher {
     /// * `process_type_tree` - A vector of `ProcessTypeBitNode`, representing the tree structure used for text processing based on the process types extracted from the input [SimTable] list.
     /// * `sim_processed_table_list` - A vector of `SimProcessedTable`, each containing an owned vector of words and other properties derived from the input [SimTable] list.
     pub fn new(sim_table_list: &[SimTable]) -> SimMatcher {
-        let mut process_type_list = Vec::with_capacity(sim_table_list.len());
+        let mut process_type_set = IdSet::with_capacity(sim_table_list.len());
         let mut sim_processed_table_list = Vec::with_capacity(sim_table_list.len());
 
         for sim_table in sim_table_list {
-            process_type_list.push(sim_table.process_type);
+            process_type_set.insert(sim_table.process_type.bits() as usize);
             sim_processed_table_list.push(SimProcessedTable {
                 table_id: sim_table.table_id,
                 match_id: sim_table.match_id,
@@ -192,7 +192,7 @@ impl SimMatcher {
             })
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_list);
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         SimMatcher {
             process_type_tree,

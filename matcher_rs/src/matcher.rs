@@ -527,7 +527,7 @@ impl Matcher {
         M: MatchTableTrait<T>,
         T: AsRef<str>,
     {
-        let mut process_type_list = Vec::new();
+        let mut process_type_set = IdSet::new();
 
         let mut simple_word_id = 0;
         let mut simple_word_table_conf_id = 0;
@@ -557,7 +557,7 @@ impl Matcher {
                 if !word_list.is_empty() {
                     match match_table_type {
                         MatchTableType::Simple { process_type } => {
-                            process_type_list.push(process_type);
+                            process_type_set.insert(process_type.bits() as usize);
                             simple_word_table_conf_list.push(WordTableConf {
                                 match_id,
                                 table_id,
@@ -580,7 +580,7 @@ impl Matcher {
                             sim_match_type,
                             threshold,
                         } => {
-                            process_type_list.push(process_type);
+                            process_type_set.insert(process_type.bits() as usize);
                             sim_table_list.push(SimTable {
                                 table_id,
                                 match_id,
@@ -594,7 +594,7 @@ impl Matcher {
                             process_type,
                             regex_match_type,
                         } => {
-                            process_type_list.push(process_type);
+                            process_type_set.insert(process_type.bits() as usize);
                             regex_table_list.push(RegexTable {
                                 table_id,
                                 match_id,
@@ -607,7 +607,7 @@ impl Matcher {
                 }
 
                 if !exemption_word_list.is_empty() {
-                    process_type_list.push(exemption_process_type);
+                    process_type_set.insert(exemption_process_type.bits() as usize);
                     simple_word_table_conf_list.push(WordTableConf {
                         match_id,
                         table_id,
@@ -628,7 +628,7 @@ impl Matcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_list);
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         Matcher {
             process_type_tree,

@@ -212,11 +212,11 @@ impl RegexMatcher {
     /// For each [RegexTable] entry, the function creates a corresponding `RegexPatternTable` with appropriate
     /// regex patterns or lists, then constructs the final [RegexMatcher] with a process type tree.
     pub fn new(regex_table_list: &[RegexTable]) -> RegexMatcher {
-        let mut process_type_list = Vec::with_capacity(regex_table_list.len());
+        let mut process_type_set = IdSet::with_capacity(regex_table_list.len());
         let mut regex_pattern_table_list = Vec::with_capacity(regex_table_list.len());
 
         for regex_table in regex_table_list {
-            process_type_list.push(regex_table.process_type);
+            process_type_set.insert(regex_table.process_type.bits() as usize);
 
             let size = regex_table.word_list.len();
 
@@ -315,7 +315,7 @@ impl RegexMatcher {
             };
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_list);
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         RegexMatcher {
             process_type_tree,
