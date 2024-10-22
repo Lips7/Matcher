@@ -10,6 +10,7 @@ from matcher_py.extension_types import (
     SimMatchType,
 )
 
+
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
         Matcher(1)
@@ -31,19 +32,21 @@ def test_init_with_empty_map():
     Matcher(json.dumps({}).encode())
     Matcher(json.dumps({1: []}).encode())
     Matcher(
-        json.dumps({
-            1: [
-                MatchTable(
-                    table_id=1,
-                    match_table_type=MatchTableType.Simple(
-                        process_type=ProcessType.MatchNone
-                    ),
-                    word_list=[],
-                    exemption_process_type=ProcessType.MatchNone,
-                    exemption_word_list=[],
-                )
-            ]
-        }).encode()
+        json.dumps(
+            {
+                1: [
+                    MatchTable(
+                        table_id=1,
+                        match_table_type=MatchTableType.Simple(
+                            process_type=ProcessType.MatchNone
+                        ),
+                        word_list=[],
+                        exemption_process_type=ProcessType.MatchNone,
+                        exemption_word_list=[],
+                    )
+                ]
+            }
+        ).encode()
     )
 
 
