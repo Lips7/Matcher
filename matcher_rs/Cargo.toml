@@ -27,16 +27,16 @@ crate-type = ["rlib"]
 aho-corasick-unsafe = { version = "0.0.4", git = "https://github.com/Lips7/aho-corasick" }
 bitflags = "2.6.0"
 daachorse = "1.0.0"
-fancy-regex = "0.13.0"
+fancy-regex = "0.14.0"
 id-set = "0.2.2"
 lazy_static = "1.5.0"
 micromap = "0.0.15"
 nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"]}
 rapidfuzz = "0.5.0"
-regex = { version = "1.11.0", features = ["perf-dfa-full"] }
+regex = { version = "1.11.1", features = ["perf-dfa-full"] }
 rustc-hash = "2.0.0"
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 tinyvec = { version = "1.8.0", features = ["serde"] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
