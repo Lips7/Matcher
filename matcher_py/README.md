@@ -217,7 +217,7 @@ simple_matcher = SimpleMatcher(
                 3: "hallo"
             }
         }
-    ).encode
+    ).encode()
 )
 # Check if a text matches
 assert simple_matcher.is_match("hello^&!#*#&!^#*()world")
