@@ -49,7 +49,7 @@ mimalloc = "0.1.43"
 daachorse = "1.0.0"
 
 [dev-dependencies]
-divan = "0.1.14"
+divan = "0.1.15"
 fastrand = "2.1.1"
 
 [features]
