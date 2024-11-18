@@ -1,9 +1,14 @@
 # Changelog
 
+## 0.5.6 - 2024-11-18
+
+### Performance
+- Fix `build_process_type_tree` function, use set instead of list.
+- Update several dependencies.
+
 ## 0.5.5 - 2024-10-14
 
 ### Bug fixes
-
 - Change `XXX(Enum)` to `XXX(str, Enum)` in extension_types.py to fix json dumps issue.
 
 ### Flexibility
