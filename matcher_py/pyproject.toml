@@ -1,7 +1,7 @@
 [project]
 name = "matcher_py"
 description = "A high-performance matcher designed to solve LOGICAL and TEXT VARIATIONS problems in word matching, implemented in Rust."
-version = "0.5.5"
+version = "0.5.6"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = 'Foster Guo', email = "f975793771@gmail.com" }]
