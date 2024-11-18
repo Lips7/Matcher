@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::convert::Infallible;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{
-    pyclass, pymethods, pymodule, wrap_pyfunction, PyModule, PyObject, PyResult, Python,
-};
+use pyo3::prelude::{pyclass, pymethods, pymodule, wrap_pyfunction, PyModule, PyResult, Python};
 use pyo3::types::{PyDict, PyDictMethods, PyModuleMethods};
-use pyo3::{intern, pyfunction, Bound, IntoPy};
+use pyo3::{intern, pyfunction, Bound, IntoPyObject};
 
 use matcher_rs::{
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
@@ -24,30 +23,20 @@ use matcher_rs::{
 /// the data it references.
 pub struct SimpleResult<'a>(SimpleResultRs<'a>);
 
-impl IntoPy<PyObject> for SimpleResult<'_> {
-    /// Converts a [SimpleResult] instance into a Python dictionary ([PyObject]).
-    ///
-    /// This implementation of [IntoPy] enables [SimpleResult] to be translated
-    /// into a Python dictionary, making it accessible and manipulatable in the
-    /// Python environment.
-    ///
-    /// # Parameters
-    /// - `self`: The [SimpleResult] instance to be converted.
-    /// - `py`: The Python interpreter instance.
-    ///
-    /// # Returns
-    /// A [PyObject] in the form of a Python dictionary, containing the keys:
-    /// - `"word_id"`: The identifier for the word.
-    /// - `"word"`: The actual word as a string slice reference.
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new_bound(py);
+impl<'py> IntoPyObject<'py> for SimpleResult<'py> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
 
         dict.set_item(intern!(py, "word_id"), self.0.word_id)
             .unwrap();
         dict.set_item(intern!(py, "word"), self.0.word.as_ref())
             .unwrap();
 
-        dict.into()
+        Ok(dict)
     }
 }
 
@@ -60,28 +49,13 @@ impl IntoPy<PyObject> for SimpleResult<'_> {
 /// the data it references.
 pub struct MatchResult<'a>(MatchResultRs<'a>);
 
-impl IntoPy<PyObject> for MatchResult<'_> {
-    /// Converts a [MatchResult] instance into a Python dictionary ([PyObject]).
-    ///
-    /// This implementation of [IntoPy] enables [MatchResult] to be translated
-    /// into a Python dictionary, making it accessible and manipulatable in the
-    /// Python environment.
-    ///
-    /// The resulting dictionary will have the following keys:
-    /// - `"match_id"`: The identifier for the match.
-    /// - `"table_id"`: The identifier for the table.
-    /// - `"word_id"`: The identifier for the word.
-    /// - `"word"`: The actual word as a string slice reference.
-    /// - `"similarity"`: The similarity score of the match.
-    ///
-    /// # Parameters
-    /// - `self`: The [MatchResult] instance to be converted.
-    /// - `py`: The Python interpreter instance.
-    ///
-    /// # Returns
-    /// A [PyObject] in the form of a Python dictionary, containing the match result details.
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new_bound(py);
+impl<'py> IntoPyObject<'py> for MatchResult<'py> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
 
         dict.set_item(intern!(py, "match_id"), self.0.match_id)
             .unwrap();
@@ -94,7 +68,7 @@ impl IntoPy<PyObject> for MatchResult<'_> {
         dict.set_item(intern!(py, "similarity"), self.0.similarity)
             .unwrap();
 
-        dict.into()
+        Ok(dict)
     }
 }
 
