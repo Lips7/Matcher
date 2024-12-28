@@ -12,7 +12,7 @@ cd ..
 
 cd matcher_py
 unset CONDA_PREFIX
-maturin develop
 ruff format .
-pytest
+rye sync
+rye test
 cd ..
