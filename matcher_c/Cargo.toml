@@ -9,7 +9,6 @@ keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
-rust-version.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/crate/matcher_c/latest"
 
