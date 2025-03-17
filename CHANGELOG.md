@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.7 - 2025-03-17
+
+### Flexibility
+- Update dependencies.
+
 ## 0.5.6 - 2024-11-18
 
 ### Performance
