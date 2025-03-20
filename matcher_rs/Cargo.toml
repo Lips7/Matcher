@@ -42,7 +42,7 @@ tinyvec = { version = "1.9.0", features = ["serde"] }
 tikv-jemallocator = "0.6.0"
 
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
-mimalloc = "0.1.43"
+mimalloc = "0.1.44"
 
 [build-dependencies]
 daachorse = "1.0.0"
