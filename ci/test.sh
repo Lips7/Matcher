@@ -11,8 +11,7 @@ cargo test --no-default-features --features "dfa,serde"
 cd ..
 
 cd matcher_py
-unset CONDA_PREFIX
 ruff format .
-rye sync
-rye test
+uv sync
+pytest
 cd ..

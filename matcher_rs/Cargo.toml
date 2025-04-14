@@ -29,7 +29,7 @@ daachorse = "1.0.0"
 fancy-regex = "0.14.0"
 id-set = "0.2.2"
 lazy_static = "1.5.0"
-micromap = "0.0.15"
+micromap = "0.0.18"
 nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"]}
 rapidfuzz = "0.5.0"
@@ -42,13 +42,13 @@ tinyvec = { version = "1.9.0", features = ["serde"] }
 tikv-jemallocator = "0.6.0"
 
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
-mimalloc = "0.1.44"
+mimalloc = "0.1.46"
 
 [build-dependencies]
 daachorse = "1.0.0"
 
 [dev-dependencies]
-divan = "0.1.17"
+divan = "0.1.21"
 fastrand = "2.3.0"
 
 [features]

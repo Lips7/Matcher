@@ -229,10 +229,8 @@ pub trait MatchTableTrait<S: AsRef<str>> {
 pub struct MatchTable<'a> {
     pub table_id: u32,
     pub match_table_type: MatchTableType,
-    #[serde(borrow)]
     pub word_list: Vec<&'a str>,
     pub exemption_process_type: ProcessType,
-    #[serde(borrow)]
     pub exemption_word_list: Vec<&'a str>,
 }
 
