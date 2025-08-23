@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.8 - 2025-08-23
+- staticmethod for extension_types.py
+- Update dependencies.
+
 ## 0.5.7 - 2025-03-17
 
 ### Flexibility
