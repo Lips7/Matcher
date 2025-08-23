@@ -309,7 +309,7 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "matcher_c"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "matcher_rs",
  "sonic-rs",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_py"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "matcher_rs",
  "pyo3",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "matcher_rs"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "aho-corasick-unsafe",
  "bitflags",
