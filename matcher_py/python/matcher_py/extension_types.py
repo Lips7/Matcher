@@ -94,6 +94,7 @@ class Similar(TypedDict):
 
 
 class MatchTableType:
+    @staticmethod
     def Simple(process_type: ProcessType) -> Dict[str, Simple]:
         """
         Create a dictionary representing a simple text processing operation.
@@ -107,6 +108,7 @@ class MatchTableType:
         """
         return {"simple": Simple(process_type=process_type)}
 
+    @staticmethod
     def Regex(
         process_type: ProcessType, regex_match_type: RegexMatchType
     ) -> Dict[str, Regex]:
@@ -125,6 +127,7 @@ class MatchTableType:
             "regex": Regex(process_type=process_type, regex_match_type=regex_match_type)
         }
 
+    @staticmethod
     def Similar(
         process_type: ProcessType, sim_match_type: SimMatchType, threshold: float
     ) -> Dict[str, Similar]:
