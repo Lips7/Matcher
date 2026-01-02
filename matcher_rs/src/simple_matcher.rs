@@ -168,8 +168,8 @@ impl SimpleMatcher {
     /// # Parameters
     ///
     /// - `process_type_word_map`: A reference to a hash map that associates [ProcessType] with another hash map.
-    ///    The inner hash map links word identifiers (`u32`) to strings representing words. The outer hash map allows
-    ///    different process types to have their own specific set of words.
+    ///   The inner hash map links word identifiers (`u32`) to strings representing words. The outer hash map allows
+    ///   different process types to have their own specific set of words.
     ///
     /// # Type Parameters
     ///

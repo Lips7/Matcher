@@ -19,7 +19,7 @@ impl SimpleWord {
     /// # Arguments
     ///
     /// * `word` - An input that implements the `AsRef<str>` trait. This allows for a wide range
-    ///            of input types, including `String`, `&str`, and `Cow<str>`.
+    ///   of input types, including `String`, `&str`, and `Cow<str>`.
     ///
     /// # Returns
     ///
@@ -91,7 +91,7 @@ impl SimpleWord {
     /// # Arguments
     ///
     /// * `word` - An input that implements the `AsRef<str>` trait. This could be a
-    ///            `String`, `&str`, or `Cow<str>`.
+    ///   `String`, `&str`, or `Cow<str>`.
     ///
     /// # Returns
     ///
@@ -123,7 +123,7 @@ impl SimpleWord {
     /// # Arguments
     ///
     /// * `word` - An input that implements the `AsRef<str>` trait. This could be a
-    ///            `String`, `&str`, or `Cow<str>`.
+    ///   `String`, `&str`, or `Cow<str>`.
     ///
     /// # Returns
     ///

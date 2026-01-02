@@ -364,7 +364,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
-    ///     and the second element is the set of process types associated with that text.
+    ///   and the second element is the set of process types associated with that text.
     ///
     /// # Returns
     ///
