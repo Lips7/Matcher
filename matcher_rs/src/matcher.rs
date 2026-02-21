@@ -169,9 +169,9 @@ pub enum MatchTableType {
 pub trait MatchTableTrait<S: AsRef<str>> {
     fn table_id(&self) -> u32;
     fn match_table_type(&self) -> MatchTableType;
-    fn word_list(&self) -> &Vec<S>;
+    fn word_list(&self) -> &[S];
     fn exemption_process_type(&self) -> ProcessType;
-    fn exemption_word_list(&self) -> &Vec<S>;
+    fn exemption_word_list(&self) -> &[S];
 }
 
 /// A structure representing a match table configuration.
@@ -243,13 +243,13 @@ impl<'a> MatchTableTrait<&'a str> for MatchTable<'a> {
     fn match_table_type(&self) -> MatchTableType {
         self.match_table_type
     }
-    fn word_list(&self) -> &Vec<&'a str> {
+    fn word_list(&self) -> &[&'a str] {
         &self.word_list
     }
     fn exemption_process_type(&self) -> ProcessType {
         self.exemption_process_type
     }
-    fn exemption_word_list(&self) -> &Vec<&'a str> {
+    fn exemption_word_list(&self) -> &[&'a str] {
         &self.exemption_word_list
     }
 }
@@ -272,13 +272,13 @@ impl<'a> MatchTableTrait<Cow<'a, str>> for MatchTableSerde<'a> {
     fn match_table_type(&self) -> MatchTableType {
         self.match_table_type
     }
-    fn word_list(&self) -> &Vec<Cow<'a, str>> {
+    fn word_list(&self) -> &[Cow<'a, str>] {
         &self.word_list
     }
     fn exemption_process_type(&self) -> ProcessType {
         self.exemption_process_type
     }
-    fn exemption_word_list(&self) -> &Vec<Cow<'a, str>> {
+    fn exemption_word_list(&self) -> &[Cow<'a, str>] {
         &self.exemption_word_list
     }
 }
