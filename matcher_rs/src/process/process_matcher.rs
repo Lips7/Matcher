@@ -484,6 +484,11 @@ pub fn get_process_matcher(
         };
         let uncached_result = Arc::new((process_replace_list, process_matcher));
         let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
+        // Re-check after acquiring the write lock: another thread may have inserted
+        // the same key between our read-miss and this write acquisition.
+        if let Some(cached_result) = process_matcher_cache.get(&process_type_bit) {
+            return Arc::clone(cached_result);
+        }
         process_matcher_cache.insert(process_type_bit, Arc::clone(&uncached_result));
         return uncached_result;
     }
@@ -599,6 +604,11 @@ pub fn get_process_matcher(
 
         let uncached_result = Arc::new((process_replace_list, process_matcher));
         let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
+        // Re-check after acquiring the write lock: another thread may have inserted
+        // the same key between our read-miss and this write acquisition.
+        if let Some(cached_result) = process_matcher_cache.get(&process_type_bit) {
+            return Arc::clone(cached_result);
+        }
         process_matcher_cache.insert(process_type_bit, Arc::clone(&uncached_result));
         uncached_result
     }
