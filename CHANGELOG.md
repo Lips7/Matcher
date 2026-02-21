@@ -1,32 +1,30 @@
 # Changelog
 
-## Unreleased / 0.7.0
+## 0.7.1 - 2026-02-21
 
-### API
+### Security & Safety (Audit Fixes)
+- **FFI Panic Safety**: All entry points in `matcher_c` are now wrapped in `catch_unwind` to prevent native crashes when Rust code panics.
+- **Memory Robustness**: Fixed brittle raw pointer usage in `reduce_text_process_with_tree` (process matcher) by switching to indexing.
+- **ReDoS Protection**: Added pattern length limits (1024 chars) to `RegexMatcher` to mitigate exponential backtracking risks.
+- **Invariants**: Added `debug_assert!` checks across `SimpleMatcher` to verify internal consistency in development.
+
+### Java
+- **Ergonomics**: Introduced high-level `Matcher` and `SimpleMatcher` classes that implement `AutoCloseable` for automatic native memory management (RAII).
+
+### API (from 0.7.0)
 - **Breaking**: `MatchResultTrait::similarity` now returns `Option<f64>` — `None` for exact
-  matchers (Simple, Regex) and `Some(score)` for similarity matchers. Update callers
-  to handle the `Option`.
+  matchers (Simple, Regex) and `Some(score)` for similarity matchers.
 - **Breaking**: `MatchTableTrait::word_list` and `exemption_word_list` now return `&[S]`
-  instead of `&Vec<S>` (more idiomatic, clippy::ptr_arg; only affects trait implementors).
-- Internal `TextMatcherTrait` methods are now marked `#[doc(hidden)]` to signal they are
-  implementation details not intended for external use.
+  instead of `&Vec<S>`.
+- Internal `TextMatcherTrait` methods are now marked `#[doc(hidden)]`.
 
 ### Performance / Correctness
-- Fixed double-checked locking in `get_process_matcher`: the write-path now re-checks
-  the cache before inserting to prevent redundant matcher builds under contention.
-- Re-enabled `overflow-checks` globally; hot-path arithmetic that intentionally wraps
-  now uses explicit `wrapping_add` / `wrapping_mul`.
-
-### Ergonomics
-- Added `debug_assert` in `SimpleMatcherBuilder::add_word` to detect duplicate `word_id`
-  values at the same `ProcessType` in debug builds.
-- `process_iter` on `RegexMatcher` and `SimMatcher` returns a `Box<dyn Iterator>` that
-  is `!Send`; this constraint is now documented on the method.
+- Fixed double-checked locking in `get_process_matcher`.
+- Re-enabled `overflow-checks` globally; hot-path arithmetic uses `wrapping_add` / `wrapping_mul`.
 
 ### Maintenance
-- Replaced `lazy_static` dependency with `std::sync::LazyLock` (stable since Rust 1.80),
-  removing one external dependency.
-- Updated `CHANGELOG.md` to document all changes since 0.5.9.
+- Replaced `lazy_static` with `std::sync::LazyLock`.
+- Updated documentation regarding `!Send` iterators and git-dependency limitations.
 
 ## 0.6.0 - 2026-02-21
 
