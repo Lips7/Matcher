@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use aho_corasick_unsafe::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
@@ -14,7 +14,6 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 use id_set::IdSet;
-use lazy_static::lazy_static;
 use micromap::Map;
 use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
@@ -132,25 +131,16 @@ impl IsEnabled for ProcessType {}
 
 type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>, 8>>;
 
-lazy_static! {
-    /// A global, lazily-initialized cache for storing process matchers.
-    ///
-    /// This cache is implemented using a read-write lock ([RwLock]) around an [Map] that maps
-    /// [ProcessType] keys to [Arc] instances holding tuples of a [Vec] of string slices and `ProcessMatcher`
-    /// instances. This allows for efficient shared access to commonly used process matchers without incurring
-    /// the overhead of creating new matcher instances.
-    ///
-    /// The cache is initialized with a capacity of 8 entries. The `lazy_static!` macro ensures that the
-    /// cache is created and initialized only when it is first accessed.
-    ///
-    /// # Note
-    ///
-    /// The [PROCESS_MATCHER_CACHE] is intended to be used in scenarios where process matchers are frequently
-    /// reused across different parts of an application. Storing matchers in the cache can significantly improve
-    /// performance by avoiding redundant computations and allocations.
-    pub static ref PROCESS_MATCHER_CACHE: ProcessMatcherCache =
-        RwLock::new(Map::default());
-}
+/// A global, lazily-initialized cache for storing process matchers.
+///
+/// Maps [ProcessType] keys to [Arc] instances holding tuples of a replacement-string
+/// list and a `ProcessMatcher`. Protected by a [parking_lot::RwLock] for efficient
+/// concurrent read access.
+///
+/// The cache is capped at 8 entries, matching the number of distinct single-bit
+/// [ProcessType] variants that can be passed to [get_process_matcher].
+pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
+    LazyLock::new(|| RwLock::new(Map::default()));
 
 /// Represents different types of process matchers used for text processing.
 ///
