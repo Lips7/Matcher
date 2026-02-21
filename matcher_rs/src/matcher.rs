@@ -79,7 +79,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 ///     table_id: u32,
 ///     word_id: u32,
 ///     word: Cow<'a, str>,
-///     similarity: f64,
+///     similarity: Option<f64>,
 /// }
 ///
 /// impl<'a> MatchResultTrait<'a> for MatchResult<'a> {
@@ -95,7 +95,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 ///     fn word(&self) -> &str {
 ///         self.word.as_ref()
 ///     }
-///     fn similarity(&self) -> f64 {
+///     fn similarity(&self) -> Option<f64> {
 ///         self.similarity
 ///     }
 /// }
@@ -105,7 +105,7 @@ pub trait MatchResultTrait<'a> {
     fn table_id(&self) -> u32;
     fn word_id(&self) -> u32;
     fn word(&self) -> &str;
-    fn similarity(&self) -> f64;
+    fn similarity(&self) -> Option<f64>;
 }
 
 /// An enumeration representing different types of match tables.
@@ -337,7 +337,7 @@ struct WordTableConf {
 ///     table_id: 101,
 ///     word_id: 1001,
 ///     word: Cow::Borrowed("example"),
-///     similarity: 0.95,
+///     similarity: Some(0.95),
 /// };
 /// ```
 #[derive(Serialize)]
@@ -346,7 +346,7 @@ pub struct MatchResult<'a> {
     pub table_id: u32,
     pub word_id: u32,
     pub word: Cow<'a, str>,
-    pub similarity: f64,
+    pub similarity: Option<f64>,
 }
 
 impl MatchResultTrait<'_> for MatchResult<'_> {
@@ -362,7 +362,7 @@ impl MatchResultTrait<'_> for MatchResult<'_> {
     fn word(&self) -> &str {
         self.word.as_ref()
     }
-    fn similarity(&self) -> f64 {
+    fn similarity(&self) -> Option<f64> {
         self.similarity
     }
 }
@@ -374,7 +374,7 @@ impl<'a, 'b: 'a> From<SimResult<'b>> for MatchResult<'a> {
             table_id: sim_result.table_id,
             word_id: sim_result.word_id,
             word: sim_result.word,
-            similarity: sim_result.similarity,
+            similarity: Some(sim_result.similarity),
         }
     }
 }
@@ -386,7 +386,7 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
             table_id: regex_result.table_id,
             word_id: regex_result.word_id,
             word: regex_result.word,
-            similarity: 1.0,
+            similarity: None,
         }
     }
 }
@@ -764,7 +764,7 @@ impl Matcher {
                             simple_result.word_id.unchecked_sub(word_table_conf.offset)
                         },
                         word: simple_result.word,
-                        similarity: 1.0,
+                        similarity: None,
                     });
                 }
             }

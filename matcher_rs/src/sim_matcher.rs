@@ -110,8 +110,8 @@ impl MatchResultTrait<'_> for SimResult<'_> {
     fn word(&self) -> &str {
         &self.word
     }
-    fn similarity(&self) -> f64 {
-        self.similarity
+    fn similarity(&self) -> Option<f64> {
+        Some(self.similarity)
     }
 }
 

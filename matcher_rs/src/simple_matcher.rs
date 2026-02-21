@@ -109,8 +109,8 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     fn word(&self) -> &str {
         &self.word
     }
-    fn similarity(&self) -> f64 {
-        1.0
+    fn similarity(&self) -> Option<f64> {
+        None
     }
 }
 
