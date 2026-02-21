@@ -732,7 +732,8 @@ impl Matcher {
             for simple_result in simple_matcher
                 ._process_with_processed_text_process_type_set(processed_text_process_type_set)
             {
-                // Guaranteed not failed
+                // SAFETY: `simple_word_table_conf_index_list` is pre-populated guaranteeing index mapping corresponds directly
+                // to valid indices mapped within `simple_word_table_conf_list`.
                 let word_table_conf = unsafe {
                     self.simple_word_table_conf_list.get_unchecked(
                         *self
@@ -758,6 +759,9 @@ impl Matcher {
                     result_list.push(MatchResult {
                         match_id: word_table_conf.match_id,
                         table_id: word_table_conf.table_id,
+                        // SAFETY: `simple_result.word_id` is an aggregated count offset by `word_table_conf.offset`.
+                        // Because words matched belong strictly to their relative simple word ID table configurations,
+                        // `simple_result.word_id` is computationally guaranteed to be >= `offset`.
                         word_id: unsafe {
                             simple_result.word_id.unchecked_sub(word_table_conf.offset)
                         },
