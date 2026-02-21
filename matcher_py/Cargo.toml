@@ -19,7 +19,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 matcher_rs = { path = "../matcher_rs", version = "0.5.9" }
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
+pyo3 = { version = "0.28.2", features = ["extension-module"] }
 sonic-rs = "0.5.6"
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
@@ -29,4 +29,4 @@ tikv-jemallocator = "0.6.1"
 mimalloc = "0.1.48"
 
 [build-dependencies]
-pyo3-build-config = "0.27.2"
+pyo3-build-config = "0.28.2"
