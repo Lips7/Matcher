@@ -3,7 +3,7 @@ name: Code Coverage
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'matcher_rs/src/**'
       - '.github/workflows/coverage.yml'
