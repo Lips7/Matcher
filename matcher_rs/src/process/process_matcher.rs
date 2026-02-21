@@ -50,6 +50,10 @@ bitflags! {
         /// non-zero sentinel for the first transformation step (no-op) in a
         /// sequence. As a consequence, `ProcessType::empty()` is NOT equal to
         /// `ProcessType::None`.
+        ///
+        /// # Serialization
+        ///
+        /// When using the `serde` feature, `ProcessType` serializes as its underlying `u8` bitmask.
         const None = 0b00000001;
 
         /// Processing involving Fanjian (traditional Chinese to simplified Chinese conversion).

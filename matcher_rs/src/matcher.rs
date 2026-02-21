@@ -126,6 +126,12 @@ pub trait MatchResultTrait<'a> {
 ///   - `sim_match_type`: The type of similarity matching.
 ///   - `threshold`: The similarity threshold that needs to be met.
 ///   - `process_type`: The type of text processing to apply.
+///
+/// # Serialization
+///
+/// When using the `serde` feature, this enum serializes as a tagged union using `snake_case`. For example, in JSON:
+/// - `{"simple": {"process_type": 1}}`
+/// - `{"similar": {"sim_match_type": "levenshtein", "threshold": 0.8, "process_type": 1}}`
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchTableType {
