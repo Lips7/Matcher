@@ -22,4 +22,16 @@ jobs:
         with:
             toolchain: nightly
       - name: Run benchmarks
-        run: cargo bench -p matcher_rs --verbose --features "dfa"
+        run: cargo bench -p matcher_rs --features "dfa" -- --output-format bencher | tee output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rust Benchmark
+          tool: 'cargo'
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          # Show alert with commit comment on detecting possible performance regression
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false

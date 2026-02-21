@@ -330,7 +330,9 @@ name = "matcher_c"
 version = "0.5.9"
 dependencies = [
  "matcher_rs",
+ "mimalloc",
  "sonic-rs",
+ "tikv-jemallocator",
 ]
 
 [[package]]
@@ -338,9 +340,11 @@ name = "matcher_py"
 version = "0.5.9"
 dependencies = [
  "matcher_rs",
+ "mimalloc",
  "pyo3",
  "pyo3-build-config",
  "sonic-rs",
+ "tikv-jemallocator",
 ]
 
 [[package]]

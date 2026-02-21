@@ -31,17 +31,17 @@ id-set = "0.2.2"
 lazy_static = "1.5.0"
 micromap = "0.1.0"
 nohash-hasher = "0.2.0"
-parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"]}
+parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 rapidfuzz = "0.5.0"
 regex = { version = "1.12.2", features = ["perf-dfa-full"] }
 rustc-hash = "2.1.1"
 serde = { version = "1.0.228", features = ["derive"] }
 tinyvec = { version = "1.10.0", features = ["serde"] }
 
-[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
+[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dev-dependencies]
 tikv-jemallocator = "0.6.1"
 
-[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
+[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dev-dependencies]
 mimalloc = "0.1.48"
 
 [build-dependencies]

@@ -1,3 +1,11 @@
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::hint::black_box;
 
 use divan::Bencher;

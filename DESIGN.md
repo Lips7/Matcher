@@ -40,6 +40,20 @@ The `Matcher` utilizes a JSON structure to define matches and tables. Below is a
 }
 ```
 
+```mermaid
+flowchart LR
+    Match{"MatchID (777)"} -->|OR| Table1["TableID (45)"]
+    Match -->|OR| Table2["TableID (46)"]
+
+    subgraph Table Logic
+    Table1 -->|AND NOT| Except["exemption_word_list"]
+    Table1 -->|AND| Words["word_list"]
+    end
+
+    Words -->|OR| W1["hello"]
+    Words -->|OR| W2["world"]
+```
+
 - `777`: This is the `MatchID`.
 - `45`: This is the `TableID`.
 
@@ -227,6 +241,21 @@ Words and sentences in the real world involve complex combinations of variations
 A user's `Matcher` configuration may specify multiple variants of matching required at once, represented as bitflags. For example, one internal `MatchTable` might require `Delete | PinYin`, while another requires just `Delete`.
 
 To prevent redundant processing of the same string, `matcher_rs` constructs a graph (the `ProcessType` tree) via `build_process_type_tree`.
+
+```mermaid
+flowchart TD
+    Raw["Raw Input String"] --> None["MatchNone (No Op)"]
+    Raw --> Fanjian["Fanjian (Trad -> Simp)"]
+
+    Fanjian --> F_Delete["Delete (Symbol Obfuscation)"]
+    None --> N_Delete["Delete (Symbol Obfuscation)"]
+
+    F_Delete --> F_D_Norm["Normalize (Case / Symbols)"]
+    N_Delete --> N_Norm["Normalize (Case / Symbols)"]
+
+    F_Delete -.-> |Cache hit fed to| F_D_Pinyin["PinYin"]
+```
+
 1. When a string enters the system, it explores nodes sequentially.
 2. The tree ensures the `Delete` transformation is performed exactly once.
 3. The cached output of the `Delete` branch is then fed directly as the starting state into the `PinYin` branch.
@@ -248,3 +277,5 @@ The Matcher orchestrator ensures `O(1)` constant-time dispatch and scaling by us
   String transformations (`Delete`, `Normalize`) operate lazily. If a string undergoes a `Normalize` transformation but the string contains no combinable characters or varied casings, the system returns a `Cow::Borrowed` pointer to the original memory address, omitting the internal allocation of a `String` entirely.
 * **Rapid Lookups:**
   Internal ID lookups utilize `IntMap` (a high-speed hasher specifically tailored for integer-keyed hashes) and bounding bit arrays (`IdSet`), allowing matching lookups to run near the limits of CPU cache latency without heavy cryptographic hashing overhead.
+* **Global Memory Allocators (FFI Boundaries):**
+  The highly-concurrent matching algorithms require a robust multithreaded allocator capable of preventing memory fragmentation. The `matcher_rs` Rust library itself leaves the allocator up to the consumer, but the Foreign Function Interface (FFI) bindings for Python and C (`matcher_py`, `matcher_c`) automatically overwrite the system allocator with `tikv-jemallocator` (on Linux ARM64) and `mimalloc` (on all others) to guarantee max throughput in multi-threaded runtime environments without hijacking downstream Rust targets.
