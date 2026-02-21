@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use id_set::IdSet;
 use rapidfuzz::distance;
@@ -298,6 +300,79 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
         self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
+    }
+
+    /// Processes the given text and returns a **lazy** iterator over [SimResult] matches.
+    ///
+    /// Unlike [`process`], which eagerly collects all results into a [`Vec`], this method
+    /// returns a [`Box<dyn Iterator>`] that yields results on demand. Text preprocessing
+    /// (`reduce_text_process_with_tree`) is performed once upfront. Each similarity comparison
+    /// is then driven lazily as the caller advances the iterator.
+    ///
+    /// Deduplication of `(table_id, word_index)` pairs is handled by an [`IdSet`] captured
+    /// inside the iterator closure and updated as items are consumed.
+    ///
+    /// # Parameters
+    ///
+    /// * `text` - A string slice representing the input text to be processed and checked for similarity matches.
+    ///
+    /// # Returns
+    ///
+    /// * `Box<dyn Iterator<Item = SimResult<'a>> + 'a>` — a lazy iterator of similarity match results.
+    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = SimResult<'a>> + 'a> {
+        if text.is_empty() {
+            return Box::new(std::iter::empty());
+        }
+
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        // Wrap the dedup set in Rc<RefCell<_>> so it can be shared across the nested
+        // FnMut closures without triggering the "moved out of captured variable" error.
+        let table_id_index_set = Rc::new(RefCell::new(IdSet::new()));
+
+        Box::new(processed_text_process_type_set.into_iter().flat_map(
+            move |(processed_text, process_type_set)| {
+                let table_id_index_set = Rc::clone(&table_id_index_set);
+                self.sim_processed_table_list
+                    .iter()
+                    .filter(move |t| process_type_set.contains(t.process_type.bits() as usize))
+                    .flat_map(move |sim_processed_table| {
+                        let table_id_index_set = Rc::clone(&table_id_index_set);
+                        // Yield word-level results for this (processed_text, table) pair.
+                        let mut batch: Vec<SimResult<'a>> = Vec::new();
+                        match sim_processed_table.sim_match_type {
+                            SimMatchType::Levenshtein => {
+                                for (index, word) in
+                                    sim_processed_table.word_list.iter().enumerate()
+                                {
+                                    let table_id_index =
+                                        ((sim_processed_table.table_id as usize) << 32) | index;
+                                    if table_id_index_set.borrow_mut().insert(table_id_index) {
+                                        if let Some(similarity) =
+                                            distance::levenshtein::normalized_similarity_with_args(
+                                                word.chars(),
+                                                processed_text.chars(),
+                                                &distance::levenshtein::Args::default()
+                                                    .score_cutoff(sim_processed_table.threshold),
+                                            )
+                                        {
+                                            batch.push(SimResult {
+                                                match_id: sim_processed_table.match_id,
+                                                table_id: sim_processed_table.table_id,
+                                                word_id: index as u32,
+                                                word: Cow::Borrowed(word),
+                                                similarity,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        batch.into_iter()
+                    })
+            },
+        ))
     }
 
     /// Processes the provided set of processed text variants and their corresponding process type sets,

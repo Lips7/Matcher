@@ -905,4 +905,44 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
             .flat_map(|(_, result_list)| result_list) // Flatten the result lists from all match IDs into a single iterator.
             .collect()
     }
+
+    /// Processes the given text and returns a **lazy** iterator over [MatchResult] matches.
+    ///
+    /// # Design note — why the word-match map is still eager
+    ///
+    /// The [Matcher] applies **exemption logic**: a simple-matcher hit on an exemption word for a
+    /// given `(match_id, table_id)` pair must *retroactively remove* previously accumulated
+    /// results for that pair. This is implemented via `_word_match_with_processed_text_process_type_set`,
+    /// which returns a `HashMap<u32, Vec<MatchResult>>` only after processing the entire input.
+    ///
+    /// Because all results must be seen before any can be safely emitted (an exemption hit in the
+    /// middle of the input would invalidate earlier simple-match results), the aggregation into the
+    /// `HashMap` must remain eager.
+    ///
+    /// The benefit over calling [`process`] is that the final `collect()` step is avoided: results
+    /// are yielded lazily to the caller as it advances the iterator. Callers that short-circuit
+    /// (e.g., looking for the *first* result satisfying some predicate) pay no allocation cost for
+    /// the results they never consume.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - A reference to the input text string to be processed.
+    ///
+    /// # Returns
+    ///
+    /// * `Box<dyn Iterator<Item = MatchResult<'a>> + 'a>` — a lazy iterator of match results.
+    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = MatchResult<'a>> + 'a> {
+        if text.is_empty() {
+            return Box::new(std::iter::empty());
+        }
+
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        Box::new(
+            self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+                .into_values()
+                .flatten(),
+        )
+    }
 }

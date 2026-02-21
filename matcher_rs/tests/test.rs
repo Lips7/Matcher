@@ -434,3 +434,254 @@ mod test_process {
         println!("{processed_text_process_type_set:?}");
     }
 }
+
+mod test_process_iter {
+    use std::collections::HashMap;
+
+    use matcher_rs::{
+        MatchTable, MatchTableType, Matcher, ProcessType, RegexMatchType, RegexMatcher, RegexTable,
+        SimMatchType, SimMatcher, SimTable, SimpleMatcher, TextMatcherTrait,
+    };
+
+    // ── SimpleMatcher ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn simple_process_iter_matches_process() {
+        let matcher = SimpleMatcher::new(&HashMap::from([(
+            ProcessType::None,
+            HashMap::from([(1u32, "hello"), (2u32, "world")]),
+        )]));
+
+        let text = "say hello to the world";
+
+        let mut via_process: Vec<u32> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.word_id)
+            .collect();
+        let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+
+        via_process.sort();
+        via_iter.sort();
+
+        assert_eq!(
+            via_process, via_iter,
+            "process_iter must yield same word_ids as process"
+        );
+    }
+
+    #[test]
+    fn simple_process_iter_empty() {
+        let matcher = SimpleMatcher::new(&HashMap::from([(
+            ProcessType::None,
+            HashMap::from([(1u32, "hello")]),
+        )]));
+
+        assert_eq!(matcher.process_iter("").count(), 0);
+    }
+
+    // ── RegexMatcher ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn regex_process_iter_matches_process() {
+        let matcher = RegexMatcher::new(&[RegexTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            regex_match_type: RegexMatchType::Regex,
+            word_list: vec!["h[aeiou]llo", "w[aeiou]rld"],
+        }]);
+
+        let text = "hello world hallo";
+
+        let mut via_process: Vec<u32> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.word_id)
+            .collect();
+        let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+
+        via_process.sort();
+        via_iter.sort();
+
+        assert_eq!(
+            via_process, via_iter,
+            "process_iter must yield same word_ids as process"
+        );
+    }
+
+    #[test]
+    fn regex_process_iter_acrostic() {
+        let matcher = RegexMatcher::new(&[RegexTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            regex_match_type: RegexMatchType::Acrostic,
+            word_list: vec!["h,e,l,l,o", "你,好"],
+        }]);
+
+        let text = "hope, endures, love, lasts, onward.";
+        // process_iter should find the same results as process
+        let via_process: Vec<u32> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.word_id)
+            .collect();
+        let via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+        assert_eq!(via_process, via_iter);
+    }
+
+    #[test]
+    fn regex_process_iter_empty() {
+        let matcher = RegexMatcher::new(&[RegexTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            regex_match_type: RegexMatchType::Regex,
+            word_list: vec!["hello"],
+        }]);
+
+        assert_eq!(matcher.process_iter("").count(), 0);
+    }
+
+    // ── SimMatcher ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn sim_process_iter_matches_process() {
+        let matcher = SimMatcher::new(&[SimTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            sim_match_type: SimMatchType::Levenshtein,
+            word_list: vec!["helloworld", "rustlang"],
+            threshold: 0.8,
+        }]);
+
+        let text = "helloworl"; // close to "helloworld"
+
+        let mut via_process: Vec<u32> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.word_id)
+            .collect();
+        let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+
+        via_process.sort();
+        via_iter.sort();
+
+        assert_eq!(
+            via_process, via_iter,
+            "process_iter must yield same word_ids as process"
+        );
+    }
+
+    #[test]
+    fn sim_process_iter_similarity_values_match() {
+        let matcher = SimMatcher::new(&[SimTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            sim_match_type: SimMatchType::Levenshtein,
+            word_list: vec!["helloworld"],
+            threshold: 0.8,
+        }]);
+
+        let text = "halloworld";
+        let via_process: Vec<f64> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.similarity)
+            .collect();
+        let via_iter: Vec<f64> = matcher.process_iter(text).map(|r| r.similarity).collect();
+        assert_eq!(via_process, via_iter);
+    }
+
+    #[test]
+    fn sim_process_iter_empty() {
+        let matcher = SimMatcher::new(&[SimTable {
+            table_id: 1,
+            match_id: 1,
+            process_type: ProcessType::None,
+            sim_match_type: SimMatchType::Levenshtein,
+            word_list: vec!["hello"],
+            threshold: 0.8,
+        }]);
+
+        assert_eq!(matcher.process_iter("").count(), 0);
+    }
+
+    // ── Matcher (top-level) ────────────────────────────────────────────────────
+
+    #[test]
+    fn matcher_process_iter_matches_process() {
+        let matcher = Matcher::new(&HashMap::from([(
+            1u32,
+            vec![MatchTable {
+                table_id: 1,
+                match_table_type: MatchTableType::Simple {
+                    process_type: ProcessType::None,
+                },
+                word_list: vec!["hello", "world"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec![],
+            }],
+        )]));
+
+        let text = "hello world";
+
+        let mut via_process: Vec<u32> = matcher
+            .process(text)
+            .into_iter()
+            .map(|r| r.word_id)
+            .collect();
+        let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+
+        via_process.sort();
+        via_iter.sort();
+
+        assert_eq!(
+            via_process, via_iter,
+            "Matcher process_iter must yield same results as process"
+        );
+    }
+
+    #[test]
+    fn matcher_process_iter_empty() {
+        let matcher = Matcher::new(&HashMap::from([(
+            1u32,
+            vec![MatchTable {
+                table_id: 1,
+                match_table_type: MatchTableType::Simple {
+                    process_type: ProcessType::None,
+                },
+                word_list: vec!["hello"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec![],
+            }],
+        )]));
+
+        assert_eq!(matcher.process_iter("").count(), 0);
+    }
+
+    #[test]
+    fn matcher_process_iter_exemption_respected() {
+        // Verify that exemption logic still works correctly through process_iter.
+        let matcher = Matcher::new(&HashMap::from([(
+            1u32,
+            vec![MatchTable {
+                table_id: 1,
+                match_table_type: MatchTableType::Simple {
+                    process_type: ProcessType::None,
+                },
+                word_list: vec!["hello"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec!["world"],
+            }],
+        )]));
+
+        // "hello" alone — should match
+        assert!(matcher.process_iter("hello").count() > 0);
+        // "hello world" — exemption fires, no results
+        assert_eq!(matcher.process_iter("hello world").count(), 0);
+    }
+}
