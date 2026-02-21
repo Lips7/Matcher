@@ -2,7 +2,7 @@ mod util;
 pub use util::word::SimpleWord;
 
 mod builder;
-pub use builder::{MatcherBuilder, SimpleMatcherBuilder};
+pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};
 
 mod process;
 pub use process::process_matcher::{
