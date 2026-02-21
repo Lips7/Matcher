@@ -43,6 +43,13 @@ bitflags! {
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, Default)]
     pub struct ProcessType: u8 {
         /// No processing action.
+        ///
+        /// # Note
+        ///
+        /// This is purposefully set to `0b00000001` (1) rather than `0` to act as a
+        /// non-zero sentinel for the first transformation step (no-op) in a
+        /// sequence. As a consequence, `ProcessType::empty()` is NOT equal to
+        /// `ProcessType::None`.
         const None = 0b00000001;
 
         /// Processing involving Fanjian (traditional Chinese to simplified Chinese conversion).
