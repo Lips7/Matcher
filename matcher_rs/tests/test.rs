@@ -13,6 +13,11 @@ mod test_simple {
             ProcessType::None,
             HashMap::from([(1, "hello"), (2, "world")]),
         )]));
+        // Boundary conditions
+        let empty_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
+        let empty_matcher = SimpleMatcher::new(&empty_map);
+        assert!(!empty_matcher.is_match("test"));
+        assert!(!empty_matcher.is_match(""));
     }
 
     #[test]
@@ -181,6 +186,11 @@ mod test_matcher {
                 exemption_word_list: vec![],
             }],
         )]));
+
+        let empty_map: HashMap<u32, Vec<MatchTable<'_>>> = HashMap::new();
+        let empty_matcher = Matcher::new(&empty_map);
+        assert!(!empty_matcher.is_match("anything"));
+        assert!(!empty_matcher.is_match(""));
     }
 
     #[test]
