@@ -2,98 +2,64 @@ package com.matcher_java;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializeConfig;
-import com.matcher_java.extension_types.MatchTable;
-import com.matcher_java.extension_types.MatchTableType;
-import com.matcher_java.extension_types.ProcessType;
-import com.matcher_java.extension_types.ProcessTypeSerializer;
-import com.sun.jna.Pointer;
-
+import com.matcher_java.extension_types.*;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class MatcherJavaExample {
     public static void main(String[] args) throws IOException {
-        System.out.println("Simple Matcher Test");
-        simple_matcher_process_demo();
+        System.out.println("--- Simple Matcher High-Level API Test ---");
+        simpleMatcherHighLevelDemo();
 
-        System.out.println("\n");
-
-        System.out.println("Matcher Test");
-        matcher_process_demo();
+        System.out.println("\n--- Matcher High-Level API Test ---");
+        matcherHighLevelDemo();
     }
 
-    public static void simple_matcher_process_demo() throws IOException {
-        SerializeConfig serializeConfig = new SerializeConfig();
-        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
+    public static void simpleMatcherHighLevelDemo() throws IOException {
+        SerializeConfig config = new SerializeConfig();
+        config.put(ProcessType.class, new ProcessTypeSerializer());
 
         Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
         Map<String, String> wordMap = new HashMap<>();
         wordMap.put("1", "hello&world");
         simpleTable.put(ProcessType.MatchNone, wordMap);
 
-        String simpleTableStr = JSON.toJSONString(simpleTable, serializeConfig);
-        System.out.printf("simple_table: %s\n", simpleTableStr);
+        byte[] configBytes = JSON.toJSONBytes(simpleTable, config);
 
-        byte[] simpleTableBytes = JSON.toJSONBytes(simpleTable, serializeConfig);
+        try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
+            String text = "hello,world";
 
-        MatcherJava instance = MatcherJava.INSTANCE;
+            boolean isMatch = matcher.isMatch(text);
+            System.out.printf("isMatch: %s\n", isMatch);
 
-        Pointer simpleMatcher = instance.init_simple_matcher(simpleTableBytes);
-
-        byte[] strBytes = "hello,world".getBytes("utf-8");
-        byte[] cStrBytes = new byte[strBytes.length + 1];
-        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
-
-        boolean isMatch = instance.simple_matcher_is_match(simpleMatcher, cStrBytes);
-        System.out.printf("isMatch: %s\n", isMatch);
-
-        Pointer matchResPtr = instance.simple_matcher_process_as_string(simpleMatcher, cStrBytes);
-        String matchRes = matchResPtr.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes);
-        instance.drop_string(matchResPtr);
-
-        instance.drop_simple_matcher(simpleMatcher);
+            List<SimpleResult> results = matcher.process(text);
+            System.out.printf("Results: %s\n", JSON.toJSONString(results));
+        }
     }
 
-    public static void matcher_process_demo() throws IOException {
-        SerializeConfig serializeConfig = new SerializeConfig();
-        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
+    public static void matcherHighLevelDemo() throws IOException {
+        SerializeConfig config = new SerializeConfig();
+        config.put(ProcessType.class, new ProcessTypeSerializer());
 
         Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
-        List<MatchTable> matchTableList = new ArrayList<>();
-        MatchTable matchTable = new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of());
-        matchTableList.add(matchTable);
-        matchTableMap.put("1", matchTableList);
+        List<MatchTable> tables = List.of(
+            new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of())
+        );
+        matchTableMap.put("1", tables);
 
-        String matchTableMapStr = JSON.toJSONString(matchTableMap, serializeConfig);
-        System.out.printf("match_table_map: %s\n", matchTableMapStr);
+        byte[] configBytes = JSON.toJSONBytes(matchTableMap, config);
 
-        byte[] matchTableMapBytes = JSON.toJSONBytes(matchTableMap, serializeConfig);
+        try (Matcher matcher = new Matcher(configBytes)) {
+            String text = "hello,world";
 
-        MatcherJava instance = MatcherJava.INSTANCE;
+            boolean isMatch = matcher.isMatch(text);
+            System.out.printf("isMatch: %s\n", isMatch);
 
-        Pointer matcher = instance.init_matcher(matchTableMapBytes);
+            List<MatchResult> results = matcher.process(text);
+            System.out.printf("Process Results: %s\n", JSON.toJSONString(results));
 
-        byte[] strBytes = "hello,world".getBytes("utf-8");
-        byte[] cStrBytes = new byte[strBytes.length + 1];
-        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
-
-        boolean isMatch = instance.matcher_is_match(matcher, cStrBytes);
-        System.out.printf("isMatch: %s\n", isMatch);
-
-        Pointer matchResPtr1 = instance.matcher_process_as_string(matcher, cStrBytes);
-        String matchRes1 = matchResPtr1.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes1);
-        instance.drop_string(matchResPtr1);
-
-        Pointer matchResPtr2 = instance.matcher_word_match_as_string(matcher, cStrBytes);
-        String matchRes2 = matchResPtr2.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes2);
-        instance.drop_string(matchResPtr2);
-
-        instance.drop_matcher(matcher);
+            Map<Integer, List<MatchResult>> wordResults = matcher.wordMatch(text);
+            System.out.printf("Word Match Results: %s\n", JSON.toJSONString(wordResults));
+        }
     }
 }
