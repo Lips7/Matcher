@@ -85,7 +85,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
   - [x] ~~Test char-wise HashMap transformation for Chinese Characters. (Too slow)~~
 - [x] Make aho-corasick unsafe.
   - [x] See https://github.com/Lips7/aho-corasick.
-- [ ] Optimize NOT logic word-wise.
+- [x] Optimize NOT logic word-wise.
 - [x] Optimize `RegexMatcher` using `RegexSet`.
 - [x] Optimize `SimpleMatcher` when multiple `ProcessType` are used.
   1. Consider if there are multiple `ProcessType`
@@ -105,7 +105,7 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Merge multiple aho-corasick matcher into one when multiple `ProcessType` are used.
 - [x] When `dfa` feature is disabled, use daachorse to perform text processing.
   - [x] Do not use it for simple process function, too slow to build.
-- [ ] Use more regex set to optimize regex matcher.
+- [x] Use more regex set to optimize regex matcher.
 
 ### Flexibility
 - [x] Cache `get_process_matcher` results globally, instead of caching result inside SimpleMatcher.
@@ -119,8 +119,8 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
   - [x] See https://github.com/Lips7/aho-corasick.
 - [x] Implement NOT logic word-wise.
 - [x] Support stable rust.
-- [ ] Support iterator.
-- [ ] A real java package.
+- [x] Support iterator.
+- [x] A real java package.
 - [x] Multiple Python version wheel build.
 - [ ] Customize str conversion map.
 - [x] Add Matcher process function to py, c and java.
