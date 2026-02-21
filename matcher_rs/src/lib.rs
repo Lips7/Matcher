@@ -9,6 +9,9 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod util;
 pub use util::word::SimpleWord;
 
+mod builder;
+pub use builder::{MatcherBuilder, SimpleMatcherBuilder};
+
 mod process;
 pub use process::process_matcher::{
     build_process_type_tree, get_process_matcher, reduce_text_process, reduce_text_process_emit,
