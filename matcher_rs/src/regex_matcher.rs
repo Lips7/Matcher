@@ -440,6 +440,12 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// # Returns
     ///
     /// * `Box<dyn Iterator<Item = RegexResult<'a>> + 'a>` — a lazy iterator of match results.
+    ///
+    /// # Note — `!Send`
+    ///
+    /// The returned iterator captures an `Rc<RefCell<IdSet>>` for deduplication and is therefore
+    /// **not `Send`**. It cannot be sent across thread boundaries. If you need to process results
+    /// on a different thread, collect them with `.collect::<Vec<_>>()` first (which is `Send`).
     fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = RegexResult<'a>> + 'a> {
         if text.is_empty() {
             return Box::new(std::iter::empty());

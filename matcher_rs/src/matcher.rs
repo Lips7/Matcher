@@ -12,32 +12,30 @@ use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
 use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 
-/// Trait defining the behavior of text matching.
-///
-/// This trait is designed to work with various types of match results and provides methods to
-/// determine if a text matches certain criteria and process the text to produce match results.
+/// Text-matching trait shared by all matcher types.
 ///
 /// # Type Parameters
 ///
 /// - `'a`: Lifetime parameter associated with the trait and match results.
 /// - `T`: A type that implements [`MatchResultTrait<'a>`] and has the same lifetime as `'a`.
 ///
-/// # Provided Methods
+/// # Sealed — internal methods
 ///
-/// - `is_match`: Checks if the given text matches the criteria defined by the implementation.
-/// - `_is_match_with_processed_text_process_type_set`: Checks if the given processed text and
-///   associated [IdSet] matches the criteria defined by the implementation.
-/// - `process`: Processes the given text and returns a [Vec] of match results of type `T`.
-/// - `_process_with_processed_text_process_type_set`: Processes the given processed text and
-///   associated [IdSet] to produce a [Vec] of match results of type `T`.
-/// - `process_iter`: Processes the given text and returns an iterator over match results of type `T`.
+/// The two `_*_with_processed_text_process_type_set` methods (marked with a leading
+/// underscore) are **implementation details**. They are visible because the trait is
+/// `pub`, but they are `#[doc(hidden)]` and subject to change without notice. External
+/// code should only call [`is_match`](TextMatcherTrait::is_match),
+/// [`process`](TextMatcherTrait::process), and
+/// [`process_iter`](TextMatcherTrait::process_iter).
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match(&'a self, text: &'a str) -> bool;
+    #[doc(hidden)]
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool;
     fn process(&'a self, text: &'a str) -> Vec<T>;
+    #[doc(hidden)]
     fn _process_with_processed_text_process_type_set(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
