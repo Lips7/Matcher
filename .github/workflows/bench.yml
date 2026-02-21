@@ -20,7 +20,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@master
         with:
-            toolchain: nightly
+            toolchain: stable
       - name: Run benchmarks
         run: cargo bench -p matcher_rs --features "dfa" -- --output-format bencher | tee output.txt
       - name: Store benchmark result

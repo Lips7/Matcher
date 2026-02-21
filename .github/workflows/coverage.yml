@@ -25,7 +25,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly
+          toolchain: stable
       - name: Install tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin
       - name: Generate code coverage

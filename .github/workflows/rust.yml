@@ -14,12 +14,16 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, nightly]
     steps:
       - uses: actions/checkout@v4
       - name: Install rust
         uses: dtolnay/rust-toolchain@master
         with:
-            toolchain: nightly
+            toolchain: ${{ matrix.rust }}
       - name: Build
         run: cargo build --release --verbose
       - name: Test
