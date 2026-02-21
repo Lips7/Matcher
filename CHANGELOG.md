@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 - 2026-02-22
+
+### Changed
+- Vibe some changes.
+
+## 0.5.9 - 2025-08-23
+
+### Changed
+- Update dependencies.
+
 ## 0.5.8 - 2025-08-23
 - staticmethod for extension_types.py
 - Update dependencies.
