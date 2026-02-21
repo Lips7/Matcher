@@ -1,9 +1,41 @@
 # Changelog
 
-## 0.6.0 - 2026-02-22
+## Unreleased / 0.7.0
 
-### Changed
-- Vibe some changes.
+### API
+- **Breaking**: `MatchResultTrait::similarity` now returns `Option<f64>` — `None` for exact
+  matchers (Simple, Regex) and `Some(score)` for similarity matchers. Update callers
+  to handle the `Option`.
+- **Breaking**: `MatchTableTrait::word_list` and `exemption_word_list` now return `&[S]`
+  instead of `&Vec<S>` (more idiomatic, clippy::ptr_arg; only affects trait implementors).
+- Internal `TextMatcherTrait` methods are now marked `#[doc(hidden)]` to signal they are
+  implementation details not intended for external use.
+
+### Performance / Correctness
+- Fixed double-checked locking in `get_process_matcher`: the write-path now re-checks
+  the cache before inserting to prevent redundant matcher builds under contention.
+- Re-enabled `overflow-checks` globally; hot-path arithmetic that intentionally wraps
+  now uses explicit `wrapping_add` / `wrapping_mul`.
+
+### Ergonomics
+- Added `debug_assert` in `SimpleMatcherBuilder::add_word` to detect duplicate `word_id`
+  values at the same `ProcessType` in debug builds.
+- `process_iter` on `RegexMatcher` and `SimMatcher` returns a `Box<dyn Iterator>` that
+  is `!Send`; this constraint is now documented on the method.
+
+### Maintenance
+- Replaced `lazy_static` dependency with `std::sync::LazyLock` (stable since Rust 1.80),
+  removing one external dependency.
+- Updated `CHANGELOG.md` to document all changes since 0.5.9.
+
+## 0.6.0 - 2026-02-21
+
+### Added
+- Builder API: `SimpleMatcherBuilder`, `MatchTableBuilder`, `MatcherBuilder`.
+- `process_iter` — lazy iterator over match results for all four matcher types.
+  `RegexMatcher` and `SimMatcher` have truly lazy implementations;
+  `SimpleMatcher` wraps `process()` (two-pass AC constraint documented);
+  `Matcher` avoids the final `collect()` via `into_values().flatten()`.
 
 ## 0.5.9 - 2025-08-23
 
