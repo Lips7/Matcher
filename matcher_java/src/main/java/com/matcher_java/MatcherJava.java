@@ -6,7 +6,7 @@ import com.sun.jna.Pointer;
 
 interface MatcherJava extends Library {
     MatcherJava INSTANCE = (MatcherJava) Native.load(
-            MatcherJava.class.getResource("/matcher_c.so").getPath(),
+            "matcher_c",
             MatcherJava.class);
 
     Pointer init_matcher(byte[] match_table_map_bytes);
