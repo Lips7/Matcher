@@ -459,7 +459,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let bit = split_bit_matrix
                             .get_unchecked_mut(offset)
                             .get_unchecked_mut(index);
-                        *bit = bit.unchecked_add((offset < word_conf.not_offset) as i32 * -2 + 1);
+                        *bit = bit.wrapping_add((offset < word_conf.not_offset) as i32 * -2 + 1);
 
                         if offset >= word_conf.not_offset && *bit > 0 {
                             not_word_id_set.insert(word_id as usize);
@@ -611,8 +611,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         let split_bit = split_bit_matrix
                             .get_unchecked_mut(offset)
                             .get_unchecked_mut(index);
-                        *split_bit = split_bit
-                            .unchecked_add((offset < word_conf.not_offset) as i32 * -2 + 1);
+                        *split_bit =
+                            split_bit.wrapping_add((offset < word_conf.not_offset) as i32 * -2 + 1);
 
                         if offset >= word_conf.not_offset && *split_bit > 0 {
                             not_word_id_set.insert(word_id as usize);

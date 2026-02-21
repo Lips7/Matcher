@@ -22,7 +22,6 @@ codegen-units = 1
 incremental = false
 debug = false
 debug-assertions = false
-overflow-checks = false
 
 [profile.bench]
 strip = "none"
@@ -32,4 +31,3 @@ codegen-units = 1
 incremental = false
 debug = true
 debug-assertions = false
-overflow-checks = false
