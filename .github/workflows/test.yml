@@ -75,7 +75,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z threads=2 -D warnings"
+          RUSTFLAGS: ${{ matrix.rust == 'nightly' && '-Z threads=2 -D warnings' || '-D warnings' }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release -i python3.13
