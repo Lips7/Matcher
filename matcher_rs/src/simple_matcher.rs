@@ -505,6 +505,29 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
     }
 
+    /// Processes the given text and returns an iterator over [SimpleResult] matches.
+    ///
+    /// # Why a fully lazy iterator is not possible for [SimpleMatcher]
+    ///
+    /// The Aho-Corasick automaton with AND/NOT logical operators requires a **two-pass** algorithm:
+    ///
+    /// - **Pass 1** (scan): Traverse the entire input and accumulate the `word_id_split_bit_map`
+    ///   (counting which sub-patterns were seen) and the `not_word_id_set` (patterns that triggered
+    ///   a NOT-exclusion). A NOT-exclusion token can appear *after* a positive match token anywhere
+    ///   in the text, so no result can be emitted until the full scan is complete.
+    ///
+    /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
+    ///   matrices satisfy the AND conditions.
+    ///
+    /// Because of this inherent two-phase dependency, this override simply wraps [`process`] and
+    /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
+    /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
+    /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,
+    /// but that would require a fundamentally different matcher construction.
+    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = SimpleResult<'a>> + 'a> {
+        Box::new(self.process(text).into_iter())
+    }
+
     /// Processes the given processed text and type sets to produce matching results.
     ///
     /// This function examines the provided processed text along with their corresponding ID sets
