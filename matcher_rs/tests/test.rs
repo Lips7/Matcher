@@ -1,7 +1,9 @@
 mod test_simple {
     use std::collections::HashMap;
 
-    use matcher_rs::{ProcessType, SimpleMatcher, SimpleWord, TextMatcherTrait};
+    use matcher_rs::{
+        ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleWord, TextMatcherTrait,
+    };
 
     #[test]
     fn simple_match_init() {
@@ -13,6 +15,25 @@ mod test_simple {
             ProcessType::None,
             HashMap::from([(1, "hello"), (2, "world")]),
         )]));
+        // Boundary conditions
+        let empty_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
+        let empty_matcher = SimpleMatcher::new(&empty_map);
+        assert!(!empty_matcher.is_match("test"));
+        assert!(!empty_matcher.is_match(""));
+    }
+
+    #[test]
+    fn simple_match_builder() {
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, "hello")
+            .add_word(ProcessType::None, 2, "world")
+            .add_word(ProcessType::Delete, 3, "foo")
+            .build();
+
+        assert!(matcher.is_match("hello"));
+        assert!(matcher.is_match("world"));
+        assert!(matcher.is_match("f*o*o"));
+        assert!(!matcher.is_match("hallo warld no split match single"));
     }
 
     #[test]
@@ -165,7 +186,30 @@ mod test_sim {
 mod test_matcher {
     use std::collections::HashMap;
 
-    use matcher_rs::{MatchTable, MatchTableType, Matcher, ProcessType, TextMatcherTrait};
+    use matcher_rs::{
+        MatchTable, MatchTableType, Matcher, MatcherBuilder, ProcessType, TextMatcherTrait,
+    };
+
+    #[test]
+    fn matcher_builder() {
+        let matcher = MatcherBuilder::new()
+            .add_table(
+                1,
+                MatchTable {
+                    table_id: 1,
+                    match_table_type: MatchTableType::Simple {
+                        process_type: ProcessType::None,
+                    },
+                    word_list: vec!["hello"],
+                    exemption_process_type: ProcessType::None,
+                    exemption_word_list: vec![],
+                },
+            )
+            .build();
+
+        assert!(matcher.is_match("hello world"));
+        assert!(!matcher.is_match("goodbye"));
+    }
 
     #[test]
     fn matcher_init() {
@@ -181,6 +225,11 @@ mod test_matcher {
                 exemption_word_list: vec![],
             }],
         )]));
+
+        let empty_map: HashMap<u32, Vec<MatchTable<'_>>> = HashMap::new();
+        let empty_matcher = Matcher::new(&empty_map);
+        assert!(!empty_matcher.is_match("anything"));
+        assert!(!empty_matcher.is_match(""));
     }
 
     #[test]

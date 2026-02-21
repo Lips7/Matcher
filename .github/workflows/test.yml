@@ -40,6 +40,7 @@ jobs:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             suffix: dll
+        rust: [stable, nightly]
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -48,7 +49,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly
+          toolchain: ${{ matrix.rust }}
           target: ${{ matrix.platform.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
@@ -74,12 +75,12 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: "-Z threads=2 -D warnings"
+          RUSTFLAGS: ${{ matrix.rust == 'nightly' && '-Z threads=2 -D warnings' || '-D warnings' }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release -i python3.13
           sccache: 'true'
-          rust-toolchain: nightly
+          rust-toolchain: ${{ matrix.rust }}
           working-directory: matcher_py
       - name: Python Test
         shell: bash

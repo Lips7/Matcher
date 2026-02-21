@@ -1,13 +1,8 @@
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 mod util;
 pub use util::word::SimpleWord;
+
+mod builder;
+pub use builder::{MatcherBuilder, SimpleMatcherBuilder};
 
 mod process;
 pub use process::process_matcher::{

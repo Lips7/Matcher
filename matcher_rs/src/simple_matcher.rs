@@ -233,14 +233,16 @@ impl SimpleMatcher {
                 for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
                     if (is_and || start == 0) && start != index {
                         ac_split_word_and_counter
-                            // Guaranteed not failed
+                            // SAFETY: The `start` and `index` variables are guaranteed to lie on valid UTF-8 boundaries
+                            // because they are yielded directly by `match_indices`, which returns valid character offsets.
                             .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
                             .and_modify(|cnt| *cnt += 1)
                             .or_insert(1);
                     }
                     if is_not && start != index {
                         ac_split_word_not_counter
-                            // Guaranteed not failed
+                            // SAFETY: The `start` and `index` variables are guaranteed to lie on valid UTF-8 boundaries
+                            // because they are yielded directly by `match_indices`, which returns valid character offsets.
                             .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
                             .and_modify(|cnt| *cnt -= 1)
                             .or_insert(0);
@@ -261,14 +263,16 @@ impl SimpleMatcher {
                 }
                 if (is_and || start == 0) && start != simple_word.as_ref().len() {
                     ac_split_word_and_counter
-                        // Guaranteed not failed
+                        // SAFETY: `start` either comes from `0` or a valid character boundary produced by `match_indices`.
+                        // Slicing to the end of the string is guaranteed to be safe.
                         .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                         .and_modify(|cnt| *cnt += 1)
                         .or_insert(1);
                 }
                 if is_not && start != simple_word.as_ref().len() {
                     ac_split_word_not_counter
-                        // Guaranteed not failed
+                        // SAFETY: `start` either comes from `0` or a valid character boundary produced by `match_indices`.
+                        // Slicing to the end of the string is guaranteed to be safe.
                         .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
                         .and_modify(|cnt| *cnt -= 1)
                         .or_insert(0);
@@ -297,7 +301,9 @@ impl SimpleMatcher {
                 {
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
                         if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
-                            // Guaranteed not failed
+                            // SAFETY: `ac_dedup_word_id_map` exclusively manages identifiers that are strictly
+                            // bounded by the length of `ac_dedup_word_conf_list`. Therefore, retrieving by ID
+                            // will never fall out of bounds.
                             let word_conf_list: &mut Vec<(ProcessType, u32, usize)> = unsafe {
                                 ac_dedup_word_conf_list
                                     .get_unchecked_mut(*ac_dedup_word_id as usize)
@@ -433,7 +439,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         continue;
                     }
 
-                    // Guaranteed not failed
+                    // SAFETY: `word_id` is sourced directly from `self.ac_dedup_word_conf_list`,
+                    // which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.
                     let word_conf = unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() };
 
                     let split_bit_matrix =
@@ -446,6 +453,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         });
 
                     // bit is i32, so it will not overflow almost 100%
+                    // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
+                    // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
                     unsafe {
                         let bit = split_bit_matrix
                             .get_unchecked_mut(offset)
@@ -540,13 +549,15 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         for (index, (processed_text, process_type_set)) in
             processed_text_process_type_set.iter().enumerate()
         {
-            // Guaranteed not failed
+            // SAFETY: The process_text is guaranteed to be matched. The underlying Aho-Corasick implementation
+            // may return an error if configured improperly, but we initialize it with known good parameters.
             for ac_dedup_result in unsafe {
                 self.ac_matcher
                     .try_find_overlapping_iter(processed_text.as_ref())
                     .unwrap_unchecked()
             } {
-                // Guaranteed not failed
+                // SAFETY: The pattern ID returned by Aho-Corasick corresponds exactly to the index
+                // we used to populate `ac_dedup_word_conf_list` during AhoCorasickBuilder setup.
                 for &(match_process_type, word_id, offset) in unsafe {
                     self.ac_dedup_word_conf_list
                         .get_unchecked(ac_dedup_result.pattern().as_usize())
@@ -557,7 +568,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         continue;
                     }
 
-                    // Guaranteed not failed
+                    // SAFETY: `word_id` is sourced directly from `self.ac_dedup_word_conf_list`,
+                    // which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.
                     let word_conf = unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() };
 
                     let split_bit_matrix =
@@ -570,6 +582,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                         });
 
                     // split_bit is i32, so it will not overflow almost 100%
+                    // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
+                    // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
                     unsafe {
                         let split_bit = split_bit_matrix
                             .get_unchecked_mut(offset)
@@ -595,7 +609,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     .then_some(SimpleResult {
                         word_id,
                         word: Cow::Borrowed(
-                            // Guaranteed not failed
+                            // SAFETY: Like above, the presence of `word_id` within `word_id_split_bit_map`
+                            // implies it was previously drawn from a valid automaton match, which is derived
+                            // directly from the keys stored inside `word_conf_map`.
                             &unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() }.word,
                         ),
                     })

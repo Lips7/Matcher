@@ -217,9 +217,12 @@ impl ProcessMatcher {
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::LeftMost(ac) => {
                 for mat in ac.leftmost_find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    // Guaranteed not failed
+                    // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
+                    // with `process_replace_list`, so it will never go naturally out of bounds.
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.value() as usize)
                     });
@@ -228,9 +231,12 @@ impl ProcessMatcher {
             }
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    // Guaranteed not failed
+                    // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
+                    // with `process_replace_list`, so it will never go naturally out of bounds.
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.value() as usize)
                     });
@@ -239,9 +245,12 @@ impl ProcessMatcher {
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    // Guaranteed not failed
+                    // SAFETY: The pattern ID returned is an index bounded tightly bounded by
+                    // `process_replace_list` mapped directly from pattern initialization.
                     result.push_str(unsafe {
                         process_replace_list.get_unchecked(mat.pattern().as_usize())
                     });
@@ -251,7 +260,8 @@ impl ProcessMatcher {
         }
 
         if last_end > 0 {
-            // Guaranteed not failed
+            // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
+            // naturally guaranteeing it exists on a valid UTF-8 character boundary.
             result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
@@ -288,21 +298,27 @@ impl ProcessMatcher {
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::LeftMost(ac) => {
                 for mat in ac.leftmost_find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
             }
             ProcessMatcher::Chinese(ac) => {
                 for mat in ac.find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
             }
             ProcessMatcher::Others(ac) => {
                 for mat in ac.find_iter(text) {
-                    // Guaranteed not failed
+                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                    // the automaton always fall exactly on valid UTF-8 character boundaries.
                     result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
                     last_end = mat.end();
                 }
@@ -310,7 +326,8 @@ impl ProcessMatcher {
         }
 
         if last_end > 0 {
-            // Guaranteed not failed
+            // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
+            // naturally guaranteeing it exists on a valid UTF-8 character boundary.
             result.push_str(unsafe { text.get_unchecked(last_end..) });
             (true, Cow::Owned(result))
         } else {
@@ -493,7 +510,8 @@ pub fn get_process_matcher(
             }
             ProcessType::Fanjian => (
                 FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // Guaranteed not failed
+                // SAFETY: `FANJIAN_PROCESS_MATCHER_BYTES` matches the identical version and byte layout
+                // exported manually using `CharwiseDoubleArrayAhoCorasick` build constraints during static compilation.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         FANJIAN_PROCESS_MATCHER_BYTES,
@@ -528,6 +546,7 @@ pub fn get_process_matcher(
                 {
                     (
                         Vec::new(),
+                        // SAFETY: `TEXT_DELETE_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                         ProcessMatcher::LeftMost(unsafe {
                             CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                                 TEXT_DELETE_PROCESS_MATCHER_BYTES,
@@ -555,6 +574,7 @@ pub fn get_process_matcher(
                 {
                     (
                         NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                        // SAFETY: `NORMALIZE_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                         ProcessMatcher::LeftMost(unsafe {
                             CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                                 NORMALIZE_PROCESS_MATCHER_BYTES,
@@ -566,7 +586,7 @@ pub fn get_process_matcher(
             }
             ProcessType::PinYin => (
                 PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // Guaranteed not failed
+                // SAFETY: `PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
@@ -576,7 +596,7 @@ pub fn get_process_matcher(
             ),
             ProcessType::PinYinChar => (
                 PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // Guaranteed not failed
+                // SAFETY: `PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
@@ -717,7 +737,8 @@ pub fn reduce_text_process<'a>(
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        // Guaranteed not failed
+        // SAFETY: The `processed_text_list` is initialized with a first element immediately prior to this loop.
+        // Thus, calling `.last_mut()` is mathematically guaranteed to contain at least one element.
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
         match (process_type_bit, process_matcher) {
@@ -792,7 +813,8 @@ pub fn reduce_text_process_emit<'a>(
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        // Guaranteed not failed
+        // SAFETY: The `processed_text_list` is initialized with a first element immediately prior to this loop.
+        // Thus, calling `.last_mut()` is mathematically guaranteed to contain at least one element.
         let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
 
         match (process_type_bit, process_matcher) {
@@ -972,18 +994,25 @@ pub fn reduce_text_process_with_tree<'a>(
     ));
 
     for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
+        // SAFETY: `current_node_index` combined with +1 is strictly bounded by the `enumerate` iteration
+        // which traverses `process_type_tree_copied`.
         let (left_tree, right_tree) = unsafe {
             process_type_tree_copied.split_at_mut_unchecked(current_node_index.unchecked_add(1))
         };
 
+        // SAFETY: `current_node_index` will never exceed the iterator bounds of `left_tree` created above.
         let current_copied_node = unsafe { left_tree.get_unchecked(current_node_index) };
         let mut current_index = current_copied_node.processed_text_index;
+        // SAFETY: `current_index` corresponds explicitly to an index registered in `processed_text_process_type_set`
+        // before children are recursively evaluated.
         let current_text_ptr =
             unsafe { processed_text_process_type_set.get_unchecked(current_index) }
                 .0
                 .as_ref() as *const str;
 
         for child_node_index in current_node.children {
+            // SAFETY: `child_node_index` is sourced securely from the internally generated structural graph
+            // bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.
             let child_node = unsafe {
                 right_tree.get_unchecked_mut(
                     child_node_index
