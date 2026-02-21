@@ -22,7 +22,7 @@ jobs:
         with:
             toolchain: stable
       - name: Run benchmarks
-        run: cargo bench -p matcher_rs --features "dfa" -- --output-format bencher | tee output.txt
+        run: cargo bench -p matcher_rs --features "dfa" | tee output.txt
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
