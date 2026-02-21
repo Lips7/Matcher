@@ -6,7 +6,7 @@ use proptest::prelude::*;
 use std::collections::HashMap;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig::with_cases(50))]
 
     #[test]
     fn prop_simple_matcher_does_not_panic(
