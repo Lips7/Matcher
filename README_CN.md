@@ -8,51 +8,59 @@
 
 ![PyPI - Version](https://img.shields.io/pypi/v/matcher_py)![PyPI - Python Version](https://img.shields.io/pypi/pyversions/matcher_py)![PyPI - Downloads](https://img.shields.io/pypi/dm/matcher_py)
 
-一个高性能文本匹配器，旨在解决**逻辑**和**文本变体**的词匹配问题，以Rust实现。
+高性能文本匹配器，旨在解决词匹配中的**逻辑**和**文本变体**问题，采用 Rust 实现。
 
-它对以下方面非常有帮助：
-- **精确率与召回率**：文本匹配是一个召回过程，逻辑匹配提高精确率，文本变体匹配提高召回率。
-- **内容过滤**：检测和攻击性或敏感词语。
+它在以下场景非常有帮助：
+- **精确率和召回率**：词匹配是一个检索过程。逻辑匹配提高精确率，文本变体匹配提高召回率。
+- **内容过滤**：检测并过滤冒犯性或敏感词汇。
 - **搜索引擎**：通过识别相关关键词来改进搜索结果。
-- **文本分析**：从大量文本中提取特定信息。
+- **文本分析**：从大容量文本中提取特定信息。
 - **垃圾邮件检测**：识别电子邮件或消息中的垃圾内容。
 - ···
 
 ## 特性
 
-有关详细的实现，请参见[Design Document](./DESIGN.md)。
+详细实现请参考 [设计文档](./DESIGN.md)。
 
 - **多种匹配方法**：
-	- 简单词匹配
-	- 基于正则表达式的匹配
-	- 基于相似度的匹配
-- **文本转换**：
-	- **繁简转换**：将繁体字转换为简体字。例如：`蟲艸` -> `虫草`
-	- **删除特定字符**：移除特定字符。例如：`*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
-	- **规范化**：将特殊字符规范化为可识别字符。例如：`𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
-	- **拼音转换**：将汉字转换为拼音以进行模糊匹配。例如：`西安` -> ` xi  an `, 匹配 `洗按` -> ` xi  an `, 但不匹配 `先` -> ` xian `
-  - **拼音字符转换**：将汉字转换为拼音。例如：`西安` -> `xian`, 匹配 `洗按` 和 `先` -> `xian`
-- **与或非词匹配**：
-	- 考虑单词的重复次数。
-	- 例如：`hello&world` 匹配 `hello world` 和 `world,hello`
-	- 例如：`无&法&无&天` 匹配 `无无法天`（因为 `无` 重复两次），但不匹配 `无法天`
-	- 例如：`hello~helloo~hhello` 匹配 `hello` 但不匹配 `helloo` 和 `hhello`
-- **可定制的豁免列表**：排除特定单词的匹配。
-- **高效处理大型词列表**：针对性能进行了优化。
+  - 简单词匹配 (Simple Word Matching)
+  - 正则表达式匹配 (Regex-Based Matching)
+  - 相似度匹配 (Similarity-Based Matching)
+- **文本转换 (Text Transformation)**：
+  - **繁简转换 (Fanjian)**：将繁体中文转换为简体。
+    示例：`蟲艸` -> `虫草`
+  - **删除 (Delete)**：移除特定字符（如标点、特殊符号）。
+    示例：`*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
+  - **规范化 (Normalize)**：将特殊字符规范化为标准字符。
+    示例：`𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
+  - **拼音 (PinYin)**：将汉字转换为带空格的拼音，用于模糊匹配。
+    示例：`西安` -> ` xi  an `，匹配 `洗按` -> ` xi  an `，但不匹配 `先` -> ` xian `
+  - **拼音简写 (PinYinChar)**：将汉字转换为紧凑拼音。
+    示例：`西安` -> `xian`，匹配 `洗按` 和 `先` -> `xian`
+- **与 (AND) 或 (OR) 非 (NOT) 逻辑匹配**：
+  - 支持考虑单词重复次数。
+  - 示例：`hello&world` 匹配 `hello world` 和 `world,hello`
+  - 示例：`无&法&无&天` 匹配 `无无法天`（因为 `无` 重复了两次），但不匹配 `无法天`
+  - 示例：`hello~helloo~hhello` 匹配 `hello`，但不匹配 `helloo` 和 `hhello`
+- **可定制的豁免列表**：排除特定的匹配词。
+- **高效处理大规模词表**：针对高性能运行进行了端到端优化。
 
 ### Rust 用户
 
 请参阅 [Rust README](./matcher_rs/README.md)。
 
+> [!IMPORTANT]
+> **Git 依赖限制**：目前 `matcher_rs` crate 依赖于 git 版本的 `aho-corasick-unsafe`。下游 Rust 开发者必须也通过 git 依赖引用 `matcher_rs`，否则在标准 registry 环境下无法通过版本依赖解析。
+
 ### Python 用户
 
 请参阅 [Python README](./matcher_py/README.md)。
 
-### C, Java 和其他用户
+### C, Java 以及其他语言用户
 
-我们提供动态链接库，请参阅 [C README](./matcher_c/README.md) 和 [Java README](./matcher_java/README.md)。
+我们提供了动态链接库用于链接集成。请参阅 [C README](./matcher_c/README.md) 和 [Java README](./matcher_java/README.md)。
 
-#### 或从源构建
+#### 从源码编译
 
 ```shell
 git clone https://github.com/Lips7/Matcher.git
@@ -60,12 +68,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-t
 cargo build --release
 ```
 
-在 `target/release` 文件夹底下找到 `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll`。
+编译完成后，你可以在 `target/release` 目录下找到 `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll`。
 
-#### 预构建的包
+#### 预编译二进制文件
 
-访问 [release page](https://github.com/Lips7/Matcher/releases) 来下载预构建的动态链接库.
+访问 [Release 页面](https://github.com/Lips7/Matcher/releases) 下载预编译好的二进制文件。
 
-## 性能测试
+## 基准测试 (Benchmarks)
 
-请参阅 [benchmarks](./matcher_rs/README.md#benchmarks) 查看更多细节。
+详情请参考 [基准测试](./matcher_rs/README.md#benchmarks)。
