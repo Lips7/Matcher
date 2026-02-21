@@ -20,114 +20,81 @@ Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` 
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
-## Java usage example
+## Java Usage
 
-Put the `matcher_c` dynamic library under the `src/main/resources` directory.
+We recommend using the high-level `Matcher` and `SimpleMatcher` classes, which provide a safe, idiomatic API and handle native memory management via `AutoCloseable`.
 
-Copy the code below or refer to [MatcherJavaExample.java](./src/test/java/com/matcher_java/MatcherJavaExample.java).
+### SimpleMatcher Example
 
 ```java
-package com.matcher_java;
-
+import com.matcher_java.SimpleMatcher;
+import com.matcher_java.extension_types.ProcessType;
+import com.matcher_java.extension_types.SimpleResult;
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.serializer.SerializeConfig;
+import java.util.*;
+
+// Prepare your configuration
+Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
+Map<String, String> wordMap = new HashMap<>();
+wordMap.put("1", "hello&world");
+simpleTable.put(ProcessType.MatchNone, wordMap);
+
+byte[] configBytes = JSON.toJSONBytes(simpleTable);
+
+// Use try-with-resources for automatic cleanup
+try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
+    String text = "hello,world";
+
+    // Check for match
+    boolean matched = matcher.isMatch(text);
+
+    // Get detailed results
+    List<SimpleResult> results = matcher.process(text);
+}
+// matcher.close() is called automatically here
+```
+
+### Matcher Example
+
+```java
+import com.matcher_java.Matcher;
 import com.matcher_java.extension_types.MatchTable;
 import com.matcher_java.extension_types.MatchTableType;
 import com.matcher_java.extension_types.ProcessType;
-import com.matcher_java.extension_types.ProcessTypeSerializer;
-import com.sun.jna.Pointer;
+import com.matcher_java.extension_types.MatchResult;
+import com.alibaba.fastjson.JSON;
+import java.util.*;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+// Configuration mapping
+Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
+List<MatchTable> tables = List.of(
+    new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of())
+);
+matchTableMap.put("1", tables);
 
-public class MatcherJavaExample {
-    public static void main(String[] args) throws IOException {
-        System.out.println("Simple Matcher Test");
-        simple_matcher_process_demo();
+byte[] configBytes = JSON.toJSONBytes(matchTableMap);
 
-        System.out.println("\n");
+try (Matcher matcher = new Matcher(configBytes)) {
+    String text = "hello,world";
 
-        System.out.println("Matcher Test");
-        matcher_process_demo();
-    }
+    // Boolean match
+    boolean isMatch = matcher.isMatch(text);
 
-    public static void simple_matcher_process_demo() throws IOException {
-        SerializeConfig serializeConfig = new SerializeConfig();
-        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
+    // Detailed match results
+    List<MatchResult> results = matcher.process(text);
 
-        Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
-        Map<String, String> wordMap = new HashMap<>();
-        wordMap.put("1", "hello&world");
-        simpleTable.put(ProcessType.MatchNone, wordMap);
-
-        String simpleTableStr = JSON.toJSONString(simpleTable, serializeConfig);
-        System.out.printf("simple_table: %s\n", simpleTableStr);
-
-        byte[] simpleTableBytes = JSON.toJSONBytes(simpleTable, serializeConfig);
-
-        MatcherJava instance = MatcherJava.INSTANCE;
-
-        Pointer simpleMatcher = instance.init_simple_matcher(simpleTableBytes);
-
-        byte[] strBytes = "hello,world".getBytes("utf-8");
-        byte[] cStrBytes = new byte[strBytes.length + 1];
-        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
-
-        boolean isMatch = instance.simple_matcher_is_match(simpleMatcher, cStrBytes);
-        System.out.printf("isMatch: %s\n", isMatch);
-
-        Pointer matchResPtr = instance.simple_matcher_process_as_string(simpleMatcher, cStrBytes);
-        String matchRes = matchResPtr.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes);
-        instance.drop_string(matchResPtr);
-
-        instance.drop_simple_matcher(simpleMatcher);
-    }
-
-    public static void matcher_process_demo() throws IOException {
-        SerializeConfig serializeConfig = new SerializeConfig();
-        serializeConfig.put(ProcessType.class, new ProcessTypeSerializer());
-
-        Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
-        List<MatchTable> matchTableList = new ArrayList<>();
-        MatchTable matchTable = new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of());
-        matchTableList.add(matchTable);
-        matchTableMap.put("1", matchTableList);
-
-        String matchTableMapStr = JSON.toJSONString(matchTableMap, serializeConfig);
-        System.out.printf("match_table_map: %s\n", matchTableMapStr);
-
-        byte[] matchTableMapBytes = JSON.toJSONBytes(matchTableMap, serializeConfig);
-
-        MatcherJava instance = MatcherJava.INSTANCE;
-
-        Pointer matcher = instance.init_matcher(matchTableMapBytes);
-
-        byte[] strBytes = "hello,world".getBytes("utf-8");
-        byte[] cStrBytes = new byte[strBytes.length + 1];
-        System.arraycopy(strBytes, 0, cStrBytes, 0, strBytes.length);
-
-        boolean isMatch = instance.matcher_is_match(matcher, cStrBytes);
-        System.out.printf("isMatch: %s\n", isMatch);
-
-        Pointer matchResPtr1 = instance.matcher_process_as_string(matcher, cStrBytes);
-        String matchRes1 = matchResPtr1.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes1);
-        instance.drop_string(matchResPtr1);
-
-        Pointer matchResPtr2 = instance.matcher_word_match_as_string(matcher, cStrBytes);
-        String matchRes2 = matchResPtr2.getString(0, "utf-8");
-        System.out.printf("matchRes: %s\n", matchRes2);
-        instance.drop_string(matchResPtr2);
-
-        instance.drop_matcher(matcher);
-    }
+    // Word-wise results
+    Map<Integer, List<MatchResult>> wordResults = matcher.wordMatch(text);
 }
 ```
 
-## Important Notes
+## Low-Level API
 
-Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` after initializing and processing to avoid memory leaks.
+If you need direct access to the native pointers or specialized functions, you can still use `MatcherJava.INSTANCE`. However, you **must** manually free resources using `drop_matcher`, `drop_simple_matcher`, or `drop_string` to avoid memory leaks.
+
+```java
+MatcherJava instance = MatcherJava.INSTANCE;
+Pointer ptr = instance.init_matcher(bytes);
+// ...
+instance.drop_matcher(ptr);
+```
