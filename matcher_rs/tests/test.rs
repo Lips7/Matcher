@@ -685,3 +685,82 @@ mod test_process_iter {
         assert_eq!(matcher.process_iter("hello world").count(), 0);
     }
 }
+
+mod test_edge_cases {
+    use matcher_rs::{
+        MatchTable, MatchTableType, Matcher, ProcessType, SimMatchType, SimMatcher, SimTable,
+        SimpleMatcherBuilder, TextMatcherTrait,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn simple_matcher_not_logic_ordering() {
+        // Test that NOT logic works even if the NOT token appears BEFORE the positive token.
+        let mut builder = SimpleMatcherBuilder::new();
+        builder = builder.add_word(ProcessType::None, 1, "hello~world");
+        let matcher = builder.build();
+
+        // "world hello" -> "world" triggers NOT, "hello" triggers positive.
+        assert_eq!(matcher.process("world hello").len(), 0);
+        assert_eq!(matcher.process("hello").len(), 1);
+    }
+
+    #[test]
+    fn sim_matcher_threshold_edge_cases() {
+        let sim_table_list = vec![
+            SimTable {
+                table_id: 1,
+                match_id: 1,
+                process_type: ProcessType::None,
+                sim_match_type: SimMatchType::Levenshtein,
+                word_list: vec!["hello"],
+                threshold: 0.9,
+            },
+            SimTable {
+                table_id: 2,
+                match_id: 2,
+                process_type: ProcessType::None,
+                sim_match_type: SimMatchType::Levenshtein,
+                word_list: vec!["world"],
+                threshold: 0.1,
+            },
+        ];
+        let matcher = SimMatcher::new(&sim_table_list);
+
+        // "hello" matches "hello" @ 1.0 AND "world" @ 0.2
+        assert_eq!(matcher.process("hello").len(), 2);
+        // "hellp" matches "world" @ ~0.2 (if len remains 5) and potentially nothing else
+        let results = matcher.process("hellp");
+        assert!(results.iter().any(|r| r.match_id == 2));
+    }
+
+    #[test]
+    fn process_type_tree_behavior() {
+        let matcher = Matcher::new(&HashMap::from([(
+            1u32,
+            vec![
+                MatchTable {
+                    table_id: 1,
+                    match_table_type: MatchTableType::Simple {
+                        process_type: ProcessType::Fanjian | ProcessType::Delete,
+                    },
+                    word_list: vec!["hello"],
+                    exemption_process_type: ProcessType::None,
+                    exemption_word_list: vec![],
+                },
+                MatchTable {
+                    table_id: 2,
+                    match_table_type: MatchTableType::Simple {
+                        process_type: ProcessType::None,
+                    },
+                    word_list: vec!["world"],
+                    exemption_process_type: ProcessType::None,
+                    exemption_word_list: vec![],
+                },
+            ],
+        )]));
+
+        assert_eq!(matcher.process("hello").len(), 1);
+        assert_eq!(matcher.process("world").len(), 1);
+    }
+}
