@@ -422,17 +422,28 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         for (index, (processed_text, process_type_set)) in
             processed_text_process_type_set.iter().enumerate()
         {
-            // Guaranteed not failed
-            for ac_dedup_result in unsafe {
-                self.ac_matcher
-                    .try_find_overlapping_iter(processed_text.as_ref())
-                    .unwrap_unchecked()
-            } {
-                // Guaranteed not failed
-                for &(match_process_type, word_id, offset) in unsafe {
-                    self.ac_dedup_word_conf_list
-                        .get_unchecked(ac_dedup_result.pattern().as_usize())
-                } {
+            // SAFETY: `ac_matcher` is initialized during construction and guaranteed to be valid.
+            // In debug builds, we verify it doesn't return an error.
+            let ac_iter = self
+                .ac_matcher
+                .try_find_overlapping_iter(processed_text.as_ref());
+            debug_assert!(
+                ac_iter.is_ok(),
+                "SimpleMatcher: ac_matcher.try_find_overlapping_iter failed for text: {}",
+                processed_text
+            );
+            for ac_dedup_result in unsafe { ac_iter.unwrap_unchecked() } {
+                // SAFETY: `pattern()` index is guaranteed by aho-corasick structure to be within bounds.
+                // verified by construction in SimpleMatcher::new.
+                let pattern_idx = ac_dedup_result.pattern().as_usize();
+                debug_assert!(
+                    pattern_idx < self.ac_dedup_word_conf_list.len(),
+                    "SimpleMatcher: pattern index {} out of bounds",
+                    pattern_idx
+                );
+                for &(match_process_type, word_id, offset) in
+                    unsafe { self.ac_dedup_word_conf_list.get_unchecked(pattern_idx) }
+                {
                     if !process_type_set.contains(match_process_type.bits() as usize)
                         || not_word_id_set.contains(word_id as usize)
                     {
@@ -455,6 +466,19 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     // bit is i32, so it will not overflow almost 100%
                     // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
                     // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
+                    debug_assert!(
+                        offset < split_bit_matrix.len(),
+                        "SimpleMatcher: offset {} out of bounds for split_bit_matrix of len {}",
+                        offset,
+                        split_bit_matrix.len()
+                    );
+                    debug_assert!(
+                        index < split_bit_matrix[offset].len(),
+                        "SimpleMatcher: index {} out of bounds for split_bit_matrix[{}] of len {}",
+                        index,
+                        offset,
+                        split_bit_matrix[offset].len()
+                    );
                     unsafe {
                         let bit = split_bit_matrix
                             .get_unchecked_mut(offset)
@@ -574,17 +598,30 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         {
             // SAFETY: The process_text is guaranteed to be matched. The underlying Aho-Corasick implementation
             // may return an error if configured improperly, but we initialize it with known good parameters.
-            for ac_dedup_result in unsafe {
-                self.ac_matcher
-                    .try_find_overlapping_iter(processed_text.as_ref())
-                    .unwrap_unchecked()
-            } {
+            // SAFETY: The process_text is guaranteed to be matched. The underlying Aho-Corasick implementation
+            // may return an error if configured improperly, but we initialize it with known good parameters.
+            let ac_iter = self
+                .ac_matcher
+                .try_find_overlapping_iter(processed_text.as_ref());
+            debug_assert!(
+                ac_iter.is_ok(),
+                "SimpleMatcher: ac_matcher.try_find_overlapping_iter failed for text: {}",
+                processed_text
+            );
+            for ac_dedup_result in unsafe { ac_iter.unwrap_unchecked() } {
                 // SAFETY: The pattern ID returned by Aho-Corasick corresponds exactly to the index
                 // we used to populate `ac_dedup_word_conf_list` during AhoCorasickBuilder setup.
-                for &(match_process_type, word_id, offset) in unsafe {
-                    self.ac_dedup_word_conf_list
-                        .get_unchecked(ac_dedup_result.pattern().as_usize())
-                } {
+                // SAFETY: The pattern ID returned by Aho-Corasick corresponds exactly to the index
+                // we used to populate `ac_dedup_word_conf_list` during AhoCorasickBuilder setup.
+                let pattern_idx = ac_dedup_result.pattern().as_usize();
+                debug_assert!(
+                    pattern_idx < self.ac_dedup_word_conf_list.len(),
+                    "SimpleMatcher: pattern index {} out of bounds",
+                    pattern_idx
+                );
+                for &(match_process_type, word_id, offset) in
+                    unsafe { self.ac_dedup_word_conf_list.get_unchecked(pattern_idx) }
+                {
                     if !process_type_set.contains(match_process_type.bits() as usize)
                         || not_word_id_set.contains(word_id as usize)
                     {
@@ -607,6 +644,19 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     // split_bit is i32, so it will not overflow almost 100%
                     // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
                     // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
+                    debug_assert!(
+                        offset < split_bit_matrix.len(),
+                        "SimpleMatcher: offset {} out of bounds for split_bit_matrix of len {}",
+                        offset,
+                        split_bit_matrix.len()
+                    );
+                    debug_assert!(
+                        index < split_bit_matrix[offset].len(),
+                        "SimpleMatcher: index {} out of bounds for split_bit_matrix[{}] of len {}",
+                        index,
+                        offset,
+                        split_bit_matrix[offset].len()
+                    );
                     unsafe {
                         let split_bit = split_bit_matrix
                             .get_unchecked_mut(offset)

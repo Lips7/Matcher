@@ -231,6 +231,14 @@ impl RegexMatcher {
                         .collect::<Vec<String>>()
                         .join(".?");
 
+                    if pattern.len() > 1024 {
+                        eprintln!(
+                            "SimilarChar pattern is too long ({}), potential ReDoS risk. Skipping.",
+                            pattern.len()
+                        );
+                        continue;
+                    }
+
                     regex_pattern_table_list.push(RegexPatternTable {
                         table_id: regex_table.table_id,
                         match_id: regex_table.match_id,
@@ -250,6 +258,10 @@ impl RegexMatcher {
                             r"(?i)(?:^|[\s\pP]+?){}",
                             escape(word).replace(',', r".*?[\s\pP]+?")
                         );
+                        if pattern.len() > 1024 {
+                            eprintln!("Acrostic pattern too long for word {}, skipping.", word);
+                            continue;
+                        }
                         match Regex::new(&pattern) {
                             Ok(regex) => {
                                 regex_list.push(regex);
@@ -285,6 +297,10 @@ impl RegexMatcher {
                     let mut regex_list = Vec::with_capacity(size);
 
                     for &word in regex_table.word_list.iter() {
+                        if word.len() > 1024 {
+                            eprintln!("Regex pattern too long, skipping: {:.20}...", word);
+                            continue;
+                        }
                         match Regex::new(word) {
                             Ok(regex) => {
                                 regex_list.push(regex);

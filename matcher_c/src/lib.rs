@@ -8,7 +8,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::{
     ffi::{c_char, CStr, CString},
-    str,
+    panic, ptr, str,
 };
 
 use matcher_rs::{
@@ -34,17 +34,25 @@ use matcher_rs::{
 /// This function will panic if the input data cannot be deserialized into a `MatchTableMap`.
 #[no_mangle]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
-    unsafe {
-        let match_table_map: MatchTableMap = match sonic_rs::from_slice(
-            CStr::from_ptr(match_table_map_bytes).to_bytes(),
-        ) {
-            Ok(match_table_map) => match_table_map,
-            Err(e) => {
-                panic!("Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}", e)
-            }
-        };
+    let result = panic::catch_unwind(|| unsafe {
+        let match_table_map: MatchTableMap =
+            match sonic_rs::from_slice(CStr::from_ptr(match_table_map_bytes).to_bytes()) {
+                Ok(match_table_map) => match_table_map,
+                Err(e) => {
+                    eprintln!("Deserialize match_table_map_bytes failed: {}", e);
+                    return ptr::null_mut();
+                }
+            };
 
         Box::into_raw(Box::new(Matcher::new(&match_table_map)))
+    });
+
+    match result {
+        Ok(ptr) => ptr,
+        Err(_) => {
+            eprintln!("init_matcher panicked");
+            ptr::null_mut()
+        }
     }
 }
 
@@ -68,15 +76,22 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 /// This function will panic if the input `text` is not a valid UTF-8 string.
 #[no_mangle]
 pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
-    unsafe {
-        let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
-        match text {
-            Ok(text) => matcher.as_ref().unwrap().is_match(text),
+    let result = panic::catch_unwind(|| unsafe {
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
             Err(_) => {
-                panic!("Input is not a valid utf-8 string");
+                eprintln!("Input is not a valid utf-8 string");
+                return false;
             }
-        }
-    }
+        };
+        matcher.as_ref().map_or(false, |m| m.is_match(text_str))
+    });
+
+    result.unwrap_or_else(|_| {
+        eprintln!("matcher_is_match panicked");
+        false
+    })
 }
 
 /// Processes the input text through the Matcher and returns the result as a C string.
@@ -104,17 +119,28 @@ pub unsafe extern "C" fn matcher_process_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
 ) -> *mut c_char {
-    unsafe {
-        let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
-        let res = match text {
-            Ok(text) => matcher.as_ref().unwrap().process(text),
+    let result = panic::catch_unwind(|| unsafe {
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
             Err(_) => {
-                panic!("Input is not a valid utf-8 string");
+                eprintln!("Input is not a valid utf-8 string");
+                return ptr::null_mut();
             }
         };
+        let m = match matcher.as_ref() {
+            Some(m) => m,
+            None => return ptr::null_mut(),
+        };
+        let res = m.process(text_str);
         let res_cstring = CString::new(sonic_rs::to_vec(&res).unwrap_unchecked()).unwrap();
         res_cstring.into_raw()
-    }
+    });
+
+    result.unwrap_or_else(|_| {
+        eprintln!("matcher_process_as_string panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Processes the input text through the `Matcher` and returns the word match result as a C string.
@@ -141,19 +167,28 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
 ) -> *mut c_char {
-    unsafe {
-        let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
-        let res = match text {
-            Ok(text) => {
-                sonic_rs::to_string(&matcher.as_ref().unwrap().word_match(text)).unwrap_unchecked()
-            }
+    let result = panic::catch_unwind(|| unsafe {
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
             Err(_) => {
-                panic!("Input is not a valid utf-8 string");
+                eprintln!("Input is not a valid utf-8 string");
+                return ptr::null_mut();
             }
         };
+        let m = match matcher.as_ref() {
+            Some(m) => m,
+            None => return ptr::null_mut(),
+        };
+        let res = sonic_rs::to_string(&m.word_match(text_str)).unwrap_unchecked();
         let res_cstring = CString::new(res).unwrap();
         res_cstring.into_raw()
-    }
+    });
+
+    result.unwrap_or_else(|_| {
+        eprintln!("matcher_word_match_as_string panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Frees the memory allocated for the `Matcher` instance.
@@ -168,7 +203,11 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
 /// - `matcher`: A pointer to the `Matcher` instance to be deallocated.
 #[no_mangle]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
-    unsafe { drop(Box::from_raw(matcher)) }
+    let _ = panic::catch_unwind(|| unsafe {
+        if !matcher.is_null() {
+            drop(Box::from_raw(matcher))
+        }
+    });
 }
 
 /// Initializes a `SimpleMatcher` instance from serialized table bytes.
@@ -192,19 +231,25 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
-    unsafe {
+    let result = panic::catch_unwind(|| unsafe {
         let simple_table: SimpleTable =
             match sonic_rs::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
                 Ok(simple_table) => simple_table,
                 Err(e) => {
-                    panic!(
-                    "Deserialize simple_table_bytes failed, Please check the input data.\nErr: {}",
-                    e,
-                )
+                    eprintln!("Deserialize simple_table_bytes failed: {}", e);
+                    return ptr::null_mut();
                 }
             };
 
         Box::into_raw(Box::new(SimpleMatcher::new(&simple_table)))
+    });
+
+    match result {
+        Ok(ptr) => ptr,
+        Err(_) => {
+            eprintln!("init_simple_matcher panicked");
+            ptr::null_mut()
+        }
     }
 }
 
@@ -230,15 +275,24 @@ pub unsafe extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> bool {
-    unsafe {
-        let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
-        match text {
-            Ok(text) => simple_matcher.as_ref().unwrap().is_match(text),
+    let result = panic::catch_unwind(|| unsafe {
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
             Err(_) => {
-                panic!("Input is not a valid utf-8 string");
+                eprintln!("Input is not a valid utf-8 string");
+                return false;
             }
-        }
-    }
+        };
+        simple_matcher
+            .as_ref()
+            .map_or(false, |m| m.is_match(text_str))
+    });
+
+    result.unwrap_or_else(|_| {
+        eprintln!("simple_matcher_is_match panicked");
+        false
+    })
 }
 
 /// Processes the input text using the `SimpleMatcher` and returns the result as a C string.
@@ -265,17 +319,28 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> *mut c_char {
-    unsafe {
-        let text = str::from_utf8(CStr::from_ptr(text).to_bytes());
-        let res = match text {
-            Ok(text) => simple_matcher.as_ref().unwrap().process(text),
+    let result = panic::catch_unwind(|| unsafe {
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
             Err(_) => {
-                panic!("Input is not a valid utf-8 string");
+                eprintln!("Input is not a valid utf-8 string");
+                return ptr::null_mut();
             }
         };
+        let m = match simple_matcher.as_ref() {
+            Some(m) => m,
+            None => return ptr::null_mut(),
+        };
+        let res = m.process(text_str);
         let res_cstring = CString::new(sonic_rs::to_vec(&res).unwrap_unchecked()).unwrap();
         res_cstring.into_raw()
-    }
+    });
+
+    result.unwrap_or_else(|_| {
+        eprintln!("simple_matcher_process_as_string panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Deallocates a `SimpleMatcher` instance.
@@ -290,7 +355,11 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
 /// - `simple_matcher`: A pointer to the `SimpleMatcher` instance to be deallocated.
 #[no_mangle]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
-    unsafe { drop(Box::from_raw(simple_matcher)) }
+    let _ = panic::catch_unwind(|| unsafe {
+        if !simple_matcher.is_null() {
+            drop(Box::from_raw(simple_matcher))
+        }
+    });
 }
 
 /// Deallocates a C string that was previously allocated by the Rust code and passed to C.
@@ -305,5 +374,9 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 /// - `ptr`: A pointer to the C string to be deallocated.
 #[no_mangle]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
-    unsafe { drop(CString::from_raw(ptr)) }
+    let _ = panic::catch_unwind(|| unsafe {
+        if !ptr.is_null() {
+            drop(CString::from_raw(ptr))
+        }
+    });
 }

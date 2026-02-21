@@ -1016,10 +1016,7 @@ pub fn reduce_text_process_with_tree<'a>(
         let mut current_index = current_copied_node.processed_text_index;
         // SAFETY: `current_index` corresponds explicitly to an index registered in `processed_text_process_type_set`
         // before children are recursively evaluated.
-        let current_text_ptr =
-            unsafe { processed_text_process_type_set.get_unchecked(current_index) }
-                .0
-                .as_ref() as *const str;
+        // We use indexing instead of a raw pointer to ensure memory safety even if the collection is refactored.
 
         for child_node_index in current_node.children {
             // SAFETY: `child_node_index` is sourced securely from the internally generated structural graph
@@ -1041,7 +1038,11 @@ pub fn reduce_text_process_with_tree<'a>(
                 match child_node.process_type_bit {
                     ProcessType::None => {}
                     ProcessType::Delete => {
-                        match process_matcher.delete_all(unsafe { &*current_text_ptr }) {
+                        let current_text =
+                            unsafe { processed_text_process_type_set.get_unchecked(current_index) }
+                                .0
+                                .as_ref();
+                        match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_set.push((
                                     Cow::Owned(pt),
@@ -1062,19 +1063,25 @@ pub fn reduce_text_process_with_tree<'a>(
                             (_, _) => unreachable!(),
                         }
                     }
-                    _ => match process_matcher
-                        .replace_all(unsafe { &*current_text_ptr }, process_replace_list)
-                    {
-                        (true, Cow::Owned(pt)) => {
-                            processed_text_process_type_set.push((Cow::Owned(pt), IdSet::new()));
-                            current_index =
-                                unsafe { processed_text_process_type_set.len().unchecked_sub(1) };
+                    _ => {
+                        let current_text =
+                            unsafe { processed_text_process_type_set.get_unchecked(current_index) }
+                                .0
+                                .as_ref();
+                        match process_matcher.replace_all(current_text, process_replace_list) {
+                            (true, Cow::Owned(pt)) => {
+                                processed_text_process_type_set
+                                    .push((Cow::Owned(pt), IdSet::new()));
+                                current_index = unsafe {
+                                    processed_text_process_type_set.len().unchecked_sub(1)
+                                };
+                            }
+                            (false, _) => {
+                                current_index = current_copied_node.processed_text_index;
+                            }
+                            (_, _) => unreachable!(),
                         }
-                        (false, _) => {
-                            current_index = current_copied_node.processed_text_index;
-                        }
-                        (_, _) => unreachable!(),
-                    },
+                    }
                 }
                 child_node.is_processed = true;
             }
