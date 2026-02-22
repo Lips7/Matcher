@@ -212,62 +212,83 @@ impl ProcessMatcher {
         text: &'a str,
         process_replace_list: &[&str],
     ) -> (bool, Cow<'a, str>) {
-        let mut result = String::with_capacity(text.len());
-        let mut last_end = 0;
         match self {
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::LeftMost(ac) => {
-                for mat in ac.leftmost_find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                let mut iter = ac.leftmost_find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    // SAFETY: `first_mat.start()` is strictly greater than or equal to 0. The match boundaries guaranteed by
                     // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    // SAFETY: The `first_mat.value()` returned is exactly an index mapped 1:1 during automaton construction
                     // with `process_replace_list`, so it will never go naturally out of bounds.
                     result.push_str(unsafe {
-                        process_replace_list.get_unchecked(mat.value() as usize)
+                        process_replace_list.get_unchecked(first_mat.value() as usize)
                     });
-                    last_end = mat.end();
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                        // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                        // the automaton always fall exactly on valid UTF-8 character boundaries.
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
+                        // with `process_replace_list`, so it will never go naturally out of bounds.
+                        result.push_str(unsafe {
+                            process_replace_list.get_unchecked(mat.value() as usize)
+                        });
+                        last_end = mat.end();
+                    }
+                    // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
+                    // naturally guaranteeing it exists on a valid UTF-8 character boundary.
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
             ProcessMatcher::Chinese(ac) => {
-                for mat in ac.find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
-                    // with `process_replace_list`, so it will never go naturally out of bounds.
+                let mut iter = ac.find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
                     result.push_str(unsafe {
-                        process_replace_list.get_unchecked(mat.value() as usize)
+                        process_replace_list.get_unchecked(first_mat.value() as usize)
                     });
-                    last_end = mat.end();
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        result.push_str(unsafe {
+                            process_replace_list.get_unchecked(mat.value() as usize)
+                        });
+                        last_end = mat.end();
+                    }
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
             ProcessMatcher::Others(ac) => {
-                for mat in ac.find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                let mut iter = ac.find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
                     // SAFETY: The pattern ID returned is an index bounded tightly bounded by
                     // `process_replace_list` mapped directly from pattern initialization.
                     result.push_str(unsafe {
-                        process_replace_list.get_unchecked(mat.pattern().as_usize())
+                        process_replace_list.get_unchecked(first_mat.pattern().as_usize())
                     });
-                    last_end = mat.end();
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        result.push_str(unsafe {
+                            process_replace_list.get_unchecked(mat.pattern().as_usize())
+                        });
+                        last_end = mat.end();
+                    }
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
         }
-
-        if last_end > 0 {
-            // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
-            // naturally guaranteeing it exists on a valid UTF-8 character boundary.
-            result.push_str(unsafe { text.get_unchecked(last_end..) });
-            (true, Cow::Owned(result))
-        } else {
-            (false, Cow::Borrowed(text))
-        }
+        (false, Cow::Borrowed(text))
     }
 
     /// Deletes all matched patterns in the provided text.
@@ -293,47 +314,59 @@ impl ProcessMatcher {
     /// not to fail based on the matcher's behavior.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
-        let mut result = String::with_capacity(text.len());
-        let mut last_end = 0;
         match self {
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::LeftMost(ac) => {
-                for mat in ac.leftmost_find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                let mut iter = ac.leftmost_find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    // SAFETY: `first_mat.start()` is strictly greater than or equal to 0. The match boundaries guaranteed by
                     // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    last_end = mat.end();
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
+                        // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
+                        // the automaton always fall exactly on valid UTF-8 character boundaries.
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        last_end = mat.end();
+                    }
+                    // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
+                    // naturally guaranteeing it exists on a valid UTF-8 character boundary.
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
             ProcessMatcher::Chinese(ac) => {
-                for mat in ac.find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    last_end = mat.end();
+                let mut iter = ac.find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        last_end = mat.end();
+                    }
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
             ProcessMatcher::Others(ac) => {
-                for mat in ac.find_iter(text) {
-                    // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                    // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                    last_end = mat.end();
+                let mut iter = ac.find_iter(text);
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        last_end = mat.end();
+                    }
+                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    return (true, Cow::Owned(result));
                 }
             }
         }
-
-        if last_end > 0 {
-            // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
-            // naturally guaranteeing it exists on a valid UTF-8 character boundary.
-            result.push_str(unsafe { text.get_unchecked(last_end..) });
-            (true, Cow::Owned(result))
-        } else {
-            (false, Cow::Borrowed(text))
-        }
+        (false, Cow::Borrowed(text))
     }
 }
 
