@@ -7,18 +7,6 @@ A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS**
 
 For detailed implementation, see the [Design Document](../DESIGN.md).
 
-## Table of Contents
-
-- [Matcher Rust Implement C FFI bindings](#matcher-rust-implement-c-ffi-bindings)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [Installation](#installation)
-    - [Build from source](#build-from-source)
-    - [Install pre-built binary](#install-pre-built-binary)
-  - [C Usage Example](#c-usage-example)
-  - [Python Usage Example](#python-usage-example)
-  - [Important Notes](#important-notes)
-
 ## Overview
 
 This package provides C FFI (Foreign Function Interface) bindings for the Matcher library. It allows you to use the high-performance matching capabilities of Matcher in C, C++, Python (via `cffi`), and other languages that support C FFI.

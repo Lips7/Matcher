@@ -8,27 +8,6 @@ A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS**
 
 For detailed implementation, see the [Design Document](../DESIGN.md).
 
-## Table of Contents
-
-- [Matcher Rust Implementation with PyO3 Binding](#matcher-rust-implementation-with-pyo3-binding)
-  - [Table of Contents](#table-of-contents)
-  - [Features](#features)
-  - [Installation](#installation)
-    - [Use pip](#use-pip)
-    - [Install pre-built binary](#install-pre-built-binary)
-    - [Build from source](#build-from-source)
-  - [Usage](#usage)
-    - [Text Process Usage](#text-process-usage)
-    - [Matcher Basic Usage](#matcher-basic-usage)
-    - [Simple Matcher Basic Usage](#simple-matcher-basic-usage)
-  - [Explanation of the configuration](#explanation-of-the-configuration)
-    - [MatchTable](#matchtable)
-    - [MatchTableType](#matchtabletype)
-    - [ProcessType](#processtype)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [More Information](#more-information)
-
 ## Features
 
 - **Multiple Matching Methods**:
