@@ -350,70 +350,11 @@ impl SimpleMatcher {
             word_conf_map,
         }
     }
-}
 
-impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
-    /// Determines if the given text matches any pattern.
-    ///
-    /// This function first checks if the provided text is empty. If it is, the function
-    /// immediately returns `false`. Otherwise, it processes the text using a process type
-    /// tree to reduce the text, then checks for matches with the processed text and
-    /// associated process types.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A reference to a string slice that holds the text to be matched.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the text matches any pattern, otherwise `false`.
-    ///
-    /// # Safety
-    ///
-    /// This function does not perform any inherently unsafe operations, but it calls an
-    /// internal function `_is_match_with_processed_text_process_type_set` which contains
-    /// unsafe blocks. The safety of this function thus relies on the correctness and safety
-    /// of the called internal functions.
-    fn is_match(&'a self, text: &'a str) -> bool {
-        if text.is_empty() {
-            return false;
-        }
-
-        let processed_text_process_type_set =
-            reduce_text_process_with_tree(&self.process_type_tree, text);
-
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
-    }
-
-    /// Checks if any pattern matches the processed text.
-    ///
-    /// This function processes the text with the given process type set and checks for
-    /// matches. It maintains bitmaps to keep track of word IDs that are matched and
-    /// potentially excluded (i.e., words that should not be in the matched set). The function
-    /// iterates over the processed text, updates the split bitmaps and sets, and finally determines
-    /// if any word ID set contains a match.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
-    ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
-    ///   string slice, and the ID set is an `id_set::IdSet`.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if any pattern matches the processed text, otherwise `false`.
-    ///
-    /// # Safety
-    ///
-    /// This function contains several unsafe blocks. It relies on unchecked operations like
-    /// `unwrap_unchecked`, `get_unchecked`, and unchecked arithmetic operations to ensure
-    /// performance. The unsafe guarantees are based on the internal invariants that the
-    /// original code assumes are always true, such as the fact that certain lookups and
-    /// operations will not fail.
-    fn _is_match_with_processed_text_process_type_set(
+    fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
-    ) -> bool {
+    ) -> FxHashMap<u32, Vec<Vec<i32>>> {
         let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
         let mut not_word_id_set = IdSet::new();
 
@@ -494,6 +435,75 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             }
         }
 
+        word_id_split_bit_map
+    }
+}
+
+impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
+    /// Determines if the given text matches any pattern.
+    ///
+    /// This function first checks if the provided text is empty. If it is, the function
+    /// immediately returns `false`. Otherwise, it processes the text using a process type
+    /// tree to reduce the text, then checks for matches with the processed text and
+    /// associated process types.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - A reference to a string slice that holds the text to be matched.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the text matches any pattern, otherwise `false`.
+    ///
+    /// # Safety
+    ///
+    /// This function does not perform any inherently unsafe operations, but it calls an
+    /// internal function `_is_match_with_processed_text_process_type_set` which contains
+    /// unsafe blocks. The safety of this function thus relies on the correctness and safety
+    /// of the called internal functions.
+    fn is_match(&'a self, text: &'a str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+
+        let processed_text_process_type_set =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
+
+        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+    }
+
+    /// Checks if any pattern matches the processed text.
+    ///
+    /// This function processes the text with the given process type set and checks for
+    /// matches. It maintains bitmaps to keep track of word IDs that are matched and
+    /// potentially excluded (i.e., words that should not be in the matched set). The function
+    /// iterates over the processed text, updates the split bitmaps and sets, and finally determines
+    /// if any word ID set contains a match.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
+    ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
+    ///   string slice, and the ID set is an `id_set::IdSet`.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if any pattern matches the processed text, otherwise `false`.
+    ///
+    /// # Safety
+    ///
+    /// This function contains several unsafe blocks. It relies on unchecked operations like
+    /// `unwrap_unchecked`, `get_unchecked`, and unchecked arithmetic operations to ensure
+    /// performance. The unsafe guarantees are based on the internal invariants that the
+    /// original code assumes are always true, such as the fact that certain lookups and
+    /// operations will not fail.
+    fn _is_match_with_processed_text_process_type_set(
+        &'a self,
+        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+    ) -> bool {
+        let word_id_split_bit_map =
+            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
+
         word_id_split_bit_map.values().any(|split_bit_matrix| {
             split_bit_matrix
                 .iter()
@@ -527,29 +537,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
         self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
-    }
-
-    /// Processes the given text and returns an iterator over [SimpleResult] matches.
-    ///
-    /// # Why a fully lazy iterator is not possible for [SimpleMatcher]
-    ///
-    /// The Aho-Corasick automaton with AND/NOT logical operators requires a **two-pass** algorithm:
-    ///
-    /// - **Pass 1** (scan): Traverse the entire input and accumulate the `word_id_split_bit_map`
-    ///   (counting which sub-patterns were seen) and the `not_word_id_set` (patterns that triggered
-    ///   a NOT-exclusion). A NOT-exclusion token can appear *after* a positive match token anywhere
-    ///   in the text, so no result can be emitted until the full scan is complete.
-    ///
-    /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
-    ///   matrices satisfy the AND conditions.
-    ///
-    /// Because of this inherent two-phase dependency, this override simply wraps [`process`] and
-    /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
-    /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
-    /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,
-    /// but that would require a fundamentally different matcher construction.
-    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = SimpleResult<'a>> + 'a> {
-        Box::new(self.process(text).into_iter())
     }
 
     /// Processes the given processed text and type sets to produce matching results.
@@ -588,90 +575,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<SimpleResult<'a>> {
-        let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
-        let mut not_word_id_set = IdSet::new();
-
-        let processed_times = processed_text_process_type_set.len();
-
-        for (index, (processed_text, process_type_set)) in
-            processed_text_process_type_set.iter().enumerate()
-        {
-            // SAFETY: The process_text is guaranteed to be matched. The underlying Aho-Corasick implementation
-            // may return an error if configured improperly, but we initialize it with known good parameters.
-            // SAFETY: The process_text is guaranteed to be matched. The underlying Aho-Corasick implementation
-            // may return an error if configured improperly, but we initialize it with known good parameters.
-            let ac_iter = self
-                .ac_matcher
-                .try_find_overlapping_iter(processed_text.as_ref());
-            debug_assert!(
-                ac_iter.is_ok(),
-                "SimpleMatcher: ac_matcher.try_find_overlapping_iter failed for text: {}",
-                processed_text
-            );
-            for ac_dedup_result in unsafe { ac_iter.unwrap_unchecked() } {
-                // SAFETY: The pattern ID returned by Aho-Corasick corresponds exactly to the index
-                // we used to populate `ac_dedup_word_conf_list` during AhoCorasickBuilder setup.
-                // SAFETY: The pattern ID returned by Aho-Corasick corresponds exactly to the index
-                // we used to populate `ac_dedup_word_conf_list` during AhoCorasickBuilder setup.
-                let pattern_idx = ac_dedup_result.pattern().as_usize();
-                debug_assert!(
-                    pattern_idx < self.ac_dedup_word_conf_list.len(),
-                    "SimpleMatcher: pattern index {} out of bounds",
-                    pattern_idx
-                );
-                for &(match_process_type, word_id, offset) in
-                    unsafe { self.ac_dedup_word_conf_list.get_unchecked(pattern_idx) }
-                {
-                    if !process_type_set.contains(match_process_type.bits() as usize)
-                        || not_word_id_set.contains(word_id as usize)
-                    {
-                        continue;
-                    }
-
-                    // SAFETY: `word_id` is sourced directly from `self.ac_dedup_word_conf_list`,
-                    // which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.
-                    let word_conf = unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() };
-
-                    let split_bit_matrix =
-                        word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                            word_conf
-                                .split_bit
-                                .iter()
-                                .map(|&bit| vec![bit; processed_times])
-                                .collect::<Vec<Vec<i32>>>()
-                        });
-
-                    // split_bit is i32, so it will not overflow almost 100%
-                    // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
-                    // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
-                    debug_assert!(
-                        offset < split_bit_matrix.len(),
-                        "SimpleMatcher: offset {} out of bounds for split_bit_matrix of len {}",
-                        offset,
-                        split_bit_matrix.len()
-                    );
-                    debug_assert!(
-                        index < split_bit_matrix[offset].len(),
-                        "SimpleMatcher: index {} out of bounds for split_bit_matrix[{}] of len {}",
-                        index,
-                        offset,
-                        split_bit_matrix[offset].len()
-                    );
-                    unsafe {
-                        let split_bit = split_bit_matrix
-                            .get_unchecked_mut(offset)
-                            .get_unchecked_mut(index);
-                        *split_bit =
-                            split_bit.wrapping_add((offset < word_conf.not_offset) as i32 * -2 + 1);
-
-                        if offset >= word_conf.not_offset && *split_bit > 0 {
-                            not_word_id_set.insert(word_id as usize);
-                            word_id_split_bit_map.remove(&word_id);
-                        }
-                    }
-                }
-            }
-        }
+        let word_id_split_bit_map =
+            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
 
         word_id_split_bit_map
             .into_iter()
@@ -690,5 +595,28 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     })
             })
             .collect()
+    }
+
+    /// Processes the given text and returns an iterator over [SimpleResult] matches.
+    ///
+    /// # Why a fully lazy iterator is not possible for [SimpleMatcher]
+    ///
+    /// The Aho-Corasick automaton with AND/NOT logical operators requires a **two-pass** algorithm:
+    ///
+    /// - **Pass 1** (scan): Traverse the entire input and accumulate the `word_id_split_bit_map`
+    ///   (counting which sub-patterns were seen) and the `not_word_id_set` (patterns that triggered
+    ///   a NOT-exclusion). A NOT-exclusion token can appear *after* a positive match token anywhere
+    ///   in the text, so no result can be emitted until the full scan is complete.
+    ///
+    /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
+    ///   matrices satisfy the AND conditions.
+    ///
+    /// Because of this inherent two-phase dependency, this override simply wraps [`process`] and
+    /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
+    /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
+    /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,
+    /// but that would require a fundamentally different matcher construction.
+    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimpleResult<'a>> + 'a {
+        self.process(text).into_iter()
     }
 }
