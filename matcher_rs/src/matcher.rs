@@ -28,21 +28,23 @@ use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 /// [`process`](TextMatcherTrait::process), and
 /// [`process_iter`](TextMatcherTrait::process_iter).
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
-    fn is_match(&'a self, text: &'a str) -> bool;
+    fn is_match(&'a self, text: &'a str) -> bool {
+        self.process_iter(text).next().is_some()
+    }
     #[doc(hidden)]
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> bool;
-    fn process(&'a self, text: &'a str) -> Vec<T>;
+    fn process(&'a self, text: &'a str) -> Vec<T> {
+        self.process_iter(text).collect()
+    }
     #[doc(hidden)]
     fn _process_with_processed_text_process_type_set(
         &'a self,
         processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
     ) -> Vec<T>;
-    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = T> + 'a> {
-        Box::new(self.process(text).into_iter())
-    }
+    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a;
 }
 
 /// A trait defining the required methods for a match result.
@@ -934,19 +936,17 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// # Returns
     ///
-    /// * `Box<dyn Iterator<Item = MatchResult<'a>> + 'a>` — a lazy iterator of match results.
-    fn process_iter(&'a self, text: &'a str) -> Box<dyn Iterator<Item = MatchResult<'a>> + 'a> {
-        if text.is_empty() {
-            return Box::new(std::iter::empty());
-        }
+    /// * An `impl Iterator<Item = MatchResult<'a>>` — a lazy iterator of match results.
+    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = MatchResult<'a>> + 'a {
+        let mut iter = (!text.is_empty()).then(|| {
+            let processed_text_process_type_set =
+                reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        let processed_text_process_type_set =
-            reduce_text_process_with_tree(&self.process_type_tree, text);
-
-        Box::new(
             self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
                 .into_values()
-                .flatten(),
-        )
+                .flatten()
+        });
+
+        std::iter::from_fn(move || iter.as_mut().and_then(|i| i.next()))
     }
 }
