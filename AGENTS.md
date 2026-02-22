@@ -1,141 +1,107 @@
 # AGENTS.md — Matcher Repository Guide
 
-This file is intended for AI coding agents. It describes the project layout,
-conventions, how to build and test, and important design patterns to be
-aware of before making changes.
+This file is intended for AI coding agents. It describes the project layout, conventions, how to build and test, and important design patterns to be aware of before making changes.
 
 ---
 
 ## Repository Overview
 
-Matcher is a high-performance, multi-language word-matching library implemented
-in Rust and exposed via FFI bindings:
+Matcher is a high-performance, multi-language word-matching library implemented in Rust and exposed via FFI bindings.
 
-| Directory       | Language      | Purpose                                                  |
-| --------------- | ------------- | -------------------------------------------------------- |
-| `matcher_rs/`   | Rust          | Core library — all matching logic lives here             |
-| `matcher_py/`   | Python (PyO3) | Python bindings (`pip install matcher_py`)               |
-| `matcher_c/`    | C             | C FFI bindings                                           |
-| `matcher_java/` | Java (JNA)    | Java bindings                                            |
-| `data/`         | —             | Unicode process maps used to build transformation tables |
+| Directory       | Language      | Build Tool       | Purpose                                                  |
+| --------------- | ------------- | ---------------- | -------------------------------------------------------- |
+| `matcher_rs/`   | Rust          | `cargo`          | Core library — all matching logic lives here             |
+| `matcher_py/`   | Python (PyO3) | `maturin`        | Python bindings (`pip install matcher_py`)               |
+| `matcher_c/`    | C (FFI)       | `cargo` (cdylib) | C FFI bindings & exported headers                        |
+| `matcher_java/` | Java (JNA)    | `maven`          | Java bindings using `matcher_c` library                  |
+| `data/`         | —             | —                | Unicode process maps used to build transformation tables |
 
-The single source of truth for matching logic is **`matcher_rs`**. All other
-packages are thin wrappers around it.
+The single source of truth for matching logic is **`matcher_rs`**. All other packages are wrappers around it.
 
 ---
 
 ## Core Concepts
 
-Read `DESIGN.md` for the full design. The short version:
+### Extension Types & Configuration
+Matching rules are typically defined in JSON. To ensure type safety across languages, we use "Extension Types":
+- **Python/C**: `extension_types.py` (found in both `matcher_py` and `matcher_c`). It defines `TypedDict` and `IntFlag` enums (e.g., `ProcessType`, `MatchTable`, `MatchTableType`).
+- **Java**: `com.matcher_java.extension_types` package. Contains Java classes equivalent to the Python types for serialized configuration.
 
-- **`ProcessType`** (bitflags) — text normalisation pipelines applied before
-  matching (e.g. `Fanjian`, `Delete`, `Normalize`, `PinYin`). Combinations are
-  deduplicated at construction time via a `ProcessType` tree.
-- **`SimpleMatcher`** — fast Aho-Corasick matcher over a flat word map. Supports
-  AND (`&`), NOT (`~`) logic within a word entry. Primary inner engine.
-- **`Matcher`** — orchestrates `SimpleMatcher`, `RegexMatcher`, and `SimMatcher`
-  (similarity) across a map of `MatchTable`s grouped by `match_id`.
-- **`MatchTable`** defines one matching rule:
-  - `table_id` + `match_table_type` (`Simple | Regex | Similar`) — required
-  - `word_list` — words to match
-  - `exemption_process_type` + `exemption_word_list` — NOT-logic exemptions
+Always use these helper types when constructing configurations in tests or examples.
+
+### Core Engines
+- **`SimpleMatcher`**: Fast Aho-Corasick matcher over a flat word map. Supports AND (`&`), NOT (`~`) logic within a word entry.
+- **`Matcher`**: Orchestrates `SimpleMatcher`, `RegexMatcher`, and `SimMatcher` (similarity) across multiple `MatchTable`s.
 
 ---
 
 ## Workspace Layout
 
-```
-matcher_rs/
-  src/
-    lib.rs              ← crate root & public re-exports
-    builder.rs          ← SimpleMatcherBuilder, MatchTableBuilder, MatcherBuilder
-    matcher.rs          ← Matcher, MatchTable, MatchTableType, traits
-    simple_matcher.rs   ← SimpleMatcher (Aho-Corasick core)
-    regex_matcher.rs    ← RegexMatcher
-    sim_matcher.rs      ← SimMatcher (Levenshtein / similarity)
-    process/            ← ProcessType definitions, tree builder, text processors
-    util/               ← SimpleWord combinator helpers
-  tests/
-    test.rs             ← integration tests
-    test_proptest.rs    ← property-based tests
-```
+### `matcher_rs/` (Rust Core)
+- `src/lib.rs`: Exports public API.
+- `src/builder.rs`: Builder patterns for all matchers.
+- `src/process/`: Transformation logic (Fanjian, Pinyin, etc.).
+- `src/simple_matcher.rs`: Core AC engine.
+
+### `matcher_c/` (C FFI)
+- `src/lib.rs`: Defines the `no_mangle` FFI surface.
+- `matcher_c.h`: Hand-written header matching the Rust FFI.
 
 ---
 
 ## Build & Test
 
-All commands should be run from the repo root unless stated otherwise.
-
+### Rust Core (`matcher_rs`)
 ```bash
-# Build the Rust core (release)
 cargo build -p matcher_rs --release
-
-# Run all Rust tests
 cargo test -p matcher_rs
-
-# Run only a specific test
-cargo test -p matcher_rs <test_name>
-
-# Build with the 'dfa' feature (required for benchmarks)
-cargo build -p matcher_rs --features "dfa" --release
-
-# Run benchmarks
 cargo bench -p matcher_rs --features "dfa"
 ```
 
-For Python bindings, see `matcher_py/README.md` and the `Makefile`.
+### Python Bindings (`matcher_py`)
+Uses `maturin` for building and `pytest` for testing.
+```bash
+cd matcher_py
+maturin develop  # Build and install in current venv
+pytest           # Run tests
+```
+
+### C Bindings (`matcher_c`)
+```bash
+cd matcher_c
+cargo build --release  # Produces libmatcher_c.so/dylib/dll
+```
+
+### Java Bindings (`matcher_java`)
+Requires the `matcher_c` dynamic library to be built first or available in the search path.
+```bash
+cd matcher_java
+./build_native.sh  # Helper script to build the C lib and place it for JNA
+mvn test           # Run Java tests
+```
+
+---
+
+## FFI Best Practices & Memory Management
+
+### The `drop_*` Pattern
+Any pointer returned by the C FFI (e.g., from `init_matcher` or `matcher_process_as_string`) **must** be manually freed using the corresponding `drop_*` function to avoid memory leaks:
+- `drop_matcher(void*)`
+- `drop_simple_matcher(void*)`
+- `drop_string(char*)`
+
+### JSON Communication
+Communication between languages is largely handled via JSON strings. The FFI layer deserializes these into Rust types defined in `matcher_rs`. Ensure the JSON structure exactly matches the `MatchTable` or `SimpleTable` requirements.
 
 ---
 
 ## Code Conventions
 
-### Rust
-- Follow standard Rust idioms (`clippy` clean, no `unwrap` in library code).
-- Use `#[derive(Default)]` + `new()` constructors for builder types.
-- All public types and functions must have `///` doc comments with at least
-  one `# Example` block that compiles as a doctest.
-- Builders follow the **consuming builder** pattern (`mut self -> Self`).
-- Imports: use top-level `use crate::{...}` — do not use inline `crate::` paths.
-
-### Adding a new builder
-Follow the pattern in `builder.rs`:
-1. Define the struct with `pub` fields or private fields + methods.
-2. Implement `new(required_fields...)` and one chainable method per optional field.
-3. Implement `build(self) -> TargetType`.
-4. Re-export from `lib.rs`.
-5. Add integration tests to `tests/test.rs` inside the relevant `mod test_*` block.
-
-### Adding a new `ProcessType` variant
-`ProcessType` is a bitflag enum defined in `src/process/process_matcher.rs`.
-After adding a variant you **must** update the process tree builder logic and
-add a corresponding text processor.
-
----
-
-## CI Workflows (`.github/workflows/`)
-
-| File            | Trigger               | Purpose                      |
-| --------------- | --------------------- | ---------------------------- |
-| `rust.yml`      | push / PR             | Build + test on nightly      |
-| `coverage.yml`  | push to `master` / PR | Tarpaulin coverage → Codecov |
-| `bench.yml`     | push to `master` / PR | Criterion benchmarks         |
-| `publish-*.yml` | tags                  | Publish crates / packages    |
-
-The default branch is **`master`**.
-
----
-
-## Key Design Invariants — Do Not Break
-
-1. **`ProcessType` tree deduplication** — the tree built in `Matcher::new` ensures
-   each text transformation is computed at most once per input string. Any change
-   to how `process_type_set` is populated must preserve this.
-2. **`simple_word_table_conf_index_list` offsets** — the unsafe indexing in
-   `_word_match_with_processed_text_process_type_set` relies on these being
-   contiguous and correctly offset. Changing how words are inserted into
-   `simple_table` requires updating the offset bookkeeping in `Matcher::new`.
-3. **Lifetime invariants** — `MatchTable<'a>` borrows string slices. Builders must
-   not introduce owned `String`s where `&'a str` is expected, as this would break
-   FFI and serde compatibility.
-4. **`Cow<'a, str>` zero-copy** — text processing returns `Cow`. Avoid eagerly
-   converting to `String`, especially inside hot matching paths.
+### README Standardization
+All `README.md` files follow a standard professional layout:
+1. Title + Badges
+2. Overview
+3. Table of Contents (Optional/Context-dependent)
+4. Installation (Build from source / Pre-built)
+5. Usage Examples (using Extension Types)
+6. Important Notes (FFI details, toolchains)
