@@ -1,8 +1,32 @@
 # Matcher Rust Implement C FFI bindings
 
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/lips7/Matcher/test.yml)
+![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)
+
+A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust with C FFI bindings for cross-language support.
+
+For detailed implementation, see the [Design Document](../DESIGN.md).
+
+## Table of Contents
+
+- [Matcher Rust Implement C FFI bindings](#matcher-rust-implement-c-ffi-bindings)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Installation](#installation)
+    - [Build from source](#build-from-source)
+    - [Install pre-built binary](#install-pre-built-binary)
+  - [C Usage Example](#c-usage-example)
+  - [Python Usage Example](#python-usage-example)
+  - [Important Notes](#important-notes)
+
 ## Overview
 
-A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust.
+This package provides C FFI (Foreign Function Interface) bindings for the Matcher library. It allows you to use the high-performance matching capabilities of Matcher in C, C++, Python (via `cffi`), and other languages that support C FFI.
+
+Key features exposed:
+- High-performance text matching with logical operators (`&`, `~`).
+- Support for various text normalization processes (Fanjian, Delete, Normalize, PinYin).
+- Multiple matching types: Simple, Regex, Similarity, Acrostic.
 
 ## Installation
 
@@ -10,91 +34,101 @@ A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS**
 
 ```shell
 git clone https://github.com/Lips7/Matcher.git
+cd Matcher/matcher_c
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
 cargo build --release
 ```
 
-Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+After building, you will find the dynamic library in the `target/release` directory:
+- Linux: `libmatcher_c.so`
+- macOS: `libmatcher_c.dylib`
+- Windows: `matcher_c.dll`
 
 ### Install pre-built binary
 
 Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
 
-## Python usage example
+## C Usage Example
 
-```Python
+You can use the `matcher_c.h` header and the compiled library in your C projects.
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include "matcher_c.h"
+
+int main() {
+    // Configuration in JSON format
+    // ProcessType: MatchNone = 1
+    char* config = "{\"1\":[{\"table_id\":1,\"match_table_type\":{\"simple\":{\"process_type\":1}},\"word_list\":[\"hello\",\"world\"],\"exemption_process_type\":1,\"exemption_word_list\":[]}]}";
+
+    // Initialize matcher
+    void* matcher = init_matcher(config);
+
+    // Check if a text matches
+    if (matcher_is_match(matcher, "hello world")) {
+        printf("Matches!\n");
+    }
+
+    // Process and get result as JSON string
+    char* result = matcher_process_as_string(matcher, "hello");
+    printf("Result: %s\n", result);
+
+    // Clean up
+    drop_string(result);
+    drop_matcher(matcher);
+
+    return 0;
+}
+```
+
+## Python Usage Example
+
+Using the C FFI bindings via Python's `cffi` library and the provided `extension_types.py`:
+
+```python
 import json
-
 from cffi import FFI
+from extension_types import MatchTable, MatchTableType, ProcessType
 
-from extension_types import MatchTableType, ProcessType, MatchTable
-
-## define ffi
+# Initialize FFI and load library
 ffi = FFI()
-ffi.cdef(open("./matcher_c.h", "r", encoding="utf-8").read())
-lib = ffi.dlopen("./matcher_c.so")
+with open("./matcher_c.h", "r", encoding="utf-8") as f:
+    ffi.cdef(f.read())
+lib = ffi.dlopen("./libmatcher_c.so") # Adjust extension for your OS
 
-# init matcher
-matcher = lib.init_matcher(
-    json.dumps({
-        1: [
-            MatchTable(
-                table_id=1,
-                match_table_type=MatchTableType.Simple(
-                    process_type=ProcessType.MatchNone
-                ),
-                word_list=["hello,world", "hello", "world"],
-                exemption_process_type=ProcessType.MatchNone,
-                exemption_word_list=[],
-            )
-        ]
-    }).encode()
-)
+# Define configuration using extension types
+config = {
+    1: [
+        MatchTable(
+            table_id=1,
+            match_table_type=MatchTableType.Simple(process_type=ProcessType.MatchNone),
+            word_list=["hello", "world"],
+            exemption_process_type=ProcessType.MatchNone,
+            exemption_word_list=[],
+        )
+    ]
+}
 
-# check is match
-lib.matcher_is_match(matcher, "hello".encode("utf-8"))  # True
+# Init matcher
+matcher = lib.init_matcher(json.dumps(config).encode())
 
-# match as list
+# Check match
+is_match = lib.matcher_is_match(matcher, "hello".encode("utf-8"))
+print(f"Is match: {is_match}")
+
+# Match and get string result
 res = lib.matcher_process_as_string(matcher, "hello,world".encode("utf-8"))
 print(ffi.string(res).decode("utf-8"))
-# [{"match_id":1,"table_id":1,"word_id":0,"word":"hello,world","similarity":1.0},{"match_id":1,"table_id":1,"word_id":1,"word":"hello","similarity":1.0},{"match_id":1,"table_id":1,"word_id":2,"word":"world","similarity":1.0}]
 lib.drop_string(res)
 
-# match as dict
-res = lib.matcher_word_match_as_string(matcher, "hello,world".encode("utf-8"))
-print(ffi.string(res).decode("utf-8"))
-# {"1":[{"match_id":1,"table_id":1,"word_id":0,"word":"hello,world","similarity":1.0},{"match_id":1,"table_id":1,"word_id":1,"word":"hello","similarity":1.0},{"match_id":1,"table_id":1,"word_id":2,"word":"world","similarity":1.0}]}
-lib.drop_string(res)
-
-# drop matcher
+# Clean up
 lib.drop_matcher(matcher)
-
-# init simple matcher
-simple_matcher = lib.init_simple_matcher(
-    json.dumps(({
-        ProcessType.MatchFanjianDeleteNormalize | ProcessType.MatchPinYinChar: {
-            1: "妳好&世界",
-            2: "hello",
-        }
-    })).encode()
-)
-
-# check is match
-lib.simple_matcher_is_match(simple_matcher, "你好世界".encode("utf-8"))  # True
-
-# match as list
-res = lib.simple_matcher_process_as_string(
-    simple_matcher, "nihaoshijie!hello!world!".encode("utf-8")
-)
-print(ffi.string(res).decode("utf-8"))
-# [{"word_id":1,"word":"妳好&世界"},{"word_id":2,"word":"hello"}]
-lib.drop_string(res)
-
-# drop simple matcher
-lib.drop_simple_matcher(simple_matcher)
 ```
 
 ## Important Notes
 
-1. The [extension_types.py](./extension_types.py) is not required, you can use the dynamic library directly.
-2. Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` after initializing and processing to avoid memory leaks.
+1. **Header File**: The `matcher_c.h` defines the exported functions.
+2. **Memory Management**: Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` for any pointer returned by the library to avoid memory leaks.
+3. **Extension Types**: The [extension_types.py](./extension_types.py) helper provides `TypedDict` and utility classes to ensure your configuration JSON structure is correct.
+4. **Rust Toolchain**: Building from source requires the Rust **nightly** toolchain.
