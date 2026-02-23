@@ -48,7 +48,7 @@ proptest! {
 
         // We only test if regex compilation itself doesn't panic
         if let Ok(matcher_res) = std::panic::catch_unwind(|| {
-            RegexMatcher::new(&[regex_table][..])
+            RegexMatcher::new(&[regex_table])
         }) {
             let _ = matcher_res.is_match(&text);
             let _ = matcher_res.process(&text);
