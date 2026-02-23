@@ -134,3 +134,17 @@ fn match_table_builder_similar() {
     assert!(matcher.is_match("helloworl")); // one char off
     assert!(!matcher.is_match("completely different"));
 }
+
+#[test]
+fn match_table_builder_empty() {
+    let table = MatchTableBuilder::new(
+        1,
+        MatchTableType::Simple {
+            process_type: ProcessType::None,
+        },
+    )
+    .build();
+
+    let matcher = MatcherBuilder::new().add_table(1, table).build();
+    assert!(!matcher.is_match("anything"));
+}

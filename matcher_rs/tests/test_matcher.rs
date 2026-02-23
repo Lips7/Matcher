@@ -143,3 +143,69 @@ fn process_type_tree_behavior() {
     assert_eq!(matcher.process("hello").len(), 1);
     assert_eq!(matcher.process("world").len(), 1);
 }
+
+#[test]
+fn matcher_complex_combinations() {
+    use matcher_rs::{RegexMatchType, SimMatchType};
+    let matcher = Matcher::new(&HashMap::from([(
+        1u32, // MatchID 1
+        vec![
+            MatchTable {
+                table_id: 1,
+                match_table_type: MatchTableType::Simple {
+                    process_type: ProcessType::None,
+                },
+                word_list: vec!["simpleword"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec![],
+            },
+            MatchTable {
+                table_id: 2,
+                match_table_type: MatchTableType::Regex {
+                    process_type: ProcessType::None,
+                    regex_match_type: RegexMatchType::Regex,
+                },
+                word_list: vec!["^regex.*"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec![],
+            },
+            MatchTable {
+                table_id: 3,
+                match_table_type: MatchTableType::Similar {
+                    process_type: ProcessType::None,
+                    sim_match_type: SimMatchType::Levenshtein,
+                    threshold: 0.8,
+                },
+                word_list: vec!["similarity"],
+                exemption_process_type: ProcessType::None,
+                exemption_word_list: vec![],
+            },
+        ],
+    )]));
+
+    assert!(matcher.is_match("simpleword is here"));
+    assert!(matcher.is_match("regex_is_here"));
+    assert!(matcher.is_match("similariti")); // matches sim node
+    assert!(!matcher.is_match("completely different string"));
+}
+
+#[test]
+fn matcher_cross_table_exemptions() {
+    use matcher_rs::RegexMatchType;
+    let matcher = Matcher::new(&HashMap::from([(
+        1u32,
+        vec![MatchTable {
+            table_id: 1,
+            match_table_type: MatchTableType::Regex {
+                process_type: ProcessType::None,
+                regex_match_type: RegexMatchType::Regex,
+            },
+            word_list: vec!["badword"], // Will flag this
+            exemption_process_type: ProcessType::None,
+            exemption_word_list: vec!["good badword"], // Exemption for this table
+        }],
+    )]));
+
+    assert!(matcher.is_match("This is a badword"));
+    assert!(!matcher.is_match("This is a good badword")); // Exception fires
+}

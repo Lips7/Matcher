@@ -65,3 +65,31 @@ fn test_reduce_text_process_with_set() {
     let processed_text_process_type_set = reduce_text_process_with_set(&process_type_set, text);
     println!("{processed_text_process_type_set:?}");
 }
+
+#[test]
+fn test_reduce_text_process_all_combined() {
+    // ProcessType operations applied progressively
+    let text = reduce_text_process(
+        ProcessType::Fanjian
+            | ProcessType::Delete
+            | ProcessType::Normalize
+            | ProcessType::PinYin
+            | ProcessType::PinYinChar,
+        "~ᗩ~躶~𝚩~軆~Ⲉ~ 漢語西安",
+    );
+    println!("{:?}", text);
+    assert!(!text.is_empty());
+}
+
+#[test]
+fn test_reduce_text_process_empty_text() {
+    let process_type_set = IdSet::from_iter([
+        ProcessType::Fanjian.bits() as usize,
+        ProcessType::Delete.bits() as usize,
+        ProcessType::Normalize.bits() as usize,
+    ]);
+
+    let processed_text = reduce_text_process_with_set(&process_type_set, "");
+    // Should be basically a single entry of `("", ProcessTypes...)` or purely empty.
+    assert!(processed_text.iter().all(|(text, _)| text.is_empty()));
+}

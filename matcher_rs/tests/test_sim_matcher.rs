@@ -109,3 +109,53 @@ fn sim_matcher_threshold_edge_cases() {
     let results = matcher.process("hellp");
     assert!(results.iter().any(|r| r.match_id == 2));
 }
+
+#[test]
+fn sim_match_multibyte_and_unicode() {
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["你好世界", "👋😀🌍"],
+        threshold: 0.75, // Allow 1 character off for 4-character string
+    }]);
+
+    assert!(sim_matcher.is_match("你好世果")); // one char off, 3/4 = 0.75 >= 0.75 -> matches
+    assert!(!sim_matcher.is_match("你")); // too far
+
+    // For length 3, a missing char is 2/3 = 0.66 which is < 0.75. So we need exact.
+    assert!(!sim_matcher.is_match("👋😀"));
+    assert!(sim_matcher.is_match("👋😀🌍")); // exact
+}
+
+#[test]
+fn sim_match_exact_threshold() {
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["perfection"],
+        threshold: 1.0,
+    }]);
+
+    assert!(sim_matcher.is_match("perfection"));
+    assert!(!sim_matcher.is_match("perfectio")); // 1 char off must fail
+}
+
+#[test]
+fn sim_match_zero_threshold() {
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["apple"],
+        threshold: 0.0,
+    }]);
+
+    // With threshold 0.0, anything should match unless similarity logic drops completely disparate things.
+    // Given the formula 1.0 - (distance / max_len), it might only be exact 0.0 if there are no common chars.
+    assert!(sim_matcher.is_match("banana"));
+}

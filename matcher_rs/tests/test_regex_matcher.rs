@@ -1,4 +1,6 @@
-use matcher_rs::{ProcessType, RegexMatchType, RegexMatcher, RegexTable, TextMatcherTrait};
+use matcher_rs::{
+    MatchResultTrait, ProcessType, RegexMatchType, RegexMatcher, RegexTable, TextMatcherTrait,
+};
 
 #[test]
 fn regex_match_regex() {
@@ -103,4 +105,54 @@ fn regex_process_iter_empty() {
     }]);
 
     assert_eq!(matcher.process_iter("").count(), 0);
+}
+
+#[test]
+fn regex_match_invalid_regex_graceful_ignore() {
+    // an invalid regex like "[unclosed" should be skipped and not panic.
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["valid", "[unclosed"],
+    }]);
+
+    assert!(regex_matcher.is_match("this is valid"));
+    assert!(!regex_matcher.is_match("[unclosed"));
+}
+
+#[test]
+fn regex_match_long_pattern_skip() {
+    // Tests that a pattern over 1024 chars in length is skipped
+    // to avoid potential ReDoS.
+    let very_long_word = "a".repeat(1050);
+
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec![&very_long_word],
+    }]);
+
+    assert!(!regex_matcher.is_match(&very_long_word));
+}
+
+#[test]
+fn regex_match_regex_set() {
+    // Test behavior with multiple regex patterns confirming valid conversion and matching.
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["alpha", "beta", "gamma"],
+    }]);
+
+    let results = regex_matcher.process("beta and gamma");
+    let mut words: Vec<String> = results.into_iter().map(|r| r.word().to_string()).collect();
+    words.sort();
+
+    assert_eq!(words, vec!["beta", "gamma"]);
 }

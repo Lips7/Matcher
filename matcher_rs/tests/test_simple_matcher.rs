@@ -157,3 +157,51 @@ fn simple_matcher_not_logic_ordering() {
     assert_eq!(matcher.process("world hello").len(), 0);
     assert_eq!(matcher.process("hello").len(), 1);
 }
+
+#[test]
+fn simple_match_overlapping_words() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "hello world")
+        .add_word(ProcessType::None, 3, "world")
+        .build();
+
+    let results = matcher.process("hello world");
+    let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
+    ids.sort();
+
+    // It should match "hello", "hello world", and "world"
+    assert_eq!(ids, vec![1, 2, 3]);
+}
+
+#[test]
+fn simple_match_whitespace_handling() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, " ")
+        .add_word(ProcessType::None, 2, "hello ")
+        .build();
+
+    assert!(matcher.is_match(" "));
+    assert!(matcher.is_match("hello "));
+    assert!(!matcher.is_match("hello")); // Missing space
+}
+
+#[test]
+fn simple_match_very_long_text() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "needle")
+        .build();
+
+    let long_text = "haystack ".repeat(10000) + "needle" + &" haystack".repeat(10000);
+    assert!(matcher.is_match(&long_text));
+}
+
+#[test]
+#[should_panic(expected = "SimpleMatcherBuilder: duplicate word_id")]
+fn simple_match_duplicate_id_panic_in_debug() {
+    // Note: depending on compilation profile, this might only panic in debug mode
+    let _ = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 1, "world") // Duplicate ID, same ProcessType
+        .build();
+}
