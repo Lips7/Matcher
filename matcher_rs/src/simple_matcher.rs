@@ -338,7 +338,6 @@ impl SimpleMatcher {
 
         let ac_matcher = AhoCorasickBuilder::new()
             .kind(Some(aho_corasick_kind))
-            .ascii_case_insensitive(true)
             .prefilter(prefilter)
             .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
             .unwrap();
