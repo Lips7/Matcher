@@ -27,7 +27,8 @@ dependencies = [
 [[package]]
 name = "aho-corasick-unsafe"
 version = "0.0.4"
-source = "git+https://github.com/Lips7/aho-corasick#66356d8b00f779c4e2b458b6857efb6aa0438a2e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2258365483d4afc0b4085b969477f7391c8123001669ad943cbbdc6d2b34cd8"
 dependencies = [
  "memchr",
  "serde",
