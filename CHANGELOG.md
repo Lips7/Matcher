@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.2 - 2026-02-25
+
+### Refactor & Performance
+- Removed explicit ASCII case-insensitivity from `AhoCorasickBuilder` to simplify builder configuration.
+- Deferred `String` allocation in `ProcessMatcher`'s `replace_all` and `delete_all` for performance optimization.
+- Simplified `TextMatcherTrait` and various internal matcher method implementations.
+- Expanded testing suite by separating tests into individual files, adding edge case checks and fixing slice coercion in proptests.
+
+### Maintenance & Documentation
+- Switched `aho-corasick-unsafe` dependency from git source to `crates.io`.
+- Updated benchmarks with deterministic scenarios for process types.
+- Enhanced Java example to use the high-level API and adjusted the environment for macOS.
+- Heavily improved documentation across `README.md`, `README_CN.md`, `AGENTS.md` and specific language READMEs.
 ## 0.7.1 - 2026-02-21
 
 ### Security & Safety (Audit Fixes)
