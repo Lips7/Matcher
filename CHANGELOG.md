@@ -13,6 +13,7 @@
 - Updated benchmarks with deterministic scenarios for process types.
 - Enhanced Java example to use the high-level API and adjusted the environment for macOS.
 - Heavily improved documentation across `README.md`, `README_CN.md`, `AGENTS.md` and specific language READMEs.
+
 ## 0.7.1 - 2026-02-21
 
 ### Security & Safety (Audit Fixes)
