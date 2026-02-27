@@ -49,8 +49,7 @@
 
 请参阅 [Rust README](./matcher_rs/README.md)。
 
-> [!IMPORTANT]
-> **Git 依赖限制**：目前 `matcher_rs` crate 依赖于 git 版本的 `aho-corasick-unsafe`。下游 Rust 开发者必须也通过 git 依赖引用 `matcher_rs`，否则在标准 registry 环境下无法通过版本依赖解析。
+
 
 ### Python 用户
 

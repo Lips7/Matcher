@@ -39,8 +39,7 @@ To use `matcher_rs` in your Rust project, run the following command:
 cargo add matcher_rs
 ```
 
-> [!IMPORTANT]
-> **Git Dependency Limitation**: This crate currently depends on a git-based version of `aho-corasick-unsafe` (a fork of `aho-corasick`). As a result, projects depending on `matcher_rs` must also use a git dependency or the `matcher_rs` dependency will fail to resolve in some package registry environments.
+
 
 ### Explanation of the configuration
 

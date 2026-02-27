@@ -49,8 +49,7 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
 
 See the [Rust README](./matcher_rs/README.md).
 
-> [!IMPORTANT]
-> **Git Dependency Limitation**: The `matcher_rs` crate currently depends on a git-based version of `aho-corasick-unsafe`. Downstream Rust consumers must also use a git dependency for `matcher_rs` or resolution will fail in standard registry-only environments.
+
 
 ### Python Users
 
