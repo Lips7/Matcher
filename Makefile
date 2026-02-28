@@ -19,5 +19,5 @@ test:
 	cd matcher_py && ruff format . && uv sync && pytest
 
 update:
-	cargo update --verbose --recursive --breaking -Z unstable-options
+	cargo update --verbose --recursive --breaking
 	cargo upgrade --verbose --recursive
