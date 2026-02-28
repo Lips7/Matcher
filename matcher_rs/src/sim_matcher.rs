@@ -316,8 +316,8 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                             let table_id_index =
                                 ((sim_processed_table.table_id as usize) << 32) | index;
 
-                            if table_id_index_set.insert(table_id_index) {
-                                if let Some(similarity) =
+                            if table_id_index_set.insert(table_id_index)
+                                && let Some(similarity) =
                                     distance::levenshtein::normalized_similarity_with_args(
                                         text.chars(),
                                         processed_text.chars(),
@@ -333,7 +333,6 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                         similarity,
                                     });
                                 }
-                            }
                         }
                     }
                 }

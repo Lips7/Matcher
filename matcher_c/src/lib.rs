@@ -7,7 +7,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::{
-    ffi::{c_char, CStr, CString},
+    ffi::{CStr, CString, c_char},
     panic, ptr, str,
 };
 
@@ -32,7 +32,7 @@ use matcher_rs::{
 ///
 /// # Panics
 /// This function will panic if the input data cannot be deserialized into a `MatchTableMap`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     let result = panic::catch_unwind(|| unsafe {
         let match_table_map: MatchTableMap =
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
     let result = panic::catch_unwind(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
@@ -114,7 +114,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string or if the
 /// serialization of the result fails.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn matcher_process_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn matcher_process_as_string(
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn matcher_word_match_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
 ///
 /// # Parameters
 /// - `matcher`: A pointer to the `Matcher` instance to be deallocated.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
     let _ = panic::catch_unwind(|| unsafe {
         if !matcher.is_null() {
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 ///
 /// # Panics
 /// This function will panic if the deserialization of `simple_table_bytes` fails.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn init_simple_matcher(
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
@@ -314,7 +314,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_process_as_string(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
@@ -353,7 +353,7 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
 ///
 /// # Parameters
 /// - `simple_matcher`: A pointer to the `SimpleMatcher` instance to be deallocated.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     let _ = panic::catch_unwind(|| unsafe {
         if !simple_matcher.is_null() {
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 ///
 /// # Parameters
 /// - `ptr`: A pointer to the C string to be deallocated.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     let _ = panic::catch_unwind(|| unsafe {
         if !ptr.is_null() {

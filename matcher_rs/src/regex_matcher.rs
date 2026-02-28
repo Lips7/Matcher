@@ -463,17 +463,16 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                             let table_id_index =
                                 ((regex_pattern_table.table_id as usize) << 32) | index;
 
-                            if table_id_index_set.insert(table_id_index) {
-                                if let Ok(is_match) = regex.is_match(processed_text) {
-                                    if is_match {
-                                        result_list.push(RegexResult {
-                                            match_id: regex_pattern_table.match_id,
-                                            table_id: regex_pattern_table.table_id,
-                                            word_id: index as u32,
-                                            word: Cow::Borrowed(&word_list[index]),
-                                        });
-                                    }
-                                }
+                            if table_id_index_set.insert(table_id_index)
+                                && let Ok(is_match) = regex.is_match(processed_text)
+                                && is_match
+                            {
+                                result_list.push(RegexResult {
+                                    match_id: regex_pattern_table.match_id,
+                                    table_id: regex_pattern_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(&word_list[index]),
+                                });
                             }
                         }
                     }
@@ -583,15 +582,15 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                         for (index, regex) in regex_list.iter().enumerate() {
                             let table_id_index =
                                 ((regex_pattern_table.table_id as usize) << 32) | index;
-                            if table_id_index_set.insert(table_id_index) {
-                                if let Ok(true) = regex.is_match(processed_text) {
-                                    result_buf.push(RegexResult {
-                                        match_id: regex_pattern_table.match_id,
-                                        table_id: regex_pattern_table.table_id,
-                                        word_id: index as u32,
-                                        word: Cow::Borrowed(&word_list[index]),
-                                    });
-                                }
+                            if table_id_index_set.insert(table_id_index)
+                                && let Ok(true) = regex.is_match(processed_text)
+                            {
+                                result_buf.push(RegexResult {
+                                    match_id: regex_pattern_table.match_id,
+                                    table_id: regex_pattern_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(&word_list[index]),
+                                });
                             }
                         }
                     }
