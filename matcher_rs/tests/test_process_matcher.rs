@@ -1,7 +1,7 @@
 use id_set::IdSet;
 use matcher_rs::{
-    build_process_type_tree, reduce_text_process, reduce_text_process_emit,
-    reduce_text_process_with_set, reduce_text_process_with_tree, text_process, ProcessType,
+    ProcessType, build_process_type_tree, reduce_text_process, reduce_text_process_emit,
+    reduce_text_process_with_set, reduce_text_process_with_tree, text_process,
 };
 
 #[test]

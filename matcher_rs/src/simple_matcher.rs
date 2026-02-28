@@ -10,8 +10,8 @@ use tinyvec::ArrayVec;
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
-    build_process_type_tree, reduce_text_process_emit, reduce_text_process_with_tree, ProcessType,
-    ProcessTypeBitNode,
+    ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_emit,
+    reduce_text_process_with_tree,
 };
 
 /// A type alias for a nested integer map structure used for mapping process types to words.

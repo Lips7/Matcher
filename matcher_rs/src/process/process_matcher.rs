@@ -153,20 +153,6 @@ type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, Proce
 pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
     LazyLock::new(|| RwLock::new(Map::default()));
 
-/// Represents different types of process matchers used for text processing.
-///
-/// This enum contains variants for different kinds of matchers that can operate on text to find and
-/// replace or delete specific patterns. Each variant is designed to handle specific use cases
-/// effectively. The enum is clonable, allowing for easy duplication when necessary.
-///
-/// # Variants
-///
-/// - `LeftMost`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher to find the leftmost non-overlapping matches
-///   in the text. This variant is only available when the "dfa" feature is not enabled.
-///
-/// - `Chinese`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher specifically tailored to handle Chinese text,
-///   focusing on character-wise matching to find the patterns.
-///
 /// Error type returned by [`text_process`] when more than one bit is set in the
 /// `process_type` argument.
 ///
@@ -183,6 +169,20 @@ impl Display for ProcessTypeError {
 
 impl std::error::Error for ProcessTypeError {}
 
+/// Represents different types of process matchers used for text processing.
+///
+/// This enum contains variants for different kinds of matchers that can operate on text to find and
+/// replace or delete specific patterns. Each variant is designed to handle specific use cases
+/// effectively. The enum is clonable, allowing for easy duplication when necessary.
+///
+/// # Variants
+///
+/// - `LeftMost`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher to find the leftmost non-overlapping matches
+///   in the text. This variant is only available when the "dfa" feature is not enabled.
+///
+/// - `Chinese`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher specifically tailored to handle Chinese text,
+///   focusing on character-wise matching to find the patterns.
+///
 /// - `Others`: Uses a standard [AhoCorasick] matcher for general-purpose text processing. This is suitable for
 ///   finding matches for patterns not covered by the other two variants.
 ///

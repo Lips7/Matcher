@@ -8,7 +8,7 @@ use tinyvec::ArrayVec;
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
-        build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+        ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
     },
 };
 
@@ -324,15 +324,15 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                         &distance::levenshtein::Args::default()
                                             .score_cutoff(sim_processed_table.threshold),
                                     )
-                                {
-                                    result_list.push(SimResult {
-                                        match_id: sim_processed_table.match_id,
-                                        table_id: sim_processed_table.table_id,
-                                        word_id: index as u32,
-                                        word: Cow::Borrowed(text),
-                                        similarity,
-                                    });
-                                }
+                            {
+                                result_list.push(SimResult {
+                                    match_id: sim_processed_table.match_id,
+                                    table_id: sim_processed_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(text),
+                                    similarity,
+                                });
+                            }
                         }
                     }
                 }
