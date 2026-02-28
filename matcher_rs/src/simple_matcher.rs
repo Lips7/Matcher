@@ -6,12 +6,11 @@ use id_set::IdSet;
 use nohash_hasher::IntMap;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
-use tinyvec::ArrayVec;
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
-    ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_emit,
-    reduce_text_process_with_tree,
+    ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+    reduce_text_process_emit, reduce_text_process_with_tree,
 };
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
@@ -115,6 +114,11 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
 }
 
+/// A single entry in the deduplicated word configuration list.
+///
+/// Fields: `(process_type, word_id, offset)`.
+type WordConfEntry = (ProcessType, u32, usize);
+
 /// Represents a simple matcher for processing words based on process types.
 ///
 /// The [SimpleMatcher] structure is designed to perform efficient word matching, supporting logical operators
@@ -163,7 +167,7 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AhoCorasick,
-    ac_dedup_word_conf_list: Vec<Vec<(ProcessType, u32, usize)>>,
+    ac_dedup_word_conf_list: Vec<Vec<WordConfEntry>>,
     word_conf_map: IntMap<u32, WordConf>,
 }
 
@@ -378,7 +382,7 @@ impl SimpleMatcher {
     ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> FxHashMap<u32, Vec<Vec<i32>>> {
         let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
         let mut not_word_id_set = IdSet::new();
@@ -473,7 +477,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// * `true` if any pattern matches the processed text, otherwise `false`.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
         let word_id_split_bit_map =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
@@ -536,7 +540,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// encounters unexpected states, this could lead to issues.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<SimpleResult<'a>> {
         let word_id_split_bit_map =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);

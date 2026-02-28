@@ -3,7 +3,7 @@ pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};
 
 mod process;
 pub use process::process_matcher::{
-    ProcessType, ProcessTypeError, build_process_type_tree, get_process_matcher,
+    ProcessType, ProcessTypeError, ProcessedTextSet, build_process_type_tree, get_process_matcher,
     reduce_text_process, reduce_text_process_emit, reduce_text_process_with_set,
     reduce_text_process_with_tree, text_process,
 };

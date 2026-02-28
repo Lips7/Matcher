@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::process::process_matcher::{
-    ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
+    ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+    reduce_text_process_with_tree,
 };
 use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
@@ -40,7 +40,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     #[doc(hidden)]
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool;
     fn process(&'a self, text: &'a str) -> Vec<T> {
         self.process_iter(text).collect()
@@ -48,7 +48,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     #[doc(hidden)]
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<T>;
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a;
 }
@@ -716,7 +716,7 @@ impl Matcher {
     ///   If no matches are found, the function returns an empty [HashMap].
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> HashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = HashMap::new();
         let mut failed_match_table_id_set = IdSet::new();
@@ -830,7 +830,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// initialized before calling this function.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
         match &self.simple_matcher {
             Some(_) => !self
@@ -904,7 +904,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///   from the match IDs.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<MatchResult<'a>> {
         self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
             .into_values()

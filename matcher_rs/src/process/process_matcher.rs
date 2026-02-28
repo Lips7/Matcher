@@ -169,6 +169,13 @@ impl Display for ProcessTypeError {
 
 impl std::error::Error for ProcessTypeError {}
 
+/// A fixed-capacity array of `(processed_text, process_type_set)` pairs produced by
+/// the `reduce_text_process_*` family of functions.
+///
+/// The capacity of 16 supports up to 16 distinct text-processing variants per input,
+/// which is the practical upper bound given the number of [`ProcessType`] flags.
+pub type ProcessedTextSet<'a> = ArrayVec<[(Cow<'a, str>, IdSet); 16]>;
+
 /// Represents different types of process matchers used for text processing.
 ///
 /// This enum contains variants for different kinds of matchers that can operate on text to find and
@@ -940,11 +947,10 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
+) -> ProcessedTextSet<'a> {
     let mut process_type_tree_copied: Vec<ProcessTypeBitNode> = process_type_tree.to_vec();
 
-    let mut processed_text_process_type_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> =
-        ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),
@@ -1039,7 +1045,7 @@ pub fn reduce_text_process_with_tree<'a>(
 pub fn reduce_text_process_with_set<'a>(
     process_type_set: &IdSet,
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
+) -> ProcessedTextSet<'a> {
     let mut process_type_tree = Vec::with_capacity(8);
     let mut root = ProcessTypeBitNode {
         process_type_list: ArrayVec::new(),
@@ -1051,8 +1057,7 @@ pub fn reduce_text_process_with_set<'a>(
     root.process_type_list.push(ProcessType::None);
     process_type_tree.push(root);
 
-    let mut processed_text_process_type_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> =
-        ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),

@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use id_set::IdSet;
 use rapidfuzz::distance;
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
-        ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
+        ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+        reduce_text_process_with_tree,
     },
 };
 
@@ -244,7 +244,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// according to the specified match type and similarity threshold; otherwise, returns `false`.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {
@@ -300,7 +300,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// an [IdSet] to track already processed table ID and word index combinations.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = IdSet::new();

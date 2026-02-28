@@ -4,12 +4,12 @@ use fancy_regex::{Regex, escape};
 use id_set::IdSet;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
-        ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
+        ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+        reduce_text_process_with_tree,
     },
 };
 
@@ -380,7 +380,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
@@ -427,7 +427,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = IdSet::new();
