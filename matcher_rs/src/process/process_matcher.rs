@@ -18,7 +18,6 @@ use id_set::IdSet;
 use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tinyvec::ArrayVec;
 
 use crate::process::constants::*;
 
@@ -172,7 +171,7 @@ impl std::error::Error for ProcessTypeError {}
 ///
 /// The capacity of 16 supports up to 16 distinct text-processing variants per input,
 /// which is the practical upper bound given the number of [`ProcessType`] flags.
-pub type ProcessedTextSet<'a> = ArrayVec<[(Cow<'a, str>, IdSet); 16]>;
+pub type ProcessedTextSet<'a> = Vec<(Cow<'a, str>, IdSet)>;
 
 /// Represents different types of process matchers used for text processing.
 ///
@@ -690,7 +689,7 @@ pub fn text_process(
 ///
 /// # Returns
 ///
-/// An [ArrayVec] containing the processed text at each step. The initial text is always included as the first element.
+/// An [Vec] containing the processed text at each step. The initial text is always included as the first element.
 ///
 /// # Example
 ///
@@ -711,11 +710,8 @@ pub fn text_process(
 /// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
 /// paths that should not be possible based on earlier checks and logic.
 #[inline(always)]
-pub fn reduce_text_process<'a>(
-    process_type: ProcessType,
-    text: &'a str,
-) -> ArrayVec<[Cow<'a, str>; 8]> {
-    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
+    let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();
     processed_text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
@@ -758,7 +754,7 @@ pub fn reduce_text_process<'a>(
 ///
 /// # Returns
 ///
-/// An [ArrayVec] containing the processed text at each step. The initial text is always included as the first element.
+/// An [Vec] containing the processed text at each step. The initial text is always included as the first element.
 ///
 /// # Example
 ///
@@ -779,11 +775,8 @@ pub fn reduce_text_process<'a>(
 /// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
 /// paths that should not be possible based on earlier checks and logic.
 #[inline(always)]
-pub fn reduce_text_process_emit<'a>(
-    process_type: ProcessType,
-    text: &'a str,
-) -> ArrayVec<[Cow<'a, str>; 8]> {
-    let mut processed_text_list: ArrayVec<[Cow<'a, str>; 8]> = ArrayVec::new();
+pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
+    let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();
     processed_text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
@@ -823,18 +816,18 @@ pub fn reduce_text_process_emit<'a>(
 ///
 /// # Fields
 ///
-/// * `process_type_list` - An [ArrayVec] containing the list of processing types associated with this node.
+/// * `process_type_list` - An [Vec] containing the list of processing types associated with this node.
 /// * `process_type_bit` - A [ProcessType] representing the specific processing rule for this node.
 /// * `is_processed` - A [bool] flag indicating whether the node has been processed.
 /// * `processed_text_index` - An [usize] indicating the index of the processed text.
-/// * `children` - An [ArrayVec] containing the indices of child nodes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// * `children` - An [Vec] containing the indices of child nodes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
-    process_type_list: ArrayVec<[ProcessType; 8]>,
+    process_type_list: Vec<ProcessType>,
     process_type_bit: ProcessType,
     is_processed: bool,
     processed_text_index: usize,
-    children: ArrayVec<[usize; 8]>,
+    children: Vec<usize>,
 }
 
 /// Constructs a processing type tree from a list of processing types.
@@ -861,31 +854,31 @@ pub struct ProcessTypeBitNode {
 /// # Panics
 ///
 /// This function does not panic under normal circumstances. It assumes that [ProcessType::iter()]
-/// provides a finite iterator and that array operations on [ArrayVec] are safe as long as the constraints
+/// provides a finite iterator and that array operations on [Vec] are safe as long as the constraints
 /// are respected.
 pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
-        process_type_list: ArrayVec::new(),
+        process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         is_processed: true,
         processed_text_index: 0,
-        children: ArrayVec::new(),
+        children: Vec::new(),
     };
     process_type_tree.push(root);
     for process_type_usize in process_type_set.iter() {
         let process_type = ProcessType::from_bits(process_type_usize as u8).unwrap();
         let mut current_node_index = 0;
         for process_type_bit in process_type.into_iter() {
-            let current_node = process_type_tree[current_node_index];
+            let current_node = &process_type_tree[current_node_index];
             if current_node.process_type_bit == process_type_bit {
                 continue;
             }
 
             let mut is_found = false;
-            for child_node_index in current_node.children {
-                if process_type_bit == process_type_tree[child_node_index].process_type_bit {
-                    current_node_index = child_node_index;
+            for child_node_index in &current_node.children {
+                if process_type_bit == process_type_tree[*child_node_index].process_type_bit {
+                    current_node_index = *child_node_index;
                     is_found = true;
                     break;
                 }
@@ -893,11 +886,11 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 
             if !is_found {
                 let mut child = ProcessTypeBitNode {
-                    process_type_list: ArrayVec::new(),
+                    process_type_list: Vec::new(),
                     process_type_bit,
                     is_processed: false,
                     processed_text_index: 0,
-                    children: ArrayVec::new(),
+                    children: Vec::new(),
                 };
                 child.process_type_list.push(process_type);
                 process_type_tree.push(child);
@@ -921,7 +914,7 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 /// This function takes a preconstructed tree of `ProcessTypeBitNode` and applies the processing rules
 /// to the input text based on the tree structure. It iterates over each node in the tree and applies
 /// the corresponding processing rules, ensuring that each node's `process_type_bit` is handled
-/// appropriately. The results of the processing are stored in an [ArrayVec] which contains tuples of
+/// appropriately. The results of the processing are stored in an [Vec] which contains tuples of
 /// the processed text and an [IdSet] of process type bits.
 ///
 /// # Arguments
@@ -932,13 +925,13 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 ///
 /// # Returns
 ///
-/// An [ArrayVec] containing tuples. Each tuple consists of:
+/// An [Vec] containing tuples. Each tuple consists of:
 /// * A [Cow] string, which could be either the borrowed input text or an owned version of the processed text.
 /// * An [IdSet] which contains the bits of the processed [ProcessType].
 ///
 /// # Panics
 ///
-/// This function assumes that array operations on [ArrayVec] and slice operations on the process type tree
+/// This function assumes that array operations on [Vec] and slice operations on the process type tree
 /// and `processed_text_process_type_set` are safe. It may panic if the assumptions about the data structure
 /// are violated, such as out-of-bounds access.
 #[inline(always)]
@@ -948,7 +941,7 @@ pub fn reduce_text_process_with_tree<'a>(
 ) -> ProcessedTextSet<'a> {
     let mut process_type_tree_copied: Vec<ProcessTypeBitNode> = process_type_tree.to_vec();
 
-    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = Vec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),
@@ -959,8 +952,8 @@ pub fn reduce_text_process_with_tree<'a>(
         let current_copied_node = left_tree.get(current_node_index).expect("`current_node_index` will never exceed the iterator bounds of `left_tree` created above.");
         let mut current_index = current_copied_node.processed_text_index;
 
-        for child_node_index in current_node.children {
-            let child_node = right_tree.get_mut(child_node_index - current_node_index - 1).expect("`child_node_index` is sourced securely from the internally generated structural graph bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.");
+        for child_node_index in &current_node.children {
+            let child_node = right_tree.get_mut(*child_node_index - current_node_index - 1).expect("`child_node_index` is sourced securely from the internally generated structural graph bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.");
 
             if child_node.is_processed {
                 current_index = current_copied_node.processed_text_index;
@@ -1036,7 +1029,7 @@ pub fn reduce_text_process_with_tree<'a>(
 ///
 /// # Returns
 ///
-/// An [ArrayVec] containing tuples where each tuple consists of:
+/// An [Vec] containing tuples where each tuple consists of:
 /// - A [Cow<'a, str>] representing the processed text.
 /// - An [IdSet] containing the identifiers of the process types applied.
 #[inline(always)]
@@ -1046,16 +1039,16 @@ pub fn reduce_text_process_with_set<'a>(
 ) -> ProcessedTextSet<'a> {
     let mut process_type_tree = Vec::with_capacity(8);
     let mut root = ProcessTypeBitNode {
-        process_type_list: ArrayVec::new(),
+        process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         is_processed: true,
         processed_text_index: 0,
-        children: ArrayVec::new(),
+        children: Vec::new(),
     };
     root.process_type_list.push(ProcessType::None);
     process_type_tree.push(root);
 
-    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = Vec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),
@@ -1068,15 +1061,15 @@ pub fn reduce_text_process_with_set<'a>(
         let mut current_node_index = 0;
 
         for process_type_bit in process_type.iter() {
-            let current_node = process_type_tree[current_node_index];
+            let current_node = &process_type_tree[current_node_index];
             if current_node.process_type_bit == process_type_bit {
                 continue;
             }
 
             let mut is_found = false;
-            for child_node_index in current_node.children {
-                if process_type_bit == process_type_tree[child_node_index].process_type_bit {
-                    current_node_index = child_node_index;
+            for child_node_index in &current_node.children {
+                if process_type_bit == process_type_tree[*child_node_index].process_type_bit {
+                    current_node_index = *child_node_index;
                     is_found = true;
                     break;
                 }
@@ -1119,11 +1112,11 @@ pub fn reduce_text_process_with_set<'a>(
                 }
 
                 let mut child = ProcessTypeBitNode {
-                    process_type_list: ArrayVec::new(),
+                    process_type_list: Vec::new(),
                     process_type_bit,
                     is_processed: true,
                     processed_text_index: current_index,
-                    children: ArrayVec::new(),
+                    children: Vec::new(),
                 };
                 child.process_type_list.push(process_type);
                 process_type_tree.push(child);
