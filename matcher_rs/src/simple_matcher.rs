@@ -132,21 +132,28 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///
 /// # Example
 ///
+/// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+/// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
+///
 /// This example demonstrates creating a [SimpleMatcher] instance using the `new` method with a sample
 /// `process_type_word_map`:
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use matcher_rs::{SimpleMatcher, ProcessType};
+/// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
 ///
-/// // Define a mock process_type_word_map for demonstration
+/// // Recommended: Using SimpleMatcherBuilder
+/// let matcher = SimpleMatcherBuilder::new()
+///     .add_word(ProcessType::None, 1, "example&word")
+///     .build();
+///
+/// // Or manually mapping:
 /// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
 /// let mut inner_map: HashMap<u32, &str> = HashMap::new();
 /// inner_map.insert(1, "example&word");
 /// process_type_word_map.insert(ProcessType::None, inner_map);
 ///
-/// // Creating a SimpleMatcher instance
-/// let matcher = SimpleMatcher::new(&process_type_word_map);
+/// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
 ///
 /// println!("{:?}", matcher);
 /// ```
@@ -183,24 +190,30 @@ impl SimpleMatcher {
     ///
     /// # Example
     ///
+    /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+    /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
+    ///
     /// ```rust
     /// use std::collections::HashMap;
-    /// use matcher_rs::{SimpleMatcher, ProcessType};
+    /// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
     ///
-    /// // Define a mock process_type_word_map for demonstration
+    /// // Recommended: Using SimpleMatcherBuilder
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "example&word")
+    ///     .build();
+    ///
+    /// // Or manually mapping:
     /// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
     /// let mut inner_map: HashMap<u32, &str> = HashMap::new();
     /// inner_map.insert(1, "example&word");
     /// process_type_word_map.insert(ProcessType::None, inner_map);
     ///
-    /// // Creating a SimpleMatcher instance
-    /// let matcher = SimpleMatcher::new(&process_type_word_map);
+    /// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
     ///
     /// println!("{:?}", matcher);
     /// ```
     ///
-    /// The above example demonstrates how to create a [SimpleMatcher] by passing a constructed
-    /// `process_type_word_map`.
+    /// The above example demonstrates how to create a [SimpleMatcher].
     pub fn new<I, S1, S2>(
         process_type_word_map: &HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -331,6 +344,35 @@ impl SimpleMatcher {
         }
     }
 
+    /// Core matching logic for `SimpleMatcher`, processing multiple text variants and process types.
+    ///
+    /// This function scans the provided processed text variants using the internal Aho-Corasick automaton.
+    /// It keeps track of sub-pattern matches (AND logic `&`) and handles exclusions (NOT logic `~`).
+    /// The returned data structure maps each `word_id` to a nested vector tracking which split-bits
+    /// matched across the different text variants.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Iterate over each tuple of `(processed_text, process_type_set)`.
+    /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
+    ///    sub-pattern matches within the `processed_text`.
+    /// 3. For each sub-pattern match, check if its `ProcessType` aligns with the current text variant's `process_type_set`.
+    /// 4. Maintain a 2D split-bit matrix for each `word_id` to record which tokens condition the text satisfies.
+    ///    - **AND Tokens (`&`)**: Decrements their state towards `< 0`. The token count dictates how negative it goes.
+    ///      Every time the exact sub-pattern occurs, it brings the count closer.
+    ///    - **NOT Tokens (`~`)**: Checks if they exist (offset >= `not_offset`). If a NOT token appears,
+    ///      the `word_id` is disqualified and immediately discarded from further checks using `not_word_id_set`.
+    /// 5. Return the map of matched patterns which is later used in *Pass 2* to evaluate conditions.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A list of tuples containing processed text variants
+    ///   and their associated [`IdSet`] of valid [`ProcessType`]s.
+    ///
+    /// # Returns
+    ///
+    /// * `FxHashMap<u32, Vec<Vec<i32>>>` - A mapping from matched `word_id` to a split-bit matrix,
+    ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,

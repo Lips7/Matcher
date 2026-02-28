@@ -217,12 +217,20 @@ pub trait MatchTableTrait<S: AsRef<str>> {
 ///
 /// # Examples
 ///
-/// The following is an example of how a [MatchTable] might be instantiated:
+/// The following is an example of how a [MatchTable] might be manually instantiated or built:
 ///
 /// ```rust
-/// use matcher_rs::{MatchTable, MatchTableType, ProcessType};
+/// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType};
 ///
-/// let match_table = MatchTable {
+/// // Recommended: Using MatchTableBuilder
+/// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+///     .add_words(["example", "sample"])
+///     .exemption_process_type(ProcessType::None)
+///     .add_exemption_words(["ignore", "skip"])
+///     .build();
+///
+/// // Or manually
+/// let match_table_manual = MatchTable {
 ///     table_id: 1,
 ///     match_table_type: MatchTableType::Simple {
 ///         process_type: ProcessType::None,
@@ -496,33 +504,37 @@ impl Matcher {
     ///
     /// # Example
     ///
+    /// Note: It is highly recommended to use [`MatcherBuilder`](crate::MatcherBuilder) to
+    /// easily build a Matcher without manually instantiating `Vec` and `HashMap`s.
+    ///
     /// ```rust
     /// use std::borrow::Cow;
     /// use nohash_hasher::IntMap;
-    /// use matcher_rs::{MatchTable, MatchTableType, ProcessType, RegexMatchType, Matcher};
+    /// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType, RegexMatchType, Matcher, MatcherBuilder};
     /// use std::collections::HashMap;
     ///
-    /// let match_table_1 = MatchTable {
-    ///     table_id: 1,
-    ///     match_table_type: MatchTableType::Simple { process_type: ProcessType::None },
-    ///     word_list: vec!["word1", "word2"],
-    ///     exemption_process_type: ProcessType::None,
-    ///     exemption_word_list: vec!["ignore"],
-    /// };
+    /// let match_table_1 = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_words(["word1", "word2"])
+    ///     .add_exemption_word("ignore")
+    ///     .build();
     ///
-    /// let match_table_2 = MatchTable {
-    ///     table_id: 2,
-    ///     match_table_type: MatchTableType::Regex { process_type: ProcessType::None, regex_match_type: RegexMatchType::Regex },
-    ///     word_list: vec!["regex1", "regex2"],
-    ///     exemption_process_type: ProcessType::None,
-    ///     exemption_word_list: vec!["skip"],
-    /// };
+    /// let match_table_2 = MatchTableBuilder::new(2, MatchTableType::Regex { process_type: ProcessType::None, regex_match_type: RegexMatchType::Regex })
+    ///     .add_words(["regex1", "regex2"])
+    ///     .add_exemption_word("skip")
+    ///     .build();
     ///
+    /// // Recommended approach:
+    /// let matcher = MatcherBuilder::new()
+    ///     .add_table(1, match_table_1.clone())
+    ///     .add_table(2, match_table_2.clone())
+    ///     .build();
+    ///
+    /// // Or manually mapping:
     /// let mut match_table_map: HashMap<u32, Vec<MatchTable>> = HashMap::new();
     /// match_table_map.insert(1, vec![match_table_1]);
     /// match_table_map.insert(2, vec![match_table_2]);
     ///
-    /// let matcher = Matcher::new(&match_table_map);
+    /// let matcher_manual = Matcher::new(&match_table_map);
     /// ```
     pub fn new<S, M, T>(match_table_map: &HashMap<u32, Vec<M>, S>) -> Matcher
     where
