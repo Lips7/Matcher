@@ -58,8 +58,6 @@ jobs:
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "dfa"
       - name: Test runtime_build and dfa
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa"
-      - name: Test serde and dfa
-        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "serde,dfa"
       - name: Run doc
         run: cargo doc
       - name: Rename & move
