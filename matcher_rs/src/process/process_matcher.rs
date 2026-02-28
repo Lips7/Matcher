@@ -207,55 +207,42 @@ impl ProcessMatcher {
         text: &'a str,
         process_replace_list: &[&str],
     ) -> (bool, Cow<'a, str>) {
+        /// Shared iteration logic for replace: given a mutable iterator of matches,
+        /// builds the replaced string using the `$idx` expression to look up the
+        /// replacement index from each match object.
+        macro_rules! do_replace {
+            ($iter:expr, $idx:expr) => {{
+                let mut iter = $iter;
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(&text[0..first_mat.start()]);
+                    result.push_str(process_replace_list[$idx(&first_mat)]);
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(&text[last_end..mat.start()]);
+                        result.push_str(process_replace_list[$idx(&mat)]);
+                        last_end = mat.end();
+                    }
+                    result.push_str(&text[last_end..]);
+                    return (true, Cow::Owned(result));
+                }
+            }};
+        }
+
         match self {
             #[cfg(not(feature = "dfa"))]
-            ProcessMatcher::LeftMost(ac) => {
-                let mut iter = ac.leftmost_find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.value() as usize]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.value() as usize]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
+            ProcessMatcher::LeftMost(ac) => do_replace!(
+                ac.leftmost_find_iter(text),
+                |m: &daachorse::Match<u32>| m.value() as usize
+            ),
             ProcessMatcher::Chinese(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.value() as usize]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.value() as usize]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
+                do_replace!(ac.find_iter(text), |m: &daachorse::Match<u32>| m.value()
+                    as usize)
             }
             ProcessMatcher::Others(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.pattern().as_usize()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.pattern().as_usize()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
+                do_replace!(ac.find_iter(text), |m: &aho_corasick::Match| m
+                    .pattern()
+                    .as_usize())
             }
         }
         (false, Cow::Borrowed(text))
@@ -279,50 +266,30 @@ impl ProcessMatcher {
     ///   the deletions is returned.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
+        /// Shared iteration logic for delete: given a mutable iterator of matches,
+        /// builds the result string by concatenating only the non-matched segments.
+        macro_rules! do_delete {
+            ($iter:expr) => {{
+                let mut iter = $iter;
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(&text[0..first_mat.start()]);
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(&text[last_end..mat.start()]);
+                        last_end = mat.end();
+                    }
+                    result.push_str(&text[last_end..]);
+                    return (true, Cow::Owned(result));
+                }
+            }};
+        }
+
         match self {
             #[cfg(not(feature = "dfa"))]
-            ProcessMatcher::LeftMost(ac) => {
-                let mut iter = ac.leftmost_find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
-            ProcessMatcher::Chinese(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
-            ProcessMatcher::Others(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
+            ProcessMatcher::LeftMost(ac) => do_delete!(ac.leftmost_find_iter(text)),
+            ProcessMatcher::Chinese(ac) => do_delete!(ac.find_iter(text)),
+            ProcessMatcher::Others(ac) => do_delete!(ac.find_iter(text)),
         }
         (false, Cow::Borrowed(text))
     }
