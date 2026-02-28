@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use id_set::IdSet;
 use nohash_hasher::IntMap;
-use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
@@ -232,16 +231,15 @@ impl SimpleMatcher {
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::with_capacity(word_size);
-        let mut ac_dedup_word_id_map =
-            FxHashMap::with_capacity_and_hasher(word_size, Default::default());
+        let mut ac_dedup_word_id_map = HashMap::with_capacity(word_size);
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
             process_type_set.insert(process_type.bits() as usize);
 
             for (&simple_word_id, simple_word) in simple_word_map {
-                let mut ac_split_word_and_counter = FxHashMap::default();
-                let mut ac_split_word_not_counter = FxHashMap::default();
+                let mut ac_split_word_and_counter = HashMap::new();
+                let mut ac_split_word_not_counter = HashMap::new();
 
                 let mut start = 0;
                 let mut is_and = false;
@@ -383,13 +381,13 @@ impl SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * `FxHashMap<u32, Vec<Vec<i32>>>` - A mapping from matched `word_id` to a split-bit matrix,
+    /// * `HashMap<u32, Vec<Vec<i32>>>` - A mapping from matched `word_id` to a split-bit matrix,
     ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> FxHashMap<u32, Vec<Vec<i32>>> {
-        let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
+    ) -> HashMap<u32, Vec<Vec<i32>>> {
+        let mut word_id_split_bit_map = HashMap::new();
         let mut not_word_id_set = IdSet::new();
 
         let processed_times = processed_text_process_type_set.len();

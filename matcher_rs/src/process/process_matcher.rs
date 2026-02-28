@@ -17,8 +17,6 @@ use daachorse::{
 use id_set::IdSet;
 use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
-#[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tinyvec::ArrayVec;
 
@@ -378,7 +376,7 @@ pub fn get_process_matcher(
 
     #[cfg(feature = "runtime_build")]
     {
-        let mut process_dict = FxHashMap::default();
+        let mut process_dict = HashMap::new();
 
         match process_type_bit {
             ProcessType::None => {}
@@ -510,7 +508,7 @@ pub fn get_process_matcher(
             ProcessType::Delete => {
                 #[cfg(feature = "dfa")]
                 {
-                    let mut process_dict = FxHashMap::default();
+                    let mut process_dict = HashMap::new();
                     process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                     process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
                     process_dict.retain(|&key, &mut value| key != value);
