@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 
-use fancy_regex::{escape, Regex};
+use fancy_regex::{Regex, escape};
 use id_set::IdSet;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::{
-    matcher::{MatchResultTrait, TextMatcherTrait},
+    matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
     process::process_matcher::{
-        build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+        ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+        reduce_text_process_with_tree,
     },
 };
 
@@ -170,8 +170,8 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RegexMatcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
-    regex_pattern_table_list: Vec<RegexPatternTable>,
+    process_type_tree: Box<[ProcessTypeBitNode]>,
+    regex_pattern_table_list: Box<[RegexPatternTable]>,
 }
 
 impl RegexMatcher {
@@ -244,7 +244,7 @@ impl RegexMatcher {
                     let mut regex_list = Vec::with_capacity(size);
                     let mut pattern_list = Vec::with_capacity(size);
 
-                    for &word in regex_table.word_list.iter() {
+                    for &word in &regex_table.word_list {
                         let pattern = format!(
                             r"(?i)(?:^|[\s\pP]+?){}",
                             escape(word).replace(',', r".*?[\s\pP]+?")
@@ -260,7 +260,7 @@ impl RegexMatcher {
                                 pattern_list.push(pattern);
                             }
                             Err(e) => {
-                                println!("Acrostic word {word} is illegal, ignored. Error: {e}");
+                                eprintln!("Acrostic word {word} is illegal, ignored. Error: {e}");
                             }
                         }
                     }
@@ -287,7 +287,7 @@ impl RegexMatcher {
                     let mut word_list = Vec::with_capacity(size);
                     let mut regex_list = Vec::with_capacity(size);
 
-                    for &word in regex_table.word_list.iter() {
+                    for &word in &regex_table.word_list {
                         if word.len() > 1024 {
                             eprintln!("Regex pattern too long, skipping: {:.20}...", word);
                             continue;
@@ -298,7 +298,7 @@ impl RegexMatcher {
                                 word_list.push(word.to_owned());
                             }
                             Err(e) => {
-                                println!("Regex word {word} is illegal, ignored. Error: {e}");
+                                eprintln!("Regex word {word} is illegal, ignored. Error: {e}");
                             }
                         }
                     }
@@ -324,11 +324,11 @@ impl RegexMatcher {
             };
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
         RegexMatcher {
             process_type_tree,
-            regex_pattern_table_list,
+            regex_pattern_table_list: regex_pattern_table_list.into_boxed_slice(),
         }
     }
 }
@@ -354,9 +354,116 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_set)
     }
+    /// Returns a **lazy** iterator over [RegexResult] matches for the given text.
+    ///
+    /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
+    /// Pattern matching is then driven table-by-table as the caller advances the
+    /// iterator. Results from each table are buffered internally and yielded one at a
+    /// time, so callers that short-circuit (`.next()`, `.find()`, `.take(n)`) skip
+    /// tables that would otherwise be evaluated unnecessarily.
+    ///
+    /// An [`IdSet`] deduplicates `(table_id, word_index)` pairs across processed-text
+    /// variants.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The input text to be processed and matched against the regex patterns.
+    ///
+    /// # Returns
+    ///
+    /// An `impl Iterator<Item = RegexResult<'a>>` — a lazy iterator of match results.
+    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = RegexResult<'a>> + 'a {
+        gen move {
+            if text.is_empty() {
+                return;
+            }
 
+            let processed_text_process_type_set =
+                reduce_text_process_with_tree(&self.process_type_tree, text);
+
+            let mut table_id_index_set = IdSet::new();
+
+            for (processed_text, process_type_set) in processed_text_process_type_set {
+                for regex_pattern_table in self.regex_pattern_table_list.iter() {
+                    if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize)
+                    {
+                        continue;
+                    }
+
+                    match &regex_pattern_table.regex_type {
+                        RegexType::Standard { regex } => {
+                            if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
+                                let mut temp = Vec::new();
+                                for caps in regex.captures_iter(&processed_text).flatten() {
+                                    temp.push(RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: 0,
+                                        word: Cow::Owned(
+                                            caps.iter()
+                                                .skip(1)
+                                                .filter_map(|m| m.map(|mc| mc.as_str()))
+                                                .collect::<String>(),
+                                        ),
+                                    });
+                                }
+                                for r in temp {
+                                    yield r;
+                                }
+                            }
+                        }
+                        RegexType::List {
+                            regex_list,
+                            word_list,
+                        } => {
+                            for (index, regex) in regex_list.iter().enumerate() {
+                                let table_id_index =
+                                    ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                                if table_id_index_set.insert(table_id_index)
+                                    && let Ok(true) = regex.is_match(&processed_text)
+                                {
+                                    yield RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: index as u32,
+                                        word: Cow::Borrowed(&word_list[index]),
+                                    };
+                                }
+                            }
+                        }
+                        RegexType::Set {
+                            regex_set,
+                            word_list,
+                        } => {
+                            let mut temp = Vec::new();
+                            for index in regex_set.matches(&processed_text) {
+                                let table_id_index =
+                                    ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                                if table_id_index_set.insert(table_id_index) {
+                                    temp.push(RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: index as u32,
+                                        word: Cow::Borrowed(&word_list[index]),
+                                    });
+                                }
+                            }
+                            for r in temp {
+                                yield r;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     /// Checks if any of the given processed texts match any of the regex patterns in the [RegexMatcher].
     ///
     /// This function iterates over the pairs of processed text and their associated processing type sets.
@@ -378,9 +485,9 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// # Returns
     ///
     /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
-    fn _is_match_with_processed_text_process_type_set(
+    fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
@@ -425,9 +532,9 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// # Returns
     ///
     /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
-    fn _process_with_processed_text_process_type_set(
+    fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = IdSet::new();
@@ -499,123 +606,5 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         }
 
         result_list
-    }
-
-    /// Returns a **lazy** iterator over [RegexResult] matches for the given text.
-    ///
-    /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
-    /// Pattern matching is then driven table-by-table as the caller advances the
-    /// iterator. Results from each table are buffered internally and yielded one at a
-    /// time, so callers that short-circuit (`.next()`, `.find()`, `.take(n)`) skip
-    /// tables that would otherwise be evaluated unnecessarily.
-    ///
-    /// An [`IdSet`] deduplicates `(table_id, word_index)` pairs across processed-text
-    /// variants.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - The input text to be processed and matched against the regex patterns.
-    ///
-    /// # Returns
-    ///
-    /// An `impl Iterator<Item = RegexResult<'a>>` — a lazy iterator of match results.
-    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = RegexResult<'a>> + 'a {
-        let processed_text_process_type_set = if text.is_empty() {
-            Default::default()
-        } else {
-            reduce_text_process_with_tree(&self.process_type_tree, text)
-        };
-
-        let mut table_id_index_set = IdSet::new();
-        let mut processed_index = 0;
-        let mut table_index = 0;
-        let mut result_buf: Vec<RegexResult<'a>> = Vec::new();
-
-        std::iter::from_fn(move || {
-            loop {
-                // Drain buffered results from the last table first.
-                if let Some(result) = result_buf.pop() {
-                    return Some(result);
-                }
-
-                if processed_index >= processed_text_process_type_set.len() {
-                    return None;
-                }
-                let (ref processed_text, ref process_type_set) =
-                    processed_text_process_type_set[processed_index];
-
-                if table_index >= self.regex_pattern_table_list.len() {
-                    table_index = 0;
-                    processed_index += 1;
-                    continue;
-                }
-
-                let regex_pattern_table = &self.regex_pattern_table_list[table_index];
-                table_index += 1;
-
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
-                    continue;
-                }
-
-                match &regex_pattern_table.regex_type {
-                    RegexType::Standard { regex } => {
-                        if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
-                            for caps in regex.captures_iter(processed_text).flatten() {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: 0,
-                                    word: Cow::Owned(
-                                        caps.iter()
-                                            .skip(1)
-                                            .filter_map(|m| m.map(|mc| mc.as_str()))
-                                            .collect::<String>(),
-                                    ),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::List {
-                        regex_list,
-                        word_list,
-                    } => {
-                        for (index, regex) in regex_list.iter().enumerate() {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-                            if table_id_index_set.insert(table_id_index)
-                                && let Ok(true) = regex.is_match(processed_text)
-                            {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::Set {
-                        regex_set,
-                        word_list,
-                    } => {
-                        for index in regex_set.matches(processed_text) {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-                            if table_id_index_set.insert(table_id_index) {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Reverse so pop() yields results in original insertion order.
-                result_buf.reverse();
-            }
-        })
     }
 }

@@ -159,10 +159,10 @@ fn main() -> Result<()> {
 
             let mut process_set = HashSet::new();
 
-            process_set.extend(TEXT_DELETE.trim().lines().map(|line| line));
+            process_set.extend(TEXT_DELETE.trim().lines());
             process_set.extend(WHITE_SPACE);
 
-            let process_list = process_set.iter().map(|&s| s).collect::<Vec<&str>>();
+            let process_list: Vec<&str> = process_set.iter().copied().collect();
 
             let mut process_list_bin = File::create(format!("{out_dir}/delete_process_list.bin"))?;
             process_list_bin.write_all(process_list.join("\n").as_bytes())?;

@@ -1,10 +1,13 @@
+#![feature(gen_blocks)]
+
 mod builder;
 pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};
 
 mod process;
 pub use process::process_matcher::{
-    build_process_type_tree, get_process_matcher, reduce_text_process, reduce_text_process_emit,
-    reduce_text_process_with_set, reduce_text_process_with_tree, text_process, ProcessType,
+    ProcessType, ProcessTypeError, ProcessedTextSet, build_process_type_tree, get_process_matcher,
+    reduce_text_process, reduce_text_process_emit, reduce_text_process_with_set,
+    reduce_text_process_with_tree, text_process,
 };
 
 mod simple_matcher;

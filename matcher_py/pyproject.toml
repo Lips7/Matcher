@@ -34,9 +34,8 @@ changelog = "https://github.com/Lips7/Matcher/blob/master/CHANGELOG.md"
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
-[tool.uv]
-managed = true
-dev-dependencies = ["pytest", "pip"]
+[dependency-groups]
+dev = ["pytest", "pip"]
 
 [tool.maturin]
 python-source = "python"

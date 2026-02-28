@@ -11,15 +11,15 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{pyclass, pymethods, pymodule, wrap_pyfunction, PyModule, PyResult, Python};
+use pyo3::prelude::{PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction};
 use pyo3::types::{PyDict, PyDictMethods, PyModuleMethods};
-use pyo3::{intern, pyfunction, Bound, IntoPyObject};
+use pyo3::{Bound, IntoPyObject, intern, pyfunction};
 
 use matcher_rs::{
-    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
     MatchResult as MatchResultRs, MatchTableMapSerde as MatchTableMapRs, Matcher as MatcherRs,
     ProcessType, SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs,
     SimpleTableSerde as SimpleTableRs, TextMatcherTrait,
+    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
 };
 
 /// A structure representing a simple result from the SimpleMatcher.
@@ -105,7 +105,7 @@ fn text_process(process_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
     let process_type = ProcessType::from_bits(process_type).unwrap_or(ProcessType::None);
     match text_process_rs(process_type, text) {
         Ok(result) => Ok(result),
-        Err(e) => Err(PyValueError::new_err(e)),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
     }
 }
 
@@ -177,9 +177,9 @@ impl Matcher {
             Ok(match_table_map) => match_table_map,
             Err(e) => {
                 return Err(PyValueError::new_err(format!(
-                "Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}",
-                e
-            )))
+                    "Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}",
+                    e
+                )));
             }
         };
 
@@ -361,7 +361,7 @@ impl SimpleMatcher {
                 return Err(PyValueError::new_err(format!(
                     "Deserialize simple_table_bytes failed, Please check the input data.\n Err: {}",
                     e
-                )))
+                )));
             }
         };
 

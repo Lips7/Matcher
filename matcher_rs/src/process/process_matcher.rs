@@ -153,6 +153,29 @@ type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, Proce
 pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
     LazyLock::new(|| RwLock::new(Map::default()));
 
+/// Error type returned by [`text_process`] when more than one bit is set in the
+/// `process_type` argument.
+///
+/// This type implements [`std::fmt::Display`] and [`std::error::Error`], making it
+/// compatible with the standard error ecosystem (`Box<dyn Error>`, `anyhow`, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessTypeError;
+
+impl Display for ProcessTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("text_process only accepts a single process_type bit")
+    }
+}
+
+impl std::error::Error for ProcessTypeError {}
+
+/// A fixed-capacity array of `(processed_text, process_type_set)` pairs produced by
+/// the `reduce_text_process_*` family of functions.
+///
+/// The capacity of 16 supports up to 16 distinct text-processing variants per input,
+/// which is the practical upper bound given the number of [`ProcessType`] flags.
+pub type ProcessedTextSet<'a> = ArrayVec<[(Cow<'a, str>, IdSet); 16]>;
+
 /// Represents different types of process matchers used for text processing.
 ///
 /// This enum contains variants for different kinds of matchers that can operate on text to find and
@@ -207,55 +230,42 @@ impl ProcessMatcher {
         text: &'a str,
         process_replace_list: &[&str],
     ) -> (bool, Cow<'a, str>) {
+        /// Shared iteration logic for replace: given a mutable iterator of matches,
+        /// builds the replaced string using the `$idx` expression to look up the
+        /// replacement index from each match object.
+        macro_rules! do_replace {
+            ($iter:expr, $idx:expr) => {{
+                let mut iter = $iter;
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(&text[0..first_mat.start()]);
+                    result.push_str(process_replace_list[$idx(&first_mat)]);
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(&text[last_end..mat.start()]);
+                        result.push_str(process_replace_list[$idx(&mat)]);
+                        last_end = mat.end();
+                    }
+                    result.push_str(&text[last_end..]);
+                    return (true, Cow::Owned(result));
+                }
+            }};
+        }
+
         match self {
             #[cfg(not(feature = "dfa"))]
-            ProcessMatcher::LeftMost(ac) => {
-                let mut iter = ac.leftmost_find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.value() as usize]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.value() as usize]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
+            ProcessMatcher::LeftMost(ac) => do_replace!(
+                ac.leftmost_find_iter(text),
+                |m: &daachorse::Match<u32>| m.value() as usize
+            ),
             ProcessMatcher::Chinese(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.value() as usize]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.value() as usize]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
+                do_replace!(ac.find_iter(text), |m: &daachorse::Match<u32>| m.value()
+                    as usize)
             }
             ProcessMatcher::Others(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    result.push_str(process_replace_list[first_mat.pattern().as_usize()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        result.push_str(process_replace_list[mat.pattern().as_usize()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
+                do_replace!(ac.find_iter(text), |m: &aho_corasick::Match| m
+                    .pattern()
+                    .as_usize())
             }
         }
         (false, Cow::Borrowed(text))
@@ -279,50 +289,30 @@ impl ProcessMatcher {
     ///   the deletions is returned.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
+        /// Shared iteration logic for delete: given a mutable iterator of matches,
+        /// builds the result string by concatenating only the non-matched segments.
+        macro_rules! do_delete {
+            ($iter:expr) => {{
+                let mut iter = $iter;
+                if let Some(first_mat) = iter.next() {
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(&text[0..first_mat.start()]);
+                    let mut last_end = first_mat.end();
+                    for mat in iter {
+                        result.push_str(&text[last_end..mat.start()]);
+                        last_end = mat.end();
+                    }
+                    result.push_str(&text[last_end..]);
+                    return (true, Cow::Owned(result));
+                }
+            }};
+        }
+
         match self {
             #[cfg(not(feature = "dfa"))]
-            ProcessMatcher::LeftMost(ac) => {
-                let mut iter = ac.leftmost_find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
-            ProcessMatcher::Chinese(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
-            ProcessMatcher::Others(ac) => {
-                let mut iter = ac.find_iter(text);
-                if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[0..first_mat.start()]);
-                    let mut last_end = first_mat.end();
-                    for mat in iter {
-                        result.push_str(&text[last_end..mat.start()]);
-                        last_end = mat.end();
-                    }
-                    result.push_str(&text[last_end..]);
-                    return (true, Cow::Owned(result));
-                }
-            }
+            ProcessMatcher::LeftMost(ac) => do_delete!(ac.leftmost_find_iter(text)),
+            ProcessMatcher::Chinese(ac) => do_delete!(ac.find_iter(text)),
+            ProcessMatcher::Others(ac) => do_delete!(ac.find_iter(text)),
         }
         (false, Cow::Borrowed(text))
     }
@@ -632,11 +622,11 @@ pub fn get_process_matcher(
 ///
 /// A [Result] containing either:
 /// * `Ok(Cow<str>)` with the processed text, or
-/// * `Err(&'static str)` with an error message if more than one bit is set in `process_type_bit`.
+/// * `Err(ProcessTypeError)` if more than one bit is set in `process_type_bit`.
 ///
 /// # Errors
 ///
-/// This function returns an error if `process_type_bit` has more than one bit set,
+/// This function returns a [`ProcessTypeError`] if `process_type_bit` has more than one bit set,
 /// as the function is designed to process only one type of transformation at a time.
 ///
 /// # Example
@@ -661,9 +651,9 @@ pub fn get_process_matcher(
 pub fn text_process(
     process_type_bit: ProcessType,
     text: &str,
-) -> Result<Cow<'_, str>, &'static str> {
+) -> Result<Cow<'_, str>, ProcessTypeError> {
     if process_type_bit.iter().count() > 1 {
-        return Err("text_process function only accept one bit of process_type");
+        return Err(ProcessTypeError);
     }
 
     let cached_result = get_process_matcher(process_type_bit);
@@ -957,11 +947,10 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
+) -> ProcessedTextSet<'a> {
     let mut process_type_tree_copied: Vec<ProcessTypeBitNode> = process_type_tree.to_vec();
 
-    let mut processed_text_process_type_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> =
-        ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),
@@ -1056,7 +1045,7 @@ pub fn reduce_text_process_with_tree<'a>(
 pub fn reduce_text_process_with_set<'a>(
     process_type_set: &IdSet,
     text: &'a str,
-) -> ArrayVec<[(Cow<'a, str>, IdSet); 16]> {
+) -> ProcessedTextSet<'a> {
     let mut process_type_tree = Vec::with_capacity(8);
     let mut root = ProcessTypeBitNode {
         process_type_list: ArrayVec::new(),
@@ -1068,8 +1057,7 @@ pub fn reduce_text_process_with_set<'a>(
     root.process_type_list.push(ProcessType::None);
     process_type_tree.push(root);
 
-    let mut processed_text_process_type_set: ArrayVec<[(Cow<'a, str>, IdSet); 16]> =
-        ArrayVec::new();
+    let mut processed_text_process_type_set: ProcessedTextSet<'a> = ArrayVec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
         IdSet::from_iter([ProcessType::None.bits() as usize]),

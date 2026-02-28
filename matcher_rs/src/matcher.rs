@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 use crate::process::process_matcher::{
-    build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+    ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+    reduce_text_process_with_tree,
 };
 use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
@@ -20,32 +20,40 @@ use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 /// - `'a`: Lifetime parameter associated with the trait and match results.
 /// - `T`: A type that implements [`MatchResultTrait<'a>`] and has the same lifetime as `'a`.
 ///
-/// # Sealed — internal methods
+/// # Public API
 ///
-/// The two `_*_with_processed_text_process_type_set` methods (marked with a leading
-/// underscore) are **implementation details**. They are visible because the trait is
-/// `pub`, but they are `#[doc(hidden)]` and subject to change without notice. External
-/// code should only call [`is_match`](TextMatcherTrait::is_match),
+/// External code should call [`is_match`](TextMatcherTrait::is_match),
 /// [`process`](TextMatcherTrait::process), and
 /// [`process_iter`](TextMatcherTrait::process_iter).
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement text matching",
+    label = "this type cannot be used as a matcher",
+    note = "implement `TextMatcherTrait` or use one of the built-in matchers: `SimpleMatcher`, `RegexMatcher`, `SimMatcher`, or `Matcher`"
+)]
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match(&'a self, text: &'a str) -> bool {
         self.process_iter(text).next().is_some()
     }
-    #[doc(hidden)]
-    fn _is_match_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
-    ) -> bool;
     fn process(&'a self, text: &'a str) -> Vec<T> {
         self.process_iter(text).collect()
     }
-    #[doc(hidden)]
-    fn _process_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
-    ) -> Vec<T>;
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a;
+}
+
+/// Internal trait for preprocessed-text matching. Not part of the public API.
+///
+/// These methods accept already-reduced text (a [`ProcessedTextSet`]) rather than
+/// raw input, avoiding redundant preprocessing when the same reduced text is reused
+/// across multiple matchers (e.g. inside [`Matcher`]).
+pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
+    fn is_match_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> bool;
+    fn process_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> Vec<T>;
 }
 
 /// A trait defining the required methods for a match result.
@@ -103,6 +111,11 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 ///     }
 /// }
 /// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `MatchResultTrait`",
+    label = "this type cannot be used as a match result",
+    note = "implement `MatchResultTrait` with `match_id`, `table_id`, `word_id`, `word`, and `similarity` methods"
+)]
 pub trait MatchResultTrait<'a> {
     fn match_id(&self) -> u32;
     fn table_id(&self) -> u32;
@@ -356,7 +369,7 @@ struct WordTableConf {
 ///     similarity: Some(0.95),
 /// };
 /// ```
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct MatchResult<'a> {
     pub match_id: u32,
     pub table_id: u32,
@@ -476,9 +489,9 @@ pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
 ///   operations if any such tables are configured.
 #[derive(Debug, Clone)]
 pub struct Matcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
-    simple_word_table_conf_list: Vec<WordTableConf>,
-    simple_word_table_conf_index_list: Vec<usize>,
+    process_type_tree: Box<[ProcessTypeBitNode]>,
+    simple_word_table_conf_list: Box<[WordTableConf]>,
+    simple_word_table_conf_index_list: Box<[usize]>,
     simple_matcher: Option<SimpleMatcher>,
     regex_matcher: Option<RegexMatcher>,
     sim_matcher: Option<SimMatcher>,
@@ -642,12 +655,12 @@ impl Matcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
         Matcher {
             process_type_tree,
-            simple_word_table_conf_list,
-            simple_word_table_conf_index_list,
+            simple_word_table_conf_list: simple_word_table_conf_list.into_boxed_slice(),
+            simple_word_table_conf_index_list: simple_word_table_conf_index_list.into_boxed_slice(),
             simple_matcher: (!simple_table.is_empty()).then(|| SimpleMatcher::new(&simple_table)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),
@@ -706,38 +719,32 @@ impl Matcher {
     ///   If no matches are found, the function returns an empty [HashMap].
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> HashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = HashMap::new();
         let mut failed_match_table_id_set = IdSet::new();
 
         if let Some(regex_matcher) = &self.regex_matcher {
-            for regex_result in regex_matcher
-                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
+            for regex_result in regex_matcher.process_preprocessed(processed_text_process_type_set)
             {
-                let result_list: &mut Vec<MatchResult> = match_result_dict
-                    .entry(regex_result.match_id)
-                    .or_insert(Vec::new());
+                let result_list: &mut Vec<MatchResult> =
+                    match_result_dict.entry(regex_result.match_id).or_default();
 
                 result_list.push(regex_result.into());
             }
         }
 
         if let Some(sim_matcher) = &self.sim_matcher {
-            for sim_result in sim_matcher
-                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
-            {
-                let result_list = match_result_dict
-                    .entry(sim_result.match_id)
-                    .or_insert(Vec::new());
+            for sim_result in sim_matcher.process_preprocessed(processed_text_process_type_set) {
+                let result_list = match_result_dict.entry(sim_result.match_id).or_default();
 
                 result_list.push(sim_result.into());
             }
         }
 
         if let Some(simple_matcher) = &self.simple_matcher {
-            for simple_result in simple_matcher
-                ._process_with_processed_text_process_type_set(processed_text_process_type_set)
+            for simple_result in
+                simple_matcher.process_preprocessed(processed_text_process_type_set)
             {
                 let word_table_conf = self.simple_word_table_conf_list.get(
                     self.simple_word_table_conf_index_list[simple_result.word_id as usize],
@@ -751,7 +758,7 @@ impl Matcher {
 
                 let result_list = match_result_dict
                     .entry(word_table_conf.match_id)
-                    .or_insert(Vec::new());
+                    .or_default();
                 if word_table_conf.is_exemption {
                     failed_match_table_id_set.insert(match_table_id);
                     result_list
@@ -795,56 +802,8 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_set)
     }
-
-    /// Checks if there are any matches for the processed text within the configured match tables.
-    ///
-    /// This function takes a reference to a processed text set and determines if any matches
-    /// exist within the match tables of the [Matcher] instance. The function prioritizes
-    /// checking the simple matcher first. If the simple matcher is not configured or
-    /// doesn't find any matches, it proceeds to check the regex matcher and then the
-    /// similarity matcher, in that order.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a processed text (as a [Cow<'a, str>]) and an associated [IdSet].
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - Returns `true` if any matches are found within any of the matchers, otherwise `false`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe to use under normal circumstances but depends on the reliability
-    /// of the underlying matchers and the integrity of the `processed_text_process_type_set`
-    /// input. Ensure the input data is correctly processed and the matchers are properly
-    /// initialized before calling this function.
-    fn _is_match_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
-    ) -> bool {
-        match &self.simple_matcher {
-            Some(_) => !self
-                ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
-                .is_empty(),
-            None => {
-                if let Some(regex_matcher) = &self.regex_matcher && regex_matcher._is_match_with_processed_text_process_type_set(
-                        processed_text_process_type_set,
-                    ) {
-                        return true;
-                    }
-                if let Some(sim_matcher) = &self.sim_matcher && sim_matcher._is_match_with_processed_text_process_type_set(
-                        processed_text_process_type_set,
-                    ) {
-                        return true;
-                    }
-                false
-            }
-        }
-    }
-
     /// Processes the input text to generate a list of match results.
     ///
     /// This function takes an input text string, processes it according to the
@@ -869,36 +828,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
-    }
-
-    /// Aggregates match results by processing the pre-processed text with the configured matchers.
-    ///
-    /// This function takes a reference to a pre-processed text set (a list of tuples containing
-    /// processed text and associated [IdSet]) and generates match results using the instance's
-    /// configured matchers. The function focuses on word-level matching and aggregates the
-    /// results into a single list of [MatchResult] instances.
-    ///
-    /// The process involves invoking the appropriate matcher to obtain match results for the
-    /// provided pre-processed text and then flattening the results into a single vector.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a pre-processed text (as a [`Cow<'a, str>`]) and an associated [IdSet].
-    ///
-    /// # Returns
-    ///
-    /// * [`Vec<MatchResult<'a>>`] - A vector containing aggregated match results generated
-    ///   from the match IDs.
-    fn _process_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
-    ) -> Vec<MatchResult<'a>> {
-        self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
-            .into_values()
-            .flatten()
-            .collect()
+        self.process_preprocessed(&processed_text_process_type_set)
     }
 
     /// Processes the given text and returns a **lazy** iterator over [MatchResult] matches.
@@ -927,15 +857,97 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// * An `impl Iterator<Item = MatchResult<'a>>` — a lazy iterator of match results.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = MatchResult<'a>> + 'a {
-        let mut iter = (!text.is_empty()).then(|| {
+        gen move {
+            if text.is_empty() {
+                return;
+            }
+
             let processed_text_process_type_set =
                 reduce_text_process_with_tree(&self.process_type_tree, text);
 
-            self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
-                .into_values()
-                .flatten()
-        });
+            let matches = self
+                ._word_match_with_processed_text_process_type_set(&processed_text_process_type_set);
+            for value_list in matches.into_values() {
+                for match_result in value_list {
+                    yield match_result;
+                }
+            }
+        }
+    }
+}
 
-        std::iter::from_fn(move || iter.as_mut().and_then(|i| i.next()))
+impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
+    /// Checks if there are any matches for the processed text within the configured match tables.
+    ///
+    /// This function takes a reference to a processed text set and determines if any matches
+    /// exist within the match tables of the [Matcher] instance. The function prioritizes
+    /// checking the simple matcher first. If the simple matcher is not configured or
+    /// doesn't find any matches, it proceeds to check the regex matcher and then the
+    /// similarity matcher, in that order.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
+    ///   contains a processed text (as a [Cow<'a, str>]) and an associated [IdSet].
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - Returns `true` if any matches are found within any of the matchers, otherwise `false`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe to use under normal circumstances but depends on the reliability
+    /// of the underlying matchers and the integrity of the `processed_text_process_type_set`
+    /// input. Ensure the input data is correctly processed and the matchers are properly
+    /// initialized before calling this function.
+    fn is_match_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> bool {
+        if self.simple_matcher.is_some() {
+            return !self
+                ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
+                .is_empty();
+        }
+        if let Some(regex_matcher) = &self.regex_matcher
+            && regex_matcher.is_match_preprocessed(processed_text_process_type_set)
+        {
+            return true;
+        }
+        if let Some(sim_matcher) = &self.sim_matcher
+            && sim_matcher.is_match_preprocessed(processed_text_process_type_set)
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Aggregates match results by processing the pre-processed text with the configured matchers.
+    ///
+    /// This function takes a reference to a pre-processed text set (a list of tuples containing
+    /// processed text and associated [IdSet]) and generates match results using the instance's
+    /// configured matchers. The function focuses on word-level matching and aggregates the
+    /// results into a single list of [MatchResult] instances.
+    ///
+    /// The process involves invoking the appropriate matcher to obtain match results for the
+    /// provided pre-processed text and then flattening the results into a single vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
+    ///   contains a pre-processed text (as a [`Cow<'a, str>`]) and an associated [IdSet].
+    ///
+    /// # Returns
+    ///
+    /// * [`Vec<MatchResult<'a>>`] - A vector containing aggregated match results generated
+    ///   from the match IDs.
+    fn process_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> Vec<MatchResult<'a>> {
+        self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
+            .into_values()
+            .flatten()
+            .collect()
     }
 }
