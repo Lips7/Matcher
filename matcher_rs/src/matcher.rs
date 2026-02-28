@@ -356,7 +356,7 @@ struct WordTableConf {
 ///     similarity: Some(0.95),
 /// };
 /// ```
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct MatchResult<'a> {
     pub match_id: u32,
     pub table_id: u32,
