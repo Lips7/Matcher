@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tinyvec::ArrayVec;
 
 use crate::process::process_matcher::{
-    build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+    ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
 };
 use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
@@ -715,9 +715,8 @@ impl Matcher {
             for regex_result in regex_matcher
                 ._process_with_processed_text_process_type_set(processed_text_process_type_set)
             {
-                let result_list: &mut Vec<MatchResult> = match_result_dict
-                    .entry(regex_result.match_id)
-                    .or_insert(Vec::new());
+                let result_list: &mut Vec<MatchResult> =
+                    match_result_dict.entry(regex_result.match_id).or_default();
 
                 result_list.push(regex_result.into());
             }
@@ -727,9 +726,7 @@ impl Matcher {
             for sim_result in sim_matcher
                 ._process_with_processed_text_process_type_set(processed_text_process_type_set)
             {
-                let result_list = match_result_dict
-                    .entry(sim_result.match_id)
-                    .or_insert(Vec::new());
+                let result_list = match_result_dict.entry(sim_result.match_id).or_default();
 
                 result_list.push(sim_result.into());
             }
@@ -751,7 +748,7 @@ impl Matcher {
 
                 let result_list = match_result_dict
                     .entry(word_table_conf.match_id)
-                    .or_insert(Vec::new());
+                    .or_default();
                 if word_table_conf.is_exemption {
                     failed_match_table_id_set.insert(match_table_id);
                     result_list
@@ -830,16 +827,20 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
                 ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
                 .is_empty(),
             None => {
-                if let Some(regex_matcher) = &self.regex_matcher && regex_matcher._is_match_with_processed_text_process_type_set(
+                if let Some(regex_matcher) = &self.regex_matcher
+                    && regex_matcher._is_match_with_processed_text_process_type_set(
                         processed_text_process_type_set,
-                    ) {
-                        return true;
-                    }
-                if let Some(sim_matcher) = &self.sim_matcher && sim_matcher._is_match_with_processed_text_process_type_set(
+                    )
+                {
+                    return true;
+                }
+                if let Some(sim_matcher) = &self.sim_matcher
+                    && sim_matcher._is_match_with_processed_text_process_type_set(
                         processed_text_process_type_set,
-                    ) {
-                        return true;
-                    }
+                    )
+                {
+                    return true;
+                }
                 false
             }
         }
