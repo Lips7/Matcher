@@ -48,7 +48,7 @@ proptest! {
 
         // We only test if regex compilation itself doesn't panic
         if let Ok(matcher_res) = std::panic::catch_unwind(|| {
-            RegexMatcher::new(&[regex_table])
+            RegexMatcher::new(&[regex_table].as_slice())
         }) {
             let _ = matcher_res.is_match(&text);
             let _ = matcher_res.process(&text);
@@ -70,7 +70,7 @@ proptest! {
             threshold,
         };
 
-        let matcher = SimMatcher::new(&[sim_table]);
+        let matcher = SimMatcher::new(&[sim_table].as_slice());
         let _ = matcher.is_match(&text);
         let _ = matcher.process(&text);
     }

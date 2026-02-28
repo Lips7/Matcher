@@ -43,8 +43,8 @@ cargo add matcher_rs
 
 ### Explanation of the configuration
 
-* `Matcher`'s configuration is defined by the `MatchTableMap = HashMap<u32, Vec<MatchTable>>` type, the key of `MatchTableMap` is called `match_id`, **for each `match_id`, the `table_id` inside is required to be unique**.
-* `SimpleMatcher`'s configuration is defined by the `SimpleTable = HashMap<ProcessType, HashMap<u32, &str>>` type, the value `HashMap<u32, &str>`'s key is called `word_id`, **`word_id` is required to be globally unique**.
+* `Matcher`'s configuration is built using `MatcherBuilder` and `MatchTableBuilder`.
+* `SimpleMatcher`'s configuration is built using `SimpleMatcherBuilder`. For each `SimpleMatcher`, the added `word_id` is required to be globally unique.
 
 #### MatchTable
 
@@ -105,36 +105,28 @@ let result = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好，
 ```
 
 ```rust
-use std::collections::HashMap;
-use matcher_rs::{Matcher, MatchTableMap, MatchTable, MatchTableType, ProcessType};
+use matcher_rs::{MatcherBuilder, MatchTableBuilder, MatchTableType, ProcessType};
 
-let match_table_map: MatchTableMap = HashMap::from_iter(vec![
-    (1, vec![MatchTable {
-        table_id: 1,
-        match_table_type: MatchTableType::Simple { process_type: ProcessType::FanjianDeleteNormalize},
-        word_list: vec!["example", "test"],
-        exemption_process_type: ProcessType::None,
-        exemption_word_list: vec![],
-    }]),
-]);
-let matcher = Matcher::new(&match_table_map);
+let table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::FanjianDeleteNormalize })
+    .add_words(["example", "test"])
+    .build();
+
+let matcher = MatcherBuilder::new()
+    .add_table(1, table)
+    .build();
+
 let text = "This is an example text.";
 let results = matcher.word_match(text);
 ```
 
 ```rust
-use std::collections::HashMap;
-use matcher_rs::{ProcessType, SimpleMatcher};
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 
-let mut simple_table = HashMap::new();
-let mut simple_word_map = HashMap::new();
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::Fanjian, 1, "你好")
+    .add_word(ProcessType::Fanjian, 2, "世界")
+    .build();
 
-simple_word_map.insert(1, "你好");
-simple_word_map.insert(2, "世界");
-
-simple_table.insert(ProcessType::Fanjian, simple_word_map);
-
-let matcher = SimpleMatcher::new(&simple_table);
 let text = "你好，世界！";
 let results = matcher.process(text);
 ```
