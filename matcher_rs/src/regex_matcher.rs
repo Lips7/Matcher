@@ -260,7 +260,7 @@ impl RegexMatcher {
                                 pattern_list.push(pattern);
                             }
                             Err(e) => {
-                                println!("Acrostic word {word} is illegal, ignored. Error: {e}");
+                                eprintln!("Acrostic word {word} is illegal, ignored. Error: {e}");
                             }
                         }
                     }
@@ -298,7 +298,7 @@ impl RegexMatcher {
                                 word_list.push(word.to_owned());
                             }
                             Err(e) => {
-                                println!("Regex word {word} is illegal, ignored. Error: {e}");
+                                eprintln!("Regex word {word} is illegal, ignored. Error: {e}");
                             }
                         }
                     }
