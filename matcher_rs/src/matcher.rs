@@ -900,8 +900,8 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<MatchResult<'a>> {
         self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
-            .into_iter()
-            .flat_map(|(_, result_list)| result_list) // Flatten the result lists from all match IDs into a single iterator.
+            .into_values()
+            .flatten()
             .collect()
     }
 

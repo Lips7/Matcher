@@ -85,7 +85,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
                 return false;
             }
         };
-        matcher.as_ref().map_or(false, |m| m.is_match(text_str))
+        matcher.as_ref().is_some_and(|m| m.is_match(text_str))
     });
 
     result.unwrap_or_else(|_| {
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
         };
         simple_matcher
             .as_ref()
-            .map_or(false, |m| m.is_match(text_str))
+            .is_some_and(|m| m.is_match(text_str))
     });
 
     result.unwrap_or_else(|_| {

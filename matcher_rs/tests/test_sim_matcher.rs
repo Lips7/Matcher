@@ -2,17 +2,14 @@ use matcher_rs::{ProcessType, SimMatchType, SimMatcher, SimTable, TextMatcherTra
 
 #[test]
 fn sim_match() {
-    let sim_matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["helloworld"],
-            threshold: 0.8,
-        }]
-        .as_slice(),
-    );
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["helloworld"],
+        threshold: 0.8,
+    }]);
 
     assert!(sim_matcher.is_match("helloworl"));
     assert!(sim_matcher.is_match("halloworld"));
@@ -22,17 +19,14 @@ fn sim_match() {
 
 #[test]
 fn sim_process_iter_matches_process() {
-    let matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["helloworld", "rustlang"],
-            threshold: 0.8,
-        }]
-        .as_slice(),
-    );
+    let matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["helloworld", "rustlang"],
+        threshold: 0.8,
+    }]);
 
     let text = "helloworl"; // close to "helloworld"
 
@@ -54,17 +48,14 @@ fn sim_process_iter_matches_process() {
 
 #[test]
 fn sim_process_iter_similarity_values_match() {
-    let matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["helloworld"],
-            threshold: 0.8,
-        }]
-        .as_slice(),
-    );
+    let matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["helloworld"],
+        threshold: 0.8,
+    }]);
 
     let text = "halloworld";
     let via_process: Vec<f64> = matcher
@@ -78,17 +69,14 @@ fn sim_process_iter_similarity_values_match() {
 
 #[test]
 fn sim_process_iter_empty() {
-    let matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["hello"],
-            threshold: 0.8,
-        }]
-        .as_slice(),
-    );
+    let matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["hello"],
+        threshold: 0.8,
+    }]);
 
     assert_eq!(matcher.process_iter("").count(), 0);
 }
@@ -124,17 +112,14 @@ fn sim_matcher_threshold_edge_cases() {
 
 #[test]
 fn sim_match_multibyte_and_unicode() {
-    let sim_matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["你好世界", "👋😀🌍"],
-            threshold: 0.75, // Allow 1 character off for 4-character string
-        }]
-        .as_slice(),
-    );
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["你好世界", "👋😀🌍"],
+        threshold: 0.75, // Allow 1 character off for 4-character string
+    }]);
 
     assert!(sim_matcher.is_match("你好世果")); // one char off, 3/4 = 0.75 >= 0.75 -> matches
     assert!(!sim_matcher.is_match("你")); // too far
@@ -146,17 +131,14 @@ fn sim_match_multibyte_and_unicode() {
 
 #[test]
 fn sim_match_exact_threshold() {
-    let sim_matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["perfection"],
-            threshold: 1.0,
-        }]
-        .as_slice(),
-    );
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["perfection"],
+        threshold: 1.0,
+    }]);
 
     assert!(sim_matcher.is_match("perfection"));
     assert!(!sim_matcher.is_match("perfectio")); // 1 char off must fail
@@ -164,17 +146,14 @@ fn sim_match_exact_threshold() {
 
 #[test]
 fn sim_match_zero_threshold() {
-    let sim_matcher = SimMatcher::new(
-        &[SimTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            sim_match_type: SimMatchType::Levenshtein,
-            word_list: vec!["apple"],
-            threshold: 0.0,
-        }]
-        .as_slice(),
-    );
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["apple"],
+        threshold: 0.0,
+    }]);
 
     // With threshold 0.0, anything should match unless similarity logic drops completely disparate things.
     // Given the formula 1.0 - (distance / max_len), it might only be exact 0.0 if there are no common chars.

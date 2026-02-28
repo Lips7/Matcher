@@ -4,16 +4,13 @@ use matcher_rs::{
 
 #[test]
 fn regex_match_regex() {
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec!["h[aeiou]llo", "w[aeiou]rd"],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["h[aeiou]llo", "w[aeiou]rd"],
+    }]);
 
     assert!(regex_matcher.is_match("hallo"));
     assert!(regex_matcher.is_match("ward"));
@@ -21,16 +18,13 @@ fn regex_match_regex() {
 
 #[test]
 fn regex_match_acrostic() {
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Acrostic,
-            word_list: vec!["h,e,l,l,o", "你,好"],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Acrostic,
+        word_list: vec!["h,e,l,l,o", "你,好"],
+    }]);
 
     assert!(regex_matcher.is_match("hope, endures, love, lasts, onward."));
     assert!(regex_matcher.is_match("Happy moments shared, Every smile and laugh, Love in every word, Lighting up our paths, Open hearts we show."));
@@ -39,16 +33,13 @@ fn regex_match_acrostic() {
 
 #[test]
 fn regex_match_similar_char() {
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::SimilarChar,
-            word_list: vec!["hello,hi,H,你好", "world,word,🌍,世界"],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::SimilarChar,
+        word_list: vec!["hello,hi,H,你好", "world,word,🌍,世界"],
+    }]);
 
     assert!(regex_matcher.is_match("helloworld"));
     assert!(regex_matcher.is_match("hi世界"));
@@ -56,16 +47,13 @@ fn regex_match_similar_char() {
 
 #[test]
 fn regex_process_iter_matches_process() {
-    let matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec!["h[aeiou]llo", "w[aeiou]rld"],
-        }]
-        .as_slice(),
-    );
+    let matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["h[aeiou]llo", "w[aeiou]rld"],
+    }]);
 
     let text = "hello world hallo";
 
@@ -87,16 +75,13 @@ fn regex_process_iter_matches_process() {
 
 #[test]
 fn regex_process_iter_acrostic() {
-    let matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Acrostic,
-            word_list: vec!["h,e,l,l,o", "你,好"],
-        }]
-        .as_slice(),
-    );
+    let matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Acrostic,
+        word_list: vec!["h,e,l,l,o", "你,好"],
+    }]);
 
     let text = "hope, endures, love, lasts, onward.";
     // process_iter should find the same results as process
@@ -111,16 +96,13 @@ fn regex_process_iter_acrostic() {
 
 #[test]
 fn regex_process_iter_empty() {
-    let matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec!["hello"],
-        }]
-        .as_slice(),
-    );
+    let matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["hello"],
+    }]);
 
     assert_eq!(matcher.process_iter("").count(), 0);
 }
@@ -128,16 +110,13 @@ fn regex_process_iter_empty() {
 #[test]
 fn regex_match_invalid_regex_graceful_ignore() {
     // an invalid regex like "[unclosed" should be skipped and not panic.
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec!["valid", "[unclosed"],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["valid", "[unclosed"],
+    }]);
 
     assert!(regex_matcher.is_match("this is valid"));
     assert!(!regex_matcher.is_match("[unclosed"));
@@ -149,16 +128,13 @@ fn regex_match_long_pattern_skip() {
     // to avoid potential ReDoS.
     let very_long_word = "a".repeat(1050);
 
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec![&very_long_word],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec![&very_long_word],
+    }]);
 
     assert!(!regex_matcher.is_match(&very_long_word));
 }
@@ -166,16 +142,13 @@ fn regex_match_long_pattern_skip() {
 #[test]
 fn regex_match_regex_set() {
     // Test behavior with multiple regex patterns confirming valid conversion and matching.
-    let regex_matcher = RegexMatcher::new(
-        &[RegexTable {
-            table_id: 1,
-            match_id: 1,
-            process_type: ProcessType::None,
-            regex_match_type: RegexMatchType::Regex,
-            word_list: vec!["alpha", "beta", "gamma"],
-        }]
-        .as_slice(),
-    );
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["alpha", "beta", "gamma"],
+    }]);
 
     let results = regex_matcher.process("beta and gamma");
     let mut words: Vec<String> = results.into_iter().map(|r| r.word().to_string()).collect();

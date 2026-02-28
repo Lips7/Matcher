@@ -69,8 +69,7 @@ pub const FANJIAN_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/fanjian_daachorse_charwise_u32_matcher.bin"
-))
-.as_slice();
+));
 
 /// These constants are related to Pinyin processing and are included based on feature flags.
 ///
@@ -97,8 +96,7 @@ pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/pinyin_daachorse_charwise_u32_matcher.bin"
-))
-.as_slice();
+));
 
 /// List of Unicode code points considered as whitespace characters.
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
