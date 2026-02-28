@@ -832,28 +832,24 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
-        match &self.simple_matcher {
-            Some(_) => !self
+        if self.simple_matcher.is_some() {
+            return !self
                 ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
-                .is_empty(),
-            None => {
-                if let Some(regex_matcher) = &self.regex_matcher
-                    && regex_matcher._is_match_with_processed_text_process_type_set(
-                        processed_text_process_type_set,
-                    )
-                {
-                    return true;
-                }
-                if let Some(sim_matcher) = &self.sim_matcher
-                    && sim_matcher._is_match_with_processed_text_process_type_set(
-                        processed_text_process_type_set,
-                    )
-                {
-                    return true;
-                }
-                false
-            }
+                .is_empty();
         }
+        if let Some(regex_matcher) = &self.regex_matcher
+            && regex_matcher
+                ._is_match_with_processed_text_process_type_set(processed_text_process_type_set)
+        {
+            return true;
+        }
+        if let Some(sim_matcher) = &self.sim_matcher
+            && sim_matcher
+                ._is_match_with_processed_text_process_type_set(processed_text_process_type_set)
+        {
+            return true;
+        }
+        false
     }
 
     /// Processes the input text to generate a list of match results.
