@@ -1,7 +1,7 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
-use std::collections::HashMap;
 
 use aho_corasick::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
@@ -135,11 +135,10 @@ impl Display for ProcessType {
 
 /// Implements the [IsEnabled] trait for the [ProcessType] struct.
 ///
-/// This trait allows for [ProcessType] to be used in [Map].
+/// This trait allows for [ProcessType] to be used in [HashMap].
 impl IsEnabled for ProcessType {}
 
-type ProcessMatcherCache =
-    RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
+type ProcessMatcherCache = RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
 
 /// A global, lazily-initialized cache for storing process matchers.
 ///
