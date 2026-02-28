@@ -28,6 +28,11 @@ use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 /// code should only call [`is_match`](TextMatcherTrait::is_match),
 /// [`process`](TextMatcherTrait::process), and
 /// [`process_iter`](TextMatcherTrait::process_iter).
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement text matching",
+    label = "this type cannot be used as a matcher",
+    note = "implement `TextMatcherTrait` or use one of the built-in matchers: `SimpleMatcher`, `RegexMatcher`, `SimMatcher`, or `Matcher`"
+)]
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match(&'a self, text: &'a str) -> bool {
         self.process_iter(text).next().is_some()
@@ -103,6 +108,11 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 ///     }
 /// }
 /// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `MatchResultTrait`",
+    label = "this type cannot be used as a match result",
+    note = "implement `MatchResultTrait` with `match_id`, `table_id`, `word_id`, `word`, and `similarity` methods"
+)]
 pub trait MatchResultTrait<'a> {
     fn match_id(&self) -> u32;
     fn table_id(&self) -> u32;
