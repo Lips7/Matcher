@@ -167,6 +167,22 @@ pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
 /// - `Chinese`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher specifically tailored to handle Chinese text,
 ///   focusing on character-wise matching to find the patterns.
 ///
+/// Error type returned by [`text_process`] when more than one bit is set in the
+/// `process_type` argument.
+///
+/// This type implements [`std::fmt::Display`] and [`std::error::Error`], making it
+/// compatible with the standard error ecosystem (`Box<dyn Error>`, `anyhow`, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessTypeError;
+
+impl Display for ProcessTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("text_process only accepts a single process_type bit")
+    }
+}
+
+impl std::error::Error for ProcessTypeError {}
+
 /// - `Others`: Uses a standard [AhoCorasick] matcher for general-purpose text processing. This is suitable for
 ///   finding matches for patterns not covered by the other two variants.
 ///
@@ -599,11 +615,11 @@ pub fn get_process_matcher(
 ///
 /// A [Result] containing either:
 /// * `Ok(Cow<str>)` with the processed text, or
-/// * `Err(&'static str)` with an error message if more than one bit is set in `process_type_bit`.
+/// * `Err(ProcessTypeError)` if more than one bit is set in `process_type_bit`.
 ///
 /// # Errors
 ///
-/// This function returns an error if `process_type_bit` has more than one bit set,
+/// This function returns a [`ProcessTypeError`] if `process_type_bit` has more than one bit set,
 /// as the function is designed to process only one type of transformation at a time.
 ///
 /// # Example
@@ -628,9 +644,9 @@ pub fn get_process_matcher(
 pub fn text_process(
     process_type_bit: ProcessType,
     text: &str,
-) -> Result<Cow<'_, str>, &'static str> {
+) -> Result<Cow<'_, str>, ProcessTypeError> {
     if process_type_bit.iter().count() > 1 {
-        return Err("text_process function only accept one bit of process_type");
+        return Err(ProcessTypeError);
     }
 
     let cached_result = get_process_matcher(process_type_bit);
