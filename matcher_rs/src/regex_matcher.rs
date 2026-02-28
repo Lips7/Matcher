@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use fancy_regex::{escape, Regex};
+use fancy_regex::{Regex, escape};
 use id_set::IdSet;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use tinyvec::ArrayVec;
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
-        build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
+        ProcessType, ProcessTypeBitNode, build_process_type_tree, reduce_text_process_with_tree,
     },
 };
 
@@ -244,7 +244,7 @@ impl RegexMatcher {
                     let mut regex_list = Vec::with_capacity(size);
                     let mut pattern_list = Vec::with_capacity(size);
 
-                    for &word in regex_table.word_list.iter() {
+                    for &word in &regex_table.word_list {
                         let pattern = format!(
                             r"(?i)(?:^|[\s\pP]+?){}",
                             escape(word).replace(',', r".*?[\s\pP]+?")
@@ -287,7 +287,7 @@ impl RegexMatcher {
                     let mut word_list = Vec::with_capacity(size);
                     let mut regex_list = Vec::with_capacity(size);
 
-                    for &word in regex_table.word_list.iter() {
+                    for &word in &regex_table.word_list {
                         if word.len() > 1024 {
                             eprintln!("Regex pattern too long, skipping: {:.20}...", word);
                             continue;
