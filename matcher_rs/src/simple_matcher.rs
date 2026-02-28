@@ -305,11 +305,8 @@ impl SimpleMatcher {
                     .enumerate()
                 {
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
-                        if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
-                            let word_conf_list: &mut Vec<(ProcessType, u32, usize)> =
-                                &mut ac_dedup_word_conf_list[*ac_dedup_word_id as usize];
-                            word_conf_list.push((process_type, simple_word_id, offset));
-                        } else {
+                        let Some(&ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref())
+                        else {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
                             ac_dedup_word_conf_list.push(vec![(
                                 process_type,
@@ -318,7 +315,13 @@ impl SimpleMatcher {
                             )]);
                             ac_dedup_word_list.push(ac_word);
                             ac_dedup_word_id += 1;
-                        }
+                            continue;
+                        };
+                        ac_dedup_word_conf_list[ac_dedup_word_id as usize].push((
+                            process_type,
+                            simple_word_id,
+                            offset,
+                        ));
                     }
                 }
             }
