@@ -165,9 +165,9 @@ type WordConfEntry = (ProcessType, u32, usize);
 /// The above example creates a [SimpleMatcher] with a nested map and prints the matcher instance.
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
+    process_type_tree: Box<[ProcessTypeBitNode]>,
     ac_matcher: AhoCorasick,
-    ac_dedup_word_conf_list: Vec<Vec<WordConfEntry>>,
+    ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
     word_conf_map: IntMap<u32, WordConf>,
 }
 
@@ -331,7 +331,7 @@ impl SimpleMatcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
         #[cfg(feature = "dfa")]
         let aho_corasick_kind = AhoCorasickKind::DFA;
@@ -342,6 +342,11 @@ impl SimpleMatcher {
             .kind(Some(aho_corasick_kind))
             .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
             .unwrap();
+
+        let ac_dedup_word_conf_list = ac_dedup_word_conf_list
+            .into_iter()
+            .map(|v| v.into_boxed_slice())
+            .collect::<Box<[_]>>();
 
         SimpleMatcher {
             process_type_tree,

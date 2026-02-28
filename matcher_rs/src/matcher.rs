@@ -489,9 +489,9 @@ pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
 ///   operations if any such tables are configured.
 #[derive(Debug, Clone)]
 pub struct Matcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
-    simple_word_table_conf_list: Vec<WordTableConf>,
-    simple_word_table_conf_index_list: Vec<usize>,
+    process_type_tree: Box<[ProcessTypeBitNode]>,
+    simple_word_table_conf_list: Box<[WordTableConf]>,
+    simple_word_table_conf_index_list: Box<[usize]>,
     simple_matcher: Option<SimpleMatcher>,
     regex_matcher: Option<RegexMatcher>,
     sim_matcher: Option<SimMatcher>,
@@ -655,12 +655,12 @@ impl Matcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
         Matcher {
             process_type_tree,
-            simple_word_table_conf_list,
-            simple_word_table_conf_index_list,
+            simple_word_table_conf_list: simple_word_table_conf_list.into_boxed_slice(),
+            simple_word_table_conf_index_list: simple_word_table_conf_index_list.into_boxed_slice(),
             simple_matcher: (!simple_table.is_empty()).then(|| SimpleMatcher::new(&simple_table)),
             regex_matcher: (!regex_table_list.is_empty())
                 .then(|| RegexMatcher::new(&regex_table_list)),

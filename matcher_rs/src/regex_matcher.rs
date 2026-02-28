@@ -170,8 +170,8 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RegexMatcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
-    regex_pattern_table_list: Vec<RegexPatternTable>,
+    process_type_tree: Box<[ProcessTypeBitNode]>,
+    regex_pattern_table_list: Box<[RegexPatternTable]>,
 }
 
 impl RegexMatcher {
@@ -324,11 +324,11 @@ impl RegexMatcher {
             };
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
         RegexMatcher {
             process_type_tree,
-            regex_pattern_table_list,
+            regex_pattern_table_list: regex_pattern_table_list.into_boxed_slice(),
         }
     }
 }
