@@ -1,3 +1,5 @@
+#![feature(gen_blocks)]
+
 mod builder;
 pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};
 

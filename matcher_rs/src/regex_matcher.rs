@@ -375,103 +375,91 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// An `impl Iterator<Item = RegexResult<'a>>` — a lazy iterator of match results.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = RegexResult<'a>> + 'a {
-        let processed_text_process_type_set = if text.is_empty() {
-            Default::default()
-        } else {
-            reduce_text_process_with_tree(&self.process_type_tree, text)
-        };
-
-        let mut table_id_index_set = IdSet::new();
-        let mut processed_index = 0;
-        let mut table_index = 0;
-        let mut result_buf: Vec<RegexResult<'a>> = Vec::new();
-
-        std::iter::from_fn(move || {
-            loop {
-                // Drain buffered results from the last table first.
-                if let Some(result) = result_buf.pop() {
-                    return Some(result);
-                }
-
-                if processed_index >= processed_text_process_type_set.len() {
-                    return None;
-                }
-                let (ref processed_text, ref process_type_set) =
-                    processed_text_process_type_set[processed_index];
-
-                if table_index >= self.regex_pattern_table_list.len() {
-                    table_index = 0;
-                    processed_index += 1;
-                    continue;
-                }
-
-                let regex_pattern_table = &self.regex_pattern_table_list[table_index];
-                table_index += 1;
-
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
-                    continue;
-                }
-
-                match &regex_pattern_table.regex_type {
-                    RegexType::Standard { regex } => {
-                        if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
-                            for caps in regex.captures_iter(processed_text).flatten() {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: 0,
-                                    word: Cow::Owned(
-                                        caps.iter()
-                                            .skip(1)
-                                            .filter_map(|m| m.map(|mc| mc.as_str()))
-                                            .collect::<String>(),
-                                    ),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::List {
-                        regex_list,
-                        word_list,
-                    } => {
-                        for (index, regex) in regex_list.iter().enumerate() {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-                            if table_id_index_set.insert(table_id_index)
-                                && let Ok(true) = regex.is_match(processed_text)
-                            {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::Set {
-                        regex_set,
-                        word_list,
-                    } => {
-                        for index in regex_set.matches(processed_text) {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-                            if table_id_index_set.insert(table_id_index) {
-                                result_buf.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Reverse so pop() yields results in original insertion order.
-                result_buf.reverse();
+        gen move {
+            if text.is_empty() {
+                return;
             }
-        })
+
+            let processed_text_process_type_set =
+                reduce_text_process_with_tree(&self.process_type_tree, text);
+
+            let mut table_id_index_set = IdSet::new();
+
+            for (processed_text, process_type_set) in processed_text_process_type_set {
+                for regex_pattern_table in self.regex_pattern_table_list.iter() {
+                    if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize)
+                    {
+                        continue;
+                    }
+
+                    match &regex_pattern_table.regex_type {
+                        RegexType::Standard { regex } => {
+                            if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
+                                let mut temp = Vec::new();
+                                for caps in regex.captures_iter(&processed_text).flatten() {
+                                    temp.push(RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: 0,
+                                        word: Cow::Owned(
+                                            caps.iter()
+                                                .skip(1)
+                                                .filter_map(|m| m.map(|mc| mc.as_str()))
+                                                .collect::<String>(),
+                                        ),
+                                    });
+                                }
+                                for r in temp {
+                                    yield r;
+                                }
+                            }
+                        }
+                        RegexType::List {
+                            regex_list,
+                            word_list,
+                        } => {
+                            for (index, regex) in regex_list.iter().enumerate() {
+                                let table_id_index =
+                                    ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                                if table_id_index_set.insert(table_id_index)
+                                    && let Ok(true) = regex.is_match(&processed_text)
+                                {
+                                    yield RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: index as u32,
+                                        word: Cow::Borrowed(&word_list[index]),
+                                    };
+                                }
+                            }
+                        }
+                        RegexType::Set {
+                            regex_set,
+                            word_list,
+                        } => {
+                            let mut temp = Vec::new();
+                            for index in regex_set.matches(&processed_text) {
+                                let table_id_index =
+                                    ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                                if table_id_index_set.insert(table_id_index) {
+                                    temp.push(RegexResult {
+                                        match_id: regex_pattern_table.match_id,
+                                        table_id: regex_pattern_table.table_id,
+                                        word_id: index as u32,
+                                        word: Cow::Borrowed(&word_list[index]),
+                                    });
+                                }
+                            }
+                            for r in temp {
+                                yield r;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

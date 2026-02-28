@@ -244,73 +244,52 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///
     /// An `impl Iterator<Item = SimResult<'a>>` — a lazy iterator of similarity results.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimResult<'a>> + 'a {
-        let processed = if text.is_empty() {
-            Default::default()
-        } else {
-            reduce_text_process_with_tree(&self.process_type_tree, text)
-        };
+        gen move {
+            if text.is_empty() {
+                return;
+            }
 
-        let mut table_id_index_set = IdSet::new();
-        let mut processed_index = 0;
-        let mut table_index = 0;
-        let mut word_index = 0;
+            let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
+            let mut table_id_index_set = IdSet::new();
 
-        std::iter::from_fn(move || {
-            while processed_index < processed.len() {
-                let (ref processed_text, ref process_type_set) = processed[processed_index];
-
-                while table_index < self.sim_processed_table_list.len() {
-                    let sim_processed_table = &self.sim_processed_table_list[table_index];
-
+            for (processed_text, process_type_set) in processed {
+                for sim_processed_table in self.sim_processed_table_list.iter() {
                     if !process_type_set.contains(sim_processed_table.process_type.bits() as usize)
                     {
-                        table_index += 1;
                         continue;
                     }
 
-                    while word_index < sim_processed_table.word_list.len() {
-                        let current_word_index = word_index;
-                        word_index += 1;
+                    match sim_processed_table.sim_match_type {
+                        SimMatchType::Levenshtein => {
+                            for (index, sim_text) in
+                                sim_processed_table.word_list.iter().enumerate()
+                            {
+                                let table_id_index =
+                                    ((sim_processed_table.table_id as usize) << 32) | index;
 
-                        let table_id_index =
-                            ((sim_processed_table.table_id as usize) << 32) | current_word_index;
-                        if !table_id_index_set.insert(table_id_index) {
-                            continue;
-                        }
-
-                        match sim_processed_table.sim_match_type {
-                            SimMatchType::Levenshtein => {
-                                if let Some(similarity) =
-                                    distance::levenshtein::normalized_similarity_with_args(
-                                        sim_processed_table.word_list[current_word_index].chars(),
-                                        processed_text.chars(),
-                                        &distance::levenshtein::Args::default()
-                                            .score_cutoff(sim_processed_table.threshold),
-                                    )
+                                if table_id_index_set.insert(table_id_index)
+                                    && let Some(similarity) =
+                                        distance::levenshtein::normalized_similarity_with_args(
+                                            sim_text.chars(),
+                                            processed_text.chars(),
+                                            &distance::levenshtein::Args::default()
+                                                .score_cutoff(sim_processed_table.threshold),
+                                        )
                                 {
-                                    return Some(SimResult {
+                                    yield SimResult {
                                         match_id: sim_processed_table.match_id,
                                         table_id: sim_processed_table.table_id,
-                                        word_id: current_word_index as u32,
-                                        word: Cow::Borrowed(
-                                            &sim_processed_table.word_list[current_word_index],
-                                        ),
+                                        word_id: index as u32,
+                                        word: Cow::Borrowed(sim_text),
                                         similarity,
-                                    });
+                                    };
                                 }
                             }
                         }
                     }
-
-                    word_index = 0;
-                    table_index += 1;
                 }
-
-                table_index = 0;
-                processed_index += 1;
             }
-            None
-        })
+        }
     }
 }
 

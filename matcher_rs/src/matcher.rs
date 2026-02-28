@@ -857,16 +857,22 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// * An `impl Iterator<Item = MatchResult<'a>>` — a lazy iterator of match results.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = MatchResult<'a>> + 'a {
-        let mut iter = (!text.is_empty()).then(|| {
+        gen move {
+            if text.is_empty() {
+                return;
+            }
+
             let processed_text_process_type_set =
                 reduce_text_process_with_tree(&self.process_type_tree, text);
 
-            self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
-                .into_values()
-                .flatten()
-        });
-
-        std::iter::from_fn(move || iter.as_mut().and_then(|i| i.next()))
+            let matches = self
+                ._word_match_with_processed_text_process_type_set(&processed_text_process_type_set);
+            for value_list in matches.into_values() {
+                for match_result in value_list {
+                    yield match_result;
+                }
+            }
+        }
     }
 }
 
