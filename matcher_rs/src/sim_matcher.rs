@@ -5,7 +5,7 @@ use rapidfuzz::distance;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    matcher::{MatchResultTrait, TextMatcherTrait},
+    matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
     process::process_matcher::{
         ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
         reduce_text_process_with_tree,
@@ -223,125 +223,8 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_set)
     }
-
-    /// Checks if any processed text variant matches an entry in the similarity tables.
-    ///
-    /// This helper function iterates through the processed text variants and their corresponding
-    /// process type sets. For each variant, it checks against all entries in the similarity tables
-    /// to see if there is a match based on the defined similarity match type (e.g., Levenshtein).
-    ///
-    /// # Parameters
-    ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if any of the processed text variants match an entry in the similarity tables
-    /// according to the specified match type and similarity threshold; otherwise, returns `false`.
-    fn _is_match_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> bool {
-        for (processed_text, process_type_set) in processed_text_process_type_set {
-            for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
-                    continue;
-                }
-                let is_match = match sim_processed_table.sim_match_type {
-                    SimMatchType::Levenshtein => sim_processed_table.word_list.iter().any(|text| {
-                        distance::levenshtein::normalized_similarity_with_args(
-                            text.chars(),
-                            processed_text.chars(),
-                            &distance::levenshtein::Args::default()
-                                .score_cutoff(sim_processed_table.threshold),
-                        )
-                        .is_some()
-                    }),
-                };
-
-                if is_match {
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
-    /// Processes the provided set of processed text variants and their corresponding process type sets,
-    /// returning a list of similarity results.
-    ///
-    /// This function iterates through each processed text variant and its associated process type set,
-    /// comparing them against entries in the similarity tables to identify matches based on the defined
-    /// similarity match type (e.g., Levenshtein). For each match found, the function accumulates the result
-    /// with relevant information such as `match_id`, `table_id`, `word_id`, `word`, and the similarity score.
-    ///
-    /// # Parameters
-    ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of [SimResult] instances, each containing information about a matched entry
-    /// in the similarity tables, including:
-    /// - `match_id`: The identifier for the match.
-    /// - `table_id`: The identifier of the similarity table where the match was found.
-    /// - `word_id`: The index of the word in the similarity table's word list.
-    /// - `word`: The word from the similarity table's word list that matched the processed text.
-    /// - `similarity`: The similarity score of the match.
-    ///
-    /// The function ensures that only unique matches are included in the result list by maintaining
-    /// an [IdSet] to track already processed table ID and word index combinations.
-    fn _process_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> Vec<SimResult<'a>> {
-        let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::new();
-
-        for (processed_text, process_type_set) in processed_text_process_type_set {
-            for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
-                    continue;
-                }
-                match sim_processed_table.sim_match_type {
-                    SimMatchType::Levenshtein => {
-                        for (index, text) in sim_processed_table.word_list.iter().enumerate() {
-                            let table_id_index =
-                                ((sim_processed_table.table_id as usize) << 32) | index;
-
-                            if table_id_index_set.insert(table_id_index)
-                                && let Some(similarity) =
-                                    distance::levenshtein::normalized_similarity_with_args(
-                                        text.chars(),
-                                        processed_text.chars(),
-                                        &distance::levenshtein::Args::default()
-                                            .score_cutoff(sim_processed_table.threshold),
-                                    )
-                            {
-                                result_list.push(SimResult {
-                                    match_id: sim_processed_table.match_id,
-                                    table_id: sim_processed_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(text),
-                                    similarity,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        result_list
-    }
-
     /// Returns a **lazy** iterator over [SimResult] matches for the given text.
     ///
     /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
@@ -428,5 +311,123 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             }
             None
         })
+    }
+}
+
+impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
+    /// Checks if any processed text variant matches an entry in the similarity tables.
+    ///
+    /// This helper function iterates through the processed text variants and their corresponding
+    /// process type sets. For each variant, it checks against all entries in the similarity tables
+    /// to see if there is a match based on the defined similarity match type (e.g., Levenshtein).
+    ///
+    /// # Parameters
+    ///
+    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
+    ///   - A processed text variant represented as a [`Cow<str>`].
+    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if any of the processed text variants match an entry in the similarity tables
+    /// according to the specified match type and similarity threshold; otherwise, returns `false`.
+    fn is_match_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> bool {
+        for (processed_text, process_type_set) in processed_text_process_type_set {
+            for sim_processed_table in &self.sim_processed_table_list {
+                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
+                    continue;
+                }
+                let is_match = match sim_processed_table.sim_match_type {
+                    SimMatchType::Levenshtein => sim_processed_table.word_list.iter().any(|text| {
+                        distance::levenshtein::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::levenshtein::Args::default()
+                                .score_cutoff(sim_processed_table.threshold),
+                        )
+                        .is_some()
+                    }),
+                };
+
+                if is_match {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Processes the provided set of processed text variants and their corresponding process type sets,
+    /// returning a list of similarity results.
+    ///
+    /// This function iterates through each processed text variant and its associated process type set,
+    /// comparing them against entries in the similarity tables to identify matches based on the defined
+    /// similarity match type (e.g., Levenshtein). For each match found, the function accumulates the result
+    /// with relevant information such as `match_id`, `table_id`, `word_id`, `word`, and the similarity score.
+    ///
+    /// # Parameters
+    ///
+    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
+    ///   - A processed text variant represented as a [`Cow<str>`].
+    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of [SimResult] instances, each containing information about a matched entry
+    /// in the similarity tables, including:
+    /// - `match_id`: The identifier for the match.
+    /// - `table_id`: The identifier of the similarity table where the match was found.
+    /// - `word_id`: The index of the word in the similarity table's word list.
+    /// - `word`: The word from the similarity table's word list that matched the processed text.
+    /// - `similarity`: The similarity score of the match.
+    ///
+    /// The function ensures that only unique matches are included in the result list by maintaining
+    /// an [IdSet] to track already processed table ID and word index combinations.
+    fn process_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> Vec<SimResult<'a>> {
+        let mut result_list = Vec::new();
+        let mut table_id_index_set = IdSet::new();
+
+        for (processed_text, process_type_set) in processed_text_process_type_set {
+            for sim_processed_table in &self.sim_processed_table_list {
+                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
+                    continue;
+                }
+                match sim_processed_table.sim_match_type {
+                    SimMatchType::Levenshtein => {
+                        for (index, text) in sim_processed_table.word_list.iter().enumerate() {
+                            let table_id_index =
+                                ((sim_processed_table.table_id as usize) << 32) | index;
+
+                            if table_id_index_set.insert(table_id_index)
+                                && let Some(similarity) =
+                                    distance::levenshtein::normalized_similarity_with_args(
+                                        text.chars(),
+                                        processed_text.chars(),
+                                        &distance::levenshtein::Args::default()
+                                            .score_cutoff(sim_processed_table.threshold),
+                                    )
+                            {
+                                result_list.push(SimResult {
+                                    match_id: sim_processed_table.match_id,
+                                    table_id: sim_processed_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(text),
+                                    similarity,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result_list
     }
 }

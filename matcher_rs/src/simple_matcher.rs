@@ -7,7 +7,7 @@ use nohash_hasher::IntMap;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-use crate::matcher::{MatchResultTrait, TextMatcherTrait};
+use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree,
@@ -455,45 +455,13 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_set)
     }
-
-    /// Checks if any pattern matches the processed text.
-    ///
-    /// This function processes the text with the given process type set and checks for
-    /// matches. It maintains bitmaps to keep track of word IDs that are matched and
-    /// potentially excluded (i.e., words that should not be in the matched set). The function
-    /// iterates over the processed text, updates the split bitmaps and sets, and finally determines
-    /// if any word ID set contains a match.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
-    ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
-    ///   string slice, and the ID set is an `id_set::IdSet`.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if any pattern matches the processed text, otherwise `false`.
-    fn _is_match_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> bool {
-        let word_id_split_bit_map =
-            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
-
-        word_id_split_bit_map.values().any(|split_bit_matrix| {
-            split_bit_matrix
-                .iter()
-                .all(|split_bit_vec| split_bit_vec.iter().any(|&split_bit| split_bit <= 0))
-        })
-    }
-
     /// Processes the given text and returns a vector of matching results.
     ///
     /// This function takes an input `text`, processes it using the
     /// `reduce_text_process_with_tree` method to obtain a processed text process type set,
-    /// and then passes this set to the `_process_with_processed_text_process_type_set` method
+    /// and then passes this set to the `process_preprocessed` method
     /// to get the matching results. If the input `text` is empty, it immediately returns
     /// an empty vector.
     ///
@@ -514,51 +482,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._process_with_processed_text_process_type_set(&processed_text_process_type_set)
-    }
-
-    /// Processes the given processed text and type sets to produce matching results.
-    ///
-    /// This function examines the provided processed text along with their corresponding ID sets
-    /// and computes results by finding overlapping patterns using an Aho-Corasick matcher. The function
-    /// maintains internal sets and maps to track which word IDs are relevant based on the processing types.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A reference to a slice of tuples, where each tuple
-    ///   contains a [Cow] string slice (the processed text) and an [IdSet] (a set of IDs related to the processed text).
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
-    ///
-    /// # Panics
-    ///
-    /// If the internal invariants are violated, the function may cause undefined behavior or panic.
-    ///
-    /// For example, if `processed_text_process_type_set` has invalid data or the internal Aho-Corasick matcher
-    /// encounters unexpected states, this could lead to issues.
-    fn _process_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> Vec<SimpleResult<'a>> {
-        let word_id_split_bit_map =
-            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
-
-        word_id_split_bit_map
-            .into_iter()
-            .filter_map(|(word_id, split_bit_matrix)| {
-                split_bit_matrix
-                    .into_iter()
-                    .all(|split_bit_vec| split_bit_vec.into_iter().any(|split_bit| split_bit <= 0))
-                    .then_some(SimpleResult {
-                        word_id,
-                        word: Cow::Borrowed(
-                            &self.word_conf_map.get(&word_id).expect("Like above, the presence of `word_id` within `word_id_split_bit_map` implies it was previously drawn from a valid automaton match, which is derived directly from the keys stored inside `word_conf_map`.").word,
-                        ),
-                    })
-            })
-            .collect()
+        self.process_preprocessed(&processed_text_process_type_set)
     }
 
     /// Processes the given text and returns an iterator over [SimpleResult] matches.
@@ -582,5 +506,82 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// but that would require a fundamentally different matcher construction.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimpleResult<'a>> + 'a {
         self.process(text).into_iter()
+    }
+}
+
+impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
+    /// Checks if any pattern matches the processed text.
+    ///
+    /// This function processes the text with the given process type set and checks for
+    /// matches. It maintains bitmaps to keep track of word IDs that are matched and
+    /// potentially excluded (i.e., words that should not be in the matched set). The function
+    /// iterates over the processed text, updates the split bitmaps and sets, and finally determines
+    /// if any word ID set contains a match.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
+    ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
+    ///   string slice, and the ID set is an `id_set::IdSet`.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if any pattern matches the processed text, otherwise `false`.
+    fn is_match_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> bool {
+        let word_id_split_bit_map =
+            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
+
+        word_id_split_bit_map.values().any(|split_bit_matrix| {
+            split_bit_matrix
+                .iter()
+                .all(|split_bit_vec| split_bit_vec.iter().any(|&split_bit| split_bit <= 0))
+        })
+    }
+
+    /// Processes the given processed text and type sets to produce matching results.
+    ///
+    /// This function examines the provided processed text along with their corresponding ID sets
+    /// and computes results by finding overlapping patterns using an Aho-Corasick matcher. The function
+    /// maintains internal sets and maps to track which word IDs are relevant based on the processing types.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A reference to a slice of tuples, where each tuple
+    ///   contains a [Cow] string slice (the processed text) and an [IdSet] (a set of IDs related to the processed text).
+    ///
+    /// # Returns
+    ///
+    /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
+    ///
+    /// # Panics
+    ///
+    /// If the internal invariants are violated, the function may cause undefined behavior or panic.
+    ///
+    /// For example, if `processed_text_process_type_set` has invalid data or the internal Aho-Corasick matcher
+    /// encounters unexpected states, this could lead to issues.
+    fn process_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> Vec<SimpleResult<'a>> {
+        let word_id_split_bit_map =
+            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
+
+        word_id_split_bit_map
+            .into_iter()
+            .filter_map(|(word_id, split_bit_matrix)| {
+                split_bit_matrix
+                    .into_iter()
+                    .all(|split_bit_vec| split_bit_vec.into_iter().any(|split_bit| split_bit <= 0))
+                    .then_some(SimpleResult {
+                        word_id,
+                        word: Cow::Borrowed(
+                            &self.word_conf_map.get(&word_id).expect("Like above, the presence of `word_id` within `word_id_split_bit_map` implies it was previously drawn from a valid automaton match, which is derived directly from the keys stored inside `word_conf_map`.").word,
+                        ),
+                    })
+            })
+            .collect()
     }
 }

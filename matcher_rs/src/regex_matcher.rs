@@ -6,7 +6,7 @@ use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    matcher::{MatchResultTrait, TextMatcherTrait},
+    matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
     process::process_matcher::{
         ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
         reduce_text_process_with_tree,
@@ -354,153 +354,8 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let processed_text_process_type_set =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._is_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_set)
     }
-
-    /// Checks if any of the given processed texts match any of the regex patterns in the [RegexMatcher].
-    ///
-    /// This function iterates over the pairs of processed text and their associated processing type sets.
-    /// It checks if any of the regex patterns in the `regex_pattern_table_list` match the processed text.
-    ///
-    /// The function first verifies that the `process_type` of a regex pattern is present in the current
-    /// `process_type_set`. If it is, it evaluates the match for different types of regex patterns:
-    /// - `Standard`: Uses a standard regex match.
-    /// - `List`: Checks if any regex in the list matches.
-    /// - `Set`: Checks if the regex set matches.
-    ///
-    /// If any of the regex patterns match the processed text, the function returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
-    ///   and the second element is the set of process types associated with that text.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
-    fn _is_match_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> bool {
-        for (processed_text, process_type_set) in processed_text_process_type_set {
-            for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
-                    continue;
-                }
-
-                let is_match = match &regex_pattern_table.regex_type {
-                    RegexType::Standard { regex } => regex.is_match(processed_text).unwrap(),
-                    RegexType::List { regex_list, .. } => regex_list
-                        .iter()
-                        .any(|regex| regex.is_match(processed_text).unwrap()),
-                    RegexType::Set { regex_set, .. } => regex_set.is_match(processed_text),
-                };
-
-                if is_match {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Processes the `processed_text_process_type_set` to find and return regex matches.
-    ///
-    /// This function iterates over the pairs of processed text and their associated processing type sets.
-    /// It then checks against the regex patterns in the `regex_pattern_table_list` to find matches.
-    ///
-    /// For each regex pattern, the function first verifies that the `process_type` of a regex pattern is present
-    /// in the current `process_type_set`. If it is, it processes matches based on different types of regex patterns:
-    /// - `Standard`: Uses a standard regex match and stores the captures.
-    /// - `List`: Checks each regex in the list for a match and stores the corresponding words.
-    /// - `Set`: Checks the regex set for matches and stores the corresponding words.
-    ///
-    /// The function keeps track of matches using `table_id_index_set` to avoid duplicate entries.
-    ///
-    /// # Arguments
-    ///
-    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
-    ///   and the second element is the set of process types associated with that text.
-    ///
-    /// # Returns
-    ///
-    /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
-    fn _process_with_processed_text_process_type_set(
-        &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> Vec<RegexResult<'a>> {
-        let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::new();
-
-        for (processed_text, process_type_set) in processed_text_process_type_set {
-            for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
-                    continue;
-                }
-                match &regex_pattern_table.regex_type {
-                    RegexType::Standard { regex } => {
-                        if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
-                            for caps in regex.captures_iter(processed_text).flatten() {
-                                result_list.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: 0,
-                                    word: Cow::Owned(
-                                        caps.iter()
-                                            .skip(1)
-                                            .filter_map(|m| m.map(|match_char| match_char.as_str()))
-                                            .collect::<String>(),
-                                    ),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::List {
-                        regex_list,
-                        word_list,
-                    } => {
-                        for (index, regex) in regex_list.iter().enumerate() {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-
-                            if table_id_index_set.insert(table_id_index)
-                                && let Ok(is_match) = regex.is_match(processed_text)
-                                && is_match
-                            {
-                                result_list.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                    RegexType::Set {
-                        regex_set,
-                        word_list,
-                    } => {
-                        for index in regex_set.matches(processed_text) {
-                            let table_id_index =
-                                ((regex_pattern_table.table_id as usize) << 32) | index;
-
-                            if table_id_index_set.insert(table_id_index) {
-                                result_list.push(RegexResult {
-                                    match_id: regex_pattern_table.match_id,
-                                    table_id: regex_pattern_table.table_id,
-                                    word_id: index as u32,
-                                    word: Cow::Borrowed(&word_list[index]),
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        result_list
-    }
-
     /// Returns a **lazy** iterator over [RegexResult] matches for the given text.
     ///
     /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
@@ -617,5 +472,151 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                 result_buf.reverse();
             }
         })
+    }
+}
+
+impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
+    /// Checks if any of the given processed texts match any of the regex patterns in the [RegexMatcher].
+    ///
+    /// This function iterates over the pairs of processed text and their associated processing type sets.
+    /// It checks if any of the regex patterns in the `regex_pattern_table_list` match the processed text.
+    ///
+    /// The function first verifies that the `process_type` of a regex pattern is present in the current
+    /// `process_type_set`. If it is, it evaluates the match for different types of regex patterns:
+    /// - `Standard`: Uses a standard regex match.
+    /// - `List`: Checks if any regex in the list matches.
+    /// - `Set`: Checks if the regex set matches.
+    ///
+    /// If any of the regex patterns match the processed text, the function returns `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
+    ///   and the second element is the set of process types associated with that text.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
+    fn is_match_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> bool {
+        for (processed_text, process_type_set) in processed_text_process_type_set {
+            for regex_pattern_table in &self.regex_pattern_table_list {
+                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
+                    continue;
+                }
+
+                let is_match = match &regex_pattern_table.regex_type {
+                    RegexType::Standard { regex } => regex.is_match(processed_text).unwrap(),
+                    RegexType::List { regex_list, .. } => regex_list
+                        .iter()
+                        .any(|regex| regex.is_match(processed_text).unwrap()),
+                    RegexType::Set { regex_set, .. } => regex_set.is_match(processed_text),
+                };
+
+                if is_match {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Processes the `processed_text_process_type_set` to find and return regex matches.
+    ///
+    /// This function iterates over the pairs of processed text and their associated processing type sets.
+    /// It then checks against the regex patterns in the `regex_pattern_table_list` to find matches.
+    ///
+    /// For each regex pattern, the function first verifies that the `process_type` of a regex pattern is present
+    /// in the current `process_type_set`. If it is, it processes matches based on different types of regex patterns:
+    /// - `Standard`: Uses a standard regex match and stores the captures.
+    /// - `List`: Checks each regex in the list for a match and stores the corresponding words.
+    /// - `Set`: Checks the regex set for matches and stores the corresponding words.
+    ///
+    /// The function keeps track of matches using `table_id_index_set` to avoid duplicate entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
+    ///   and the second element is the set of process types associated with that text.
+    ///
+    /// # Returns
+    ///
+    /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
+    fn process_preprocessed(
+        &'a self,
+        processed_text_process_type_set: &ProcessedTextSet<'a>,
+    ) -> Vec<RegexResult<'a>> {
+        let mut result_list = Vec::new();
+        let mut table_id_index_set = IdSet::new();
+
+        for (processed_text, process_type_set) in processed_text_process_type_set {
+            for regex_pattern_table in &self.regex_pattern_table_list {
+                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
+                    continue;
+                }
+                match &regex_pattern_table.regex_type {
+                    RegexType::Standard { regex } => {
+                        if table_id_index_set.insert(regex_pattern_table.table_id as usize) {
+                            for caps in regex.captures_iter(processed_text).flatten() {
+                                result_list.push(RegexResult {
+                                    match_id: regex_pattern_table.match_id,
+                                    table_id: regex_pattern_table.table_id,
+                                    word_id: 0,
+                                    word: Cow::Owned(
+                                        caps.iter()
+                                            .skip(1)
+                                            .filter_map(|m| m.map(|match_char| match_char.as_str()))
+                                            .collect::<String>(),
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                    RegexType::List {
+                        regex_list,
+                        word_list,
+                    } => {
+                        for (index, regex) in regex_list.iter().enumerate() {
+                            let table_id_index =
+                                ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                            if table_id_index_set.insert(table_id_index)
+                                && let Ok(is_match) = regex.is_match(processed_text)
+                                && is_match
+                            {
+                                result_list.push(RegexResult {
+                                    match_id: regex_pattern_table.match_id,
+                                    table_id: regex_pattern_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(&word_list[index]),
+                                });
+                            }
+                        }
+                    }
+                    RegexType::Set {
+                        regex_set,
+                        word_list,
+                    } => {
+                        for index in regex_set.matches(processed_text) {
+                            let table_id_index =
+                                ((regex_pattern_table.table_id as usize) << 32) | index;
+
+                            if table_id_index_set.insert(table_id_index) {
+                                result_list.push(RegexResult {
+                                    match_id: regex_pattern_table.match_id,
+                                    table_id: regex_pattern_table.table_id,
+                                    word_id: index as u32,
+                                    word: Cow::Borrowed(&word_list[index]),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result_list
     }
 }
