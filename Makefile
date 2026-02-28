@@ -15,10 +15,9 @@ test:
 	cd matcher_rs && cargo test --no-default-features --features "dfa"
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build"
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build,dfa"
-	cd matcher_rs && cargo test --no-default-features --features "dfa,serde"
 
 	cd matcher_py && ruff format . && uv sync && pytest
 
 update:
-	cargo update --verbose --recursive --breaking -Z unstable-options
+	cargo update --verbose --recursive --breaking
 	cargo upgrade --verbose --recursive

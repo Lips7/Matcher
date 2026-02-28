@@ -308,7 +308,7 @@ impl Matcher {
     /// - `String`: A string representation of the match results found in the text.
     #[pyo3(signature=(text))]
     fn word_match_as_string(&self, text: &str) -> String {
-        unsafe { sonic_rs::to_string(&self.matcher.word_match(text)).unwrap_unchecked() }
+        sonic_rs::to_string(&self.matcher.word_match(text)).expect("It should never fail.")
     }
 }
 

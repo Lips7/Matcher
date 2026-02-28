@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use aho_corasick_unsafe::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use tinyvec::ArrayVec;
 
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
@@ -51,7 +52,7 @@ pub type SimpleTableSerde<'a> = IntMap<ProcessType, IntMap<u32, Cow<'a, str>>>;
 /// - `split_bit`: A vector of integers representing the logical splits of the word. Positive integers indicate
 ///   multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
 /// - `not_offset`: The index in `split_bit` that indicates the start of the 'NOT' split parts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct WordConf {
     word: String,
     split_bit: Vec<i32>,
@@ -90,7 +91,7 @@ struct WordConf {
 ///
 /// The example above demonstrates creating a [SimpleResult] with a borrowed `str`. The same structure can also
 /// hold an owned [String] if necessary to accommodate different use cases and data lifetimes.
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug)]
 pub struct SimpleResult<'a> {
     pub word_id: u32,
     pub word: Cow<'a, str>,
@@ -131,28 +132,34 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 ///
 /// # Example
 ///
+/// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+/// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
+///
 /// This example demonstrates creating a [SimpleMatcher] instance using the `new` method with a sample
 /// `process_type_word_map`:
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use matcher_rs::{SimpleMatcher, ProcessType};
+/// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
 ///
-/// // Define a mock process_type_word_map for demonstration
+/// // Recommended: Using SimpleMatcherBuilder
+/// let matcher = SimpleMatcherBuilder::new()
+///     .add_word(ProcessType::None, 1, "example&word")
+///     .build();
+///
+/// // Or manually mapping:
 /// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
 /// let mut inner_map: HashMap<u32, &str> = HashMap::new();
 /// inner_map.insert(1, "example&word");
 /// process_type_word_map.insert(ProcessType::None, inner_map);
 ///
-/// // Creating a SimpleMatcher instance
-/// let matcher = SimpleMatcher::new(&process_type_word_map);
+/// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
 ///
 /// println!("{:?}", matcher);
 /// ```
 ///
 /// The above example creates a [SimpleMatcher] with a nested map and prints the matcher instance.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AhoCorasick,
@@ -183,24 +190,30 @@ impl SimpleMatcher {
     ///
     /// # Example
     ///
+    /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+    /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
+    ///
     /// ```rust
     /// use std::collections::HashMap;
-    /// use matcher_rs::{SimpleMatcher, ProcessType};
+    /// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
     ///
-    /// // Define a mock process_type_word_map for demonstration
+    /// // Recommended: Using SimpleMatcherBuilder
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "example&word")
+    ///     .build();
+    ///
+    /// // Or manually mapping:
     /// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
     /// let mut inner_map: HashMap<u32, &str> = HashMap::new();
     /// inner_map.insert(1, "example&word");
     /// process_type_word_map.insert(ProcessType::None, inner_map);
     ///
-    /// // Creating a SimpleMatcher instance
-    /// let matcher = SimpleMatcher::new(&process_type_word_map);
+    /// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
     ///
     /// println!("{:?}", matcher);
     /// ```
     ///
-    /// The above example demonstrates how to create a [SimpleMatcher] by passing a constructed
-    /// `process_type_word_map`.
+    /// The above example demonstrates how to create a [SimpleMatcher].
     pub fn new<I, S1, S2>(
         process_type_word_map: &HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -233,17 +246,13 @@ impl SimpleMatcher {
                 for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
                     if (is_and || start == 0) && start != index {
                         ac_split_word_and_counter
-                            // SAFETY: The `start` and `index` variables are guaranteed to lie on valid UTF-8 boundaries
-                            // because they are yielded directly by `match_indices`, which returns valid character offsets.
-                            .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                            .entry(&simple_word.as_ref()[start..index])
                             .and_modify(|cnt| *cnt += 1)
                             .or_insert(1);
                     }
                     if is_not && start != index {
                         ac_split_word_not_counter
-                            // SAFETY: The `start` and `index` variables are guaranteed to lie on valid UTF-8 boundaries
-                            // because they are yielded directly by `match_indices`, which returns valid character offsets.
-                            .entry(unsafe { simple_word.as_ref().get_unchecked(start..index) })
+                            .entry(&simple_word.as_ref()[start..index])
                             .and_modify(|cnt| *cnt -= 1)
                             .or_insert(0);
                     }
@@ -263,17 +272,13 @@ impl SimpleMatcher {
                 }
                 if (is_and || start == 0) && start != simple_word.as_ref().len() {
                     ac_split_word_and_counter
-                        // SAFETY: `start` either comes from `0` or a valid character boundary produced by `match_indices`.
-                        // Slicing to the end of the string is guaranteed to be safe.
-                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
+                        .entry(&simple_word.as_ref()[start..])
                         .and_modify(|cnt| *cnt += 1)
                         .or_insert(1);
                 }
                 if is_not && start != simple_word.as_ref().len() {
                     ac_split_word_not_counter
-                        // SAFETY: `start` either comes from `0` or a valid character boundary produced by `match_indices`.
-                        // Slicing to the end of the string is guaranteed to be safe.
-                        .entry(unsafe { simple_word.as_ref().get_unchecked(start..) })
+                        .entry(&simple_word.as_ref()[start..])
                         .and_modify(|cnt| *cnt -= 1)
                         .or_insert(0);
                 }
@@ -301,13 +306,8 @@ impl SimpleMatcher {
                 {
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
                         if let Some(ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref()) {
-                            // SAFETY: `ac_dedup_word_id_map` exclusively manages identifiers that are strictly
-                            // bounded by the length of `ac_dedup_word_conf_list`. Therefore, retrieving by ID
-                            // will never fall out of bounds.
-                            let word_conf_list: &mut Vec<(ProcessType, u32, usize)> = unsafe {
-                                ac_dedup_word_conf_list
-                                    .get_unchecked_mut(*ac_dedup_word_id as usize)
-                            };
+                            let word_conf_list: &mut Vec<(ProcessType, u32, usize)> =
+                                &mut ac_dedup_word_conf_list[*ac_dedup_word_id as usize];
                             word_conf_list.push((process_type, simple_word_id, offset));
                         } else {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
@@ -331,14 +331,8 @@ impl SimpleMatcher {
         #[cfg(not(feature = "dfa"))]
         let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
 
-        #[cfg(feature = "serde")]
-        let prefilter = false;
-        #[cfg(not(feature = "serde"))]
-        let prefilter = true;
-
         let ac_matcher = AhoCorasickBuilder::new()
             .kind(Some(aho_corasick_kind))
-            .prefilter(prefilter)
             .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
             .unwrap();
 
@@ -350,9 +344,38 @@ impl SimpleMatcher {
         }
     }
 
+    /// Core matching logic for `SimpleMatcher`, processing multiple text variants and process types.
+    ///
+    /// This function scans the provided processed text variants using the internal Aho-Corasick automaton.
+    /// It keeps track of sub-pattern matches (AND logic `&`) and handles exclusions (NOT logic `~`).
+    /// The returned data structure maps each `word_id` to a nested vector tracking which split-bits
+    /// matched across the different text variants.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Iterate over each tuple of `(processed_text, process_type_set)`.
+    /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
+    ///    sub-pattern matches within the `processed_text`.
+    /// 3. For each sub-pattern match, check if its `ProcessType` aligns with the current text variant's `process_type_set`.
+    /// 4. Maintain a 2D split-bit matrix for each `word_id` to record which tokens condition the text satisfies.
+    ///    - **AND Tokens (`&`)**: Decrements their state towards `< 0`. The token count dictates how negative it goes.
+    ///      Every time the exact sub-pattern occurs, it brings the count closer.
+    ///    - **NOT Tokens (`~`)**: Checks if they exist (offset >= `not_offset`). If a NOT token appears,
+    ///      the `word_id` is disqualified and immediately discarded from further checks using `not_word_id_set`.
+    /// 5. Return the map of matched patterns which is later used in *Pass 2* to evaluate conditions.
+    ///
+    /// # Arguments
+    ///
+    /// * `processed_text_process_type_set` - A list of tuples containing processed text variants
+    ///   and their associated [`IdSet`] of valid [`ProcessType`]s.
+    ///
+    /// # Returns
+    ///
+    /// * `FxHashMap<u32, Vec<Vec<i32>>>` - A mapping from matched `word_id` to a split-bit matrix,
+    ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> FxHashMap<u32, Vec<Vec<i32>>> {
         let mut word_id_split_bit_map = FxHashMap::with_capacity_and_hasher(8, Default::default());
         let mut not_word_id_set = IdSet::new();
@@ -362,17 +385,13 @@ impl SimpleMatcher {
         for (index, (processed_text, process_type_set)) in
             processed_text_process_type_set.iter().enumerate()
         {
-            // SAFETY: `ac_matcher` is initialized during construction and guaranteed to be valid.
-            // In debug builds, we verify it doesn't return an error.
             let ac_iter = self
                 .ac_matcher
-                .try_find_overlapping_iter(processed_text.as_ref());
-            for ac_dedup_result in unsafe { ac_iter.unwrap_unchecked() } {
-                // SAFETY: `pattern()` index is guaranteed by aho-corasick structure to be within bounds.
-                // verified by construction in SimpleMatcher::new.
+                .find_overlapping_iter(processed_text.as_ref());
+            for ac_dedup_result in ac_iter {
                 let pattern_idx = ac_dedup_result.pattern().as_usize();
                 for &(match_process_type, word_id, offset) in
-                    unsafe { self.ac_dedup_word_conf_list.get_unchecked(pattern_idx) }
+                    &self.ac_dedup_word_conf_list[pattern_idx]
                 {
                     if !process_type_set.contains(match_process_type.bits() as usize)
                         || not_word_id_set.contains(word_id as usize)
@@ -380,9 +399,7 @@ impl SimpleMatcher {
                         continue;
                     }
 
-                    // SAFETY: `word_id` is sourced directly from `self.ac_dedup_word_conf_list`,
-                    // which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.
-                    let word_conf = unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() };
+                    let word_conf = self.word_conf_map.get(&word_id).expect("`word_id` is sourced directly from `self.ac_dedup_word_conf_list`, which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.");
 
                     let split_bit_matrix =
                         word_id_split_bit_map.entry(word_id).or_insert_with(|| {
@@ -393,19 +410,12 @@ impl SimpleMatcher {
                                 .collect::<Vec<Vec<i32>>>()
                         });
 
-                    // bit is i32, so it will not overflow almost 100%
-                    // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
-                    // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
-                    unsafe {
-                        let bit = split_bit_matrix
-                            .get_unchecked_mut(offset)
-                            .get_unchecked_mut(index);
-                        *bit = bit.wrapping_add((offset < word_conf.not_offset) as i32 * -2 + 1);
+                    let bit: &mut i32 = &mut split_bit_matrix[offset][index];
+                    *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
-                        if offset >= word_conf.not_offset && *bit > 0 {
-                            not_word_id_set.insert(word_id as usize);
-                            word_id_split_bit_map.remove(&word_id);
-                        }
+                    if offset >= word_conf.not_offset && *bit > 0 {
+                        not_word_id_set.insert(word_id as usize);
+                        word_id_split_bit_map.remove(&word_id);
                     }
                 }
             }
@@ -430,13 +440,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Returns
     ///
     /// * `true` if the text matches any pattern, otherwise `false`.
-    ///
-    /// # Safety
-    ///
-    /// This function does not perform any inherently unsafe operations, but it calls an
-    /// internal function `_is_match_with_processed_text_process_type_set` which contains
-    /// unsafe blocks. The safety of this function thus relies on the correctness and safety
-    /// of the called internal functions.
     fn is_match(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
@@ -465,17 +468,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Returns
     ///
     /// * `true` if any pattern matches the processed text, otherwise `false`.
-    ///
-    /// # Safety
-    ///
-    /// This function contains several unsafe blocks. It relies on unchecked operations like
-    /// `unwrap_unchecked`, `get_unchecked`, and unchecked arithmetic operations to ensure
-    /// performance. The unsafe guarantees are based on the internal invariants that the
-    /// original code assumes are always true, such as the fact that certain lookups and
-    /// operations will not fail.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> bool {
         let word_id_split_bit_map =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
@@ -530,17 +525,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
     ///
-    /// # Safety
-    ///
-    /// This function uses unsafe blocks extensively to ensure high performance. Unsafe operations like
-    /// `unwrap_unchecked`, `get_unchecked`, and unchecked arithmetic operations are used based on the assumption
-    /// that certain internal invariants always hold true: specific lookups and operations will not fail.
-    /// The caller must ensure that the assumptions about the internal data structures remain valid.
-    ///
-    /// The unsafe guarantees are built on the same invariants as `_is_match_with_processed_text_process_type_set`, specifically that:
-    /// - The internal patterns and configurations are set up correctly.
-    /// - Index accesses and unwraps assume that the underlying data always exists and is valid.
-    ///
     /// # Panics
     ///
     /// If the internal invariants are violated, the function may cause undefined behavior or panic.
@@ -549,7 +533,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// encounters unexpected states, this could lead to issues.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<SimpleResult<'a>> {
         let word_id_split_bit_map =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
@@ -563,10 +547,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                     .then_some(SimpleResult {
                         word_id,
                         word: Cow::Borrowed(
-                            // SAFETY: Like above, the presence of `word_id` within `word_id_split_bit_map`
-                            // implies it was previously drawn from a valid automaton match, which is derived
-                            // directly from the keys stored inside `word_conf_map`.
-                            &unsafe { self.word_conf_map.get(&word_id).unwrap_unchecked() }.word,
+                            &self.word_conf_map.get(&word_id).expect("Like above, the presence of `word_id` within `word_id_split_bit_map` implies it was previously drawn from a valid automaton match, which is derived directly from the keys stored inside `word_conf_map`.").word,
                         ),
                     })
             })
@@ -587,7 +568,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
     ///   matrices satisfy the AND conditions.
     ///
-    /// Because of this inherent two-phase dependency, this override simply wraps [`process`] and
+    /// Because of this inherent two-phase dependency, this override simply wraps [`TextMatcherTrait::process`] and
     /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
     /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
     /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,

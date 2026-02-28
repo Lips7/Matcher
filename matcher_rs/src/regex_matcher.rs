@@ -4,9 +4,8 @@ use fancy_regex::{escape, Regex};
 use id_set::IdSet;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
+use tinyvec::ArrayVec;
 
-#[cfg(feature = "serde")]
-use crate::util::serde::{serde_regex, serde_regex_list, serde_regex_set};
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
@@ -71,19 +70,15 @@ pub struct RegexTable<'a> {
 ///     - `regex_set: RegexSet` - A set of compiled regex patterns optimized for simultaneous matching. Uses custom serialization with `serde_regex_set`.
 ///     - `word_list: Vec<String>` - A list of words corresponding to the regex patterns in the set.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 enum RegexType {
     Standard {
-        #[cfg_attr(feature = "serde", serde(with = "serde_regex"))]
         regex: Regex,
     },
     List {
-        #[cfg_attr(feature = "serde", serde(with = "serde_regex_list"))]
         regex_list: Vec<Regex>,
         word_list: Vec<String>,
     },
     Set {
-        #[cfg_attr(feature = "serde", serde(with = "serde_regex_set"))]
         regex_set: RegexSet,
         word_list: Vec<String>,
     },
@@ -97,7 +92,6 @@ enum RegexType {
 /// - `process_type`: The type of process associated with the table, defined by the [ProcessType] enum.
 /// - `regex_type`: The type of regex pattern(s) used, defined by the [RegexType] enum.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct RegexPatternTable {
     table_id: u32,
     match_id: u32,
@@ -175,7 +169,6 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// assert!(matcher.is_match(text));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RegexMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     regex_pattern_table_list: Vec<RegexPatternTable>,
@@ -387,7 +380,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
@@ -434,7 +427,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = IdSet::new();

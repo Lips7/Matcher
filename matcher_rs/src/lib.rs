@@ -1,6 +1,3 @@
-mod util;
-pub use util::word::SimpleWord;
-
 mod builder;
 pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};
 

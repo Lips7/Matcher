@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
 
-use aho_corasick_unsafe::AhoCorasick;
+use aho_corasick::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
-use aho_corasick_unsafe::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
+use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
 use bitflags::bitflags;
 #[cfg(not(feature = "runtime_build"))]
 use daachorse::CharwiseDoubleArrayAhoCorasick;
@@ -201,11 +201,6 @@ impl ProcessMatcher {
     /// * [Cow<'a, str>] - A copy-on-write string containing the processed text. If no replacements were made,
     ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
     ///   the replacements is returned.
-    ///
-    /// # Safety
-    ///
-    /// This method uses `unsafe` blocks to perform unchecked slicing of the text and to access elements
-    /// in the `process_replace_list`. These operations are guaranteed not to fail based on the matchers' behavior.
     #[inline(always)]
     pub fn replace_all<'a>(
         &self,
@@ -218,30 +213,15 @@ impl ProcessMatcher {
                 let mut iter = ac.leftmost_find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    // SAFETY: `first_mat.start()` is strictly greater than or equal to 0. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
-                    // SAFETY: The `first_mat.value()` returned is exactly an index mapped 1:1 during automaton construction
-                    // with `process_replace_list`, so it will never go naturally out of bounds.
-                    result.push_str(unsafe {
-                        process_replace_list.get_unchecked(first_mat.value() as usize)
-                    });
+                    result.push_str(&text[0..first_mat.start()]);
+                    result.push_str(process_replace_list[first_mat.value() as usize]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                        // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                        // the automaton always fall exactly on valid UTF-8 character boundaries.
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                        // SAFETY: The `mat.value()` returned is exactly an index mapped 1:1 during automaton construction
-                        // with `process_replace_list`, so it will never go naturally out of bounds.
-                        result.push_str(unsafe {
-                            process_replace_list.get_unchecked(mat.value() as usize)
-                        });
+                        result.push_str(&text[last_end..mat.start()]);
+                        result.push_str(process_replace_list[mat.value() as usize]);
                         last_end = mat.end();
                     }
-                    // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
-                    // naturally guaranteeing it exists on a valid UTF-8 character boundary.
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -249,19 +229,15 @@ impl ProcessMatcher {
                 let mut iter = ac.find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
-                    result.push_str(unsafe {
-                        process_replace_list.get_unchecked(first_mat.value() as usize)
-                    });
+                    result.push_str(&text[0..first_mat.start()]);
+                    result.push_str(process_replace_list[first_mat.value() as usize]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                        result.push_str(unsafe {
-                            process_replace_list.get_unchecked(mat.value() as usize)
-                        });
+                        result.push_str(&text[last_end..mat.start()]);
+                        result.push_str(process_replace_list[mat.value() as usize]);
                         last_end = mat.end();
                     }
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -269,21 +245,15 @@ impl ProcessMatcher {
                 let mut iter = ac.find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
-                    // SAFETY: The pattern ID returned is an index bounded tightly bounded by
-                    // `process_replace_list` mapped directly from pattern initialization.
-                    result.push_str(unsafe {
-                        process_replace_list.get_unchecked(first_mat.pattern().as_usize())
-                    });
+                    result.push_str(&text[0..first_mat.start()]);
+                    result.push_str(process_replace_list[first_mat.pattern().as_usize()]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
-                        result.push_str(unsafe {
-                            process_replace_list.get_unchecked(mat.pattern().as_usize())
-                        });
+                        result.push_str(&text[last_end..mat.start()]);
+                        result.push_str(process_replace_list[mat.pattern().as_usize()]);
                         last_end = mat.end();
                     }
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -307,11 +277,6 @@ impl ProcessMatcher {
     /// * [Cow<'a, str>] - A copy-on-write string containing the processed text. If no deletions were made,
     ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
     ///   the deletions is returned.
-    ///
-    /// # Safety
-    ///
-    /// This function uses `unsafe` blocks to perform unchecked slicing of the text. These operations are guaranteed
-    /// not to fail based on the matcher's behavior.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         match self {
@@ -320,20 +285,13 @@ impl ProcessMatcher {
                 let mut iter = ac.leftmost_find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    // SAFETY: `first_mat.start()` is strictly greater than or equal to 0. The match boundaries guaranteed by
-                    // the automaton always fall exactly on valid UTF-8 character boundaries.
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    result.push_str(&text[0..first_mat.start()]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        // SAFETY: `last_end` corresponds to the end of the previous match (or 0), and `mat.start()`
-                        // is strictly greater than or equal to `last_end`. The match boundaries guaranteed by
-                        // the automaton always fall exactly on valid UTF-8 character boundaries.
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        result.push_str(&text[last_end..mat.start()]);
                         last_end = mat.end();
                     }
-                    // SAFETY: `last_end` falls exactly on the end of the final matching pattern,
-                    // naturally guaranteeing it exists on a valid UTF-8 character boundary.
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -341,13 +299,13 @@ impl ProcessMatcher {
                 let mut iter = ac.find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    result.push_str(&text[0..first_mat.start()]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        result.push_str(&text[last_end..mat.start()]);
                         last_end = mat.end();
                     }
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -355,13 +313,13 @@ impl ProcessMatcher {
                 let mut iter = ac.find_iter(text);
                 if let Some(first_mat) = iter.next() {
                     let mut result = String::with_capacity(text.len());
-                    result.push_str(unsafe { text.get_unchecked(0..first_mat.start()) });
+                    result.push_str(&text[0..first_mat.start()]);
                     let mut last_end = first_mat.end();
                     for mat in iter {
-                        result.push_str(unsafe { text.get_unchecked(last_end..mat.start()) });
+                        result.push_str(&text[last_end..mat.start()]);
                         last_end = mat.end();
                     }
-                    result.push_str(unsafe { text.get_unchecked(last_end..) });
+                    result.push_str(&text[last_end..]);
                     return (true, Cow::Owned(result));
                 }
             }
@@ -760,12 +718,6 @@ pub fn text_process(
 /// }
 /// ```
 ///
-/// # Safety
-///
-/// Unsafe code is used to access the last element of `processed_text_list`. This is safe because
-/// the list is always guaranteed to have at least one element (the original input text) before accessing
-/// its last element.
-///
 /// # Panics
 ///
 /// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
@@ -781,9 +733,7 @@ pub fn reduce_text_process<'a>(
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        // SAFETY: The `processed_text_list` is initialized with a first element immediately prior to this loop.
-        // Thus, calling `.last_mut()` is mathematically guaranteed to contain at least one element.
-        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
+        let tmp_processed_text = processed_text_list.last_mut().unwrap();
 
         match (process_type_bit, process_matcher) {
             (ProcessType::None, _) => {}
@@ -836,12 +786,6 @@ pub fn reduce_text_process<'a>(
 /// }
 /// ```
 ///
-/// # Safety
-///
-/// Unsafe code is used to access the last element of `processed_text_list`. This is safe because
-/// the list is always guaranteed to have at least one element (the original input text) before accessing
-/// its last element.
-///
 /// # Panics
 ///
 /// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
@@ -857,9 +801,7 @@ pub fn reduce_text_process_emit<'a>(
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        // SAFETY: The `processed_text_list` is initialized with a first element immediately prior to this loop.
-        // Thus, calling `.last_mut()` is mathematically guaranteed to contain at least one element.
-        let tmp_processed_text = unsafe { processed_text_list.last_mut().unwrap_unchecked() };
+        let tmp_processed_text = processed_text_list.last_mut().unwrap();
 
         match (process_type_bit, process_matcher) {
             (ProcessType::None, _) => {}
@@ -899,7 +841,6 @@ pub fn reduce_text_process_emit<'a>(
 /// * `processed_text_index` - An [usize] indicating the index of the processed text.
 /// * `children` - An [ArrayVec] containing the indices of child nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ProcessTypeBitNode {
     process_type_list: ArrayVec<[ProcessType; 8]>,
     process_type_bit: ProcessType,
@@ -934,10 +875,6 @@ pub struct ProcessTypeBitNode {
 /// This function does not panic under normal circumstances. It assumes that [ProcessType::iter()]
 /// provides a finite iterator and that array operations on [ArrayVec] are safe as long as the constraints
 /// are respected.
-///
-/// # Safety
-///
-/// The function does not involve any unsafe operations.
 pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
@@ -1011,13 +948,6 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 /// * A [Cow] string, which could be either the borrowed input text or an owned version of the processed text.
 /// * An [IdSet] which contains the bits of the processed [ProcessType].
 ///
-/// # Safety
-///
-/// This function uses unsafe code to manipulate slices and raw pointers. The unsafe blocks are
-/// used for unchecked access to slices and indices, which is safe as long as the assumptions
-/// about the data structures hold. Ensure that the provided `process_type_tree` is well-formed
-/// and the indices are valid.
-///
 /// # Panics
 ///
 /// This function assumes that array operations on [ArrayVec] and slice operations on the process type tree
@@ -1038,29 +968,12 @@ pub fn reduce_text_process_with_tree<'a>(
     ));
 
     for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-        // SAFETY: `current_node_index` combined with +1 is strictly bounded by the `enumerate` iteration
-        // which traverses `process_type_tree_copied`.
-        let (left_tree, right_tree) = unsafe {
-            process_type_tree_copied.split_at_mut_unchecked(current_node_index.unchecked_add(1))
-        };
-
-        // SAFETY: `current_node_index` will never exceed the iterator bounds of `left_tree` created above.
-        let current_copied_node = unsafe { left_tree.get_unchecked(current_node_index) };
+        let (left_tree, right_tree) = process_type_tree_copied.split_at_mut(current_node_index + 1);
+        let current_copied_node = left_tree.get(current_node_index).expect("`current_node_index` will never exceed the iterator bounds of `left_tree` created above.");
         let mut current_index = current_copied_node.processed_text_index;
-        // SAFETY: `current_index` corresponds explicitly to an index registered in `processed_text_process_type_set`
-        // before children are recursively evaluated.
-        // We use indexing instead of a raw pointer to ensure memory safety even if the collection is refactored.
 
         for child_node_index in current_node.children {
-            // SAFETY: `child_node_index` is sourced securely from the internally generated structural graph
-            // bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.
-            let child_node = unsafe {
-                right_tree.get_unchecked_mut(
-                    child_node_index
-                        .unchecked_sub(current_node_index)
-                        .unchecked_sub(1),
-                )
-            };
+            let child_node = right_tree.get_mut(child_node_index - current_node_index - 1).expect("`child_node_index` is sourced securely from the internally generated structural graph bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.");
 
             if child_node.is_processed {
                 current_index = current_copied_node.processed_text_index;
@@ -1072,9 +985,7 @@ pub fn reduce_text_process_with_tree<'a>(
                     ProcessType::None => {}
                     ProcessType::Delete => {
                         let current_text =
-                            unsafe { processed_text_process_type_set.get_unchecked(current_index) }
-                                .0
-                                .as_ref();
+                            processed_text_process_type_set[current_index].0.as_ref();
                         match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_set.push((
@@ -1086,9 +997,7 @@ pub fn reduce_text_process_with_tree<'a>(
                                             .map(|smt| smt.bits() as usize),
                                     ),
                                 ));
-                                current_index = unsafe {
-                                    processed_text_process_type_set.len().unchecked_sub(1)
-                                };
+                                current_index = processed_text_process_type_set.len() - 1;
                             }
                             (false, _) => {
                                 current_index = current_copied_node.processed_text_index;
@@ -1098,16 +1007,12 @@ pub fn reduce_text_process_with_tree<'a>(
                     }
                     _ => {
                         let current_text =
-                            unsafe { processed_text_process_type_set.get_unchecked(current_index) }
-                                .0
-                                .as_ref();
+                            processed_text_process_type_set[current_index].0.as_ref();
                         match process_matcher.replace_all(current_text, process_replace_list) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_set
                                     .push((Cow::Owned(pt), IdSet::new()));
-                                current_index = unsafe {
-                                    processed_text_process_type_set.len().unchecked_sub(1)
-                                };
+                                current_index = processed_text_process_type_set.len() - 1;
                             }
                             (false, _) => {
                                 current_index = current_copied_node.processed_text_index;
@@ -1121,7 +1026,7 @@ pub fn reduce_text_process_with_tree<'a>(
 
             child_node.processed_text_index = current_index;
             let processed_text_process_type_tuple =
-                unsafe { processed_text_process_type_set.get_unchecked_mut(current_index) };
+                &mut processed_text_process_type_set[current_index];
             processed_text_process_type_tuple.1.extend(
                 child_node
                     .process_type_list
@@ -1177,22 +1082,20 @@ pub fn reduce_text_process_with_set<'a>(
         let mut current_node_index = 0;
 
         for process_type_bit in process_type.iter() {
-            let current_node = unsafe { process_type_tree.get_unchecked(current_node_index) };
+            let current_node = process_type_tree[current_node_index];
             if current_node.process_type_bit == process_type_bit {
                 continue;
             }
 
             let mut is_found = false;
             for child_node_index in current_node.children {
-                if process_type_bit
-                    == unsafe { process_type_tree.get_unchecked(child_node_index) }.process_type_bit
-                {
+                if process_type_bit == process_type_tree[child_node_index].process_type_bit {
                     current_node_index = child_node_index;
                     is_found = true;
                     break;
                 }
             }
-            let current_node = unsafe { process_type_tree.get_unchecked_mut(current_node_index) };
+            let current_node = &mut process_type_tree[current_node_index];
 
             if !is_found {
                 let cached_result = get_process_matcher(process_type_bit);
@@ -1205,10 +1108,9 @@ pub fn reduce_text_process_with_set<'a>(
                             processed_text_process_type_set.push((Cow::Owned(pt), IdSet::new()));
                             current_index = processed_text_process_type_set.len() - 1;
 
-                            let processed_text_process_type_tuple = unsafe {
-                                processed_text_process_type_set
-                                    .get_unchecked_mut(current_node.processed_text_index)
-                            };
+                            let processed_text_process_type_tuple =
+                                &mut processed_text_process_type_set
+                                    [current_node.processed_text_index];
                             processed_text_process_type_tuple
                                 .1
                                 .insert(process_type.bits() as usize);
@@ -1241,8 +1143,7 @@ pub fn reduce_text_process_with_set<'a>(
                 process_type_tree.push(child);
 
                 let new_node_index = process_type_tree.len() - 1;
-                let current_node =
-                    unsafe { process_type_tree.get_unchecked_mut(current_node_index) };
+                let current_node = &mut process_type_tree[current_node_index];
                 current_node.children.push(new_node_index);
                 current_node_index = new_node_index;
             } else {
@@ -1251,13 +1152,11 @@ pub fn reduce_text_process_with_set<'a>(
             }
 
             let processed_text_process_type_tuple =
-                unsafe { processed_text_process_type_set.get_unchecked_mut(current_index) };
+                &mut processed_text_process_type_set[current_index];
             processed_text_process_type_tuple
                 .1
                 .insert(process_type.bits() as usize);
-            current_text = unsafe { processed_text_process_type_set.get_unchecked(current_index) }
-                .0
-                .as_ref();
+            current_text = processed_text_process_type_set[current_index].0.as_ref();
         }
     }
 

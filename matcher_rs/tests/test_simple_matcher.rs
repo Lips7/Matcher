@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleWord, TextMatcherTrait};
+use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, TextMatcherTrait};
 
 #[test]
 fn simple_match_init() {
@@ -92,18 +92,12 @@ fn simple_match_combination() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([
-            (1, SimpleWord::from("hello").and("world")),
-            (2, SimpleWord::from("hello").and("world").and("hello")),
-            (3, SimpleWord::from("hello").not("world")),
-            (4, SimpleWord::from("hello").not("world").not("world")),
-            (5, SimpleWord::from("hello").and("world").not("word")),
-            (
-                6,
-                SimpleWord::from("hello")
-                    .and("world")
-                    .not("word")
-                    .not("word"),
-            ),
+            (1, "hello&world"),
+            (2, "hello&world&hello"),
+            (3, "hello~world"),
+            (4, "hello~world~world"),
+            (5, "hello&world~word"),
+            (6, "hello&world~word~word"),
         ]),
     )]));
     assert!(simple_matcher.is_match("hello world"));
@@ -194,14 +188,4 @@ fn simple_match_very_long_text() {
 
     let long_text = "haystack ".repeat(10000) + "needle" + &" haystack".repeat(10000);
     assert!(matcher.is_match(&long_text));
-}
-
-#[test]
-#[should_panic(expected = "SimpleMatcherBuilder: duplicate word_id")]
-fn simple_match_duplicate_id_panic_in_debug() {
-    // Note: depending on compilation profile, this might only panic in debug mode
-    let _ = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::None, 1, "world") // Duplicate ID, same ProcessType
-        .build();
 }

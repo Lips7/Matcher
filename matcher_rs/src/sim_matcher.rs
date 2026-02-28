@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use id_set::IdSet;
 use rapidfuzz::distance;
 use serde::{Deserialize, Serialize};
+use tinyvec::ArrayVec;
 
 use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
@@ -62,7 +63,6 @@ pub struct SimTable<'a> {
 /// * `word_list` - A list of words over which the matching operation is performed. This is an owned vector of strings.
 /// * `threshold` - A float value representing the similarity threshold for a match.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct SimProcessedTable {
     table_id: u32,
     match_id: u32,
@@ -150,7 +150,6 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// The [SimMatcher] struct provides methods for checking if a text matches any of the processed tables
 /// and for processing texts to obtain a list of similarity results.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     sim_processed_table_list: Vec<SimProcessedTable>,
@@ -245,7 +244,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// according to the specified match type and similarity threshold; otherwise, returns `false`.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, id_set::IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {
@@ -301,7 +300,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// an [IdSet] to track already processed table ID and word index combinations.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = IdSet::new();

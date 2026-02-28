@@ -69,7 +69,8 @@ pub const FANJIAN_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/fanjian_daachorse_charwise_u32_matcher.bin"
-));
+))
+.as_slice();
 
 /// These constants are related to Pinyin processing and are included based on feature flags.
 ///
@@ -96,11 +97,12 @@ pub const PINYINCHAR_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 pub const PINYIN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/pinyin_daachorse_charwise_u32_matcher.bin"
-));
+))
+.as_slice();
 
 /// List of Unicode code points considered as whitespace characters.
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
-pub const WHITE_SPACE: &[&str] = &[
+pub const WHITE_SPACE: &[&str; 27] = &[
     "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}", "\u{00A0}",
     "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
     "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}", "\u{200F}", "\u{2028}", "\u{2029}",

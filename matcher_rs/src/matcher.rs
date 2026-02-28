@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use id_set::IdSet;
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
+use tinyvec::ArrayVec;
 
 use crate::process::process_matcher::{
     build_process_type_tree, reduce_text_process_with_tree, ProcessType, ProcessTypeBitNode,
@@ -34,7 +35,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     #[doc(hidden)]
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> bool;
     fn process(&'a self, text: &'a str) -> Vec<T> {
         self.process_iter(text).collect()
@@ -42,7 +43,7 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
     #[doc(hidden)]
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<T>;
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a;
 }
@@ -216,12 +217,20 @@ pub trait MatchTableTrait<S: AsRef<str>> {
 ///
 /// # Examples
 ///
-/// The following is an example of how a [MatchTable] might be instantiated:
+/// The following is an example of how a [MatchTable] might be manually instantiated or built:
 ///
 /// ```rust
-/// use matcher_rs::{MatchTable, MatchTableType, ProcessType};
+/// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType};
 ///
-/// let match_table = MatchTable {
+/// // Recommended: Using MatchTableBuilder
+/// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+///     .add_words(["example", "sample"])
+///     .exemption_process_type(ProcessType::None)
+///     .add_exemption_words(["ignore", "skip"])
+///     .build();
+///
+/// // Or manually
+/// let match_table_manual = MatchTable {
 ///     table_id: 1,
 ///     match_table_type: MatchTableType::Simple {
 ///         process_type: ProcessType::None,
@@ -302,7 +311,6 @@ impl<'a> MatchTableTrait<Cow<'a, str>> for MatchTableSerde<'a> {
 /// - `is_exemption: bool`: A flag indicating whether this configuration entry is for exemption words (true)
 ///   or for regular matching words (false).
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct WordTableConf {
     match_id: u32,
     table_id: u32,
@@ -466,11 +474,7 @@ pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
 ///
 /// - `sim_matcher: Option<SimMatcher>`: An optional [SimMatcher] used to perform similarity-based matching
 ///   operations if any such tables are configured.
-///
-/// The [Matcher] struct is designed to be serialized and deserialized conditionally by leveraging the `serde`
-/// feature, ensuring flexibility in its usage and integration with various systems and data transfer scenarios.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Matcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     simple_word_table_conf_list: Vec<WordTableConf>,
@@ -500,33 +504,37 @@ impl Matcher {
     ///
     /// # Example
     ///
+    /// Note: It is highly recommended to use [`MatcherBuilder`](crate::MatcherBuilder) to
+    /// easily build a Matcher without manually instantiating `Vec` and `HashMap`s.
+    ///
     /// ```rust
     /// use std::borrow::Cow;
     /// use nohash_hasher::IntMap;
-    /// use matcher_rs::{MatchTable, MatchTableType, ProcessType, RegexMatchType, Matcher};
+    /// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType, RegexMatchType, Matcher, MatcherBuilder};
     /// use std::collections::HashMap;
     ///
-    /// let match_table_1 = MatchTable {
-    ///     table_id: 1,
-    ///     match_table_type: MatchTableType::Simple { process_type: ProcessType::None },
-    ///     word_list: vec!["word1", "word2"],
-    ///     exemption_process_type: ProcessType::None,
-    ///     exemption_word_list: vec!["ignore"],
-    /// };
+    /// let match_table_1 = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_words(["word1", "word2"])
+    ///     .add_exemption_word("ignore")
+    ///     .build();
     ///
-    /// let match_table_2 = MatchTable {
-    ///     table_id: 2,
-    ///     match_table_type: MatchTableType::Regex { process_type: ProcessType::None, regex_match_type: RegexMatchType::Regex },
-    ///     word_list: vec!["regex1", "regex2"],
-    ///     exemption_process_type: ProcessType::None,
-    ///     exemption_word_list: vec!["skip"],
-    /// };
+    /// let match_table_2 = MatchTableBuilder::new(2, MatchTableType::Regex { process_type: ProcessType::None, regex_match_type: RegexMatchType::Regex })
+    ///     .add_words(["regex1", "regex2"])
+    ///     .add_exemption_word("skip")
+    ///     .build();
     ///
+    /// // Recommended approach:
+    /// let matcher = MatcherBuilder::new()
+    ///     .add_table(1, match_table_1.clone())
+    ///     .add_table(2, match_table_2.clone())
+    ///     .build();
+    ///
+    /// // Or manually mapping:
     /// let mut match_table_map: HashMap<u32, Vec<MatchTable>> = HashMap::new();
     /// match_table_map.insert(1, vec![match_table_1]);
     /// match_table_map.insert(2, vec![match_table_2]);
     ///
-    /// let matcher = Matcher::new(&match_table_map);
+    /// let matcher_manual = Matcher::new(&match_table_map);
     /// ```
     pub fn new<S, M, T>(match_table_map: &HashMap<u32, Vec<M>, S>) -> Matcher
     where
@@ -623,7 +631,7 @@ impl Matcher {
 
                     let simple_word_map = simple_table.entry(exemption_process_type).or_default();
 
-                    for exemption_word in exemption_word_list.iter() {
+                    for exemption_word in exemption_word_list {
                         simple_word_table_conf_index_list.push(simple_word_table_conf_id);
                         simple_word_map.insert(simple_word_id, exemption_word);
                         simple_word_id += 1;
@@ -696,16 +704,9 @@ impl Matcher {
     ///   values are vectors of [MatchResult] items. Each [MatchResult] holds
     ///   information about a match found in the corresponding match table.
     ///   If no matches are found, the function returns an empty [HashMap].
-    ///
-    /// # Safety
-    ///
-    /// Unsafe code is used to access elements in `simple_word_table_conf_list`
-    /// and `simple_word_table_conf_index_list` without bounds checks for
-    /// performance reasons. Ensure these operations remain safe when modifying
-    /// the underlying data structures.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> HashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = HashMap::new();
         let mut failed_match_table_id_set = IdSet::new();
@@ -738,15 +739,9 @@ impl Matcher {
             for simple_result in simple_matcher
                 ._process_with_processed_text_process_type_set(processed_text_process_type_set)
             {
-                // SAFETY: `simple_word_table_conf_index_list` is pre-populated guaranteeing index mapping corresponds directly
-                // to valid indices mapped within `simple_word_table_conf_list`.
-                let word_table_conf = unsafe {
-                    self.simple_word_table_conf_list.get_unchecked(
-                        *self
-                            .simple_word_table_conf_index_list
-                            .get_unchecked(simple_result.word_id as usize),
-                    )
-                };
+                let word_table_conf = self.simple_word_table_conf_list.get(
+                    self.simple_word_table_conf_index_list[simple_result.word_id as usize],
+                ).expect("simple_word_table_conf_index_list` is pre-populated guaranteeing index mapping corresponds directly to valid indices mapped within `simple_word_table_conf_list`.");
                 let match_table_id = ((word_table_conf.match_id as usize) << 32)
                     | (word_table_conf.table_id as usize);
 
@@ -768,9 +763,7 @@ impl Matcher {
                         // SAFETY: `simple_result.word_id` is an aggregated count offset by `word_table_conf.offset`.
                         // Because words matched belong strictly to their relative simple word ID table configurations,
                         // `simple_result.word_id` is computationally guaranteed to be >= `offset`.
-                        word_id: unsafe {
-                            simple_result.word_id.unchecked_sub(word_table_conf.offset)
-                        },
+                        word_id: simple_result.word_id - word_table_conf.offset,
                         word: simple_result.word,
                         similarity: None,
                     });
@@ -830,7 +823,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// initialized before calling this function.
     fn _is_match_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> bool {
         match &self.simple_matcher {
             Some(_) => !self
@@ -904,7 +897,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///   from the match IDs.
     fn _process_with_processed_text_process_type_set(
         &'a self,
-        processed_text_process_type_set: &[(Cow<'a, str>, IdSet)],
+        processed_text_process_type_set: &ArrayVec<[(Cow<'a, str>, IdSet); 16]>,
     ) -> Vec<MatchResult<'a>> {
         self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
             .into_iter()
@@ -925,7 +918,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// middle of the input would invalidate earlier simple-match results), the aggregation into the
     /// `HashMap` must remain eager.
     ///
-    /// The benefit over calling [`process`] is that the final `collect()` step is avoided: results
+    /// The benefit over calling [`TextMatcherTrait::process`] is that the final `collect()` step is avoided: results
     /// are yielded lazily to the caller as it advances the iterator. Callers that short-circuit
     /// (e.g., looking for the *first* result satisfying some predicate) pay no allocation cost for
     /// the results they never consume.

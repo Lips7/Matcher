@@ -17,16 +17,16 @@ const CN_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::Delete,
     ProcessType::Fanjian,
     ProcessType::FanjianDeleteNormalize,
-];
+].as_slice();
 
 const EN_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::None,
     ProcessType::Delete,
     ProcessType::DeleteNormalize,
-];
+].as_slice();
 
-const SIMPLE_WORD_MAP_SIZE_LIST: &[usize] = &[1000, 10000, 50000];
-const COMBINED_TIMES_LIST: &[usize] = &[1, 3, 5];
+const SIMPLE_WORD_MAP_SIZE_LIST: &[usize] = &[1000, 10000, 50000].as_slice();
+const COMBINED_TIMES_LIST: &[usize] = &[1, 3, 5].as_slice();
 
 const DEFAULT_PROCESS_TYPE: ProcessType = ProcessType::None;
 const DEFAULT_SIMPLE_WORD_MAP_SIZE: usize = 10000;
