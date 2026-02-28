@@ -138,8 +138,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// A struct representing a regex matcher.
 ///
 /// This struct is used to match text against a collection of regular expression patterns
-/// organized by different processing types. It supports serialization and deserialization
-/// with the `serde` crate (when the "serde" feature is enabled).
+/// organized by different processing types.
 ///
 /// Fields:
 /// - `process_type_tree`: A vector of `ProcessTypeBitNode`s representing the hierarchical tree structure of process types.
