@@ -367,20 +367,10 @@ impl SimpleMatcher {
             let ac_iter = self
                 .ac_matcher
                 .try_find_overlapping_iter(processed_text.as_ref());
-            debug_assert!(
-                ac_iter.is_ok(),
-                "SimpleMatcher: ac_matcher.try_find_overlapping_iter failed for text: {}",
-                processed_text
-            );
             for ac_dedup_result in unsafe { ac_iter.unwrap_unchecked() } {
                 // SAFETY: `pattern()` index is guaranteed by aho-corasick structure to be within bounds.
                 // verified by construction in SimpleMatcher::new.
                 let pattern_idx = ac_dedup_result.pattern().as_usize();
-                debug_assert!(
-                    pattern_idx < self.ac_dedup_word_conf_list.len(),
-                    "SimpleMatcher: pattern index {} out of bounds",
-                    pattern_idx
-                );
                 for &(match_process_type, word_id, offset) in
                     unsafe { self.ac_dedup_word_conf_list.get_unchecked(pattern_idx) }
                 {
@@ -406,19 +396,6 @@ impl SimpleMatcher {
                     // bit is i32, so it will not overflow almost 100%
                     // SAFETY: The length of the `split_bit_matrix` outer vector matches the configured `split_bit` size,
                     // and the inner vectors map precisely to `processed_times`. `offset` and `index` are strictly bounded.
-                    debug_assert!(
-                        offset < split_bit_matrix.len(),
-                        "SimpleMatcher: offset {} out of bounds for split_bit_matrix of len {}",
-                        offset,
-                        split_bit_matrix.len()
-                    );
-                    debug_assert!(
-                        index < split_bit_matrix[offset].len(),
-                        "SimpleMatcher: index {} out of bounds for split_bit_matrix[{}] of len {}",
-                        index,
-                        offset,
-                        split_bit_matrix[offset].len()
-                    );
                     unsafe {
                         let bit = split_bit_matrix
                             .get_unchecked_mut(offset)

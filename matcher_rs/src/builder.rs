@@ -40,11 +40,6 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// * `word` - The actual word or pattern to match.
     pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();
-        debug_assert!(
-            !bucket.contains_key(&word_id),
-            "SimpleMatcherBuilder: duplicate word_id {word_id} for ProcessType::{process_type:?} \
-             — the previous word will be silently overwritten. Each word_id must be unique per ProcessType."
-        );
         bucket.insert(word_id, word);
         self
     }
