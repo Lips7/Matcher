@@ -27,7 +27,6 @@ bitflags = "2.11.0"
 daachorse = "1.0.0"
 fancy-regex = "0.17.0"
 id-set = "0.2.2"
-micromap = "0.1.0"
 nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 rapidfuzz = "0.5.0"

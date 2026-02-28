@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
+use std::collections::HashMap;
 
 use aho_corasick::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
@@ -14,7 +15,6 @@ use daachorse::{
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 use id_set::IdSet;
-use micromap::Map;
 use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
@@ -140,7 +140,8 @@ impl Display for ProcessType {
 /// This trait allows for [ProcessType] to be used in [Map].
 impl IsEnabled for ProcessType {}
 
-type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>, 8>>;
+type ProcessMatcherCache =
+    RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
 
 /// A global, lazily-initialized cache for storing process matchers.
 ///
@@ -151,7 +152,7 @@ type ProcessMatcherCache = RwLock<Map<ProcessType, Arc<(Vec<&'static str>, Proce
 /// The cache is capped at 8 entries, matching the number of distinct single-bit
 /// [ProcessType] variants that can be passed to [get_process_matcher].
 pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
-    LazyLock::new(|| RwLock::new(Map::default()));
+    LazyLock::new(|| RwLock::new(HashMap::with_capacity_and_hasher(8, Default::default())));
 
 /// Error type returned by [`text_process`] when more than one bit is set in the
 /// `process_type` argument.
