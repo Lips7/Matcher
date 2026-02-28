@@ -135,10 +135,9 @@ For more detailed usage examples, please refer to the [test.rs](./tests/test.rs)
 
 ## Feature Flags
 * `runtime_build`: By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
-* `serde`: By enable serde feature, we could serialize and deserialize matcher and simple_matcher. With serde feature, AhoCorasick's prefilter is disabled, because I don't know how to serialize it correctly, which will lead to performance regression when the patterns size is small (say, less than 100).
 * `dfa`: By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
 
-Default feature is `dfa`. If you want to make `Matcher` and `SimpleMatcher` serializable, you should enable `serde` feature.
+Default feature is `dfa`.
 
 ## Benchmarks
 

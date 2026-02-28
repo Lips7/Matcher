@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.0 - 2026-02-28
+
+### Breaking Changes
+- Implement sealed trait pattern for `TextMatcherTrait`.
+
+### Refactor & Performance
+- Use `Box<[T]>` for frozen `Vec` fields to optimize memory.
+- Introduce `gen` blocks for `process_iter` implementations to improve iteration.
+- Remove unsafe code, update `aho-corasick` dependency, optimize matcher with `tinyvec`.
+- Introduce `ProcessTypeError` for `text_process` handling.
+- Use `eprintln` for warnings instead of `println`.
+- Consolidate conditional matching logic and update FFI function attributes to `unsafe(no_mangle)`.
+- Improve struct initializations and Option block handling.
+
+### Features
+- Derive `Debug` on `MatchResult` for consistency.
+- Add `diagnostic::on_unimplemented` to public traits for better compiler errors.
+
+### Maintenance & Documentation
+- Update Rust edition to 2024.
+- Add `rust-toolchain.toml` to use nightly toolchains for reproducible builds.
+- Remove direct deserialization for core types.
+- Improve `SimpleMatcher` and `Matcher` instantiation examples to recommend builder patterns.
+- Ensure correct and modern rust idiom implementations across repo.
+
 ## 0.7.2 - 2026-02-25
 
 ### Refactor & Performance
