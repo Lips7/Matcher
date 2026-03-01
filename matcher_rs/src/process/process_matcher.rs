@@ -14,7 +14,6 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -130,11 +129,6 @@ impl Display for ProcessType {
         write!(f, "{:?}", display_str_list.join("_"))
     }
 }
-
-/// Implements the [IsEnabled] trait for the [ProcessType] struct.
-///
-/// This trait allows for [ProcessType] to be used in [HashMap].
-impl IsEnabled for ProcessType {}
 
 type ProcessMatcherCache = RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
 

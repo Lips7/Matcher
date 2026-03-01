@@ -6,11 +6,11 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+use std::collections::HashMap;
 use std::hint::black_box;
 
 use divan::Bencher;
 use matcher_rs::{ProcessType, SimpleMatcher, TextMatcherTrait};
-use nohash_hasher::IntMap;
 
 const CN_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::None,
@@ -49,7 +49,7 @@ fn build_deterministic_map(
     simple_word_map_size: usize,
     combined_times: usize,
     match_scenario: bool,
-) -> IntMap<u32, String> {
+) -> HashMap<u32, String> {
     let mut patterns: Vec<&str> = if en_or_cn == "cn" {
         CN_WORD_LIST_100000.lines().collect()
     } else {
@@ -57,7 +57,7 @@ fn build_deterministic_map(
     };
     patterns.sort_unstable();
 
-    let mut simple_word_map = IntMap::default();
+    let mut simple_word_map = HashMap::new();
     let mut global_word_id = 0u32;
     let operators = ["&", "~"];
 
@@ -91,7 +91,7 @@ mod build {
 
     #[divan::bench(args = CN_PROCESS_TYPES, max_time = 5)]
     fn cn_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "cn",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -107,7 +107,7 @@ mod build {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn cn_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("cn", size, DEFAULT_COMBINED_TIMES, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
 
@@ -118,7 +118,7 @@ mod build {
 
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn cn_by_combinations(bencher: Bencher, combined_times: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map =
             build_deterministic_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
@@ -130,7 +130,7 @@ mod build {
 
     #[divan::bench(args = EN_PROCESS_TYPES, max_time = 5)]
     fn en_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "en",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -146,7 +146,7 @@ mod build {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn en_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("en", size, DEFAULT_COMBINED_TIMES, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
 
@@ -157,7 +157,7 @@ mod build {
 
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn en_by_combinations(bencher: Bencher, combined_times: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map =
             build_deterministic_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
@@ -173,7 +173,7 @@ mod search_match {
 
     #[divan::bench(args = CN_PROCESS_TYPES, max_time = 5)]
     fn cn_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "cn",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -192,7 +192,7 @@ mod search_match {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn cn_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("cn", size, DEFAULT_COMBINED_TIMES, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
@@ -206,7 +206,7 @@ mod search_match {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn en_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("en", size, DEFAULT_COMBINED_TIMES, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
@@ -220,7 +220,7 @@ mod search_match {
 
     #[divan::bench(args = EN_PROCESS_TYPES, max_time = 5)]
     fn en_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "en",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -239,7 +239,7 @@ mod search_match {
 
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn en_by_combinations(bencher: Bencher, combined_times: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map =
             build_deterministic_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
@@ -258,7 +258,7 @@ mod search_no_match {
 
     #[divan::bench(args = CN_PROCESS_TYPES, max_time = 5)]
     fn cn_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "cn",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -277,7 +277,7 @@ mod search_no_match {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn cn_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("cn", size, DEFAULT_COMBINED_TIMES, false);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
@@ -291,7 +291,7 @@ mod search_no_match {
 
     #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
     fn en_by_size(bencher: Bencher, size: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map("en", size, DEFAULT_COMBINED_TIMES, false);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
@@ -305,7 +305,7 @@ mod search_no_match {
 
     #[divan::bench(args = EN_PROCESS_TYPES, max_time = 5)]
     fn en_by_process_type(bencher: Bencher, process_type: ProcessType) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map = build_deterministic_map(
             "en",
             DEFAULT_SIMPLE_WORD_MAP_SIZE,
@@ -324,7 +324,7 @@ mod search_no_match {
 
     #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
     fn en_by_combinations(bencher: Bencher, combined_times: usize) {
-        let mut simple_table = IntMap::default();
+        let mut simple_table = HashMap::new();
         let simple_word_map =
             build_deterministic_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, false);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);

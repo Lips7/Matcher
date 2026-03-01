@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
-use nohash_hasher::IntMap;
 use serde::Serialize;
 
 use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
@@ -22,16 +21,15 @@ use crate::process::process_matcher::{
 /// # Examples
 ///
 /// ```rust
-/// use nohash_hasher::IntMap;
+/// use std::collections::HashMap;
 /// use matcher_rs::{SimpleTable, ProcessType};
 ///
-/// let mut table: SimpleTable = IntMap::default();
-/// table.insert(ProcessType::None, IntMap::default());
-/// table.get_mut(&ProcessType::None).unwrap().insert(1, "example");
+/// let mut table: SimpleTable = HashMap::new();
+/// table.insert(ProcessType::None, HashMap::new());
 /// ```
-pub type SimpleTable<'a> = IntMap<ProcessType, IntMap<u32, &'a str>>;
+pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 
-pub type SimpleTableSerde<'a> = IntMap<ProcessType, IntMap<u32, Cow<'a, str>>>;
+pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
 /// Represents the configuration for a word within the SimpleMatcher.
 ///
@@ -129,7 +127,7 @@ pub struct SimpleMatcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
     ac_matcher: AhoCorasick,
     ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
-    word_conf_map: IntMap<u32, WordConf>,
+    word_conf_map: HashMap<u32, WordConf>,
 }
 
 impl SimpleMatcher {
@@ -160,7 +158,7 @@ impl SimpleMatcher {
 
         let mut process_type_set = HashSet::with_capacity(process_type_word_map.len());
         let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
-        let mut word_conf_map = IntMap::with_capacity_and_hasher(word_size, Default::default());
+        let mut word_conf_map = HashMap::with_capacity(word_size);
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::with_capacity(word_size);

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
 
 use crate::process::process_matcher::{
@@ -379,7 +378,7 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 
 /// A type alias for a mapping from match table IDs to their corresponding [`MatchTable`]s.
 ///
-/// This mapping uses an `IntMap` mapping to `Vec<MatchTable>`.
+/// This mapping uses a `HashMap` mapping to `Vec<MatchTable>`.
 ///
 /// # Type Parameters
 /// * `'a` - The lifetime of the borrowed data within the [`MatchTable`] structures.
@@ -387,7 +386,7 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 /// # Examples
 ///
 /// ```rust
-/// use nohash_hasher::IntMap;
+/// use std::collections::HashMap;
 /// use matcher_rs::{MatchTable, MatchTableMap, MatchTableType, ProcessType, RegexMatchType};
 ///
 /// let match_table_1 = MatchTable {
@@ -406,13 +405,13 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 ///     exemption_word_list: vec!["skip"],
 /// };
 ///
-/// let mut match_table_map: MatchTableMap = IntMap::default();
+/// let mut match_table_map: MatchTableMap = HashMap::new();
 /// match_table_map.insert(1, vec![match_table_1]);
 /// match_table_map.insert(2, vec![match_table_2]);
 /// ```
-pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
+pub type MatchTableMap<'a> = HashMap<u32, Vec<MatchTable<'a>>>;
 
-pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
+pub type MatchTableMapSerde<'a> = HashMap<u32, Vec<MatchTableSerde<'a>>>;
 
 /// The [`Matcher`] struct is responsible for managing and facilitating various types of matching operations
 /// utilizing different word processing strategies and match table configurations.
@@ -474,7 +473,7 @@ impl Matcher {
         let mut simple_word_table_conf_id = 0;
         let mut simple_word_table_conf_list = Vec::new();
         let mut simple_word_table_conf_index_list = Vec::new();
-        let mut simple_table: SimpleTable = IntMap::default();
+        let mut simple_table: SimpleTable = HashMap::new();
 
         let mut regex_table_list = Vec::new();
         let mut sim_table_list = Vec::new();

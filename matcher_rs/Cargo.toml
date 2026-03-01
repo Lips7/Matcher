@@ -26,7 +26,6 @@ aho-corasick = "1.1.4"
 bitflags = "2.11.0"
 daachorse = "1.0.0"
 fancy-regex = "0.17.0"
-nohash-hasher = "0.2.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 rapidfuzz = "0.5.0"
 regex = { version = "1.12.3", features = ["perf-dfa-full"] }

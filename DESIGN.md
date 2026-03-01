@@ -275,7 +275,5 @@ The Matcher orchestrator ensures `O(1)` constant-time dispatch and scaling by us
 
 * **Zero-Copy Parsers (`Cow<'a, str>`):**
   String transformations (`Delete`, `Normalize`) operate lazily. If a string undergoes a `Normalize` transformation but the string contains no combinable characters or varied casings, the system returns a `Cow::Borrowed` pointer to the original memory address, omitting the internal allocation of a `String` entirely.
-* **Rapid Lookups:**
-  Internal ID lookups utilize `IntMap` (a high-speed hasher specifically tailored for integer-keyed hashes) and bounding bit arrays (`HashSet`), allowing matching lookups to run near the limits of CPU cache latency without heavy cryptographic hashing overhead.
 * **Global Memory Allocators (FFI Boundaries):**
   The highly-concurrent matching algorithms require a robust multithreaded allocator capable of preventing memory fragmentation. The `matcher_rs` Rust library itself leaves the allocator up to the consumer, but the Foreign Function Interface (FFI) bindings for Python and C (`matcher_py`, `matcher_c`) automatically overwrite the system allocator with `tikv-jemallocator` (on Linux ARM64) and `mimalloc` (on all others) to guarantee max throughput in multi-threaded runtime environments without hijacking downstream Rust targets.
