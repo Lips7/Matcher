@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
 use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
@@ -334,14 +335,20 @@ impl SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<(usize, Vec<i32>)> {
-        let mut split_bit_store: HashMap<usize, Vec<i32>> = HashMap::new();
-        let mut not_word_id_set: HashSet<usize> = HashSet::new();
+        let mut split_bit_store: FxHashMap<usize, Vec<i32>> =
+            FxHashMap::with_capacity_and_hasher(16, Default::default());
+        let mut not_word_id_set: FxHashSet<usize> = FxHashSet::default();
 
         let processed_times = processed_text_process_type_set.len();
 
-        for (index, (processed_text, process_type_set)) in
-            processed_text_process_type_set.iter().enumerate()
-        {
+        // Pre-compute u64 bitmasks from HashSet<u8> for O(1) bitwise process_type checks.
+        let process_type_masks: Vec<u64> = processed_text_process_type_set
+            .iter()
+            .map(|(_, set)| set.iter().fold(0u64, |mask, &v| mask | (1u64 << v)))
+            .collect();
+
+        for (index, (processed_text, _)) in processed_text_process_type_set.iter().enumerate() {
+            let process_type_mask = process_type_masks[index];
             let ac_iter = self
                 .ac_matcher
                 .find_overlapping_iter(processed_text.as_ref());
@@ -350,7 +357,7 @@ impl SimpleMatcher {
                 for &(match_process_type, word_conf_idx, offset) in
                     &self.ac_dedup_word_conf_list[pattern_idx]
                 {
-                    if !process_type_set.contains(&match_process_type.bits())
+                    if process_type_mask & (1u64 << match_process_type.bits()) == 0
                         || not_word_id_set.contains(&word_conf_idx)
                     {
                         continue;
