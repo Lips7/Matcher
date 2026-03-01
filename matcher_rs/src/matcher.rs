@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::process::process_matcher::{
-    ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+    ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_with_tree,
 };
 use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
@@ -39,17 +39,17 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 
 /// Internal trait for preprocessed-text matching. Not part of the public API.
 ///
-/// These methods accept already-reduced text (a [`ProcessedTextSet`]) rather than
+/// These methods accept already-reduced text (a [`ProcessedTextMasks`]) rather than
 /// raw input, avoiding redundant preprocessing when the same reduced text is reused
 /// across multiple matchers (e.g. inside [`Matcher`]).
 pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool;
     fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<T>;
 }
 
@@ -599,24 +599,24 @@ impl Matcher {
             return HashMap::new();
         }
 
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self._word_match_with_processed_text_process_type_set(&processed_text_process_type_set)
+        self._word_match_with_processed_text_process_type_masks(&processed_text_process_type_masks)
     }
 
     /// Matches processed text against the configured match tables.
     ///
     /// This function takes a set of processed text pieces, represented by
-    /// `processed_text_process_type_set`, and checks them against the various
+    /// `processed_text_process_type_masks`, and checks them against the various
     /// types of match tables defined in the [`Matcher`] instance (simple, regex, and
     /// similarity match tables).
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A reference to a slice of tuples,
-    ///   where each tuple contains a processed text piece (as [`Cow<str>`]) and a
-    ///   set of process type IDs ([`HashSet`]).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -624,15 +624,16 @@ impl Matcher {
     ///   values are vectors of [`MatchResult`] items. Each [`MatchResult`] holds
     ///   information about a match found in the corresponding match table.
     ///   If no matches are found, the function returns an empty [`HashMap`].
-    fn _word_match_with_processed_text_process_type_set<'a>(
+    fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> HashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = HashMap::new();
         let mut failed_match_table_id_set = HashSet::new();
 
         if let Some(regex_matcher) = &self.regex_matcher {
-            for regex_result in regex_matcher.process_preprocessed(processed_text_process_type_set)
+            for regex_result in
+                regex_matcher.process_preprocessed(processed_text_process_type_masks)
             {
                 let result_list: &mut Vec<MatchResult> =
                     match_result_dict.entry(regex_result.match_id).or_default();
@@ -642,7 +643,7 @@ impl Matcher {
         }
 
         if let Some(sim_matcher) = &self.sim_matcher {
-            for sim_result in sim_matcher.process_preprocessed(processed_text_process_type_set) {
+            for sim_result in sim_matcher.process_preprocessed(processed_text_process_type_masks) {
                 let result_list = match_result_dict.entry(sim_result.match_id).or_default();
 
                 result_list.push(sim_result.into());
@@ -651,7 +652,7 @@ impl Matcher {
 
         if let Some(simple_matcher) = &self.simple_matcher {
             for simple_result in
-                simple_matcher.process_preprocessed(processed_text_process_type_set)
+                simple_matcher.process_preprocessed(processed_text_process_type_masks)
             {
                 let word_table_conf = self.simple_word_table_conf_list.get(
                     self.simple_word_table_conf_index_list[simple_result.word_id as usize],
@@ -706,10 +707,10 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// * `bool` - Returns `true` if any matches are found, otherwise returns `false`.
     fn is_match(&self, text: &str) -> bool {
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_masks)
     }
     /// Processes the input text to generate a list of match results.
     ///
@@ -719,7 +720,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// match tables.
     ///
     /// The process involves reducing the input text based on the type tree, transforming
-    /// it into a structured format (`processed_text_process_type_set`) suitable for
+    /// it into a structured format (`processed_text_process_type_masks`) suitable for
     /// matching operations. The results are then aggregated into a single list of
     /// [`MatchResult`] instances.
     ///
@@ -732,10 +733,10 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// * [`Vec<MatchResult<'a>>`] - A vector containing match results corresponding to
     ///   the patterns defined in the match tables.
     fn process(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_set)
+        self.process_preprocessed(&processed_text_process_type_masks)
     }
 
     /// Processes the given text and returns a **lazy** iterator over [`MatchResult`] matches.
@@ -744,7 +745,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// The [`Matcher`] applies **exemption logic**: a simple-matcher hit on an exemption word for a
     /// given `(match_id, table_id)` pair must *retroactively remove* previously accumulated
-    /// results for that pair. This is implemented via `_word_match_with_processed_text_process_type_set`,
+    /// results for that pair. This is implemented via `_word_match_with_processed_text_process_type_masks`,
     /// which returns a [`HashMap<u32, Vec<MatchResult>>`] only after processing the entire input.
     ///
     /// Because all results must be seen before any can be safely emitted (an exemption hit in the
@@ -769,11 +770,12 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
                 return;
             }
 
-            let processed_text_process_type_set =
+            let processed_text_process_type_masks =
                 reduce_text_process_with_tree(&self.process_type_tree, text);
 
-            let matches = self
-                ._word_match_with_processed_text_process_type_set(&processed_text_process_type_set);
+            let matches = self._word_match_with_processed_text_process_type_masks(
+                &processed_text_process_type_masks,
+            );
             for value_list in matches.into_values() {
                 for match_result in value_list {
                     yield match_result;
@@ -794,8 +796,9 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a processed text (as a [`Cow<'a, str>`]) and an associated [`HashSet`].
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -804,25 +807,27 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// # Safety
     ///
     /// This function is safe to use under normal circumstances but depends on the reliability
-    /// of the underlying matchers and the integrity of the `processed_text_process_type_set`
+    /// of the underlying matchers and the integrity of the `processed_text_process_type_masks`
     /// input. Ensure the input data is correctly processed and the matchers are properly
     /// initialized before calling this function.
     fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
         if self.simple_matcher.is_some() {
             return !self
-                ._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
+                ._word_match_with_processed_text_process_type_masks(
+                    processed_text_process_type_masks,
+                )
                 .is_empty();
         }
         if let Some(regex_matcher) = &self.regex_matcher
-            && regex_matcher.is_match_preprocessed(processed_text_process_type_set)
+            && regex_matcher.is_match_preprocessed(processed_text_process_type_masks)
         {
             return true;
         }
         if let Some(sim_matcher) = &self.sim_matcher
-            && sim_matcher.is_match_preprocessed(processed_text_process_type_set)
+            && sim_matcher.is_match_preprocessed(processed_text_process_type_masks)
         {
             return true;
         }
@@ -841,8 +846,9 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a pre-processed text (as a [`Cow<'a, str>`]) and an associated [`HashSet`].
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -850,9 +856,9 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     ///   from the match IDs.
     fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<MatchResult<'a>> {
-        self._word_match_with_processed_text_process_type_set(processed_text_process_type_set)
+        self._word_match_with_processed_text_process_type_masks(processed_text_process_type_masks)
             .into_values()
             .flatten()
             .collect()

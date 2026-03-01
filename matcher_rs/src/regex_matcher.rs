@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
     process::process_matcher::{
-        ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+        ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
         reduce_text_process_with_tree,
     },
 };
@@ -331,10 +331,10 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
             return false;
         }
 
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_masks)
     }
     /// Returns a **lazy** iterator over [`RegexResult`] matches for the given text.
     ///
@@ -358,14 +358,15 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                 return;
             }
 
-            let processed_text_process_type_set =
+            let processed_text_process_type_masks =
                 reduce_text_process_with_tree(&self.process_type_tree, text);
 
             let mut table_id_index_set = HashSet::new();
 
-            for (processed_text, process_type_set) in processed_text_process_type_set {
+            for (processed_text, process_type_mask) in processed_text_process_type_masks {
                 for regex_pattern_table in self.regex_pattern_table_list.iter() {
-                    if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
+                    if (process_type_mask & (1u64 << regex_pattern_table.process_type.bits())) == 0
+                    {
                         continue;
                     }
 
@@ -447,7 +448,7 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     /// It checks if any of the regex patterns in the `regex_pattern_table_list` match the processed text.
     ///
     /// The function first verifies that the `process_type` of a regex pattern is present in the current
-    /// `process_type_set`. If it is, it evaluates the match for different types of regex patterns:
+    /// `process_type_mask`. If it is, it evaluates the match for different types of regex patterns:
     /// - `Standard`: Uses a standard regex match.
     /// - `List`: Checks if any regex in the list matches.
     /// - `Set`: Checks if the regex set matches.
@@ -456,19 +457,20 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
-    ///   and the second element is the set of process types associated with that text.
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
     /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
     fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
-        for (processed_text, process_type_set) in processed_text_process_type_set {
+        for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
+                if (process_type_mask & (1u64 << regex_pattern_table.process_type.bits())) == 0 {
                     continue;
                 }
 
@@ -488,13 +490,13 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
         false
     }
 
-    /// Processes the `processed_text_process_type_set` to find and return regex matches.
+    /// Processes the `processed_text_process_type_masks` to find and return regex matches.
     ///
-    /// This function iterates over the pairs of processed text and their associated processing type sets.
+    /// This function iterates over the pairs of processed text and their associated processing type masks.
     /// It then checks against the regex patterns in the `regex_pattern_table_list` to find matches.
     ///
     /// For each regex pattern, the function first verifies that the `process_type` of a regex pattern is present
-    /// in the current `process_type_set`. If it is, it processes matches based on different types of regex patterns:
+    /// in the current `process_type_mask`. If it is, it processes matches based on different types of regex patterns:
     /// - `Standard`: Uses a standard regex match and stores the captures.
     /// - `List`: Checks each regex in the list for a match and stores the corresponding words.
     /// - `Set`: Checks the regex set for matches and stores the corresponding words.
@@ -503,22 +505,23 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A slice of tuples where the first element is the processed text
-    ///   and the second element is the set of process types associated with that text.
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
     /// * [`Vec<RegexResult>`] - A vector of [`RegexResult`] instances, each representing a match found in the processed text.
     fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = HashSet::new();
 
-        for (processed_text, process_type_set) in processed_text_process_type_set {
+        for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
+                if (process_type_mask & (1u64 << regex_pattern_table.process_type.bits())) == 0 {
                     continue;
                 }
                 match &regex_pattern_table.regex_type {

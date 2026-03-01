@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
     process::process_matcher::{
-        ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+        ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
         reduce_text_process_with_tree,
     },
 };
@@ -207,10 +207,10 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             return false;
         }
 
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_masks)
     }
     /// Returns a **lazy** iterator over [`SimResult`] matches for the given text.
     ///
@@ -237,9 +237,10 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
             let mut table_id_index_set = HashSet::new();
 
-            for (processed_text, process_type_set) in processed {
+            for (processed_text, process_type_mask) in processed {
                 for sim_processed_table in self.sim_processed_table_list.iter() {
-                    if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
+                    if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0
+                    {
                         continue;
                     }
 
@@ -286,9 +287,9 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Parameters
     ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [`HashSet`] containing the process type identifiers associated with the processed text.
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -296,11 +297,11 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// according to the specified match type and similarity threshold; otherwise, returns `false`.
     fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
-        for (processed_text, process_type_set) in processed_text_process_type_set {
+        for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
+                if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0 {
                     continue;
                 }
                 let is_match = match sim_processed_table.sim_match_type {
@@ -334,9 +335,9 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     ///
     /// # Parameters
     ///
-    /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [`HashSet`] containing the process type identifiers associated with the processed text.
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -352,14 +353,14 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// an [`HashSet`] to track already processed table ID and word index combinations.
     fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
         let mut table_id_index_set = HashSet::new();
 
-        for (processed_text, process_type_set) in processed_text_process_type_set {
+        for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
+                if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0 {
                     continue;
                 }
                 match sim_processed_table.sim_match_type {

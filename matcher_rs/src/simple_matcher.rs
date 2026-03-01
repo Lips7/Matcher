@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
 use crate::process::process_matcher::{
-    ProcessType, ProcessTypeBitNode, ProcessedTextSet, build_process_type_tree,
+    ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree,
 };
 
@@ -310,10 +310,10 @@ impl SimpleMatcher {
     ///
     /// # Algorithm
     ///
-    /// 1. Iterate over each tuple of `(processed_text, process_type_set)`.
+    /// 1. Iterate over each tuple of `(processed_text, process_type_mask)`.
     /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
     ///    sub-pattern matches within the `processed_text`.
-    /// 3. For each sub-pattern match, check if its [`ProcessType`] aligns with the current text variant's `process_type_set`.
+    /// 3. For each sub-pattern match, check if its [`ProcessType`] aligns with the current text variant's `process_type_mask`.
     /// 4. Maintain a 2D split-bit matrix for each `word_id` to record which tokens condition the text satisfies.
     ///    - **AND Tokens (`&`)**: Decrements their state towards `< 0`. The token count dictates how negative it goes.
     ///      Every time the exact sub-pattern occurs, it brings the count closer.
@@ -323,32 +323,28 @@ impl SimpleMatcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A list of tuples containing processed text variants
-    ///   and their associated [`HashSet<u8>`] of valid [`ProcessType`]s.
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
     /// * `Vec<(usize, Vec<i32>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
     ///   for matched patterns, used in pass 2 to evaluate complex AND/NOT logic conditions.
     ///   The flat matrix has layout `[num_splits × processed_times]` with stride = `processed_times`.
-    fn _word_match_with_processed_text_process_type_set<'a>(
+    fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<(usize, Vec<i32>)> {
         let mut split_bit_store: FxHashMap<usize, Vec<i32>> =
             FxHashMap::with_capacity_and_hasher(16, Default::default());
         let mut not_word_id_set: FxHashSet<usize> = FxHashSet::default();
 
-        let processed_times = processed_text_process_type_set.len();
+        let processed_times = processed_text_process_type_masks.len();
 
-        // Pre-compute u64 bitmasks from HashSet<u8> for O(1) bitwise process_type checks.
-        let process_type_masks: Vec<u64> = processed_text_process_type_set
-            .iter()
-            .map(|(_, set)| set.iter().fold(0u64, |mask, &v| mask | (1u64 << v)))
-            .collect();
-
-        for (index, (processed_text, _)) in processed_text_process_type_set.iter().enumerate() {
-            let process_type_mask = process_type_masks[index];
+        for (index, (processed_text, process_type_mask)) in
+            processed_text_process_type_masks.iter().enumerate()
+        {
             let ac_iter = self
                 .ac_matcher
                 .find_overlapping_iter(processed_text.as_ref());
@@ -410,10 +406,10 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             return false;
         }
 
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_set)
+        self.is_match_preprocessed(&processed_text_process_type_masks)
     }
     /// Processes the given text and returns a vector of matching results.
     ///
@@ -430,10 +426,10 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
             return Vec::new();
         }
 
-        let processed_text_process_type_set =
+        let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_set)
+        self.process_preprocessed(&processed_text_process_type_masks)
     }
 
     /// Processes the given text and returns an iterator over [`SimpleResult`] matches.
@@ -466,20 +462,20 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
-    ///   processed text and corresponding ID sets. The processed text is a [`Cow`] (Copy-On-Write)
-    ///   string slice, and the ID set is an [`HashSet`].
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
     /// * `true` if any pattern matches the processed text, otherwise `false`.
     fn is_match_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
-        let matched =
-            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
-        let processed_times = processed_text_process_type_set.len();
+        let matched = self
+            ._word_match_with_processed_text_process_type_masks(processed_text_process_type_masks);
+        let processed_times = processed_text_process_type_masks.len();
 
         matched.iter().any(|(word_conf_idx, flat_matrix)| {
             let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
@@ -499,8 +495,9 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Arguments
     ///
-    /// * `processed_text_process_type_set` - A reference to a slice of tuples, where each tuple
-    ///   contains a [`Cow`] string slice (the processed text) and an [`HashSet`] (a set of IDs related to the processed text).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
+    ///   contains a processed text piece (as [`Cow<str>`]) and a
+    ///   u64 bitmask of process type IDs (`u64`).
     ///
     /// # Returns
     ///
@@ -510,15 +507,15 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// If the internal invariants are violated, the function may cause undefined behavior or panic.
     ///
-    /// For example, if `processed_text_process_type_set` has invalid data or the internal Aho-Corasick matcher
+    /// For example, if `processed_text_process_type_masks` has invalid data or the internal Aho-Corasick matcher
     /// encounters unexpected states, this could lead to issues.
     fn process_preprocessed(
         &'a self,
-        processed_text_process_type_set: &ProcessedTextSet<'a>,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimpleResult<'a>> {
-        let matched =
-            self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
-        let processed_times = processed_text_process_type_set.len();
+        let matched = self
+            ._word_match_with_processed_text_process_type_masks(processed_text_process_type_masks);
+        let processed_times = processed_text_process_type_masks.len();
 
         matched
             .into_iter()
