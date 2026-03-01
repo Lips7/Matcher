@@ -38,12 +38,14 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 ///
 /// # Fields
 ///
+/// - `word_id`: The ID of the word.
 /// - `word`: The original word as a String.
 /// - `split_bit`: A vector of integers representing the logical splits of the word. Positive integers indicate
 ///   multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
 /// - `not_offset`: The index in `split_bit` that indicates the start of the 'NOT' split parts.
 #[derive(Debug, Clone)]
 struct WordConf {
+    word_id: u32,
     word: String,
     split_bit: Vec<i32>,
     not_offset: usize,
@@ -102,8 +104,8 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
 
 /// A single entry in the deduplicated word configuration list.
 ///
-/// Fields: `(process_type, word_id, offset)`.
-type WordConfEntry = (ProcessType, u32, usize);
+/// Fields: `(process_type, word_conf_idx, offset)`.
+type WordConfEntry = (ProcessType, usize, usize);
 
 /// Represents a simple matcher for processing words based on process types.
 ///
@@ -127,7 +129,7 @@ pub struct SimpleMatcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
     ac_matcher: AhoCorasick,
     ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
-    word_conf_map: HashMap<u32, WordConf>,
+    word_conf_list: Box<[WordConf]>,
 }
 
 impl SimpleMatcher {
@@ -158,7 +160,8 @@ impl SimpleMatcher {
 
         let mut process_type_set = HashSet::with_capacity(process_type_word_map.len());
         let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
-        let mut word_conf_map = HashMap::with_capacity(word_size);
+        let mut word_conf_list: Vec<WordConf> = Vec::with_capacity(word_size);
+        let mut word_id_to_idx: HashMap<u32, usize> = HashMap::with_capacity(word_size);
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::with_capacity(word_size);
@@ -223,14 +226,26 @@ impl SimpleMatcher {
                     .chain(ac_split_word_not_counter.values().copied())
                     .collect::<Vec<i32>>();
 
-                word_conf_map.insert(
-                    simple_word_id,
-                    WordConf {
+                let word_conf_idx = if let Some(&existing_idx) = word_id_to_idx.get(&simple_word_id)
+                {
+                    word_conf_list[existing_idx] = WordConf {
+                        word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
                         split_bit,
                         not_offset,
-                    },
-                );
+                    };
+                    existing_idx
+                } else {
+                    let idx = word_conf_list.len();
+                    word_id_to_idx.insert(simple_word_id, idx);
+                    word_conf_list.push(WordConf {
+                        word_id: simple_word_id,
+                        word: simple_word.as_ref().to_owned(),
+                        split_bit,
+                        not_offset,
+                    });
+                    idx
+                };
 
                 for (offset, &split_word) in ac_split_word_and_counter
                     .keys()
@@ -243,7 +258,7 @@ impl SimpleMatcher {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
                             ac_dedup_word_conf_list.push(vec![(
                                 process_type,
-                                simple_word_id,
+                                word_conf_idx,
                                 offset,
                             )]);
                             ac_dedup_word_list.push(ac_word);
@@ -252,7 +267,7 @@ impl SimpleMatcher {
                         };
                         ac_dedup_word_conf_list[ac_dedup_word_id as usize].push((
                             process_type,
-                            simple_word_id,
+                            word_conf_idx,
                             offset,
                         ));
                     }
@@ -281,7 +296,7 @@ impl SimpleMatcher {
             process_type_tree,
             ac_matcher,
             ac_dedup_word_conf_list,
-            word_conf_map,
+            word_conf_list: word_conf_list.into_boxed_slice(),
         }
     }
 
@@ -312,14 +327,15 @@ impl SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * [`HashMap<u32, Vec<Vec<i32>>>`] - A mapping from matched `word_id` to a split-bit matrix,
-    ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
+    /// * `Vec<(usize, Vec<i32>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
+    ///   for matched patterns, used in pass 2 to evaluate complex AND/NOT logic conditions.
+    ///   The flat matrix has layout `[num_splits × processed_times]` with stride = `processed_times`.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
-    ) -> HashMap<u32, Vec<Vec<i32>>> {
-        let mut word_id_split_bit_map = HashMap::new();
-        let mut not_word_id_set = HashSet::new();
+    ) -> Vec<(usize, Vec<i32>)> {
+        let mut split_bit_store: HashMap<usize, Vec<i32>> = HashMap::new();
+        let mut not_word_id_set: HashSet<usize> = HashSet::new();
 
         let processed_times = processed_text_process_type_set.len();
 
@@ -331,38 +347,41 @@ impl SimpleMatcher {
                 .find_overlapping_iter(processed_text.as_ref());
             for ac_dedup_result in ac_iter {
                 let pattern_idx = ac_dedup_result.pattern().as_usize();
-                for &(match_process_type, word_id, offset) in
+                for &(match_process_type, word_conf_idx, offset) in
                     &self.ac_dedup_word_conf_list[pattern_idx]
                 {
                     if !process_type_set.contains(&match_process_type.bits())
-                        || not_word_id_set.contains(&word_id)
+                        || not_word_id_set.contains(&word_conf_idx)
                     {
                         continue;
                     }
 
-                    let word_conf = self.word_conf_map.get(&word_id).expect("`word_id` is sourced directly from `self.ac_dedup_word_conf_list`, which is structurally mapped 1:1 with values stored in `word_conf_map` during initialization.");
+                    let word_conf = &self.word_conf_list[word_conf_idx];
 
-                    let split_bit_matrix =
-                        word_id_split_bit_map.entry(word_id).or_insert_with(|| {
-                            word_conf
-                                .split_bit
-                                .iter()
-                                .map(|&bit| vec![bit; processed_times])
-                                .collect::<Vec<Vec<i32>>>()
-                        });
+                    let flat_matrix = split_bit_store.entry(word_conf_idx).or_insert_with(|| {
+                        let num_splits = word_conf.split_bit.len();
+                        let mut flat = vec![0i32; num_splits * processed_times];
+                        for (s, &bit) in word_conf.split_bit.iter().enumerate() {
+                            let row_start = s * processed_times;
+                            for t in 0..processed_times {
+                                flat[row_start + t] = bit;
+                            }
+                        }
+                        flat
+                    });
 
-                    let bit: &mut i32 = &mut split_bit_matrix[offset][index];
+                    let bit = &mut flat_matrix[offset * processed_times + index];
                     *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                     if offset >= word_conf.not_offset && *bit > 0 {
-                        not_word_id_set.insert(word_id);
-                        word_id_split_bit_map.remove(&word_id);
+                        not_word_id_set.insert(word_conf_idx);
+                        split_bit_store.remove(&word_conf_idx);
                     }
                 }
             }
         }
 
-        word_id_split_bit_map
+        split_bit_store.into_iter().collect()
     }
 }
 
@@ -451,13 +470,17 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> bool {
-        let word_id_split_bit_map =
+        let matched =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
+        let processed_times = processed_text_process_type_set.len();
 
-        word_id_split_bit_map.values().any(|split_bit_matrix| {
-            split_bit_matrix
-                .iter()
-                .all(|split_bit_vec| split_bit_vec.iter().any(|&split_bit| split_bit <= 0))
+        matched.iter().any(|(word_conf_idx, flat_matrix)| {
+            let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
+            (0..num_splits).all(|s| {
+                flat_matrix[s * processed_times..(s + 1) * processed_times]
+                    .iter()
+                    .any(|&bit| bit <= 0)
+            })
         })
     }
 
@@ -486,20 +509,24 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<SimpleResult<'a>> {
-        let word_id_split_bit_map =
+        let matched =
             self._word_match_with_processed_text_process_type_set(processed_text_process_type_set);
+        let processed_times = processed_text_process_type_set.len();
 
-        word_id_split_bit_map
+        matched
             .into_iter()
-            .filter_map(|(word_id, split_bit_matrix)| {
-                split_bit_matrix
-                    .into_iter()
-                    .all(|split_bit_vec| split_bit_vec.into_iter().any(|split_bit| split_bit <= 0))
+            .filter_map(|(word_conf_idx, flat_matrix)| {
+                let word_conf = &self.word_conf_list[word_conf_idx];
+                let num_splits = word_conf.split_bit.len();
+                (0..num_splits)
+                    .all(|s| {
+                        flat_matrix[s * processed_times..(s + 1) * processed_times]
+                            .iter()
+                            .any(|&bit| bit <= 0)
+                    })
                     .then_some(SimpleResult {
-                        word_id,
-                        word: Cow::Borrowed(
-                            &self.word_conf_map.get(&word_id).expect("Like above, the presence of `word_id` within `word_id_split_bit_map` implies it was previously drawn from a valid automaton match, which is derived directly from the keys stored inside `word_conf_map`.").word,
-                        ),
+                        word_id: word_conf.word_id,
+                        word: Cow::Borrowed(&word_conf.word),
                     })
             })
             .collect()

@@ -23,6 +23,11 @@ incremental = false
 debug = false
 debug-assertions = false
 
+[profile.profiling]
+inherits = "release"
+strip = "none"
+debug = true
+
 [profile.bench]
 strip = "none"
 opt-level = 3
