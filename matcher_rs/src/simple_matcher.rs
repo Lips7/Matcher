@@ -30,6 +30,13 @@ use crate::process::process_matcher::{
 /// ```
 pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 
+/// A type alias for a nested map structure used for serialization and deserialization.
+///
+/// This serves exactly the same role as [`SimpleTable`] but internally owns its
+/// text references using a copy-on-write `Cow<'a, str>` string format.
+///
+/// # Type Parameters
+/// * `'a` - The lifetime of the string slices.
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
 /// Represents the configuration for a word within the SimpleMatcher.
@@ -38,12 +45,10 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 /// and the index separating the 'NOT' part from the rest in the split bits vector.
 ///
 /// # Fields
-///
-/// - `word_id`: The ID of the word.
-/// - `word`: The original word as a String.
-/// - `split_bit`: A vector of integers representing the logical splits of the word. Positive integers indicate
-///   multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
-/// - `not_offset`: The index in `split_bit` that indicates the start of the 'NOT' split parts.
+/// * `word_id` - A unique identifier for the word within the table.
+/// * `word` - The original word as a String.
+/// * `split_bit` - A vector of integers representing the logical splits of the word. Positive integers indicate multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
+/// * `not_offset` - The index in `split_bit` that indicates the start of the 'NOT' split parts.
 #[derive(Debug, Clone)]
 struct WordConf {
     word_id: u32,
@@ -63,7 +68,7 @@ struct WordConf {
 ///   to existing `str` data, depending on the context.
 ///
 /// # Fields
-/// * `word_id` - A unique identifier for the matched word.
+/// * `word_id` - A unique identifier for the word within the table.
 /// * `word` - The matched word itself, wrapped in a [`Cow`] (Clone-On-Write).
 ///
 /// # Examples
@@ -114,6 +119,21 @@ type WordConfEntry = (ProcessType, usize, usize);
 /// like AND and NOT, and allowing seamless integration with various process types. Word configurations are
 /// stored and managed internally, providing a flexible and powerful matching system.
 ///
+/// # Algorithm
+/// 1. Iterates through the `process_type_word_map`.
+/// 2. For each `word`, parses the logical operators `&` (AND) and `~` (NOT).
+///    - It splits the word into sub-patterns (`ac_split_word_and_counter` and `ac_split_word_not_counter`).
+///    - It assigns a `split_bit` vector: positive numbers represent AND counts, negative numbers represent NOT counts.
+///    - Calculates the `not_offset`: the index delineating AND sub-patterns from NOT sub-patterns.
+/// 3. Normalizes and deduplicates each parsed sub-pattern across different `ProcessType`s into an `ac_dedup_word_list`.
+/// 4. Compiles the `ac_dedup_word_list` into a highly optimized Aho-Corasick DFA (`AhoCorasickKind::DFA` if enabled) for simultaneous multi-pattern search.
+///
+/// # Fields
+/// * `process_type_tree` - The compiled workflow tree ensuring text transforms happen exactly once per distinct branch sequence.
+/// * `ac_matcher` - The inner compiled `AhoCorasick` automaton used for overlapping parallel matching passes.
+/// * `ac_dedup_word_conf_list` - Deduplicated configuration references grouped by automaton match indexes.
+/// * `word_conf_list` - The unified metadata mapping each parsed split word block back to its core rule set mapping.
+///
 /// # Examples
 ///
 /// ```rust
@@ -137,17 +157,18 @@ impl SimpleMatcher {
     /// Creates a new instance of [`SimpleMatcher`] from a given process type to word map.
     ///
     /// This method initializes the [`SimpleMatcher`] by constructing the internal structures necessary for efficient word matching.
+    /// It heavily preconditions the input data to facilitate the 2-pass AND/NOT matching logic.
     ///
     /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
     /// to construct a [`SimpleMatcher`] without dealing with nested HashMaps manually.
-    ///
-    /// # Arguments
-    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of [`u32`] to word identifiers.
     ///
     /// # Type Parameters
     /// * `I` - An iterator type whose items can be converted to string slices.
     /// * `S1` - A hasher type for the inner [`HashMap`].
     /// * `S2` - A hasher type for the outer [`HashMap`].
+    ///
+    /// # Arguments
+    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of [`u32`] to word identifiers.
     ///
     /// # Returns
     /// An initialized [`SimpleMatcher`] with all its internal structures set up for use.
@@ -309,7 +330,6 @@ impl SimpleMatcher {
     /// matched across the different text variants.
     ///
     /// # Algorithm
-    ///
     /// 1. Iterate over each tuple of `(processed_text, process_type_mask)`.
     /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
     ///    sub-pattern matches within the `processed_text`.
@@ -322,13 +342,9 @@ impl SimpleMatcher {
     /// 5. Return the map of matched patterns which is later used in *Pass 2* to evaluate conditions.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
     /// * `Vec<(usize, Vec<i32>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
     ///   for matched patterns, used in pass 2 to evaluate complex AND/NOT logic conditions.
     ///   The flat matrix has layout `[num_splits × processed_times]` with stride = `processed_times`.
@@ -397,10 +413,25 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// associated process types.
     ///
     /// # Arguments
-    /// * `text` - A string slice that holds the text to be matched.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
     /// `true` if the text matches any pattern, otherwise `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "hello")
+    ///     .add_word(ProcessType::None, 2, "world")
+    ///     .build();
+    ///
+    /// assert!(matcher.is_match("hello there"));
+    /// assert!(matcher.is_match("beautiful world"));
+    /// assert!(!matcher.is_match("hi planet!"));
+    /// ```
     fn is_match(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
@@ -417,10 +448,24 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// to the matching implementation.
     ///
     /// # Arguments
-    /// * `text` - A string slice that needs to be processed.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
     /// A [`Vec<SimpleResult>`] containing the matching results.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "apple")
+    ///     .add_word(ProcessType::None, 2, "banana")
+    ///     .build();
+    ///
+    /// let results = matcher.process("I have an apple and a banana");
+    /// assert_eq!(results.len(), 2);
+    /// ```
     fn process(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         if text.is_empty() {
             return Vec::new();
@@ -445,7 +490,25 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
     ///   matrices satisfy the AND conditions.
     ///
-    /// Returns a consuming iterator over the underlying `Vec`.
+    /// # Arguments
+    /// * `text` - A string slice representing the input text to be processed and matched.
+    ///
+    /// # Returns
+    /// An iterator over [`SimpleResult`] matches.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "find me")
+    ///     .build();
+    ///
+    /// let mut iter = matcher.process_iter("can you find me?");
+    /// assert!(iter.next().is_some());
+    /// assert!(iter.next().is_none());
+    /// ```
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimpleResult<'a>> + 'a {
         self.process(text).into_iter()
     }
@@ -454,20 +517,17 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Checks if any pattern matches the processed text.
     ///
-    /// This function processes the text with the given process type set and checks for
-    /// matches. It maintains bitmaps to keep track of word IDs that are matched and
-    /// potentially excluded (i.e., words that should not be in the matched set). The function
-    /// iterates over the processed text, updates the split bitmaps and sets, and finally determines
-    /// if any word ID set contains a match.
+    /// # Algorithm (Pass 2)
+    /// 1. Calls `_word_match_with_processed_text_process_type_masks` to run the Aho-Corasick scan (Pass 1), which returns a list of candidate matrix states (`flat_matrix`) mapped to each `word_conf_idx`.
+    /// 2. Iterates over the candidate mappings.
+    /// 3. For each word configuration, evaluates the `flat_matrix` which holds the state of every sub-pattern split over `processed_times`.
+    /// 4. A split condition is satisfied if `any(|&bit| bit <= 0)` for any of the processed text variants.
+    /// 5. The full word is a match if `all()` split conditions are satisfied. Short-circuits returning `true` on the first fully satisfied word.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
     /// * `true` if any pattern matches the processed text, otherwise `false`.
     fn is_match_preprocessed(
         &'a self,
@@ -489,22 +549,21 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
 
     /// Processes the given processed text and type sets to produce matching results.
     ///
-    /// This function examines the provided processed text along with their corresponding ID sets
-    /// and computes results by finding overlapping patterns using an Aho-Corasick matcher. The function
-    /// maintains internal sets and maps to track which word IDs are relevant based on the processing types.
+    /// # Algorithm (Pass 2)
+    /// 1. Calls `_word_match_with_processed_text_process_type_masks` to run the Aho-Corasick scan (Pass 1).
+    /// 2. Filters the collected metadata mapping (`word_conf_idx` to `flat_matrix`).
+    /// 3. Extracts the number of logical split chunks (`num_splits`).
+    /// 4. Validates each word: For every logical segment (`s`), at least one variation (`processed_times`)
+    ///    must have seen its required target frequency (reaching `bit <= 0`).
+    /// 5. If `all()` segments within the word are valid, projects the `word_conf` into a `SimpleResult` to be pushed to the result payload.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
     /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
     ///
     /// # Panics
-    ///
     /// If the internal invariants are violated, the function may cause undefined behavior or panic.
     ///
     /// For example, if `processed_text_process_type_masks` has invalid data or the internal Aho-Corasick matcher

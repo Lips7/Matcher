@@ -36,11 +36,11 @@ pub enum RegexMatchType {
 /// * `'a` - The lifetime of the borrowed strings in the word list.
 ///
 /// # Fields
-/// * `table_id` - A unique identifier for the table.
-/// * `match_id` - A unique identifier for the match.
-/// * `process_type` - The type of process associated with the table, defined by the [`ProcessType`] enum.
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `match_id` - A unique identifier for the match operation.
+/// * `process_type` - The text processing rules to be applied, represented by the [`ProcessType`] bitflags enum.
 /// * `regex_match_type` - The type of match strategy used, defined by the [`RegexMatchType`] enum.
-/// * `word_list` - A list of words used in the regular expression matching.
+/// * `word_list` - A list of words to be used in the matching process.
 #[derive(Debug, Clone)]
 pub struct RegexTable<'a> {
     pub table_id: u32,
@@ -56,21 +56,6 @@ pub struct RegexTable<'a> {
 /// - `Standard`: A single compiled regex pattern.
 /// - `List`: A list of compiled regex patterns along with corresponding words.
 /// - `Set`: A set of compiled regex patterns optimized for simultaneous matching, along with corresponding words.
-///
-/// Each variant uses specific serialization and deserialization strategies provided by `serde`.
-///
-/// Variants:
-/// - `Standard { regex }`:
-///   - Fields:
-///     - `regex: Regex` - A single compiled regex pattern. Uses custom serialization with `serde_regex`.
-/// - `List { regex_list, word_list }`:
-///   - Fields:
-///     - `regex_list: Vec<Regex>` - A list of compiled regex patterns. Uses custom serialization with `serde_regex_list`.
-///     - `word_list: Vec<String>` - A list of words corresponding to the regex patterns.
-/// - `Set { regex_set, word_list }`:
-///   - Fields:
-///     - `regex_set: RegexSet` - A set of compiled regex patterns optimized for simultaneous matching. Uses custom serialization with `serde_regex_set`.
-///     - `word_list: Vec<String>` - A list of words corresponding to the regex patterns in the set.
 #[derive(Debug, Clone)]
 enum RegexType {
     Standard {
@@ -88,11 +73,11 @@ enum RegexType {
 
 /// A struct representing a table of regex patterns, containing metadata and the type of regex patterns.
 ///
-/// Fields:
-/// - `table_id`: A unique identifier for the table.
-/// - `match_id`: A unique identifier for the match.
-/// - `process_type`: The type of process associated with the table, defined by the [`ProcessType`] enum.
-/// - `regex_type`: The type of regex pattern(s) used, defined by the [`RegexType`] enum.
+/// # Fields
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `match_id` - A unique identifier for the match operation.
+/// * `process_type` - The text processing rules to be applied, represented by the [`ProcessType`] bitflags enum.
+/// * `regex_type` - The type of regex pattern(s) used, defined by the [`RegexType`] enum.
 #[derive(Debug, Clone)]
 struct RegexPatternTable {
     table_id: u32,
@@ -110,9 +95,9 @@ struct RegexPatternTable {
 /// * `'a` - The lifetime of the matched word content.
 ///
 /// # Fields
-/// * `match_id` - A unique identifier for the match.
-/// * `table_id` - A unique identifier for the table.
-/// * `word_id` - A unique identifier for the word in the match.
+/// * `match_id` - A unique identifier for the match operation.
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `word_id` - A unique identifier for the word within the table.
 /// * `word` - The matched word, represented as a [`Cow`] (clone-on-write) type.
 #[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
@@ -140,10 +125,27 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
     }
 }
 
-/// A struct representing a regex matcher.
+/// A structural text matcher for regular expressions.
 ///
-/// This struct is used to match text against a collection of regular expression patterns
-/// organized by different processing types.
+/// Under the hood, this struct pre-compiles and aggregates regex rules into an optimized tree structure.
+/// Depending on the `RegexMatchType`, it either checks single standard regexes, iterates over a list of
+/// distinct patterns, or leverages a highly optimized `RegexSet` for simultaneous pattern matching.
+///
+/// It holds a reference to a `ProcessTypeBitNode` tree, applying transformation passes (e.g., lowercasing,
+/// full-width to half-width character mappings) to the text *before* attempting the regex comparisons.
+///
+/// # Algorithm
+/// 1. Iterates over `regex_table_list`.
+/// 2. For each `RegexTable`, handles 3 match strategies:
+///    * [`RegexMatchType::SimilarChar`]: Concatenates characters with `.?.` matching variants. If length > 1024, skips.
+///    * [`RegexMatchType::Acrostic`]: Transforms each word into a pattern matching word boundaries / whitespaces `(?i)(?:^|[\s\pP]+?)`.
+///      Attempts to create a `RegexSet` from all valid patterns. If `RegexSet` creation fails (e.g., due to varying named captures), it falls back to a list of sequential `Regex` objects (`RegexType::List`).
+///    * [`RegexMatchType::Regex`]: Validates standard regexes (skips > 1024 char limits or invalid syntax). Compiles into a `RegexSet` or `RegexType::List` fallback.
+/// 3. Builds a `ProcessTypeBitNode` tree based on the union of all active `ProcessType`s.
+///
+/// # Fields
+/// * `process_type_tree` - The compiled workflow tree ensuring text transforms happen exactly once per distinct branch sequence.
+/// * `regex_pattern_table_list` - A list of specifically mapped regex table evaluation rules and engines.
 ///
 /// # Examples
 ///
@@ -173,19 +175,14 @@ impl RegexMatcher {
     ///
     /// This function initializes a [`RegexMatcher`] by processing the provided `regex_table_list`.
     /// Each [`RegexTable`] entry is transformed based on its `regex_match_type` to create the
-    /// appropriate regex patterns, which are then stored in the matcher.
+    /// appropriate regex patterns, which are then stored in the matcher. It performs early
+    /// validation to skip excessively long patterns that could pose a ReDoS (Regular Expression Denial of Service) risk.
     ///
     /// # Arguments
     /// * `regex_table_list` - A slice of [`RegexTable`] containing the regex patterns and associated metadata.
     ///
     /// # Returns
-    /// An instance of [`RegexMatcher`] initialized with the given `regex_table_list`.
-    ///
-    /// # Details
-    /// The function handles three types of regex match types:
-    /// * [`RegexMatchType::SimilarChar`]: Generates a single regex pattern that matches similar characters.
-    /// * [`RegexMatchType::Acrostic`]: Generates individual regex patterns for each word in the table, recognizing them as acrostic patterns.
-    /// * [`RegexMatchType::Regex`]: Directly uses the provided words as regex patterns or lists.
+    /// An instance of [`RegexMatcher`] initialized with the compiled regex patterns.
     pub fn new(regex_table_list: &[RegexTable]) -> RegexMatcher {
         let mut process_type_set = HashSet::with_capacity(regex_table_list.len());
         let mut regex_pattern_table_list = Vec::with_capacity(regex_table_list.len());
@@ -316,16 +313,36 @@ impl RegexMatcher {
 }
 
 impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
-    /// Checks if the given text matches any of the regex patterns in the [`RegexMatcher`].
+    /// Checks if the given text matches any of the compiled regex patterns.
     ///
-    /// This function first processes the input text using the `process_type_tree` of the [`RegexMatcher`],
-    /// which prepares the text for matching by applying various transformation rules.
+    /// This is a convenience method that delegates text pre-processing and calls
+    /// `is_match_preprocessed`.
     ///
     /// # Arguments
-    /// * `text` - A string slice that holds the text to be checked against the regex patterns.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
-    /// `true` if there is a match, otherwise returns `false`.
+    /// `true` if there is a match against any active regex table; otherwise `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{RegexTable, RegexMatchType, ProcessType, RegexMatcher, TextMatcherTrait};
+    ///
+    /// let regex_table = RegexTable {
+    ///     table_id: 1,
+    ///     match_id: 1,
+    ///     process_type: ProcessType::None,
+    ///     regex_match_type: RegexMatchType::Regex,
+    ///     word_list: vec!["^hello", "world$"],
+    /// };
+    ///
+    /// let matcher = RegexMatcher::new(&[regex_table]);
+    ///
+    /// assert!(matcher.is_match("hello there"));
+    /// assert!(matcher.is_match("beautiful world"));
+    /// assert!(!matcher.is_match("hi world!"));
+    /// ```
     fn is_match(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
@@ -339,19 +356,40 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// Returns a **lazy** iterator over [`RegexResult`] matches for the given text.
     ///
     /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
-    /// Pattern matching is then driven table-by-table as the caller advances the
-    /// iterator. Results from each table are buffered internally and yielded one at a
-    /// time, so callers that short-circuit (`.next()`, `.find()`, `.take(n)`) skip
-    /// tables that would otherwise be evaluated unnecessarily.
+    /// Pattern matching is then driven table-by-table. By utilizing a generator (`gen move`),
+    /// matches from a particular regex target are yielded immediately before proceeding to
+    /// evaluate subsequent regex patterns.
     ///
-    /// A `HashSet` deduplicates `(table_id, word_index)` pairs across processed-text
-    /// variants.
+    /// A `HashSet` named `table_id_index_set` is utilized to deduplicate matches where the
+    /// same rule hits exactly the same token across different text-processing variants
+    /// (e.g. hitting both on lowercase and Fanjian normalized outputs).
     ///
     /// # Arguments
-    /// * `text` - The input text to be processed and matched against the regex patterns.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
-    /// An `impl Iterator<Item = RegexResult<'a>>` — a lazy iterator of match results.
+    /// An `impl Iterator<Item = RegexResult<'a>>` — a lazy sequence yielding matched expressions.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{RegexTable, RegexMatchType, ProcessType, RegexMatcher, TextMatcherTrait};
+    ///
+    /// let regex_table = RegexTable {
+    ///     table_id: 1,
+    ///     match_id: 1,
+    ///     process_type: ProcessType::None,
+    ///     regex_match_type: RegexMatchType::Regex,
+    ///     word_list: vec!["apple", "banana"],
+    /// };
+    ///
+    /// let matcher = RegexMatcher::new(&[regex_table]);
+    ///
+    /// let mut iter = matcher.process_iter("I have an apple and a banana");
+    /// assert!(iter.next().is_some());
+    /// assert!(iter.next().is_some());
+    /// assert!(iter.next().is_none());
+    /// ```
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = RegexResult<'a>> + 'a {
         gen move {
             if text.is_empty() {
@@ -442,28 +480,24 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
 }
 
 impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
-    /// Checks if any of the given processed texts match any of the regex patterns in the [`RegexMatcher`].
+    /// Checks if any of the given processed texts match any internal regex pattern.
     ///
-    /// This function iterates over the pairs of processed text and their associated processing type sets.
-    /// It checks if any of the regex patterns in the `regex_pattern_table_list` match the processed text.
+    /// # Algorithm
+    /// The function iterates over all `(processed_text, process_type_mask)` pairs representing
+    /// variations of the original text. It iterates over internal regex tables:
+    /// 1. It checks if the table’s `process_type` bits align with the current `process_type_mask`.
+    /// 2. If valid, evaluates the `RegexType`:
+    ///    - `Standard`: executes `.is_match()`.
+    ///    - `List`: iterates the list returning true on the first `.is_match()`.
+    ///    - `Set`: executes `.is_match()` directly on the highly-optimized combined regex DFA.
     ///
-    /// The function first verifies that the `process_type` of a regex pattern is present in the current
-    /// `process_type_mask`. If it is, it evaluates the match for different types of regex patterns:
-    /// - `Standard`: Uses a standard regex match.
-    /// - `List`: Checks if any regex in the list matches.
-    /// - `Set`: Checks if the regex set matches.
-    ///
-    /// If any of the regex patterns match the processed text, the function returns `true`.
+    /// As soon as any match evaluates to `true`, the loop terminates early.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
-    /// * `bool` - Returns `true` if at least one regex pattern matches any processed text, otherwise returns `false`.
+    /// `true` if at least one regex matches the preprocessed text variant; `false` otherwise.
     fn is_match_preprocessed(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -490,28 +524,22 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
         false
     }
 
-    /// Processes the `processed_text_process_type_masks` to find and return regex matches.
+    /// Eagerly evaluates the reduced text variations against all compiled regular expressions,
+    /// returning a complete vector of matches.
     ///
-    /// This function iterates over the pairs of processed text and their associated processing type masks.
-    /// It then checks against the regex patterns in the `regex_pattern_table_list` to find matches.
-    ///
-    /// For each regex pattern, the function first verifies that the `process_type` of a regex pattern is present
-    /// in the current `process_type_mask`. If it is, it processes matches based on different types of regex patterns:
-    /// - `Standard`: Uses a standard regex match and stores the captures.
-    /// - `List`: Checks each regex in the list for a match and stores the corresponding words.
-    /// - `Set`: Checks the regex set for matches and stores the corresponding words.
-    ///
-    /// The function keeps track of matches using `table_id_index_set` to avoid duplicate entries.
+    /// # Algorithm
+    /// Similar to `is_match_preprocessed`, but gathers *all* distinct rules that matched.
+    /// - `table_id_index_set` guarantees that a given Regex identifier (`(table_id << 32) | id_index`)
+    ///   is only recorded once, even if it fires across multiple text manipulations (e.g. original vs lowecased).
+    /// - For a `RegexType::Standard`, it leverages `captures_iter` to extract matched token subgroups.
+    /// - For `RegexType::Set` or `RegexType::List`, it identifies which internal index triggered
+    ///   the hit and associates it with the corresponding original word from the `word_list`.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
-    /// * [`Vec<RegexResult>`] - A vector of [`RegexResult`] instances, each representing a match found in the processed text.
+    /// A vector of [`RegexResult`] instances corresponding to every distinct pattern that successfully matched.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,

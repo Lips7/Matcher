@@ -7,6 +7,12 @@ use crate::{MatchTable, MatchTableType, Matcher, ProcessType, SimpleMatcher};
 /// This builder provides a convenient and ergonomic API for constructing a [`SimpleMatcher`]
 /// without needing to manually build and nest HashMaps.
 ///
+/// # Type Parameters
+/// * `'a` - The lifetime of the word patterns and strings.
+///
+/// # Fields
+/// * `word_map` - A nested hash map storing words grouped by their `ProcessType` and uniquely identified by a `word_id`.
+///
 /// # Examples
 ///
 /// ```rust
@@ -65,6 +71,16 @@ impl<'a> SimpleMatcherBuilder<'a> {
 /// fields — `table_id` and `match_table_type` — are supplied upfront in
 /// [`MatchTableBuilder::new`]; everything else is optional and can be added
 /// incrementally before calling [`build`](MatchTableBuilder::build).
+///
+/// # Type Parameters
+/// * `'a` - The lifetime of the word patterns and strings.
+///
+/// # Fields
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `match_table_type` - The specific matching strategy and configuration used for this table.
+/// * `word_list` - A list of words to be used in the matching process.
+/// * `exemption_process_type` - The text processing rules to be applied to exemption words.
+/// * `exemption_word_list` - A list of words that trigger exemptions from matching.
 ///
 /// # Examples
 ///
@@ -189,6 +205,12 @@ impl<'a> MatchTableBuilder<'a> {
 ///
 /// This builder provides a convenient way to construct a [`Matcher`]
 /// by adding complete [`MatchTable`] entries iteratively.
+///
+/// # Type Parameters
+/// * `'a` - The lifetime of the word patterns and strings inside the tables.
+///
+/// # Fields
+/// * `table_map` - A map grouping [`MatchTable`] instances under rule-level identifiers (`match_id`).
 ///
 /// # Examples
 ///

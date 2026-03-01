@@ -21,6 +21,6 @@ pub use sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
 
 mod matcher;
 pub use matcher::{
-    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableMapSerde, MatchTableType,
-    Matcher, TextMatcherTrait,
+    MatchResult, MatchResultTrait, MatchTable, MatchTableMap, MatchTableMapSerde, MatchTableSerde,
+    MatchTableType, Matcher, TextMatcherTrait,
 };

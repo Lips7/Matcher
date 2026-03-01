@@ -42,6 +42,10 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 /// These methods accept already-reduced text (a [`ProcessedTextMasks`]) rather than
 /// raw input, avoiding redundant preprocessing when the same reduced text is reused
 /// across multiple matchers (e.g. inside [`Matcher`]).
+///
+/// # Type Parameters
+/// * `'a` - Lifetime parameter associated with the trait and match results.
+/// * `T` - A type that implements [`MatchResultTrait<'a>`] and has the same lifetime as `'a`.
 pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match_preprocessed(
         &'a self,
@@ -162,7 +166,7 @@ pub enum MatchTableType {
 /// * `S` - A type that implements `AsRef<str>`, ensuring the trait can be used with various string-like types.
 ///
 /// # Required Methods
-/// * `table_id(&self) -> u32` - Returns the unique identifier for the match table.
+/// * `table_id(&self) -> u32` - Returns the unique identifier for the specific matching table.
 /// * `match_table_type(&self) -> MatchTableType` - Returns the type of matching strategy used by the table.
 /// * `word_list(&self) -> &[S]` - Returns a reference to the slice of words used for matching operations.
 /// * `exemption_process_type(&self) -> ProcessType` - Returns the type of text processing applied to the exemption words.
@@ -188,11 +192,11 @@ pub trait MatchTableTrait<S: AsRef<str>> {
 ///   borrowed strings contained in the word lists.
 ///
 /// # Fields
-/// * `table_id` - A unique identifier for the match table.
+/// * `table_id` - A unique identifier for the specific matching table.
 /// * `match_table_type` - The type of matching strategy (e.g., Simple, Regex, Similar) used by this table.
-/// * `word_list` - A vector of words to be used for matching operations.
+/// * `word_list` - A list of words to be used in the matching process.
 /// * `exemption_process_type` - The type of text processing to apply to exemption words.
-/// * `exemption_word_list` - A vector of words that should be exempted from matching operations.
+/// * `exemption_word_list` - A list of words that should be exempted from matching operations.
 ///
 /// # Examples
 ///
@@ -246,6 +250,21 @@ impl<'a> MatchTableTrait<&'a str> for MatchTable<'a> {
     }
 }
 
+/// A structure representing a serializable match table configuration.
+///
+/// This serves exactly the same role as [`MatchTable`] but internally owns its
+/// text references using a copy-on-write `Cow<'a, str>` string format, making it
+/// suitable for dynamic parsing pipelines where strings lack static lifetimes (e.g., from network JSON requests).
+///
+/// # Type Parameters
+/// * `'a` - A lifetime parameter associated with the match table.
+///
+/// # Fields
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `match_table_type` - The specific matching strategy enum used by this rule block.
+/// * `word_list` - A list of words to be used in the matching process.
+/// * `exemption_process_type` - The preprocessing rules enforced on exemption words.
+/// * `exemption_word_list` - A list of exemption (blocking) words stored as `Cow<'a, str>` references.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MatchTableSerde<'a> {
     pub table_id: u32,
@@ -281,12 +300,10 @@ impl<'a> MatchTableTrait<Cow<'a, str>> for MatchTableSerde<'a> {
 /// including the match table ID, offset, and whether the entry is for exemption words.
 ///
 /// # Fields
-///
-/// - `match_id: u32`: A unique identifier for the matching operation this word table configuration belongs to.
-/// - `table_id: u32`: A unique identifier for the match table to which this configuration applies.
-/// - `offset: u32`: The position offset within the word table for this configuration entry.
-/// - `is_exemption: bool`: A flag indicating whether this configuration entry is for exemption words (true)
-///   or for regular matching words (false).
+/// * `match_id` - A unique identifier for the match operation.
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `offset` - The position offset within the word table for this configuration entry.
+/// * `is_exemption` - A flag indicating whether this configuration entry is for exemption words (true) or for regular matching words (false).
 #[derive(Debug, Clone)]
 struct WordTableConf {
     match_id: u32,
@@ -305,9 +322,9 @@ struct WordTableConf {
 /// * `'a` - The lifetime of the borrowed string contained in the `word` field.
 ///
 /// # Fields
-/// * `match_id` - A unique identifier for the matching operation.
-/// * `table_id` - A unique identifier for the match table.
-/// * `word_id` - A unique identifier for the matched word.
+/// * `match_id` - A unique identifier for the match operation.
+/// * `table_id` - A unique identifier for the specific matching table.
+/// * `word_id` - A unique identifier for the word within the table.
 /// * `word` - The word that was matched, using a [`Cow`] for efficiency.
 /// * `similarity` - The optional similarity score of the matched word.
 ///
@@ -411,10 +428,49 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 /// ```
 pub type MatchTableMap<'a> = HashMap<u32, Vec<MatchTable<'a>>>;
 
+/// A type alias for a mapping from match table IDs to their corresponding [`MatchTableSerde`] objects.
+///
+/// Semantically identical to [`MatchTableMap`], but accommodates dynamically parsed struct mappings built via `serde`.
+///
+/// # Type Parameters
+/// * `'a` - The lifetime of the borrowed or owned data encapsulated within the string values.
 pub type MatchTableMapSerde<'a> = HashMap<u32, Vec<MatchTableSerde<'a>>>;
 
 /// The [`Matcher`] struct is responsible for managing and facilitating various types of matching operations
 /// utilizing different word processing strategies and match table configurations.
+///
+/// # Algorithm
+/// 1. Collects all `ProcessType` requirements from incoming `Regex`, `Simple`, and `Similar` tables.
+/// 2. Compiles a unified `ProcessTypeBitNode` DAG (`process_type_tree`), deduplicating any overlapping sequence requirements across tables.
+/// 3. Retains structured mappers (`simple_word_table_conf_list`, `simple_word_table_conf_index_list`) to correctly remap flat internal simple execution IDs back into externally valid table and match IDs.
+/// 4. Dispatches text blocks natively to underlying `RegexMatcher`, `SimMatcher`, or `SimpleMatcher` engines.
+///
+/// # Fields
+/// * `process_type_tree` - The compiled workflow tree ensuring text transforms happen exactly once per distinct branch sequence.
+/// * `simple_word_table_conf_list` - A flattened catalog mapping aggregated simple string offset hits back into user-defined IDs.
+/// * `simple_word_table_conf_index_list` - Provides O(1) projection translating raw substring bounds directly to table offsets.
+/// * `simple_matcher` - Stores the core Aho-Corasick DAG optimized for exact sub-word overlapping.
+/// * `regex_matcher` - Stores an optionally bundled fallback for advanced character logic regex operations.
+/// * `sim_matcher` - Implements Rapidfuzz caching systems enabling near-instant threshold tolerance text evaluations.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashMap;
+/// use matcher_rs::{Matcher, MatchTableMap, MatchTable, MatchTableType, ProcessType, RegexMatchType};
+///
+/// let match_table_1 = MatchTable {
+///     table_id: 1,
+///     match_table_type: MatchTableType::Simple { process_type: ProcessType::None },
+///     word_list: vec!["word1", "word2"],
+///     exemption_process_type: ProcessType::None,
+///     exemption_word_list: vec!["ignore"],
+/// };
+///
+/// let mut match_table_map: MatchTableMap = HashMap::new();
+/// match_table_map.insert(1, vec![match_table_1]);
+/// let matcher = Matcher::new(&match_table_map);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Matcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
@@ -435,33 +491,16 @@ impl Matcher {
     /// Note: It is highly recommended to use [`MatcherBuilder`](crate::MatcherBuilder) to
     /// easily build a Matcher without manually instantiating `Vec` and `HashMap`s.
     ///
+    /// # Type Parameters
+    /// * `S` - The build hasher type for the `HashMap` (inferred).
+    /// * `M` - The match table type that implements `MatchTableTrait<T>`.
+    /// * `T` - String reference type that implements `AsRef<str>`.
+    ///
     /// # Arguments
     /// * `match_table_map` - A reference to a [`HashMap`] linking `match_id` keys to a [`Vec`] of match tables.
     ///
     /// # Returns
     /// An initialized [`Matcher`].
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, RegexMatchType, Matcher, MatcherBuilder};
-    /// use std::collections::HashMap;
-    ///
-    /// let match_table_1 = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
-    ///     .add_words(["word1", "word2"])
-    ///     .add_exemption_word("ignore")
-    ///     .build();
-    ///
-    /// let match_table_2 = MatchTableBuilder::new(2, MatchTableType::Regex { process_type: ProcessType::None, regex_match_type: RegexMatchType::Regex })
-    ///     .add_words(["regex1", "regex2"])
-    ///     .add_exemption_word("skip")
-    ///     .build();
-    ///
-    /// let matcher = MatcherBuilder::new()
-    ///     .add_table(1, match_table_1)
-    ///     .add_table(2, match_table_2)
-    ///     .build();
-    /// ```
     pub fn new<S, M, T>(match_table_map: &HashMap<u32, Vec<M>, S>) -> Matcher
     where
         M: MatchTableTrait<T>,
@@ -589,11 +628,27 @@ impl Matcher {
     /// text and returning the results in a `HashMap`.
     ///
     /// # Arguments
-    /// * `text` - A string slice that holds the text to be matched against the match tables.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
     /// A [`HashMap`] where keys are match IDs and values are vectors of [`MatchResult`] items.
     /// If the input text is empty, an empty [`HashMap`] is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder};
+    ///
+    /// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_word("detect")
+    ///     .build();
+    ///
+    /// let matcher = MatcherBuilder::new().add_table(1, match_table).build();
+    ///
+    /// let result = matcher.word_match("we should detect this");
+    /// assert!(result.contains_key(&1));
+    /// assert_eq!(result.get(&1).unwrap().len(), 1);
+    /// ```
     pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
         if text.is_empty() {
             return HashMap::new();
@@ -607,19 +662,19 @@ impl Matcher {
 
     /// Matches processed text against the configured match tables.
     ///
-    /// This function takes a set of processed text pieces, represented by
-    /// `processed_text_process_type_masks`, and checks them against the various
-    /// types of match tables defined in the [`Matcher`] instance (simple, regex, and
-    /// similarity match tables).
+    /// # Algorithm
+    /// 1. Initializes an empty `match_result_dict` (`HashMap<u32, Vec<MatchResult>>`) and an exemption tracker `failed_match_table_id_set`.
+    /// 2. Passes the pre-processed texts sequentially into the underlying `regex_matcher` and `sim_matcher`.
+    /// 3. Collects their `RegexResult` and `SimResult` structs, upcasting them to `MatchResult` and pushing them to the result map payload.
+    /// 4. Scans the `simple_matcher`. Simple matching uses an aggregated offset dictionary map (`simple_word_table_conf_list`).
+    /// 5. For each simple match reported:
+    ///    - If the simple match maps to an `is_exemption` configuration line: it inserts the parent `match_table_id` into the `failed_match_table_id_set`, aggressively scrubbing all previous sibling hits mapped from the same `table_id` and blocking future hits.
+    ///    - If it's a standard simple match: checks if `failed_match_table_id_set` blocks this `match_table_id`. If not, it computes its actual distinct `word_id` by mapping `- word_table_conf.offset` and adds the match to the payload.
     ///
     /// # Arguments
-    ///
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple
-    ///   contains a processed text piece (as [`Cow<str>`]) and a
-    ///   u64 bitmask of process type IDs (`u64`).
+    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    ///
     /// * [`HashMap<u32, Vec<MatchResult>>`] - A map where keys are match IDs and
     ///   values are vectors of [`MatchResult`] items. Each [`MatchResult`] holds
     ///   information about a match found in the corresponding match table.
@@ -700,12 +755,25 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// similarity match tables).
     ///
     /// # Arguments
-    ///
-    /// * `text` - A reference to the input text string to be matched.
+    /// * `text` - A string slice representing the input text to be processed and matched.
     ///
     /// # Returns
-    ///
     /// * `bool` - Returns `true` if any matches are found, otherwise returns `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder, TextMatcherTrait};
+    ///
+    /// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_word("detect")
+    ///     .build();
+    ///
+    /// let matcher = MatcherBuilder::new().add_table(1, match_table).build();
+    ///
+    /// assert!(matcher.is_match("we should detect this"));
+    /// assert!(!matcher.is_match("clean text"));
+    /// ```
     fn is_match(&self, text: &str) -> bool {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
@@ -732,6 +800,21 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// * [`Vec<MatchResult<'a>>`] - A vector containing match results corresponding to
     ///   the patterns defined in the match tables.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder, TextMatcherTrait};
+    ///
+    /// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_words(["apple", "banana"])
+    ///     .build();
+    ///
+    /// let matcher = MatcherBuilder::new().add_table(1, match_table).build();
+    ///
+    /// let results = matcher.process("I have an apple and a banana");
+    /// assert_eq!(results.len(), 2);
+    /// ```
     fn process(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
@@ -764,6 +847,22 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// # Returns
     ///
     /// * An `impl Iterator<Item = MatchResult<'a>>` — a lazy iterator of match results.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder, TextMatcherTrait};
+    ///
+    /// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
+    ///     .add_word("find")
+    ///     .build();
+    ///
+    /// let matcher = MatcherBuilder::new().add_table(1, match_table).build();
+    ///
+    /// let mut iter = matcher.process_iter("find me");
+    /// assert!(iter.next().is_some());
+    /// assert!(iter.next().is_none());
+    /// ```
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = MatchResult<'a>> + 'a {
         gen move {
             if text.is_empty() {
