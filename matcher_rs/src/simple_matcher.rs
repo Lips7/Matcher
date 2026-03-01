@@ -1,8 +1,7 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
-use id_set::IdSet;
 use nohash_hasher::IntMap;
 use serde::Serialize;
 
@@ -135,7 +134,7 @@ type WordConfEntry = (ProcessType, u32, usize);
 ///
 /// # Example
 ///
-/// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+/// Note: It is highly recommended to use [SimpleMatcherBuilder](crate::SimpleMatcherBuilder)
 /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
 ///
 /// This example demonstrates creating a [SimpleMatcher] instance using the `new` method with a sample
@@ -193,7 +192,7 @@ impl SimpleMatcher {
     ///
     /// # Example
     ///
-    /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
+    /// Note: It is highly recommended to use [SimpleMatcherBuilder](crate::SimpleMatcherBuilder)
     /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
     ///
     /// ```rust
@@ -225,7 +224,7 @@ impl SimpleMatcher {
     {
         let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
-        let mut process_type_set = IdSet::with_capacity(process_type_word_map.len());
+        let mut process_type_set = HashSet::with_capacity(process_type_word_map.len());
         let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
         let mut word_conf_map = IntMap::with_capacity_and_hasher(word_size, Default::default());
 
@@ -235,7 +234,7 @@ impl SimpleMatcher {
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
-            process_type_set.insert(process_type.bits() as usize);
+            process_type_set.insert(process_type.bits());
 
             for (&simple_word_id, simple_word) in simple_word_map {
                 let mut ac_split_word_and_counter = HashMap::new();
@@ -377,7 +376,7 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A list of tuples containing processed text variants
-    ///   and their associated [`IdSet`] of valid [`ProcessType`]s.
+    ///   and their associated [HashSet<u8>] of valid [ProcessType]s.
     ///
     /// # Returns
     ///
@@ -388,7 +387,7 @@ impl SimpleMatcher {
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> HashMap<u32, Vec<Vec<i32>>> {
         let mut word_id_split_bit_map = HashMap::new();
-        let mut not_word_id_set = IdSet::new();
+        let mut not_word_id_set = HashSet::new();
 
         let processed_times = processed_text_process_type_set.len();
 
@@ -403,8 +402,8 @@ impl SimpleMatcher {
                 for &(match_process_type, word_id, offset) in
                     &self.ac_dedup_word_conf_list[pattern_idx]
                 {
-                    if !process_type_set.contains(match_process_type.bits() as usize)
-                        || not_word_id_set.contains(word_id as usize)
+                    if !process_type_set.contains(&match_process_type.bits())
+                        || not_word_id_set.contains(&word_id)
                     {
                         continue;
                     }
@@ -424,7 +423,7 @@ impl SimpleMatcher {
                     *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                     if offset >= word_conf.not_offset && *bit > 0 {
-                        not_word_id_set.insert(word_id as usize);
+                        not_word_id_set.insert(word_id);
                         word_id_split_bit_map.remove(&word_id);
                     }
                 }
@@ -474,7 +473,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     ///
-    /// * A [`Vec<SimpleResult>`] containing the matching results. Each [SimpleResult] holds
+    /// * A [Vec<SimpleResult>] containing the matching results. Each [SimpleResult] holds
     ///   the word ID and the matched word. If no matches are found or the text is empty,
     ///   it returns an empty vector.
     fn process(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
@@ -502,7 +501,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
     ///   matrices satisfy the AND conditions.
     ///
-    /// Because of this inherent two-phase dependency, this override simply wraps [`TextMatcherTrait::process`] and
+    /// Because of this inherent two-phase dependency, this override simply wraps [TextMatcherTrait::process] and
     /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
     /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
     /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,
@@ -525,7 +524,7 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
     ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
-    ///   string slice, and the ID set is an `id_set::IdSet`.
+    ///   string slice, and the ID set is an [HashSet].
     ///
     /// # Returns
     ///
@@ -553,11 +552,11 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a slice of tuples, where each tuple
-    ///   contains a [Cow] string slice (the processed text) and an [IdSet] (a set of IDs related to the processed text).
+    ///   contains a [Cow] string slice (the processed text) and an [HashSet] (a set of IDs related to the processed text).
     ///
     /// # Returns
     ///
-    /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
+    /// * A vector of [SimpleResult] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
     ///
     /// # Panics
     ///

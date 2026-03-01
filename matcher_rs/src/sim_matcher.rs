@@ -1,6 +1,5 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
-use id_set::IdSet;
 use rapidfuzz::distance;
 use serde::{Deserialize, Serialize};
 
@@ -172,11 +171,11 @@ impl SimMatcher {
     /// * `process_type_tree` - A vector of `ProcessTypeBitNode`, representing the tree structure used for text processing based on the process types extracted from the input [SimTable] list.
     /// * `sim_processed_table_list` - A vector of `SimProcessedTable`, each containing an owned vector of words and other properties derived from the input [SimTable] list.
     pub fn new(sim_table_list: &[SimTable]) -> SimMatcher {
-        let mut process_type_set = IdSet::with_capacity(sim_table_list.len());
+        let mut process_type_set = HashSet::with_capacity(sim_table_list.len());
         let mut sim_processed_table_list = Vec::with_capacity(sim_table_list.len());
 
         for sim_table in sim_table_list {
-            process_type_set.insert(sim_table.process_type.bits() as usize);
+            process_type_set.insert(sim_table.process_type.bits());
             sim_processed_table_list.push(SimProcessedTable {
                 table_id: sim_table.table_id,
                 match_id: sim_table.match_id,
@@ -233,7 +232,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// `.find()`) avoids unnecessary similarity computations.
     ///
     /// Internally a 3-level index state machine (`processed_text` → `table` → `word`)
-    /// tracks progress. An [`IdSet`] deduplicates `(table_id, word_index)` pairs across
+    /// tracks progress. An [HashSet] deduplicates `(table_id, word_index)` pairs across
     /// processed-text variants.
     ///
     /// # Parameters
@@ -250,12 +249,11 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             }
 
             let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
-            let mut table_id_index_set = IdSet::new();
+            let mut table_id_index_set = HashSet::new();
 
             for (processed_text, process_type_set) in processed {
                 for sim_processed_table in self.sim_processed_table_list.iter() {
-                    if !process_type_set.contains(sim_processed_table.process_type.bits() as usize)
-                    {
+                    if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
                         continue;
                     }
 
@@ -303,8 +301,8 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// # Parameters
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
+    ///   - A processed text variant represented as a [Cow<str>].
+    ///   - An [HashSet] containing the process type identifiers associated with the processed text.
     ///
     /// # Returns
     ///
@@ -316,7 +314,7 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
+                if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
                     continue;
                 }
                 let is_match = match sim_processed_table.sim_match_type {
@@ -351,8 +349,8 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// # Parameters
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [`Cow<str>`].
-    ///   - An [IdSet] containing the process type identifiers associated with the processed text.
+    ///   - A processed text variant represented as a [Cow<str>].
+    ///   - An [HashSet] containing the process type identifiers associated with the processed text.
     ///
     /// # Returns
     ///
@@ -365,17 +363,17 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// - `similarity`: The similarity score of the match.
     ///
     /// The function ensures that only unique matches are included in the result list by maintaining
-    /// an [IdSet] to track already processed table ID and word index combinations.
+    /// an [HashSet] to track already processed table ID and word index combinations.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::new();
+        let mut table_id_index_set = HashSet::new();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for sim_processed_table in &self.sim_processed_table_list {
-                if !process_type_set.contains(sim_processed_table.process_type.bits() as usize) {
+                if !process_type_set.contains(&sim_processed_table.process_type.bits()) {
                     continue;
                 }
                 match sim_processed_table.sim_match_type {

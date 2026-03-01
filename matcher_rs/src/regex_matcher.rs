@@ -1,7 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 use fancy_regex::{Regex, escape};
-use id_set::IdSet;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 
@@ -204,11 +203,11 @@ impl RegexMatcher {
     /// For each [RegexTable] entry, the function creates a corresponding `RegexPatternTable` with appropriate
     /// regex patterns or lists, then constructs the final [RegexMatcher] with a process type tree.
     pub fn new(regex_table_list: &[RegexTable]) -> RegexMatcher {
-        let mut process_type_set = IdSet::with_capacity(regex_table_list.len());
+        let mut process_type_set = HashSet::with_capacity(regex_table_list.len());
         let mut regex_pattern_table_list = Vec::with_capacity(regex_table_list.len());
 
         for regex_table in regex_table_list {
-            process_type_set.insert(regex_table.process_type.bits() as usize);
+            process_type_set.insert(regex_table.process_type.bits());
 
             let size = regex_table.word_list.len();
 
@@ -363,7 +362,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
     /// time, so callers that short-circuit (`.next()`, `.find()`, `.take(n)`) skip
     /// tables that would otherwise be evaluated unnecessarily.
     ///
-    /// An [`IdSet`] deduplicates `(table_id, word_index)` pairs across processed-text
+    /// An [HashSet] deduplicates `(table_id, word_index)` pairs across processed-text
     /// variants.
     ///
     /// # Arguments
@@ -382,12 +381,11 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
             let processed_text_process_type_set =
                 reduce_text_process_with_tree(&self.process_type_tree, text);
 
-            let mut table_id_index_set = IdSet::new();
+            let mut table_id_index_set = HashSet::new();
 
             for (processed_text, process_type_set) in processed_text_process_type_set {
                 for regex_pattern_table in self.regex_pattern_table_list.iter() {
-                    if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize)
-                    {
+                    if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
                         continue;
                     }
 
@@ -490,7 +488,7 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     ) -> bool {
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
+                if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
                     continue;
                 }
 
@@ -530,17 +528,17 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Returns
     ///
-    /// * [`Vec<RegexResult>`] - A vector of [RegexResult] instances, each representing a match found in the processed text.
+    /// * [Vec<RegexResult>] - A vector of [RegexResult] instances, each representing a match found in the processed text.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = IdSet::new();
+        let mut table_id_index_set = HashSet::new();
 
         for (processed_text, process_type_set) in processed_text_process_type_set {
             for regex_pattern_table in &self.regex_pattern_table_list {
-                if !process_type_set.contains(regex_pattern_table.process_type.bits() as usize) {
+                if !process_type_set.contains(&regex_pattern_table.process_type.bits()) {
                     continue;
                 }
                 match &regex_pattern_table.regex_type {

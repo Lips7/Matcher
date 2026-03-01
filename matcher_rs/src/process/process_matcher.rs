@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
 
@@ -14,7 +14,6 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-use id_set::IdSet;
 use nohash_hasher::IsEnabled;
 use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -171,7 +170,7 @@ impl std::error::Error for ProcessTypeError {}
 ///
 /// The capacity of 16 supports up to 16 distinct text-processing variants per input,
 /// which is the practical upper bound given the number of [`ProcessType`] flags.
-pub type ProcessedTextSet<'a> = Vec<(Cow<'a, str>, IdSet)>;
+pub type ProcessedTextSet<'a> = Vec<(Cow<'a, str>, HashSet<u8>)>;
 
 /// Represents different types of process matchers used for text processing.
 ///
@@ -717,7 +716,9 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        let tmp_processed_text = processed_text_list.last_mut().unwrap();
+        let tmp_processed_text = processed_text_list
+            .last_mut()
+            .expect("It should always have at least one element");
 
         match (process_type_bit, process_matcher) {
             (ProcessType::None, _) => {}
@@ -782,7 +783,9 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
     for process_type_bit in process_type.iter() {
         let cached_result = get_process_matcher(process_type_bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
-        let tmp_processed_text = processed_text_list.last_mut().unwrap();
+        let tmp_processed_text = processed_text_list
+            .last_mut()
+            .expect("It should always have at least one element");
 
         match (process_type_bit, process_matcher) {
             (ProcessType::None, _) => {}
@@ -856,7 +859,7 @@ pub struct ProcessTypeBitNode {
 /// This function does not panic under normal circumstances. It assumes that [ProcessType::iter()]
 /// provides a finite iterator and that array operations on [Vec] are safe as long as the constraints
 /// are respected.
-pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNode> {
+pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
         process_type_list: Vec::new(),
@@ -866,8 +869,8 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
         children: Vec::new(),
     };
     process_type_tree.push(root);
-    for process_type_usize in process_type_set.iter() {
-        let process_type = ProcessType::from_bits(process_type_usize as u8).unwrap();
+    for process_type_bits in process_type_set.iter() {
+        let process_type = ProcessType::from_bits(*process_type_bits).unwrap();
         let mut current_node_index = 0;
         for process_type_bit in process_type.into_iter() {
             let current_node = &process_type_tree[current_node_index];
@@ -915,7 +918,7 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 /// to the input text based on the tree structure. It iterates over each node in the tree and applies
 /// the corresponding processing rules, ensuring that each node's `process_type_bit` is handled
 /// appropriately. The results of the processing are stored in an [Vec] which contains tuples of
-/// the processed text and an [IdSet] of process type bits.
+/// the processed text and an [HashSet] of process type bits.
 ///
 /// # Arguments
 ///
@@ -927,7 +930,7 @@ pub fn build_process_type_tree(process_type_set: &IdSet) -> Vec<ProcessTypeBitNo
 ///
 /// An [Vec] containing tuples. Each tuple consists of:
 /// * A [Cow] string, which could be either the borrowed input text or an owned version of the processed text.
-/// * An [IdSet] which contains the bits of the processed [ProcessType].
+/// * An [HashSet] which contains the bits of the processed [ProcessType].
 ///
 /// # Panics
 ///
@@ -944,7 +947,7 @@ pub fn reduce_text_process_with_tree<'a>(
     let mut processed_text_process_type_set: ProcessedTextSet<'a> = Vec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
-        IdSet::from_iter([ProcessType::None.bits() as usize]),
+        HashSet::from_iter([ProcessType::None.bits()]),
     ));
 
     for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
@@ -970,11 +973,8 @@ pub fn reduce_text_process_with_tree<'a>(
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_set.push((
                                     Cow::Owned(pt),
-                                    IdSet::from_iter(
-                                        child_node
-                                            .process_type_list
-                                            .iter()
-                                            .map(|smt| smt.bits() as usize),
+                                    HashSet::from_iter(
+                                        child_node.process_type_list.iter().map(|smt| smt.bits()),
                                     ),
                                 ));
                                 current_index = processed_text_process_type_set.len() - 1;
@@ -991,7 +991,7 @@ pub fn reduce_text_process_with_tree<'a>(
                         match process_matcher.replace_all(current_text, process_replace_list) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_set
-                                    .push((Cow::Owned(pt), IdSet::new()));
+                                    .push((Cow::Owned(pt), HashSet::new()));
                                 current_index = processed_text_process_type_set.len() - 1;
                             }
                             (false, _) => {
@@ -1007,12 +1007,9 @@ pub fn reduce_text_process_with_tree<'a>(
             child_node.processed_text_index = current_index;
             let processed_text_process_type_tuple =
                 &mut processed_text_process_type_set[current_index];
-            processed_text_process_type_tuple.1.extend(
-                child_node
-                    .process_type_list
-                    .iter()
-                    .map(|smt| smt.bits() as usize),
-            );
+            processed_text_process_type_tuple
+                .1
+                .extend(child_node.process_type_list.iter().map(|smt| smt.bits()));
         }
     }
 
@@ -1020,7 +1017,7 @@ pub fn reduce_text_process_with_tree<'a>(
 }
 
 /// Reduces the given `text` based on a list of `process_type`s and returns an array of tuples
-/// containing the processed text and an [IdSet] of process type identifiers.
+/// containing the processed text and an [HashSet] of process type identifiers.
 ///
 /// # Arguments
 ///
@@ -1031,10 +1028,10 @@ pub fn reduce_text_process_with_tree<'a>(
 ///
 /// An [Vec] containing tuples where each tuple consists of:
 /// - A [Cow<'a, str>] representing the processed text.
-/// - An [IdSet] containing the identifiers of the process types applied.
+/// - An [HashSet] containing the identifiers of the process types applied.
 #[inline(always)]
 pub fn reduce_text_process_with_set<'a>(
-    process_type_set: &IdSet,
+    process_type_set: &HashSet<u8>,
     text: &'a str,
 ) -> ProcessedTextSet<'a> {
     let mut process_type_tree = Vec::with_capacity(8);
@@ -1051,11 +1048,11 @@ pub fn reduce_text_process_with_set<'a>(
     let mut processed_text_process_type_set: ProcessedTextSet<'a> = Vec::new();
     processed_text_process_type_set.push((
         Cow::Borrowed(text),
-        IdSet::from_iter([ProcessType::None.bits() as usize]),
+        HashSet::from_iter([ProcessType::None.bits()]),
     ));
 
-    for process_type_usize in process_type_set.iter() {
-        let process_type = ProcessType::from_bits(process_type_usize as u8).unwrap();
+    for process_type_bits in process_type_set.iter() {
+        let process_type = ProcessType::from_bits(*process_type_bits).unwrap();
         let mut current_text = text;
         let mut current_index = 0;
         let mut current_node_index = 0;
@@ -1084,7 +1081,7 @@ pub fn reduce_text_process_with_set<'a>(
                     ProcessType::None => {}
                     ProcessType::Delete => match process_matcher.delete_all(current_text) {
                         (true, Cow::Owned(pt)) => {
-                            processed_text_process_type_set.push((Cow::Owned(pt), IdSet::new()));
+                            processed_text_process_type_set.push((Cow::Owned(pt), HashSet::new()));
                             current_index = processed_text_process_type_set.len() - 1;
 
                             let processed_text_process_type_tuple =
@@ -1092,7 +1089,7 @@ pub fn reduce_text_process_with_set<'a>(
                                     [current_node.processed_text_index];
                             processed_text_process_type_tuple
                                 .1
-                                .insert(process_type.bits() as usize);
+                                .insert(process_type.bits());
                         }
                         (false, _) => {
                             current_index = current_node.processed_text_index;
@@ -1101,7 +1098,7 @@ pub fn reduce_text_process_with_set<'a>(
                     },
                     _ => match process_matcher.replace_all(current_text, process_replace_list) {
                         (true, Cow::Owned(pt)) => {
-                            processed_text_process_type_set.push((Cow::Owned(pt), IdSet::new()));
+                            processed_text_process_type_set.push((Cow::Owned(pt), HashSet::new()));
                             current_index = processed_text_process_type_set.len() - 1;
                         }
                         (false, _) => {
@@ -1134,7 +1131,7 @@ pub fn reduce_text_process_with_set<'a>(
                 &mut processed_text_process_type_set[current_index];
             processed_text_process_type_tuple
                 .1
-                .insert(process_type.bits() as usize);
+                .insert(process_type.bits());
             current_text = processed_text_process_type_set[current_index].0.as_ref();
         }
     }

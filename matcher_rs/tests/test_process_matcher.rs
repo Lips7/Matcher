@@ -1,4 +1,5 @@
-use id_set::IdSet;
+use std::collections::HashSet;
+
 use matcher_rs::{
     ProcessType, build_process_type_tree, reduce_text_process, reduce_text_process_emit,
     reduce_text_process_with_set, reduce_text_process_with_tree, text_process,
@@ -24,12 +25,12 @@ fn test_reduce_text_process_emit() {
 
 #[test]
 fn test_build_process_type_tree() {
-    let process_type_set = IdSet::from_iter([
-        ProcessType::Fanjian.bits() as usize,
-        ProcessType::DeleteNormalize.bits() as usize,
-        ProcessType::FanjianDeleteNormalize.bits() as usize,
-        ProcessType::Delete.bits() as usize,
-        ProcessType::Normalize.bits() as usize,
+    let process_type_set = HashSet::from_iter([
+        ProcessType::Fanjian.bits(),
+        ProcessType::DeleteNormalize.bits(),
+        ProcessType::FanjianDeleteNormalize.bits(),
+        ProcessType::Delete.bits(),
+        ProcessType::Normalize.bits(),
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
     println!("{:?}", process_type_tree);
@@ -37,12 +38,12 @@ fn test_build_process_type_tree() {
 
 #[test]
 fn test_reduce_text_process_with_tree() {
-    let process_type_set = IdSet::from_iter([
-        ProcessType::Fanjian.bits() as usize,
-        ProcessType::DeleteNormalize.bits() as usize,
-        ProcessType::FanjianDeleteNormalize.bits() as usize,
-        ProcessType::Delete.bits() as usize,
-        ProcessType::Normalize.bits() as usize,
+    let process_type_set = HashSet::from_iter([
+        ProcessType::Fanjian.bits(),
+        ProcessType::DeleteNormalize.bits(),
+        ProcessType::FanjianDeleteNormalize.bits(),
+        ProcessType::Delete.bits(),
+        ProcessType::Normalize.bits(),
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "test爽-︻";
@@ -53,12 +54,12 @@ fn test_reduce_text_process_with_tree() {
 
 #[test]
 fn test_reduce_text_process_with_set() {
-    let process_type_set = IdSet::from_iter([
-        ProcessType::Fanjian.bits() as usize,
-        ProcessType::DeleteNormalize.bits() as usize,
-        ProcessType::FanjianDeleteNormalize.bits() as usize,
-        ProcessType::Delete.bits() as usize,
-        ProcessType::Normalize.bits() as usize,
+    let process_type_set = HashSet::from_iter([
+        ProcessType::Fanjian.bits(),
+        ProcessType::DeleteNormalize.bits(),
+        ProcessType::FanjianDeleteNormalize.bits(),
+        ProcessType::Delete.bits(),
+        ProcessType::Normalize.bits(),
     ]);
     let text = "test爽-︻";
 
@@ -83,10 +84,10 @@ fn test_reduce_text_process_all_combined() {
 
 #[test]
 fn test_reduce_text_process_empty_text() {
-    let process_type_set = IdSet::from_iter([
-        ProcessType::Fanjian.bits() as usize,
-        ProcessType::Delete.bits() as usize,
-        ProcessType::Normalize.bits() as usize,
+    let process_type_set = HashSet::from_iter([
+        ProcessType::Fanjian.bits(),
+        ProcessType::Delete.bits(),
+        ProcessType::Normalize.bits(),
     ]);
 
     let processed_text = reduce_text_process_with_set(&process_type_set, "");
