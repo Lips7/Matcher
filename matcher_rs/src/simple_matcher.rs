@@ -13,27 +13,22 @@ use crate::process::process_matcher::{
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
-/// [SimpleTable] is a nested map where the outer map uses [ProcessType] as keys,
+/// [`SimpleTable`] is a nested map where the outer map uses [`ProcessType`] as keys,
 /// and the values are inner maps that map `u32` keys to string slices.
 ///
 /// # Type Parameters
+/// * `'a` - The lifetime of the string slices.
 ///
-/// - `'a`: The lifetime of the string slices.
-///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use nohash_hasher::IntMap;
-///
 /// use matcher_rs::{SimpleTable, ProcessType};
 ///
 /// let mut table: SimpleTable = IntMap::default();
 /// table.insert(ProcessType::None, IntMap::default());
 /// table.get_mut(&ProcessType::None).unwrap().insert(1, "example");
 /// ```
-///
-/// The above example creates a [SimpleTable], inserts an inner map for a process type,
-/// and then adds a mapping from an integer key to a string slice within that inner map.
 pub type SimpleTable<'a> = IntMap<ProcessType, IntMap<u32, &'a str>>;
 
 pub type SimpleTableSerde<'a> = IntMap<ProcessType, IntMap<u32, Cow<'a, str>>>;
@@ -56,23 +51,21 @@ struct WordConf {
     not_offset: usize,
 }
 
-/// Represents a simple result for matching words in the SimpleMatcher.
+/// Represents a simple result for matching words in the `SimpleMatcher`.
 ///
-/// [SimpleResult] holds the matched word and its identifier, allowing for results to be easily accessed and utilized
+/// [`SimpleResult`] holds the matched word and its identifier, allowing for results to be easily accessed and utilized
 /// within the matching process. The main purpose of this structure is to provide a concise and clear representation
 /// of word matching outcomes.
 ///
-/// # Fields
-///
-/// - `word_id`: A unique identifier for the matched word.
-/// - `word`: The matched word itself, wrapped in a [Cow] (Clone-On-Write) to optimize for performance and memory usage.
-///
 /// # Type Parameters
-///
-/// - `'a`: The lifetime of the matched word. This allows [SimpleResult] to hold either owned [String]s or references
+/// * `'a` - The lifetime of the matched word. This allows [`SimpleResult`] to hold either owned `String`s or references
 ///   to existing `str` data, depending on the context.
 ///
-/// # Example
+/// # Fields
+/// * `word_id` - A unique identifier for the matched word.
+/// * `word` - The matched word itself, wrapped in a `Cow` (Clone-On-Write).
+///
+/// # Examples
 ///
 /// ```rust
 /// use std::borrow::Cow;
@@ -85,9 +78,6 @@ struct WordConf {
 /// assert_eq!(result.word_id, 1);
 /// assert_eq!(result.word, "example");
 /// ```
-///
-/// The example above demonstrates creating a [SimpleResult] with a borrowed `str`. The same structure can also
-/// hold an owned [String] if necessary to accommodate different use cases and data lifetimes.
 #[derive(Serialize, Debug)]
 pub struct SimpleResult<'a> {
     pub word_id: u32,
@@ -119,26 +109,11 @@ type WordConfEntry = (ProcessType, u32, usize);
 
 /// Represents a simple matcher for processing words based on process types.
 ///
-/// The [SimpleMatcher] structure is designed to perform efficient word matching, supporting logical operators
+/// The [`SimpleMatcher`] structure is designed to perform efficient word matching, supporting logical operators
 /// like AND and NOT, and allowing seamless integration with various process types. Word configurations are
 /// stored and managed internally, providing a flexible and powerful matching system.
 ///
-/// The structure supports optional serialization and deserialization if the "serde" feature is enabled.
-///
-/// # Fields
-///
-/// - `process_type_tree`: A vector containing the process type tree, represented as `ProcessTypeBitNode`s.
-/// - `ac_matcher`: An instance of the [AhoCorasick] matcher for efficient multi-pattern searching.
-/// - `ac_dedup_word_conf_list`: A nested vector holding the deduplicated word configurations mapped to their process types.
-/// - `word_conf_map`: A map of word identifiers to `WordConf` structs, storing the original word configurations.
-///
-/// # Example
-///
-/// Note: It is highly recommended to use [SimpleMatcherBuilder](crate::SimpleMatcherBuilder)
-/// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
-///
-/// This example demonstrates creating a [SimpleMatcher] instance using the `new` method with a sample
-/// `process_type_word_map`:
+/// # Examples
 ///
 /// ```rust
 /// use std::collections::HashMap;
@@ -148,19 +123,7 @@ type WordConfEntry = (ProcessType, u32, usize);
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "example&word")
 ///     .build();
-///
-/// // Or manually mapping:
-/// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
-/// let mut inner_map: HashMap<u32, &str> = HashMap::new();
-/// inner_map.insert(1, "example&word");
-/// process_type_word_map.insert(ProcessType::None, inner_map);
-///
-/// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
-///
-/// println!("{:?}", matcher);
 /// ```
-///
-/// The above example creates a [SimpleMatcher] with a nested map and prints the matcher instance.
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
@@ -170,52 +133,23 @@ pub struct SimpleMatcher {
 }
 
 impl SimpleMatcher {
-    /// Creates a new instance of [SimpleMatcher] from a given process type to word map.
+    /// Creates a new instance of [`SimpleMatcher`] from a given process type to word map.
     ///
-    /// This method initializes the [SimpleMatcher] by constructing the internal structures necessary for efficient word matching.
+    /// This method initializes the [`SimpleMatcher`] by constructing the internal structures necessary for efficient word matching.
     ///
-    /// # Parameters
-    ///
-    /// - `process_type_word_map`: A reference to a hash map that associates [ProcessType] with another hash map.
-    ///   The inner hash map links word identifiers (`u32`) to strings representing words. The outer hash map allows
-    ///   different process types to have their own specific set of words.
-    ///
-    /// # Type Parameters
-    ///
-    /// - `I`: An iterator type whose items can be converted to string slices.
-    /// - `S1`: A hasher type for the inner [HashMap].
-    /// - `S2`: A hasher type for the outer [HashMap].
-    ///
-    /// # Returns
-    ///
-    /// Returns an initialized [SimpleMatcher] with all its internal structures set up for use.
-    ///
-    /// # Example
-    ///
-    /// Note: It is highly recommended to use [SimpleMatcherBuilder](crate::SimpleMatcherBuilder)
+    /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
     /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
     ///
-    /// ```rust
-    /// use std::collections::HashMap;
-    /// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
+    /// # Arguments
+    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of `u32` to word identifiers.
     ///
-    /// // Recommended: Using SimpleMatcherBuilder
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "example&word")
-    ///     .build();
+    /// # Type Parameters
+    /// * `I` - An iterator type whose items can be converted to string slices.
+    /// * `S1` - A hasher type for the inner `HashMap`.
+    /// * `S2` - A hasher type for the outer `HashMap`.
     ///
-    /// // Or manually mapping:
-    /// let mut process_type_word_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
-    /// let mut inner_map: HashMap<u32, &str> = HashMap::new();
-    /// inner_map.insert(1, "example&word");
-    /// process_type_word_map.insert(ProcessType::None, inner_map);
-    ///
-    /// let matcher_manual = SimpleMatcher::new(&process_type_word_map);
-    ///
-    /// println!("{:?}", matcher);
-    /// ```
-    ///
-    /// The above example demonstrates how to create a [SimpleMatcher].
+    /// # Returns
+    /// An initialized [`SimpleMatcher`] with all its internal structures set up for use.
     pub fn new<I, S1, S2>(
         process_type_word_map: &HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -443,12 +377,10 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// associated process types.
     ///
     /// # Arguments
-    ///
-    /// * `text` - A reference to a string slice that holds the text to be matched.
+    /// * `text` - A string slice that holds the text to be matched.
     ///
     /// # Returns
-    ///
-    /// * `true` if the text matches any pattern, otherwise `false`.
+    /// `true` if the text matches any pattern, otherwise `false`.
     fn is_match(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
@@ -461,21 +393,14 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     }
     /// Processes the given text and returns a vector of matching results.
     ///
-    /// This function takes an input `text`, processes it using the
-    /// `reduce_text_process_with_tree` method to obtain a processed text process type set,
-    /// and then passes this set to the `process_preprocessed` method
-    /// to get the matching results. If the input `text` is empty, it immediately returns
-    /// an empty vector.
+    /// This function applies the process type tree to the text and passes the processed text
+    /// to the matching implementation.
     ///
     /// # Arguments
-    ///
-    /// * `text` - A reference to a string slice that needs to be processed.
+    /// * `text` - A string slice that needs to be processed.
     ///
     /// # Returns
-    ///
-    /// * A [Vec<SimpleResult>] containing the matching results. Each [SimpleResult] holds
-    ///   the word ID and the matched word. If no matches are found or the text is empty,
-    ///   it returns an empty vector.
+    /// A `Vec<SimpleResult>` containing the matching results.
     fn process(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         if text.is_empty() {
             return Vec::new();
@@ -487,10 +412,9 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         self.process_preprocessed(&processed_text_process_type_set)
     }
 
-    /// Processes the given text and returns an iterator over [SimpleResult] matches.
+    /// Processes the given text and returns an iterator over [`SimpleResult`] matches.
     ///
-    /// # Why a fully lazy iterator is not possible for [SimpleMatcher]
-    ///
+    /// # Details
     /// The Aho-Corasick automaton with AND/NOT logical operators requires a **two-pass** algorithm:
     ///
     /// - **Pass 1** (scan): Traverse the entire input and accumulate the `word_id_split_bit_map`
@@ -501,11 +425,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
     ///   matrices satisfy the AND conditions.
     ///
-    /// Because of this inherent two-phase dependency, this override simply wraps [TextMatcherTrait::process] and
-    /// returns a consuming iterator over its `Vec`. The caller's interface is identical to the other
-    /// matchers' `process_iter`, but no extra allocation beyond what `process` already performs is
-    /// incurred. A future optimisation could pipeline the two passes if the NOT feature is absent,
-    /// but that would require a fundamentally different matcher construction.
+    /// Returns a consuming iterator over the underlying `Vec`.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimpleResult<'a>> + 'a {
         self.process(text).into_iter()
     }

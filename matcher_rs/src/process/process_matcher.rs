@@ -179,19 +179,9 @@ pub type ProcessedTextSet<'a> = Vec<(Cow<'a, str>, HashSet<u8>)>;
 /// effectively. The enum is clonable, allowing for easy duplication when necessary.
 ///
 /// # Variants
-///
-/// - `LeftMost`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher to find the leftmost non-overlapping matches
-///   in the text. This variant is only available when the "dfa" feature is not enabled.
-///
-/// - `Chinese`: Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher specifically tailored to handle Chinese text,
-///   focusing on character-wise matching to find the patterns.
-///
-/// - `Others`: Uses a standard [AhoCorasick] matcher for general-purpose text processing. This is suitable for
-///   finding matches for patterns not covered by the other two variants.
-///
-/// Each variant encapsulates a matcher implementation that is optimized for its specific use case,
-/// allowing for efficient text processing operations such as finding, replacing, or deleting patterns
-/// within the text.
+/// * `LeftMost` - Uses a `CharwiseDoubleArrayAhoCorasick<u32>` matcher to find the leftmost non-overlapping matches.
+/// * `Chinese` - Uses a `CharwiseDoubleArrayAhoCorasick<u32>` matcher specifically tailored to handle Chinese text.
+/// * `Others` - Uses a standard `AhoCorasick` matcher for general-purpose text processing.
 #[derive(Clone)]
 pub enum ProcessMatcher {
     #[cfg(not(feature = "dfa"))]
@@ -478,7 +468,7 @@ pub fn get_process_matcher(
             return Arc::clone(cached_result);
         }
         process_matcher_cache.insert(process_type_bit, Arc::clone(&uncached_result));
-        return uncached_result;
+        uncached_result
     }
 
     #[cfg(not(feature = "runtime_build"))]
@@ -610,24 +600,18 @@ pub fn get_process_matcher(
 /// is set in `process_type_bit`.
 ///
 /// # Arguments
-///
-/// * `process_type_bit` - A [ProcessType] representing a single processing rule to apply.
+/// * `process_type_bit` - A [`ProcessType`] representing a single processing rule to apply.
 /// * `text` - A string slice representing the text to be processed.
 ///
 /// # Returns
-///
-/// A [Result] containing either:
-/// * `Ok(Cow<str>)` with the processed text, or
-/// * `Err(ProcessTypeError)` if more than one bit is set in `process_type_bit`.
+/// A `Result` containing either the processed text or a [`ProcessTypeError`].
 ///
 /// # Errors
+/// This function returns a [`ProcessTypeError`] if `process_type_bit` has more than one bit set.
 ///
-/// This function returns a [`ProcessTypeError`] if `process_type_bit` has more than one bit set,
-/// as the function is designed to process only one type of transformation at a time.
+/// # Examples
 ///
-/// # Example
-///
-/// ```
+/// ```rust
 /// use matcher_rs::{text_process, ProcessType};
 ///
 /// let process_type = ProcessType::Delete;
@@ -638,11 +622,6 @@ pub fn get_process_matcher(
 ///     Err(e) => println!("Error: {}", e),
 /// };
 /// ```
-///
-/// # Panics
-///
-/// This function does not panic under normal circumstances. It uses `unreachable!()`
-/// to mark code paths that should not be possible based on earlier checks and logic.
 #[inline(always)]
 pub fn text_process(
     process_type_bit: ProcessType,
@@ -682,17 +661,15 @@ pub fn text_process(
 /// at a particular stage of processing.
 ///
 /// # Arguments
-///
-/// * `process_type` - A [ProcessType] representing a composite of multiple processing rules to apply.
+/// * `process_type` - A [`ProcessType`] representing a composite of multiple processing rules to apply.
 /// * `text` - A string slice representing the text to be processed.
 ///
 /// # Returns
+/// A `Vec` containing the processed text at each step. The initial text is always included as the first element.
 ///
-/// An [Vec] containing the processed text at each step. The initial text is always included as the first element.
+/// # Examples
 ///
-/// # Example
-///
-/// ```
+/// ```rust
 /// use matcher_rs::{reduce_text_process, ProcessType};
 ///
 /// let process_type = ProcessType::Delete | ProcessType::PinYin;
@@ -703,11 +680,6 @@ pub fn text_process(
 ///     println!("Processed text: {}", processed_text);
 /// }
 /// ```
-///
-/// # Panics
-///
-/// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
-/// paths that should not be possible based on earlier checks and logic.
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -749,17 +721,15 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// at a particular stage of processing.
 ///
 /// # Arguments
-///
-/// * `process_type` - A [ProcessType] representing a composite of multiple processing rules to apply.
+/// * `process_type` - A [`ProcessType`] representing a composite of multiple processing rules to apply.
 /// * `text` - A string slice representing the text to be processed.
 ///
 /// # Returns
+/// A `Vec` containing the processed text at each step. The initial text is always included as the first element.
 ///
-/// An [Vec] containing the processed text at each step. The initial text is always included as the first element.
+/// # Examples
 ///
-/// # Example
-///
-/// ```
+/// ```rust
 /// use matcher_rs::{reduce_text_process_emit, ProcessType};
 ///
 /// let process_type = ProcessType::Delete | ProcessType::PinYin;
@@ -770,11 +740,6 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 ///     println!("Processed text: {}", processed_text);
 /// }
 /// ```
-///
-/// # Panics
-///
-/// This function does not panic under normal circumstances. It uses `unreachable!()` to mark code
-/// paths that should not be possible based on earlier checks and logic.
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();

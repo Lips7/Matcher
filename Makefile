@@ -7,8 +7,8 @@ build:
 	cp ./target/release/libmatcher_c.$(EXT) ./matcher_java/src/main/resources/matcher_c.so
 
 test:
-	cargo fmt
-	cargo clippy --all-targets -- -D warnings
+	cargo fmt --all
+	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo doc
 
 	cd matcher_rs && cargo test --no-default-features

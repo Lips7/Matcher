@@ -15,15 +15,14 @@ use crate::simple_matcher::{SimpleMatcher, SimpleTable};
 /// Text-matching trait shared by all matcher types.
 ///
 /// # Type Parameters
-///
-/// - `'a`: Lifetime parameter associated with the trait and match results.
-/// - `T`: A type that implements [MatchResultTrait<'a>] and has the same lifetime as `'a`.
+/// * `'a` - Lifetime parameter associated with the trait and match results.
+/// * `T` - A type that implements [`MatchResultTrait<'a>`] and has the same lifetime as `'a`.
 ///
 /// # Public API
 ///
-/// External code should call [is_match](TextMatcherTrait::is_match),
-/// [process](TextMatcherTrait::process), and
-/// [process_iter](TextMatcherTrait::process_iter).
+/// External code should call [`is_match`](TextMatcherTrait::is_match),
+/// [`process`](TextMatcherTrait::process), and
+/// [`process_iter`](TextMatcherTrait::process_iter).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` does not implement text matching",
     label = "this type cannot be used as a matcher",
@@ -57,27 +56,25 @@ pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
 
 /// A trait defining the required methods for a match result.
 ///
-/// This trait is essential for any match result type used within the [TextMatcherTrait] to ensure
+/// This trait is essential for any match result type used within the [`TextMatcherTrait`] to ensure
 /// a consistent interface for accessing match result properties. The trait includes methods to
 /// retrieve the match ID, table ID, word ID, the matched word, and the similarity score. Any type
 /// implementing this trait can be seamlessly used as a match result in the text matching operations.
 ///
-/// # Lifetimes
-///
-/// - `'a`: A lifetime parameter associated with the trait and match result, indicating the lifespan
+/// # Type Parameters
+/// * `'a` - A lifetime parameter associated with the trait and match result, indicating the lifespan
 ///   of the references returned by the trait methods.
 ///
 /// # Required Methods
-///
-/// - `match_id(&self) -> u32`: Returns the match ID associated with the result.
-/// - `table_id(&self) -> u32`: Returns the table ID where the match was found.
-/// - `word_id(&self) -> u32`: Returns the word ID within the table.
-/// - `word(&self) -> &str`: Returns a reference to the matched word.
-/// - `similarity(&self) -> f64`: Returns the similarity score of the match.
+/// * `match_id(&self) -> u32` - Returns the match ID associated with the result.
+/// * `table_id(&self) -> u32` - Returns the table ID where the match was found.
+/// * `word_id(&self) -> u32` - Returns the word ID within the table.
+/// * `word(&self) -> &str` - Returns a reference to the matched word.
+/// * `similarity(&self) -> Option<f64>` - Returns the similarity score of the match.
 ///
 /// # Examples
 ///
-/// Below is an example implementation of the [MatchResultTrait] for a struct [MatchResult]:
+/// Below is an example implementation of the [`MatchResultTrait`] for a struct `MatchResult`:
 ///
 /// ```rust
 /// use std::borrow::Cow;
@@ -128,19 +125,10 @@ pub trait MatchResultTrait<'a> {
 /// This enum is used to specify the type of matching strategy along with associated configurations
 /// that should be applied to the input text.
 ///
-/// Variants:
-///
-/// - [MatchTableType::Simple]: Represents a simple text matching strategy.
-///   - `process_type`: The type of text processing to apply.
-///
-/// - [MatchTableType::Regex]: Represents a regex-based matching strategy.
-///   - `regex_match_type`: The type of regex matching.
-///   - `process_type`: The type of text processing to apply.
-///
-/// - [MatchTableType::Similar]: Represents a similarity-based matching strategy.
-///   - `sim_match_type`: The type of similarity matching.
-///   - `threshold`: The similarity threshold that needs to be met.
-///   - `process_type`: The type of text processing to apply.
+/// # Variants
+/// * `Simple` - Represents a simple text matching strategy, holding a `process_type`.
+/// * `Regex` - Represents a regex-based matching strategy, holding a `regex_match_type` and `process_type`.
+/// * `Similar` - Represents a similarity-based matching strategy, holding a `sim_match_type`, `threshold`, and `process_type`.
 ///
 /// # Serialization
 ///
@@ -172,19 +160,14 @@ pub enum MatchTableType {
 /// interchangeably within the text matching operations.
 ///
 /// # Type Parameters
-///
-/// - `S`: A type that implements `AsRef<str>`, ensuring the trait can be used with various string-like types.
+/// * `S` - A type that implements `AsRef<str>`, ensuring the trait can be used with various string-like types.
 ///
 /// # Required Methods
-///
-/// - `table_id(&self) -> u32`: Returns the unique identifier for the match table.
-/// - `match_table_type(&self) -> MatchTableType`: Returns the type of matching strategy used by the table.
-/// - `word_list(&self) -> &Vec<S>`: Returns a reference to the vector of words used for matching operations.
-/// - `exemption_process_type(&self) -> ProcessType`: Returns the type of text processing applied to the exemption words.
-/// - `exemption_word_list(&self) -> &Vec<S>`: Returns a reference to the vector of words exempted from matching operations.
-///
-/// By implementing this trait, any custom match table structure can ensure compatibility with the
-/// text matching system, providing the necessary access to its configuration details.
+/// * `table_id(&self) -> u32` - Returns the unique identifier for the match table.
+/// * `match_table_type(&self) -> MatchTableType` - Returns the type of matching strategy used by the table.
+/// * `word_list(&self) -> &[S]` - Returns a reference to the slice of words used for matching operations.
+/// * `exemption_process_type(&self) -> ProcessType` - Returns the type of text processing applied to the exemption words.
+/// * `exemption_word_list(&self) -> &[S]` - Returns a reference to the slice of words exempted from matching operations.
 pub trait MatchTableTrait<S: AsRef<str>> {
     fn table_id(&self) -> u32;
     fn match_table_type(&self) -> MatchTableType;
@@ -201,35 +184,18 @@ pub trait MatchTableTrait<S: AsRef<str>> {
 /// from matching. Additionally, each table specifies the type of text processing to apply for both
 /// regular and exemption word lists.
 ///
-/// # Lifetimes
-///
-/// - `'a`: A lifetime parameter associated with the match table, indicating the lifespan of the
+/// # Type Parameters
+/// * `'a` - A lifetime parameter associated with the match table, indicating the lifespan of the
 ///   borrowed strings contained in the word lists.
 ///
 /// # Fields
-///
-/// - `table_id: u32`: A unique identifier for the match table.
-/// - `match_table_type: MatchTableType`: The type of matching strategy (e.g., Simple, Regex,
-///   Similar) used by this table.
-/// - `word_list: Vec<&'a str>`: A vector of words to be used for matching operations. The lifetime
-///   `'a` ensures that the borrowed strings live at least as long as the match table.
-/// - `exemption_process_type: ProcessType`: The type of text processing to apply to exemption
-///   words.
-/// - `exemption_word_list: Vec<&'a str>`: A vector of words that should be exempted from matching
-///   operations. The lifetime `'a` ensures that the borrowed strings live at least as long as the
-///   match table.
-///
-/// # Serde Attributes
-///
-/// - `#[derive(Serialize, Deserialize)]`: Automatically implements serialization and
-///   deserialization for the [MatchTable] struct, enabling easy conversion to and from different
-///   data formats (e.g., JSON).
-/// - `#[serde(borrow)]`: This attribute specifies that the deserializer should borrow data for the
-///   fields marked with `'a`, reducing unnecessary allocations and improving performance.
+/// * `table_id` - A unique identifier for the match table.
+/// * `match_table_type` - The type of matching strategy (e.g., Simple, Regex, Similar) used by this table.
+/// * `word_list` - A vector of words to be used for matching operations.
+/// * `exemption_process_type` - The type of text processing to apply to exemption words.
+/// * `exemption_word_list` - A vector of words that should be exempted from matching operations.
 ///
 /// # Examples
-///
-/// The following is an example of how a [MatchTable] might be manually instantiated or built:
 ///
 /// ```rust
 /// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType};
@@ -332,32 +298,24 @@ struct WordTableConf {
 
 /// A structure representing the results of a matching operation.
 ///
-/// The [MatchResult] struct contains detailed information about the results of a single matching
+/// The [`MatchResult`] struct contains detailed information about the results of a single matching
 /// operation including the match identifier, table identifier, word identifier, the matched word
 /// itself, and a similarity score.
 ///
-/// # Lifetimes
-///
-/// - `'a`: The lifetime of the borrowed string contained in the `word` field. This ensures that
-///   the referenced word lives at least as long as the [MatchResult].
+/// # Type Parameters
+/// * `'a` - The lifetime of the borrowed string contained in the `word` field.
 ///
 /// # Fields
-///
-/// - `match_id: u32`: A unique identifier for the matching operation.
-/// - `table_id: u32`: A unique identifier for the match table associated with this result.
-/// - `word_id: u32`: A unique identifier for the matched word.
-/// - `word: Cow<'a, str>`: The word that was matched. Uses a [Cow] (Copy on Write) to allow
-///   flexibility in whether the word is borrowed or owned.
-/// - `similarity: f64`: The similarity score of the matched word. This is typically used for
-///   similarity-based matching operations to represent how closely the word matches the criteria.
+/// * `match_id` - A unique identifier for the matching operation.
+/// * `table_id` - A unique identifier for the match table.
+/// * `word_id` - A unique identifier for the matched word.
+/// * `word` - The word that was matched, using a `Cow` for efficiency.
+/// * `similarity` - The optional similarity score of the matched word.
 ///
 /// # Examples
 ///
-/// The following example demonstrates how to create an instance of [MatchResult]:
-///
 /// ```rust
 /// use std::borrow::Cow;
-///
 /// use matcher_rs::MatchResult;
 ///
 /// let match_result = MatchResult {
@@ -419,25 +377,19 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
     }
 }
 
-/// A type alias for a mapping from match table IDs to their corresponding [MatchTable]s.
+/// A type alias for a mapping from match table IDs to their corresponding [`MatchTable`]s.
 ///
-/// This mapping uses an [IntMap] where:
-/// - The key is a `u32` that represents the unique identifier of a match table.
-/// - The value is a [Vec] containing the list of [MatchTable] structures associated with the match table ID.
+/// This mapping uses an `IntMap` mapping to `Vec<MatchTable>`.
 ///
-/// # Lifetimes
+/// # Type Parameters
+/// * `'a` - The lifetime of the borrowed data within the [`MatchTable`] structures.
 ///
-/// - `'a`: The lifetime of the borrowed data within the [MatchTable] structures.
-///
-/// # Example
+/// # Examples
 ///
 /// ```rust
-/// use std::borrow::Cow;
 /// use nohash_hasher::IntMap;
-///
 /// use matcher_rs::{MatchTable, MatchTableMap, MatchTableType, ProcessType, RegexMatchType};
 ///
-/// // Sample match table entries
 /// let match_table_1 = MatchTable {
 ///     table_id: 1,
 ///     match_table_type: MatchTableType::Simple { process_type: ProcessType::None },
@@ -454,7 +406,6 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 ///     exemption_word_list: vec!["skip"],
 /// };
 ///
-/// // Create a match table map
 /// let mut match_table_map: MatchTableMap = IntMap::default();
 /// match_table_map.insert(1, vec![match_table_1]);
 /// match_table_map.insert(2, vec![match_table_2]);
@@ -463,29 +414,8 @@ pub type MatchTableMap<'a> = IntMap<u32, Vec<MatchTable<'a>>>;
 
 pub type MatchTableMapSerde<'a> = IntMap<u32, Vec<MatchTableSerde<'a>>>;
 
-/// The [Matcher] struct is responsible for managing and facilitating various types of matching operations
+/// The [`Matcher`] struct is responsible for managing and facilitating various types of matching operations
 /// utilizing different word processing strategies and match table configurations.
-///
-/// Fields:
-///
-/// - `process_type_tree: Vec<ProcessTypeBitNode>`: A vector representing the tree structure of process types,
-///   used to manage the hierarchy and relationships between different word processing steps.
-///
-/// - `simple_word_table_conf_list: Vec<WordTableConf>`: A vector containing configurations for simple word
-///   matching tables. Each entry represents the configuration for a specific table, including its match ID,
-///   table ID, offset, and whether it is an exemption table.
-///
-/// - `simple_word_table_conf_index_list: Vec<usize>`: A vector indexing entries in `simple_word_table_conf_list`
-///   for efficient look-up and retrieval.
-///
-/// - `simple_matcher: Option<SimpleMatcher>`: An optional [SimpleMatcher] used to perform simple word matching
-///   operations if any such tables are configured.
-///
-/// - `regex_matcher: Option<RegexMatcher>`: An optional [RegexMatcher] used to perform regular expression based
-///   matching operations if any such tables are configured.
-///
-/// - `sim_matcher: Option<SimMatcher>`: An optional [SimMatcher] used to perform similarity-based matching
-///   operations if any such tables are configured.
 #[derive(Debug, Clone)]
 pub struct Matcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
@@ -497,32 +427,25 @@ pub struct Matcher {
 }
 
 impl Matcher {
-    /// Constructs a new [Matcher] instance from a given match table map.
+    /// Constructs a new [`Matcher`] instance from a given match table map.
     ///
-    /// This method initializes the [Matcher] by processing the provided match table map and
+    /// This method initializes the [`Matcher`] by processing the provided match table map and
     /// configuring various matching components (simple word tables, regex tables, and similarity
     /// tables) based on the match table configurations.
     ///
-    /// # Arguments
-    ///
-    /// * `match_table_map` - A reference to a [HashMap] where:
-    ///     - The key (`u32`) represents the unique identifier for a match table.
-    ///     - The value ([Vec<MatchTable<'_>>]) is a vector of [MatchTable] structs associated with the match table ID.
-    ///
-    /// # Returns
-    ///
-    /// Returns an initialized [Matcher] that is capable of performing different types of word matching
-    /// operations (simple, regex, similarity) based on the provided match table configurations.
-    ///
-    /// # Example
-    ///
-    /// Note: It is highly recommended to use [MatcherBuilder](crate::MatcherBuilder) to
+    /// Note: It is highly recommended to use [`MatcherBuilder`](crate::MatcherBuilder) to
     /// easily build a Matcher without manually instantiating `Vec` and `HashMap`s.
     ///
+    /// # Arguments
+    /// * `match_table_map` - A reference to a `HashMap` linking `match_id` keys to a `Vec` of match tables.
+    ///
+    /// # Returns
+    /// An initialized [`Matcher`].
+    ///
+    /// # Examples
+    ///
     /// ```rust
-    /// use std::borrow::Cow;
-    /// use nohash_hasher::IntMap;
-    /// use matcher_rs::{MatchTable, MatchTableBuilder, MatchTableType, ProcessType, RegexMatchType, Matcher, MatcherBuilder};
+    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, RegexMatchType, Matcher, MatcherBuilder};
     /// use std::collections::HashMap;
     ///
     /// let match_table_1 = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
@@ -535,18 +458,10 @@ impl Matcher {
     ///     .add_exemption_word("skip")
     ///     .build();
     ///
-    /// // Recommended approach:
     /// let matcher = MatcherBuilder::new()
-    ///     .add_table(1, match_table_1.clone())
-    ///     .add_table(2, match_table_2.clone())
+    ///     .add_table(1, match_table_1)
+    ///     .add_table(2, match_table_2)
     ///     .build();
-    ///
-    /// // Or manually mapping:
-    /// let mut match_table_map: HashMap<u32, Vec<MatchTable>> = HashMap::new();
-    /// match_table_map.insert(1, vec![match_table_1]);
-    /// match_table_map.insert(2, vec![match_table_2]);
-    ///
-    /// let matcher_manual = Matcher::new(&match_table_map);
     /// ```
     pub fn new<S, M, T>(match_table_map: &HashMap<u32, Vec<M>, S>) -> Matcher
     where
@@ -670,22 +585,16 @@ impl Matcher {
     /// Matches words in the given text based on the configured match tables.
     ///
     /// This function processes the input text through various match tables
-    /// configured in the [Matcher] instance. It handles simple word matches,
+    /// configured in the [`Matcher`] instance. It handles simple word matches,
     /// regex matches, and similarity matches by checking against the processed
-    /// text and returning the results in a [HashMap].
+    /// text and returning the results in a `HashMap`.
     ///
     /// # Arguments
-    ///
-    /// * `text` - A string slice that holds the text to be matched against the
-    ///   match tables.
+    /// * `text` - A string slice that holds the text to be matched against the match tables.
     ///
     /// # Returns
-    ///
-    /// * [HashMap<u32, Vec<MatchResult>>] - A map where keys are match IDs and
-    ///   values are vectors of [MatchResult] items. Each [MatchResult] holds
-    ///   information about a match found in the input text.
-    ///
-    /// If the input text is empty, the function returns an empty [HashMap].
+    /// A `HashMap` where keys are match IDs and values are vectors of [`MatchResult`] items.
+    /// If the input text is empty, an empty `HashMap` is returned.
     pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
         if text.is_empty() {
             return HashMap::new();

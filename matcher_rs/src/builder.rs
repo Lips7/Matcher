@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::{MatchTable, MatchTableType, Matcher, ProcessType, SimpleMatcher};
 
-/// A builder for constructing a `SimpleMatcher`.
+/// A builder for constructing a [`SimpleMatcher`].
 ///
-/// This builder provides a convenient and ergonomic API for constructing a `SimpleMatcher`
+/// This builder provides a convenient and ergonomic API for constructing a [`SimpleMatcher`]
 /// without needing to manually build and nest HashMaps.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
@@ -24,27 +24,35 @@ pub struct SimpleMatcherBuilder<'a> {
 }
 
 impl<'a> SimpleMatcherBuilder<'a> {
-    /// Creates a new, empty `SimpleMatcherBuilder`.
+    /// Creates a new, empty [`SimpleMatcherBuilder`].
+    ///
+    /// # Returns
+    /// An empty [`SimpleMatcherBuilder`].
     pub fn new() -> Self {
         Self {
             word_map: HashMap::new(),
         }
     }
 
-    /// Adds a word to the builder for a specific `ProcessType`.
+    /// Adds a word to the builder for a specific [`ProcessType`].
     ///
     /// # Arguments
-    ///
     /// * `process_type` - The text processing pipeline to apply before matching this word.
     /// * `word_id` - The unique identifier for this word.
     /// * `word` - The actual word or pattern to match.
+    ///
+    /// # Returns
+    /// The modified [`SimpleMatcherBuilder`].
     pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();
         bucket.insert(word_id, word);
         self
     }
 
-    /// Consumes the builder and constructs the `SimpleMatcher`.
+    /// Consumes the builder and constructs the [`SimpleMatcher`].
+    ///
+    /// # Returns
+    /// The constructed [`SimpleMatcher`].
     pub fn build(self) -> SimpleMatcher {
         SimpleMatcher::new(&self.word_map)
     }
@@ -58,7 +66,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
 /// [`MatchTableBuilder::new`]; everything else is optional and can be added
 /// incrementally before calling [`build`](MatchTableBuilder::build).
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder};
@@ -82,12 +90,14 @@ pub struct MatchTableBuilder<'a> {
 }
 
 impl<'a> MatchTableBuilder<'a> {
-    /// Creates a new `MatchTableBuilder` with the two required fields.
+    /// Creates a new [`MatchTableBuilder`] with the two required fields.
     ///
     /// # Arguments
-    ///
     /// * `table_id` - The unique identifier for the table.
     /// * `match_table_type` - The matching strategy (Simple, Regex, or Similar).
+    ///
+    /// # Returns
+    /// A new [`MatchTableBuilder`].
     pub fn new(table_id: u32, match_table_type: MatchTableType) -> Self {
         Self {
             table_id,
@@ -99,12 +109,24 @@ impl<'a> MatchTableBuilder<'a> {
     }
 
     /// Appends a single word to the match word list.
+    ///
+    /// # Arguments
+    /// * `word` - A word to match.
+    ///
+    /// # Returns
+    /// The modified [`MatchTableBuilder`].
     pub fn add_word(mut self, word: &'a str) -> Self {
         self.word_list.push(word);
         self
     }
 
     /// Appends multiple words to the match word list.
+    ///
+    /// # Arguments
+    /// * `words` - An iterator of words to append.
+    ///
+    /// # Returns
+    /// The modified [`MatchTableBuilder`].
     pub fn add_words(mut self, words: impl IntoIterator<Item = &'a str>) -> Self {
         self.word_list.extend(words);
         self
@@ -113,24 +135,45 @@ impl<'a> MatchTableBuilder<'a> {
     /// Sets the [`ProcessType`] applied to exemption words.
     ///
     /// Defaults to [`ProcessType::None`] if not called.
+    ///
+    /// # Arguments
+    /// * `process_type` - The text processing pipeline for exemptions.
+    ///
+    /// # Returns
+    /// The modified [`MatchTableBuilder`].
     pub fn exemption_process_type(mut self, process_type: ProcessType) -> Self {
         self.exemption_process_type = process_type;
         self
     }
 
     /// Appends a single word to the exemption word list.
+    ///
+    /// # Arguments
+    /// * `word` - A word to exempt from matching.
+    ///
+    /// # Returns
+    /// The modified [`MatchTableBuilder`].
     pub fn add_exemption_word(mut self, word: &'a str) -> Self {
         self.exemption_word_list.push(word);
         self
     }
 
     /// Appends multiple words to the exemption word list.
+    ///
+    /// # Arguments
+    /// * `words` - An iterator of words to exempt.
+    ///
+    /// # Returns
+    /// The modified [`MatchTableBuilder`].
     pub fn add_exemption_words(mut self, words: impl IntoIterator<Item = &'a str>) -> Self {
         self.exemption_word_list.extend(words);
         self
     }
 
     /// Consumes the builder and returns the configured [`MatchTable`].
+    ///
+    /// # Returns
+    /// The constructed [`MatchTable`].
     pub fn build(self) -> MatchTable<'a> {
         MatchTable {
             table_id: self.table_id,
@@ -142,12 +185,12 @@ impl<'a> MatchTableBuilder<'a> {
     }
 }
 
-/// A builder for constructing a `Matcher`.
+/// A builder for constructing a [`Matcher`].
 ///
-/// This builder provides a convenient way to construct a `Matcher` interpolator
-/// by adding complete `MatchTable` entries iteratively.
+/// This builder provides a convenient way to construct a [`Matcher`]
+/// by adding complete [`MatchTable`] entries iteratively.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use matcher_rs::{MatcherBuilder, MatchTable, MatchTableType, ProcessType};
@@ -170,25 +213,33 @@ pub struct MatcherBuilder<'a> {
 }
 
 impl<'a> MatcherBuilder<'a> {
-    /// Creates a new, empty `MatcherBuilder`.
+    /// Creates a new, empty [`MatcherBuilder`].
+    ///
+    /// # Returns
+    /// An empty [`MatcherBuilder`].
     pub fn new() -> Self {
         Self {
             table_map: HashMap::new(), // Use strictly HashMap to bridge constructor compatibility
         }
     }
 
-    /// Adds a `MatchTable` to a specific `match_id` group.
+    /// Adds a [`MatchTable`] to a specific `match_id` group.
     ///
     /// # Arguments
-    ///
     /// * `match_id` - The overarching match rule this table belongs to.
-    /// * `table` - The `MatchTable` configuration.
+    /// * `table` - The [`MatchTable`] configuration.
+    ///
+    /// # Returns
+    /// The modified [`MatcherBuilder`].
     pub fn add_table(mut self, match_id: u32, table: MatchTable<'a>) -> Self {
         self.table_map.entry(match_id).or_default().push(table);
         self
     }
 
-    /// Consumes the builder and constructs the unified `Matcher`.
+    /// Consumes the builder and constructs the unified [`Matcher`].
+    ///
+    /// # Returns
+    /// The constructed [`Matcher`].
     pub fn build(self) -> Matcher {
         Matcher::new(&self.table_map)
     }

@@ -16,8 +16,7 @@ use crate::{
 /// Currently, this enum only supports the Levenshtein distance algorithm.
 ///
 /// # Variants
-///
-/// * [SimMatchType::Levenshtein] - Represents the Levenshtein distance algorithm, a string metric for measuring the difference between two sequences.
+/// * `Levenshtein` - Represents the Levenshtein distance algorithm, a string metric for measuring the difference between two sequences.
 ///
 /// The enum variants are serialized and deserialized using the `snake_case` naming convention.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -30,12 +29,14 @@ pub enum SimMatchType {
 ///
 /// This structure holds various properties required for similarity matching using different algorithms.
 ///
-/// # Fields
+/// # Type Parameters
+/// * `'a` - The lifetime of the borrowed strings in the word list.
 ///
+/// # Fields
 /// * `table_id` - A unique identifier for the table.
 /// * `match_id` - A unique identifier for the matching process.
-/// * `process_type` - The type of processing to be applied, represented by the [ProcessType] enum.
-/// * `sim_match_type` - The type of similarity matching algorithm to be used, represented by the [SimMatchType] enum.
+/// * `process_type` - The type of processing to be applied, represented by the [`ProcessType`] enum.
+/// * `sim_match_type` - The type of similarity matching algorithm to be used, represented by the [`SimMatchType`] enum.
 /// * `word_list` - A list of words to be used in the matching process.
 /// * `threshold` - A float value representing the similarity threshold for matching.
 #[derive(Debug, Clone)]
@@ -75,15 +76,17 @@ struct SimProcessedTable {
 ///
 /// This struct holds information about the match including identifiers for the match and table,
 /// the word that was matched, and the similarity score of the match. The word is represented as a
-/// [Cow] (Clone on Write) for efficient handling of borrowed or owned strings. This allows
+/// `Cow` (Clone on Write) for efficient handling of borrowed or owned strings. This allows
 /// flexibility in returning either a borrowed string or an owned string.
 ///
-/// # Fields
+/// # Type Parameters
+/// * `'a` - The lifetime of the matched word content.
 ///
+/// # Fields
 /// * `match_id` - A unique identifier for the matching process.
 /// * `table_id` - A unique identifier for the table.
 /// * `word_id` - A unique identifier for the word within the table.
-/// * `word` - The word that was matched, represented as a [Cow] to allow for both borrowed and owned strings.
+/// * `word` - The word that was matched, represented as a `Cow`.
 /// * `similarity` - A float value representing the similarity score of the match.
 #[derive(Debug, Clone)]
 pub struct SimResult<'a> {
@@ -112,41 +115,32 @@ impl MatchResultTrait<'_> for SimResult<'_> {
     }
 }
 
-/// The [SimMatcher] struct is responsible for performing similarity matching operations
+/// The [`SimMatcher`] struct is responsible for performing similarity matching operations
 /// based on different processing types and similarity algorithms.
 ///
 /// This struct maintains a process type tree and a list of pre-processed tables that contain
 /// the necessary information for performing similarity matching on texts.
 ///
-/// # Fields
+/// # Examples
 ///
-/// * `process_type_tree` - A vector of `ProcessTypeBitNode`, representing the tree structure used for
-///   text processing based on defined process types.
-/// * `sim_processed_table_list` - A vector of `SimProcessedTable`, holding the tables with processed information
-///   for performing similarity matching.
+/// ```rust
+/// use matcher_rs::{SimMatcher, SimTable, SimMatchType, ProcessType, TextMatcherTrait};
 ///
-/// # Example
-///
-/// ```
-/// use matcher_rs::{SimMatcher, SimTable, SimMatchType, ProcessType};
-///
-/// // Create a list of `SimTable` with the required properties
 /// let sim_table_list = vec![SimTable {
 ///     table_id: 1,
 ///     match_id: 1,
 ///     process_type: ProcessType::None,
 ///     sim_match_type: SimMatchType::Levenshtein,
 ///     word_list: vec!["example", "test"],
-///     threshold: 0.8,
+///     threshold: 0.6, // Low threshold to allow matching "exampel"
 /// }];
 ///
-/// // Instantiate a `SimMatcher` with the list of `SimTable`
 /// let matcher = SimMatcher::new(&sim_table_list);
 ///
-/// // Use `matcher` methods for performing similarity matching operations
+/// assert!(matcher.is_match("exampel"));
 /// ```
 ///
-/// The [SimMatcher] struct provides methods for checking if a text matches any of the processed tables
+/// The [`SimMatcher`] struct provides methods for checking if a text matches any of the processed tables
 /// and for processing texts to obtain a list of similarity results.
 #[derive(Debug, Clone)]
 pub struct SimMatcher {
@@ -155,21 +149,17 @@ pub struct SimMatcher {
 }
 
 impl SimMatcher {
-    /// Creates a new instance of [SimMatcher] from a list of [SimTable].
+    /// Creates a new instance of [`SimMatcher`] from a list of [`SimTable`].
     ///
-    /// This function initializes a [SimMatcher] by processing each [SimTable] in the input list.
+    /// This function initializes a [`SimMatcher`] by processing each [`SimTable`] in the input list.
     /// It extracts the process types and constructs a tree structure used for processing texts.
-    /// Additionally, it converts the word lists in each [SimTable] from borrowed strings to owned strings.
+    /// Additionally, it converts the word lists in each [`SimTable`] from borrowed strings to owned strings.
     ///
-    /// # Parameters
-    ///
-    /// * `sim_table_list` - A slice of [SimTable] references to be processed and included in the new [SimMatcher] instance.
+    /// # Arguments
+    /// * `sim_table_list` - A slice of [`SimTable`] references to be processed.
     ///
     /// # Returns
-    ///
-    /// Returns a new instance of [SimMatcher] containing:
-    /// * `process_type_tree` - A vector of `ProcessTypeBitNode`, representing the tree structure used for text processing based on the process types extracted from the input [SimTable] list.
-    /// * `sim_processed_table_list` - A vector of `SimProcessedTable`, each containing an owned vector of words and other properties derived from the input [SimTable] list.
+    /// An initialized [`SimMatcher`].
     pub fn new(sim_table_list: &[SimTable]) -> SimMatcher {
         let mut process_type_set = HashSet::with_capacity(sim_table_list.len());
         let mut sim_processed_table_list = Vec::with_capacity(sim_table_list.len());
@@ -207,13 +197,11 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// helper function that checks if any of these processed text variants match the entries
     /// in the `sim_processed_table_list`.
     ///
-    /// # Parameters
-    ///
+    /// # Arguments
     /// * `text` - A string slice representing the input text to be checked for similarity matches.
     ///
     /// # Returns
-    ///
-    /// Returns `true` if the processed text matches any entry in the processed tables; otherwise returns `false`.
+    /// `true` if the processed text matches any entry in the processed tables; otherwise returns `false`.
     fn is_match(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
@@ -224,7 +212,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
 
         self.is_match_preprocessed(&processed_text_process_type_set)
     }
-    /// Returns a **lazy** iterator over [SimResult] matches for the given text.
+    /// Returns a **lazy** iterator over [`SimResult`] matches for the given text.
     ///
     /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
     /// Each similarity comparison is then driven lazily — one word at a time — as the
@@ -232,15 +220,13 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// `.find()`) avoids unnecessary similarity computations.
     ///
     /// Internally a 3-level index state machine (`processed_text` → `table` → `word`)
-    /// tracks progress. An [HashSet] deduplicates `(table_id, word_index)` pairs across
+    /// tracks progress. An `HashSet` deduplicates `(table_id, word_index)` pairs across
     /// processed-text variants.
     ///
-    /// # Parameters
-    ///
+    /// # Arguments
     /// * `text` - The input text to be processed and matched.
     ///
     /// # Returns
-    ///
     /// An `impl Iterator<Item = SimResult<'a>>` — a lazy iterator of similarity results.
     fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimResult<'a>> + 'a {
         gen move {

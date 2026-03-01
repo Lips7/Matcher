@@ -1,7 +1,6 @@
-/// This module defines several constants for processing and normalization of text data,
-/// including definitions for whitespace characters, conditional includes for files,
-/// and configurations for runtime build and DFA (Deterministic Finite Automaton) features.
-
+//! This module defines several constants for processing and normalization of text data,
+//! including definitions for whitespace characters, conditional includes for files,
+//! and configurations for runtime build and DFA (Deterministic Finite Automaton) features.
 /// These constants are conditionally included when the `runtime_build` feature is enabled.
 /// They provide paths to various text processing maps used for normalization and replacement.
 ///
