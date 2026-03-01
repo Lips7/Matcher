@@ -43,12 +43,12 @@ bitflags! {
         ///
         /// This is purposefully set to `0b00000001` (1) rather than `0` to act as a
         /// non-zero sentinel for the first transformation step (no-op) in a
-        /// sequence. As a consequence, `ProcessType::empty()` is NOT equal to
-        /// `ProcessType::None`.
+        /// sequence. As a consequence, [`ProcessType::empty()`] is NOT equal to
+        /// [`ProcessType::None`].
         ///
         /// # Serialization
         ///
-        /// When using the `serde` feature, `ProcessType` serializes as its underlying `u8` bitmask.
+        /// When using the `serde` feature, [`ProcessType`] serializes as its underlying `u8` bitmask.
         const None = 0b00000001;
 
         /// Processing involving Fanjian (traditional Chinese to simplified Chinese conversion).
@@ -75,19 +75,19 @@ bitflags! {
 }
 
 impl Serialize for ProcessType {
-    /// Serializes a [ProcessType] instance into its bit representation using the provided serializer.
+    /// Serializes a [`ProcessType`] instance into its bit representation using the provided serializer.
     ///
-    /// This implementation leverages the [Serialize] trait from Serde to convert the [ProcessType]
-    /// bitflag into a serializable form. The `bits()` method extracts the raw bit value of the
-    /// [ProcessType], which is then passed to the serializer.
+    /// This implementation leverages the [`Serialize`] trait from Serde to convert the [`ProcessType`]
+    /// bitflag into a serializable form. The [`ProcessType::bits`] method extracts the raw bit value of the
+    /// [`ProcessType`], which is then passed to the serializer.
     ///
     /// # Arguments
     ///
-    /// * [Serializer] - An instance of the [Serializer] trait that will handle the actual serialization.
+    /// * [`Serializer`] - An instance of the [`Serializer`] trait that will handle the actual serialization.
     ///
     /// # Returns
     ///
-    /// This method returns a result containing either the serialized value ([Serializer::Ok]) or an error ([Serializer::Error]).
+    /// This method returns a result containing either the serialized value ([`Serializer::Ok`]) or an error ([`Serializer::Error`]).
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -97,20 +97,20 @@ impl Serialize for ProcessType {
 }
 
 impl<'de> Deserialize<'de> for ProcessType {
-    /// Deserializes a [ProcessType] instance from its bit representation using the provided deserializer.
+    /// Deserializes a [`ProcessType`] instance from its bit representation using the provided deserializer.
     ///
-    /// This implementation leverages the [Deserialize] trait from Serde to convert a bitflag
-    /// representation back into a [ProcessType] instance. The `from_bits_retain` method is used
-    /// to reconstruct the [ProcessType] from the deserialized bit value.
+    /// This implementation leverages the [`Deserialize`] trait from Serde to convert a bitflag
+    /// representation back into a [`ProcessType`] instance. The [`ProcessType::from_bits_retain`] method is used
+    /// to reconstruct the [`ProcessType`] from the deserialized bit value.
     ///
     /// # Arguments
     ///
-    /// * [Deserializer] - An instance of the [Deserializer] trait that will handle the actual deserialization.
+    /// * [`Deserializer`] - An instance of the [`Deserializer`] trait that will handle the actual deserialization.
     ///
     /// # Returns
     ///
-    /// This method returns a [Result] containing either the deserialized [ProcessType] instance
-    /// (Ok([ProcessType])) or an error ([Deserializer::Error]).
+    /// This method returns a [`Result`] containing either the deserialized [`ProcessType`] instance
+    /// (Ok([`ProcessType`])) or an error ([`Deserializer::Error`]).
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -134,12 +134,12 @@ type ProcessMatcherCache = RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, P
 
 /// A global, lazily-initialized cache for storing process matchers.
 ///
-/// Maps [ProcessType] keys to [Arc] instances holding tuples of a replacement-string
-/// list and a `ProcessMatcher`. Protected by a [parking_lot::RwLock] for efficient
+/// Maps [`ProcessType`] keys to [`Arc`] instances holding tuples of a replacement-string
+/// list and a `ProcessMatcher`. Protected by a [`parking_lot::RwLock`] for efficient
 /// concurrent read access.
 ///
 /// The cache is capped at 8 entries, matching the number of distinct single-bit
-/// [ProcessType] variants that can be passed to [get_process_matcher].
+/// [`ProcessType`] variants that can be passed to [`get_process_matcher`].
 pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
     LazyLock::new(|| RwLock::new(HashMap::with_capacity_and_hasher(8, Default::default())));
 
@@ -173,9 +173,9 @@ pub type ProcessedTextSet<'a> = Vec<(Cow<'a, str>, HashSet<u8>)>;
 /// effectively. The enum is clonable, allowing for easy duplication when necessary.
 ///
 /// # Variants
-/// * `LeftMost` - Uses a `CharwiseDoubleArrayAhoCorasick<u32>` matcher to find the leftmost non-overlapping matches.
-/// * `Chinese` - Uses a `CharwiseDoubleArrayAhoCorasick<u32>` matcher specifically tailored to handle Chinese text.
-/// * `Others` - Uses a standard `AhoCorasick` matcher for general-purpose text processing.
+/// * `LeftMost` - Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher to find the leftmost non-overlapping matches.
+/// * `Chinese` - Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher specifically tailored to handle Chinese text.
+/// * `Others` - Uses a standard [`AhoCorasick`] matcher for general-purpose text processing.
 #[derive(Clone)]
 pub enum ProcessMatcher {
     #[cfg(not(feature = "dfa"))]
@@ -201,7 +201,7 @@ impl ProcessMatcher {
     ///
     /// This method returns a tuple:
     /// * `bool` - A boolean indicating whether any replacements were made (`true` if replacements were made, `false` otherwise).
-    /// * [Cow<'a, str>] - A copy-on-write string containing the processed text. If no replacements were made,
+    /// * [`Cow<'a, str>`] - A copy-on-write string containing the processed text. If no replacements were made,
     ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
     ///   the replacements is returned.
     #[inline(always)]
@@ -264,7 +264,7 @@ impl ProcessMatcher {
     ///
     /// This function returns a tuple:
     /// * `bool` - A boolean indicating whether any deletions were made (`true` if deletions were made, `false` otherwise).
-    /// * [Cow<'a, str>] - A copy-on-write string containing the processed text. If no deletions were made,
+    /// * [`Cow<'a, str>`] - A copy-on-write string containing the processed text. If no deletions were made,
     ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
     ///   the deletions is returned.
     #[inline(always)]
@@ -298,25 +298,25 @@ impl ProcessMatcher {
     }
 }
 
-/// Retrieves or constructs a `ProcessMatcher` for a given [ProcessType].
+/// Retrieves or constructs a `ProcessMatcher` for a given [`ProcessType`].
 ///
 /// This function looks up a cached `ProcessMatcher` for the provided `process_type_bit`.
 /// If a cached entry exists, it returns a cloned reference to the cached value. If not,
-/// it constructs a new matcher based on the [ProcessType], caches it, and returns the
+/// it constructs a new matcher based on the [`ProcessType`], caches it, and returns the
 /// new matcher. The function distinguishes between compile-time and runtime build options
 /// to decide how to construct the matcher.
 ///
 /// # Parameters
-/// - `process_type_bit`: The [ProcessType] for which a matcher is to be retrieved or constructed.
+/// - `process_type_bit`: The [`ProcessType`] for which a matcher is to be retrieved or constructed.
 ///
 /// # Returns
-/// - An [Arc] containing a tuple of a vector of replacement strings and a `ProcessMatcher`.
+/// - An [`Arc`] containing a tuple of a vector of replacement strings and a `ProcessMatcher`.
 ///
 /// # Important
-/// - For the [ProcessType::Fanjian], [ProcessType::Delete], [ProcessType::Normalize],
-///   [ProcessType::PinYin], and [ProcessType::PinYinChar] variants, the function prepares
+/// - For the [`ProcessType::Fanjian`], [`ProcessType::Delete`], [`ProcessType::Normalize`],
+///   [`ProcessType::PinYin`], and [`ProcessType::PinYinChar`] variants, the function prepares
 ///   a dictionary for character replacements or deletions.
-/// - The function makes use of the [AhoCorasick] and [CharwiseDoubleArrayAhoCorasick]
+/// - The function makes use of the [`AhoCorasick`] and [`CharwiseDoubleArrayAhoCorasick`]
 ///   for efficient text processing.
 ///
 /// # Caching
@@ -327,11 +327,11 @@ impl ProcessMatcher {
 /// # Configuration
 /// - By setting the `runtime_build` feature flag, the function creates matchers at runtime.
 /// - The `dfa` feature flag determines whether to use Deterministic Finite Automaton (DFA)
-///   based [AhoCorasick] matcher.
+///   based [`AhoCorasick`] matcher.
 ///
 /// # Safety
 /// - This function utilizes `unsafe` blocks for deserializing predefined binary patterns
-///   into [CharwiseDoubleArrayAhoCorasick], ensuring it's guaranteed safe as assumed by the context.
+///   into [`CharwiseDoubleArrayAhoCorasick`], ensuring it's guaranteed safe as assumed by the context.
 ///
 /// # Panics
 /// - The function will panic if the `process_type_bit` is any variant not handled in the match arms.
@@ -477,8 +477,8 @@ pub fn get_process_matcher(
             }
             ProcessType::Fanjian => (
                 FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: `FANJIAN_PROCESS_MATCHER_BYTES` matches the identical version and byte layout
-                // exported manually using `CharwiseDoubleArrayAhoCorasick` build constraints during static compilation.
+                // SAFETY: [`FANJIAN_PROCESS_MATCHER_BYTES`] matches the identical version and byte layout
+                // exported manually using [`CharwiseDoubleArrayAhoCorasick`] build constraints during static compilation.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         FANJIAN_PROCESS_MATCHER_BYTES,
@@ -513,7 +513,7 @@ pub fn get_process_matcher(
                 {
                     (
                         Vec::new(),
-                        // SAFETY: `TEXT_DELETE_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                        // SAFETY: [`TEXT_DELETE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
                         ProcessMatcher::LeftMost(unsafe {
                             CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                                 TEXT_DELETE_PROCESS_MATCHER_BYTES,
@@ -541,7 +541,7 @@ pub fn get_process_matcher(
                 {
                     (
                         NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                        // SAFETY: `NORMALIZE_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                        // SAFETY: [`NORMALIZE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
                         ProcessMatcher::LeftMost(unsafe {
                             CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                                 NORMALIZE_PROCESS_MATCHER_BYTES,
@@ -553,7 +553,7 @@ pub fn get_process_matcher(
             }
             ProcessType::PinYin => (
                 PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: `PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
@@ -563,7 +563,7 @@ pub fn get_process_matcher(
             ),
             ProcessType::PinYinChar => (
                 PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: `PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
                 ProcessMatcher::Chinese(unsafe {
                     CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
                         PINYIN_PROCESS_MATCHER_BYTES,
@@ -659,7 +659,7 @@ pub fn text_process(
 /// * `text` - A string slice representing the text to be processed.
 ///
 /// # Returns
-/// A `Vec` containing the processed text at each step. The initial text is always included as the first element.
+/// A [`Vec`] containing the processed text at each step. The initial text is always included as the first element.
 ///
 /// # Examples
 ///
@@ -719,7 +719,7 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// * `text` - A string slice representing the text to be processed.
 ///
 /// # Returns
-/// A `Vec` containing the processed text at each step. The initial text is always included as the first element.
+/// A [`Vec`] containing the processed text at each step. The initial text is always included as the first element.
 ///
 /// # Examples
 ///
@@ -778,11 +778,11 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 ///
 /// # Fields
 ///
-/// * `process_type_list` - An [Vec] containing the list of processing types associated with this node.
-/// * `process_type_bit` - A [ProcessType] representing the specific processing rule for this node.
-/// * `is_processed` - A [bool] flag indicating whether the node has been processed.
-/// * `processed_text_index` - An [usize] indicating the index of the processed text.
-/// * `children` - An [Vec] containing the indices of child nodes.
+/// * `process_type_list` - An [`Vec`] containing the list of processing types associated with this node.
+/// * `process_type_bit` - A [`ProcessType`] representing the specific processing rule for this node.
+/// * `is_processed` - A [`bool`] flag indicating whether the node has been processed.
+/// * `processed_text_index` - An [`usize`] indicating the index of the processed text.
+/// * `children` - An [`Vec`] containing the indices of child nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
@@ -794,29 +794,29 @@ pub struct ProcessTypeBitNode {
 
 /// Constructs a processing type tree from a list of processing types.
 ///
-/// This function builds a [Vec] of `ProcessTypeBitNode` from a given list of [ProcessType].
+/// This function builds a [`Vec`] of `ProcessTypeBitNode` from a given list of [`ProcessType`].
 /// Each node in the tree corresponds to a bit in a composite processing type, allowing for
 /// efficient traversal and application of processing rules.
 ///
 /// # Arguments
 ///
-/// * `process_type_list` - A slice of [ProcessType] that will be used to construct the tree.
+/// * `process_type_list` - A slice of [`ProcessType`] that will be used to construct the tree.
 ///
 /// # Returns
 ///
-/// A [Vec] containing `ProcessTypeBitNode`s that represent the processing type tree.
+/// A [`Vec`] containing `ProcessTypeBitNode`s that represent the processing type tree.
 ///
 /// # Details
 ///
-/// The tree is constructed by traversing each [ProcessType] in the input set and building a chain
-/// of nodes for each bit in the [ProcessType]. If a node for a specific bit already exists, it reuses
+/// The tree is constructed by traversing each [`ProcessType`] in the input set and building a chain
+/// of nodes for each bit in the [`ProcessType`]. If a node for a specific bit already exists, it reuses
 /// the node; otherwise, it creates a new node. Each node maintains a list of process types and its children,
 /// ensuring efficient lookups and updates.
 ///
 /// # Panics
 ///
-/// This function does not panic under normal circumstances. It assumes that [ProcessType::iter()]
-/// provides a finite iterator and that array operations on [Vec] are safe as long as the constraints
+/// This function does not panic under normal circumstances. It assumes that [`ProcessType::iter()`]
+/// provides a finite iterator and that array operations on [`Vec`] are safe as long as the constraints
 /// are respected.
 pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
@@ -876,8 +876,8 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
 /// This function takes a preconstructed tree of `ProcessTypeBitNode` and applies the processing rules
 /// to the input text based on the tree structure. It iterates over each node in the tree and applies
 /// the corresponding processing rules, ensuring that each node's `process_type_bit` is handled
-/// appropriately. The results of the processing are stored in an [Vec] which contains tuples of
-/// the processed text and an [HashSet] of process type bits.
+/// appropriately. The results of the processing are stored in an [`Vec`] which contains tuples of
+/// the processed text and an [`HashSet`] of process type bits.
 ///
 /// # Arguments
 ///
@@ -887,13 +887,13 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
 ///
 /// # Returns
 ///
-/// An [Vec] containing tuples. Each tuple consists of:
-/// * A [Cow] string, which could be either the borrowed input text or an owned version of the processed text.
-/// * An [HashSet] which contains the bits of the processed [ProcessType].
+/// An [`Vec`] containing tuples. Each tuple consists of:
+/// * A [`Cow`] string, which could be either the borrowed input text or an owned version of the processed text.
+/// * An [`HashSet`] which contains the bits of the processed [`ProcessType`].
 ///
 /// # Panics
 ///
-/// This function assumes that array operations on [Vec] and slice operations on the process type tree
+/// This function assumes that array operations on [`Vec`] and slice operations on the process type tree
 /// and `processed_text_process_type_set` are safe. It may panic if the assumptions about the data structure
 /// are violated, such as out-of-bounds access.
 #[inline(always)]
@@ -976,18 +976,18 @@ pub fn reduce_text_process_with_tree<'a>(
 }
 
 /// Reduces the given `text` based on a list of `process_type`s and returns an array of tuples
-/// containing the processed text and an [HashSet] of process type identifiers.
+/// containing the processed text and an [`HashSet`] of process type identifiers.
 ///
 /// # Arguments
 ///
-/// * `process_type_list` - A slice of [ProcessType] indicating how the text should be processed.
+/// * `process_type_list` - A slice of [`ProcessType`] indicating how the text should be processed.
 /// * `text` - A string slice that is to be processed.
 ///
 /// # Returns
 ///
-/// An [Vec] containing tuples where each tuple consists of:
-/// - A [Cow<'a, str>] representing the processed text.
-/// - An [HashSet] containing the identifiers of the process types applied.
+/// An [`Vec`] containing tuples where each tuple consists of:
+/// - A [`Cow<'a, str>`] representing the processed text.
+/// - An [`HashSet`] containing the identifiers of the process types applied.
 #[inline(always)]
 pub fn reduce_text_process_with_set<'a>(
     process_type_set: &HashSet<u8>,

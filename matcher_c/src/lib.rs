@@ -16,22 +16,22 @@ use matcher_rs::{
     TextMatcherTrait,
 };
 
-/// Initializes a `Matcher` from a serialized `MatchTableMap` in MessagePack format.
+/// Initializes a [`Matcher`] from a serialized [`MatchTableMap`] in MessagePack format.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
 /// that `match_table_map_bytes` points to a valid null-terminated C string containing a
-/// serialized `MatchTableMap`, and that the string remains valid for the duration of the call.
+/// serialized [`MatchTableMap`], and that the string remains valid for the duration of the call.
 ///
 /// # Parameters
-/// - `match_table_map_bytes`: A pointer to a C string containing the serialized `MatchTableMap`.
+/// - `match_table_map_bytes`: A pointer to a C string containing the serialized [`MatchTableMap`].
 ///
 /// # Returns
-/// A raw pointer to the newly created `Matcher`. The caller is responsible for managing the
-/// lifetime of this pointer and must eventually call `drop` on it to free the memory.
+/// A raw pointer to the newly created [`Matcher`]. The caller is responsible for managing the
+/// lifetime of this pointer and must eventually call [`drop`] on it to free the memory.
 ///
 /// # Panics
-/// This function will panic if the input data cannot be deserialized into a `MatchTableMap`.
+/// This function will panic if the input data cannot be deserialized into a [`MatchTableMap`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
     let result = panic::catch_unwind(|| unsafe {
@@ -60,16 +60,16 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `matcher` points to a valid `Matcher` instance and that `text` points to a valid
+/// that `matcher` points to a valid [`Matcher`] instance and that `text` points to a valid
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
 /// # Parameters
-/// - `matcher`: A pointer to the `Matcher` instance.
+/// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be checked for matches.
 ///
 /// # Returns
-/// - `true` if the text matches any pattern in the `Matcher`.
+/// - `true` if the text matches any pattern in the [`Matcher`].
 /// - `false` otherwise.
 ///
 /// # Panics
@@ -98,17 +98,17 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `matcher` points to a valid `Matcher` instance and that `text` points to a valid
+/// that `matcher` points to a valid [`Matcher`] instance and that `text` points to a valid
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
 /// # Parameters
-/// - `matcher`: A pointer to the `Matcher` instance.
+/// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
 /// A pointer to a newly allocated C string containing the processing result. The caller is
-/// responsible for managing the lifetime of this pointer and must eventually call `drop_string`
+/// responsible for managing the lifetime of this pointer and must eventually call [`drop_string`]
 /// on it to free the memory.
 ///
 /// # Panics
@@ -143,22 +143,22 @@ pub unsafe extern "C" fn matcher_process_as_string(
     })
 }
 
-/// Processes the input text through the `Matcher` and returns the word match result as a C string.
+/// Processes the input text through the [`Matcher`] and returns the word match result as a C string.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `matcher` points to a valid `Matcher` instance and that `text` points to a valid
+/// that `matcher` points to a valid [`Matcher`] instance and that `text` points to a valid
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
 /// # Parameters
-/// - `matcher`: A pointer to the `Matcher` instance.
+/// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
 /// A pointer to a newly allocated C string containing the word match processing result.
 /// The caller is responsible for managing the lifetime of this pointer and must eventually
-/// call `drop_string` on it to free the memory.
+/// call [`drop_string`] on it to free the memory.
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
@@ -191,16 +191,16 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
     })
 }
 
-/// Frees the memory allocated for the `Matcher` instance.
+/// Frees the memory allocated for the [`Matcher`] instance.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `matcher` points to a valid `Matcher` instance. This function transfers ownership
+/// that `matcher` points to a valid [`Matcher`] instance. This function transfers ownership
 /// of the raw pointer and deallocates the memory, so the caller must not use the `matcher`
 /// pointer after calling this function.
 ///
 /// # Parameters
-/// - `matcher`: A pointer to the `Matcher` instance to be deallocated.
+/// - `matcher`: A pointer to the [`Matcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
     let _ = panic::catch_unwind(|| unsafe {
@@ -210,20 +210,20 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
     });
 }
 
-/// Initializes a `SimpleMatcher` instance from serialized table bytes.
+/// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
 /// that `simple_table_bytes` points to a valid null-terminated C string. The returned
-/// `SimpleMatcher` pointer must be properly managed and eventually deallocated by calling
+/// [`SimpleMatcher`] pointer must be properly managed and eventually deallocated by calling
 /// `drop_simple_matcher`.
 ///
 /// # Parameters
 /// - `simple_table_bytes`: A pointer to a C string containing the serialized table bytes.
 ///
 /// # Returns
-/// A pointer to a newly allocated `SimpleMatcher` instance. The caller is responsible for managing
-/// the lifetime of this pointer and must eventually call `drop_simple_matcher` to free the memory.
+/// A pointer to a newly allocated [`SimpleMatcher`] instance. The caller is responsible for managing
+/// the lifetime of this pointer and must eventually call [`drop_simple_matcher`] to free the memory.
 ///
 /// # Panics
 /// This function will panic if the deserialization of `simple_table_bytes` fails.
@@ -253,20 +253,20 @@ pub unsafe extern "C" fn init_simple_matcher(
     }
 }
 
-/// Determines if the input text matches using the `SimpleMatcher`.
+/// Determines if the input text matches using the [`SimpleMatcher`].
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid `SimpleMatcher` instance and that `text` points to a
+/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance and that `text` points to a
 /// valid null-terminated C string. Both the `simple_matcher` and the `text` must remain valid for
 /// the duration of the call.
 ///
 /// # Parameters
-/// - `simple_matcher`: A pointer to the `SimpleMatcher` instance.
+/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
-/// A boolean indicating whether the text matches based on the `SimpleMatcher`.
+/// A boolean indicating whether the text matches based on the [`SimpleMatcher`].
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
@@ -295,22 +295,22 @@ pub unsafe extern "C" fn simple_matcher_is_match(
     })
 }
 
-/// Processes the input text using the `SimpleMatcher` and returns the result as a C string.
+/// Processes the input text using the [`SimpleMatcher`] and returns the result as a C string.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid `SimpleMatcher` instance and that `text` points to a
+/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance and that `text` points to a
 /// valid null-terminated C string. Both `simple_matcher` and `text` must remain valid for the
 /// duration of the call.
 ///
 /// # Parameters
-/// - `simple_matcher`: A pointer to the `SimpleMatcher` instance.
+/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
 /// A pointer to a newly allocated C string containing the processing result. The caller is
 /// responsible for managing the lifetime of this pointer and must eventually call
-/// `drop_string` on it to free the memory.
+/// [`drop_string`] on it to free the memory.
 ///
 /// # Panics
 /// This function will panic if the input `text` is not a valid UTF-8 string.
@@ -343,16 +343,16 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
     })
 }
 
-/// Deallocates a `SimpleMatcher` instance.
+/// Deallocates a [`SimpleMatcher`] instance.
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid `SimpleMatcher` instance that was previously allocated
-/// by `init_simple_matcher`. After calling this function, the `simple_matcher` pointer must not be
+/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance that was previously allocated
+/// by [`init_simple_matcher`]. After calling this function, the `simple_matcher` pointer must not be
 /// used again as it points to deallocated memory.
 ///
 /// # Parameters
-/// - `simple_matcher`: A pointer to the `SimpleMatcher` instance to be deallocated.
+/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     let _ = panic::catch_unwind(|| unsafe {
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
 /// that `ptr` points to a valid C string that was previously allocated by Rust code using
-/// `CString::into_raw` or a similar method. After calling this function, the `ptr` pointer must
+/// [`CString::into_raw`] or a similar method. After calling this function, the `ptr` pointer must
 /// not be used again as it points to deallocated memory.
 ///
 /// # Parameters

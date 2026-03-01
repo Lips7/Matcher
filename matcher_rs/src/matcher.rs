@@ -39,9 +39,9 @@ pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
 
 /// Internal trait for preprocessed-text matching. Not part of the public API.
 ///
-/// These methods accept already-reduced text (a [ProcessedTextSet]) rather than
+/// These methods accept already-reduced text (a [`ProcessedTextSet`]) rather than
 /// raw input, avoiding redundant preprocessing when the same reduced text is reused
-/// across multiple matchers (e.g. inside [Matcher]).
+/// across multiple matchers (e.g. inside [`Matcher`]).
 pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match_preprocessed(
         &'a self,
@@ -308,7 +308,7 @@ struct WordTableConf {
 /// * `match_id` - A unique identifier for the matching operation.
 /// * `table_id` - A unique identifier for the match table.
 /// * `word_id` - A unique identifier for the matched word.
-/// * `word` - The word that was matched, using a `Cow` for efficiency.
+/// * `word` - The word that was matched, using a [`Cow`] for efficiency.
 /// * `similarity` - The optional similarity score of the matched word.
 ///
 /// # Examples
@@ -378,7 +378,7 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
 
 /// A type alias for a mapping from match table IDs to their corresponding [`MatchTable`]s.
 ///
-/// This mapping uses a `HashMap` mapping to `Vec<MatchTable>`.
+/// This mapping uses a [`HashMap`] mapping to [`Vec<MatchTable>`].
 ///
 /// # Type Parameters
 /// * `'a` - The lifetime of the borrowed data within the [`MatchTable`] structures.
@@ -436,7 +436,7 @@ impl Matcher {
     /// easily build a Matcher without manually instantiating `Vec` and `HashMap`s.
     ///
     /// # Arguments
-    /// * `match_table_map` - A reference to a `HashMap` linking `match_id` keys to a `Vec` of match tables.
+    /// * `match_table_map` - A reference to a [`HashMap`] linking `match_id` keys to a [`Vec`] of match tables.
     ///
     /// # Returns
     /// An initialized [`Matcher`].
@@ -592,8 +592,8 @@ impl Matcher {
     /// * `text` - A string slice that holds the text to be matched against the match tables.
     ///
     /// # Returns
-    /// A `HashMap` where keys are match IDs and values are vectors of [`MatchResult`] items.
-    /// If the input text is empty, an empty `HashMap` is returned.
+    /// A [`HashMap`] where keys are match IDs and values are vectors of [`MatchResult`] items.
+    /// If the input text is empty, an empty [`HashMap`] is returned.
     pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
         if text.is_empty() {
             return HashMap::new();
@@ -609,21 +609,21 @@ impl Matcher {
     ///
     /// This function takes a set of processed text pieces, represented by
     /// `processed_text_process_type_set`, and checks them against the various
-    /// types of match tables defined in the [Matcher] instance (simple, regex, and
+    /// types of match tables defined in the [`Matcher`] instance (simple, regex, and
     /// similarity match tables).
     ///
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a slice of tuples,
-    ///   where each tuple contains a processed text piece (as [Cow<str>]) and a
-    ///   set of process type IDs ([HashSet]).
+    ///   where each tuple contains a processed text piece (as [`Cow<str>`]) and a
+    ///   set of process type IDs ([`HashSet`]).
     ///
     /// # Returns
     ///
-    /// * [HashMap<u32, Vec<MatchResult>>] - A map where keys are match IDs and
-    ///   values are vectors of [MatchResult] items. Each [MatchResult] holds
+    /// * [`HashMap<u32, Vec<MatchResult>>`] - A map where keys are match IDs and
+    ///   values are vectors of [`MatchResult`] items. Each [`MatchResult`] holds
     ///   information about a match found in the corresponding match table.
-    ///   If no matches are found, the function returns an empty [HashMap].
+    ///   If no matches are found, the function returns an empty [`HashMap`].
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,
@@ -694,7 +694,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// Checks if the given text matches any pattern in the match tables.
     ///
     /// This function processes the input text using the `process_type_tree`
-    /// defined for the [Matcher] instance and then checks if any matches
+    /// defined for the [`Matcher`] instance and then checks if any matches
     /// are found using the underlying match tables (simple, regex, and
     /// similarity match tables).
     ///
@@ -714,14 +714,14 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// Processes the input text to generate a list of match results.
     ///
     /// This function takes an input text string, processes it according to the
-    /// [Matcher] instance's configured process type tree, and then generates a
+    /// [`Matcher`] instance's configured process type tree, and then generates a
     /// list of match results by applying the processed text against the configured
     /// match tables.
     ///
     /// The process involves reducing the input text based on the type tree, transforming
     /// it into a structured format (`processed_text_process_type_set`) suitable for
     /// matching operations. The results are then aggregated into a single list of
-    /// [MatchResult] instances.
+    /// [`MatchResult`] instances.
     ///
     /// # Arguments
     ///
@@ -729,7 +729,7 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     ///
     /// # Returns
     ///
-    /// * [Vec<MatchResult<'a>>] - A vector containing match results corresponding to
+    /// * [`Vec<MatchResult<'a>>`] - A vector containing match results corresponding to
     ///   the patterns defined in the match tables.
     fn process(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
         let processed_text_process_type_set =
@@ -738,20 +738,20 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         self.process_preprocessed(&processed_text_process_type_set)
     }
 
-    /// Processes the given text and returns a **lazy** iterator over [MatchResult] matches.
+    /// Processes the given text and returns a **lazy** iterator over [`MatchResult`] matches.
     ///
     /// # Design note — why the word-match map is still eager
     ///
-    /// The [Matcher] applies **exemption logic**: a simple-matcher hit on an exemption word for a
+    /// The [`Matcher`] applies **exemption logic**: a simple-matcher hit on an exemption word for a
     /// given `(match_id, table_id)` pair must *retroactively remove* previously accumulated
     /// results for that pair. This is implemented via `_word_match_with_processed_text_process_type_set`,
-    /// which returns a `HashMap<u32, Vec<MatchResult>>` only after processing the entire input.
+    /// which returns a [`HashMap<u32, Vec<MatchResult>>`] only after processing the entire input.
     ///
     /// Because all results must be seen before any can be safely emitted (an exemption hit in the
     /// middle of the input would invalidate earlier simple-match results), the aggregation into the
-    /// `HashMap` must remain eager.
+    /// [`HashMap`] must remain eager.
     ///
-    /// The benefit over calling [TextMatcherTrait::process] is that the final `collect()` step is avoided: results
+    /// The benefit over calling [`TextMatcherTrait::process`] is that the final `collect()` step is avoided: results
     /// are yielded lazily to the caller as it advances the iterator. Callers that short-circuit
     /// (e.g., looking for the *first* result satisfying some predicate) pay no allocation cost for
     /// the results they never consume.
@@ -787,7 +787,7 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// Checks if there are any matches for the processed text within the configured match tables.
     ///
     /// This function takes a reference to a processed text set and determines if any matches
-    /// exist within the match tables of the [Matcher] instance. The function prioritizes
+    /// exist within the match tables of the [`Matcher`] instance. The function prioritizes
     /// checking the simple matcher first. If the simple matcher is not configured or
     /// doesn't find any matches, it proceeds to check the regex matcher and then the
     /// similarity matcher, in that order.
@@ -795,7 +795,7 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a processed text (as a [Cow<'a, str>]) and an associated [HashSet].
+    ///   contains a processed text (as a [`Cow<'a, str>`]) and an associated [`HashSet`].
     ///
     /// # Returns
     ///
@@ -832,9 +832,9 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// Aggregates match results by processing the pre-processed text with the configured matchers.
     ///
     /// This function takes a reference to a pre-processed text set (a list of tuples containing
-    /// processed text and associated [HashSet]) and generates match results using the instance's
+    /// processed text and associated [`HashSet`]) and generates match results using the instance's
     /// configured matchers. The function focuses on word-level matching and aggregates the
-    /// results into a single list of [MatchResult] instances.
+    /// results into a single list of [`MatchResult`] instances.
     ///
     /// The process involves invoking the appropriate matcher to obtain match results for the
     /// provided pre-processed text and then flattening the results into a single vector.
@@ -842,11 +842,11 @@ impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple
-    ///   contains a pre-processed text (as a [Cow<'a, str>]) and an associated [HashSet].
+    ///   contains a pre-processed text (as a [`Cow<'a, str>`]) and an associated [`HashSet`].
     ///
     /// # Returns
     ///
-    /// * [Vec<MatchResult<'a>>] - A vector containing aggregated match results generated
+    /// * [`Vec<MatchResult<'a>>`] - A vector containing aggregated match results generated
     ///   from the match IDs.
     fn process_preprocessed(
         &'a self,

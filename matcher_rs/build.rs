@@ -17,12 +17,12 @@ use std::io::Result;
 ///     - For 'pinyin':
 ///         - Also create a binary file with trimmed replacements.
 ///     - For specified mappings ('fanjian', 'pinyin'):
-///         - Use the `daachorse` crate to build and serialize a CharwiseDoubleArrayAhoCorasick matcher, and write it to a binary file.
+///         - Use the [`daachorse`] crate to build and serialize a [`daachorse::CharwiseDoubleArrayAhoCorasick`] matcher, and write it to a binary file.
 ///     - For 'normalize', when DFA feature is not enabled:
 ///         - Similarly, build a matcher with a different match kind and serialize it.
 /// 5. Additionally, if 'dfa' feature is not enabled:
 ///     - Load delete and whitespace character patterns from TEXT_DELETE constant and WHITE_SPACE array respectively.
-///     - Aggregate these patterns into a HashSet to remove duplicates.
+///     - Aggregate these patterns into a [`std::collections::HashSet`] to remove duplicates.
 ///     - Write these patterns to a binary file.
 ///     - Build a matcher for these patterns, serialize it, and write it to a binary file.
 ///

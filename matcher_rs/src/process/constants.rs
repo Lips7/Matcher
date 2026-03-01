@@ -24,14 +24,14 @@ pub const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
 /// feature flags.
 ///
 /// When the `runtime_build` feature is not enabled and the `dfa` feature is enabled,
-/// `NORMALIZE_PROCESS_LIST_STR` is included. This constant provides the path to the
+/// [`NORMALIZE_PROCESS_LIST_STR`] is included. This constant provides the path to the
 /// normalization process list, which is generated at compile time.
 ///
 /// When `runtime_build` is not enabled and the `dfa` feature is not enabled,
 /// `NORMALIZE_PROCESS_MATCHER_BYTES` is included. This constant provides the path to
 /// the normalization matcher bytes, which is also generated during the build process.
 ///
-/// Additionally, `NORMALIZE_PROCESS_REPLACE_LIST_STR` is included when `runtime_build`
+/// Additionally, [`NORMALIZE_PROCESS_REPLACE_LIST_STR`] is included when `runtime_build`
 /// is not enabled. This constant provides the path to the normalization replace list,
 /// used for text replacement operations during normalization.
 #[cfg(all(not(feature = "runtime_build"), feature = "dfa"))]
@@ -51,12 +51,12 @@ pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 /// These constants are related to Fanjian (simplified vs traditional Chinese conversion)
 /// processing and are included based on feature flags.
 ///
-/// - When the `runtime_build` feature is not enabled, `FANJIAN_PROCESS_REPLACE_LIST_STR`
+/// - When the `runtime_build` feature is not enabled, [`FANJIAN_PROCESS_REPLACE_LIST_STR`]
 ///   is included. This constant provides the path to the Fanjian process replace list,
 ///   which is used for converting traditional Chinese characters to simplified Chinese
 ///   characters during normalization.
 ///
-/// - Additionally, when the `runtime_build` feature is not enabled, `FANJIAN_PROCESS_MATCHER_BYTES`
+/// - Additionally, when the `runtime_build` feature is not enabled, [`FANJIAN_PROCESS_MATCHER_BYTES`]
 ///   is included. This constant provides the path to the Fanjian matcher bytes, which are
 ///   used for matching Fanjian text patterns during the normalization process.
 #[cfg(not(feature = "runtime_build"))]
@@ -72,15 +72,15 @@ pub const FANJIAN_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
 
 /// These constants are related to Pinyin processing and are included based on feature flags.
 ///
-/// - When the `runtime_build` feature is not enabled, `PINYIN_PROCESS_REPLACE_LIST_STR`
+/// - When the `runtime_build` feature is not enabled, [`PINYIN_PROCESS_REPLACE_LIST_STR`]
 ///   is included. This constant provides the path to the Pinyin process replace list,
 ///   which is used for converting Chinese characters to Pinyin during normalization.
 ///
-/// - Similarly, when the `runtime_build` feature is not enabled, `PINYINCHAR_PROCESS_REPLACE_LIST_STR`
+/// - Similarly, when the `runtime_build` feature is not enabled, [`PINYINCHAR_PROCESS_REPLACE_LIST_STR`]
 ///   is included. This constant provides the path to the Pinyin character process replace list,
 ///   which is also used for text replacement operations.
 ///
-/// - Additionally, when the `runtime_build` feature is not enabled, `PINYIN_PROCESS_MATCHER_BYTES`
+/// - Additionally, when the `runtime_build` feature is not enabled, [`PINYIN_PROCESS_MATCHER_BYTES`]
 ///   is included. This constant provides the path to the Pinyin matcher bytes, which are
 ///   used for matching Pinyin text patterns during the normalization process.
 #[cfg(not(feature = "runtime_build"))]
@@ -109,7 +109,7 @@ pub const WHITE_SPACE: &[&str; 27] = &[
 /// These constants are related to the text deletion processing and are included based on feature flags.
 ///
 /// - When the `runtime_build` feature is not enabled and the `dfa` feature is enabled,
-///   `TEXT_DELETE` is included. This constant provides the path to the text deletion map,
+///   [`TEXT_DELETE`] is included. This constant provides the path to the text deletion map,
 ///   used for identifying text segments to be deleted during normalization.
 ///
 /// - When the `runtime_build` feature is not enabled and the `dfa` feature is not enabled,

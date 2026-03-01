@@ -14,8 +14,8 @@ use crate::{
 
 /// Enum representing different types of regular expression matches, each with a unique strategy.
 ///
-/// This enum is decorated with `Serialize` and `Deserialize` traits for (de)serialization,
-/// `Clone` and `Copy` traits to allow copying, `Debug` for formatting, and `PartialEq` for
+/// This enum is decorated with [`Serialize`] and [`Deserialize`] traits for (de)serialization,
+/// [`Clone`] and [`Copy`] traits to allow copying, [`Debug`] for formatting, and [`PartialEq`] for
 /// comparison. Uses snake_case for serialized representations.
 ///
 /// # Variants
@@ -91,8 +91,8 @@ enum RegexType {
 /// Fields:
 /// - `table_id`: A unique identifier for the table.
 /// - `match_id`: A unique identifier for the match.
-/// - `process_type`: The type of process associated with the table, defined by the [ProcessType] enum.
-/// - `regex_type`: The type of regex pattern(s) used, defined by the [RegexType] enum.
+/// - `process_type`: The type of process associated with the table, defined by the [`ProcessType`] enum.
+/// - `regex_type`: The type of regex pattern(s) used, defined by the [`RegexType`] enum.
 #[derive(Debug, Clone)]
 struct RegexPatternTable {
     table_id: u32,
@@ -113,7 +113,7 @@ struct RegexPatternTable {
 /// * `match_id` - A unique identifier for the match.
 /// * `table_id` - A unique identifier for the table.
 /// * `word_id` - A unique identifier for the word in the match.
-/// * `word` - The matched word, represented as a `Cow` (clone-on-write) type.
+/// * `word` - The matched word, represented as a [`Cow`] (clone-on-write) type.
 #[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
     pub match_id: u32,
@@ -441,7 +441,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
 }
 
 impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
-    /// Checks if any of the given processed texts match any of the regex patterns in the [RegexMatcher].
+    /// Checks if any of the given processed texts match any of the regex patterns in the [`RegexMatcher`].
     ///
     /// This function iterates over the pairs of processed text and their associated processing type sets.
     /// It checks if any of the regex patterns in the `regex_pattern_table_list` match the processed text.
@@ -508,7 +508,7 @@ impl<'a> TextMatcherInternal<'a, RegexResult<'a>> for RegexMatcher {
     ///
     /// # Returns
     ///
-    /// * [Vec<RegexResult>] - A vector of [RegexResult] instances, each representing a match found in the processed text.
+    /// * [`Vec<RegexResult>`] - A vector of [`RegexResult`] instances, each representing a match found in the processed text.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,

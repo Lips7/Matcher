@@ -51,15 +51,15 @@ pub struct SimTable<'a> {
 
 /// Represents a processed table used in the similarity matching process.
 ///
-/// This struct is a concrete version of the [SimTable] struct, with ownership over
+/// This struct is a concrete version of the [`SimTable`] struct, with ownership over
 /// the word list.
 ///
 /// # Fields
 ///
 /// * `table_id` - A unique identifier for the table.
 /// * `match_id` - A unique identifier for the matching process.
-/// * `process_type` - The type of processing to be applied, represented by the [ProcessType] enum.
-/// * `sim_match_type` - The type of similarity matching algorithm to be used, represented by the [SimMatchType] enum.
+/// * `process_type` - The type of processing to be applied, represented by the [`ProcessType`] enum.
+/// * `sim_match_type` - The type of similarity matching algorithm to be used, represented by the [`SimMatchType`] enum.
 /// * `word_list` - A list of words over which the matching operation is performed. This is an owned vector of strings.
 /// * `threshold` - A float value representing the similarity threshold for a match.
 #[derive(Debug, Clone)]
@@ -220,7 +220,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     /// `.find()`) avoids unnecessary similarity computations.
     ///
     /// Internally a 3-level index state machine (`processed_text` → `table` → `word`)
-    /// tracks progress. An `HashSet` deduplicates `(table_id, word_index)` pairs across
+    /// tracks progress. A [`HashSet`] deduplicates `(table_id, word_index)` pairs across
     /// processed-text variants.
     ///
     /// # Arguments
@@ -287,8 +287,8 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// # Parameters
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [Cow<str>].
-    ///   - An [HashSet] containing the process type identifiers associated with the processed text.
+    ///   - A processed text variant represented as a [`Cow<str>`].
+    ///   - An [`HashSet`] containing the process type identifiers associated with the processed text.
     ///
     /// # Returns
     ///
@@ -335,12 +335,12 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// # Parameters
     ///
     /// * `processed_text_process_type_set` - A reference to a list of tuples where each tuple consists of:
-    ///   - A processed text variant represented as a [Cow<str>].
-    ///   - An [HashSet] containing the process type identifiers associated with the processed text.
+    ///   - A processed text variant represented as a [`Cow<str>`].
+    ///   - An [`HashSet`] containing the process type identifiers associated with the processed text.
     ///
     /// # Returns
     ///
-    /// Returns a vector of [SimResult] instances, each containing information about a matched entry
+    /// Returns a vector of [`SimResult`] instances, each containing information about a matched entry
     /// in the similarity tables, including:
     /// - `match_id`: The identifier for the match.
     /// - `table_id`: The identifier of the similarity table where the match was found.
@@ -349,7 +349,7 @@ impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// - `similarity`: The similarity score of the match.
     ///
     /// The function ensures that only unique matches are included in the result list by maintaining
-    /// an [HashSet] to track already processed table ID and word index combinations.
+    /// an [`HashSet`] to track already processed table ID and word index combinations.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_set: &ProcessedTextSet<'a>,

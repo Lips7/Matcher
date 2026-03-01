@@ -13,7 +13,7 @@ use crate::process::process_matcher::{
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
 /// [`SimpleTable`] is a nested map where the outer map uses [`ProcessType`] as keys,
-/// and the values are inner maps that map `u32` keys to string slices.
+/// and the values are inner maps that map [`u32`] keys to string slices.
 ///
 /// # Type Parameters
 /// * `'a` - The lifetime of the string slices.
@@ -33,7 +33,7 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 
 /// Represents the configuration for a word within the SimpleMatcher.
 ///
-/// [WordConf] contains the word as a string, the split bits indicating logical operators ('&' for AND, '~' for NOT),
+/// [`WordConf`] contains the word as a string, the split bits indicating logical operators ('&' for AND, '~' for NOT),
 /// and the index separating the 'NOT' part from the rest in the split bits vector.
 ///
 /// # Fields
@@ -61,7 +61,7 @@ struct WordConf {
 ///
 /// # Fields
 /// * `word_id` - A unique identifier for the matched word.
-/// * `word` - The matched word itself, wrapped in a `Cow` (Clone-On-Write).
+/// * `word` - The matched word itself, wrapped in a [`Cow`] (Clone-On-Write).
 ///
 /// # Examples
 ///
@@ -136,15 +136,15 @@ impl SimpleMatcher {
     /// This method initializes the [`SimpleMatcher`] by constructing the internal structures necessary for efficient word matching.
     ///
     /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
-    /// to construct a `SimpleMatcher` without dealing with nested HashMaps manually.
+    /// to construct a [`SimpleMatcher`] without dealing with nested HashMaps manually.
     ///
     /// # Arguments
-    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of `u32` to word identifiers.
+    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of [`u32`] to word identifiers.
     ///
     /// # Type Parameters
     /// * `I` - An iterator type whose items can be converted to string slices.
-    /// * `S1` - A hasher type for the inner `HashMap`.
-    /// * `S2` - A hasher type for the outer `HashMap`.
+    /// * `S1` - A hasher type for the inner [`HashMap`].
+    /// * `S2` - A hasher type for the outer [`HashMap`].
     ///
     /// # Returns
     /// An initialized [`SimpleMatcher`] with all its internal structures set up for use.
@@ -297,7 +297,7 @@ impl SimpleMatcher {
     /// 1. Iterate over each tuple of `(processed_text, process_type_set)`.
     /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
     ///    sub-pattern matches within the `processed_text`.
-    /// 3. For each sub-pattern match, check if its `ProcessType` aligns with the current text variant's `process_type_set`.
+    /// 3. For each sub-pattern match, check if its [`ProcessType`] aligns with the current text variant's `process_type_set`.
     /// 4. Maintain a 2D split-bit matrix for each `word_id` to record which tokens condition the text satisfies.
     ///    - **AND Tokens (`&`)**: Decrements their state towards `< 0`. The token count dictates how negative it goes.
     ///      Every time the exact sub-pattern occurs, it brings the count closer.
@@ -308,11 +308,11 @@ impl SimpleMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A list of tuples containing processed text variants
-    ///   and their associated [HashSet<u8>] of valid [ProcessType]s.
+    ///   and their associated [`HashSet<u8>`] of valid [`ProcessType`]s.
     ///
     /// # Returns
     ///
-    /// * `HashMap<u32, Vec<Vec<i32>>>` - A mapping from matched `word_id` to a split-bit matrix,
+    /// * [`HashMap<u32, Vec<Vec<i32>>>`] - A mapping from matched `word_id` to a split-bit matrix,
     ///   which is later used in pass 2 to evaluate complex AND/NOT logic conditions.
     fn _word_match_with_processed_text_process_type_set<'a>(
         &'a self,
@@ -398,7 +398,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// * `text` - A string slice that needs to be processed.
     ///
     /// # Returns
-    /// A `Vec<SimpleResult>` containing the matching results.
+    /// A [`Vec<SimpleResult>`] containing the matching results.
     fn process(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         if text.is_empty() {
             return Vec::new();
@@ -441,8 +441,8 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a slice containing tuples of
-    ///   processed text and corresponding ID sets. The processed text is a [Cow] (Copy-On-Write)
-    ///   string slice, and the ID set is an [HashSet].
+    ///   processed text and corresponding ID sets. The processed text is a [`Cow`] (Copy-On-Write)
+    ///   string slice, and the ID set is an [`HashSet`].
     ///
     /// # Returns
     ///
@@ -470,11 +470,11 @@ impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Arguments
     ///
     /// * `processed_text_process_type_set` - A reference to a slice of tuples, where each tuple
-    ///   contains a [Cow] string slice (the processed text) and an [HashSet] (a set of IDs related to the processed text).
+    ///   contains a [`Cow`] string slice (the processed text) and an [`HashSet`] (a set of IDs related to the processed text).
     ///
     /// # Returns
     ///
-    /// * A vector of [SimpleResult] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
+    /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
     ///
     /// # Panics
     ///
