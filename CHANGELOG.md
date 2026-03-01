@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1 - 2026-03-01
+
+### Refactor & Performance
+- Replace `nohash-hasher`, `id-set`, `FxHashMap` (`rustc-hash`), and `micromap` with std collections (`HashMap`/`HashSet`), removing these external dependencies.
+- Replace `tinyvec::ArrayVec` with `std::vec::Vec` for dynamic collections in the process matcher.
+
+### Maintenance & Documentation
+- Standardize rustdoc comments and add intra-doc links to type names across the project for improved readability.
+- Improve build/linting commands and remove outdated feature mentions.
+
 ## 0.8.0 - 2026-02-28
 
 ### Breaking Changes
