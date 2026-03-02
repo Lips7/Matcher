@@ -109,10 +109,21 @@ impl MatchResultTrait<'_> for SimpleResult<'_> {
     }
 }
 
-/// A single entry in the deduplicated word configuration list.
+/// Represents a single entry in the deduplicated word configuration list.
 ///
-/// Fields: `(process_type, word_conf_idx, offset)`.
-type WordConfEntry = (ProcessType, usize, usize);
+/// [`WordConfEntry`] provides a mapping between a matched pattern and its original
+/// word configuration, specifying the process type and the specific sub-pattern offset.
+///
+/// # Fields
+/// * `process_type` - The [`ProcessType`] associated with this word configuration.
+/// * `word_conf_idx` - The index of the [`WordConf`] within the `word_conf_list`.
+/// * `offset` - The position within the `split_bit` vector of the [`WordConf`].
+#[derive(Debug, Clone)]
+struct WordConfEntry {
+    process_type: ProcessType,
+    word_conf_idx: usize,
+    offset: usize,
+}
 
 /// Represents a simple matcher for processing words based on process types.
 ///
@@ -279,20 +290,20 @@ impl SimpleMatcher {
                         let Some(&ac_dedup_word_id) = ac_dedup_word_id_map.get(ac_word.as_ref())
                         else {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
-                            ac_dedup_word_conf_list.push(vec![(
+                            ac_dedup_word_conf_list.push(vec![WordConfEntry {
                                 process_type,
                                 word_conf_idx,
                                 offset,
-                            )]);
+                            }]);
                             ac_dedup_word_list.push(ac_word);
                             ac_dedup_word_id += 1;
                             continue;
                         };
-                        ac_dedup_word_conf_list[ac_dedup_word_id as usize].push((
+                        ac_dedup_word_conf_list[ac_dedup_word_id as usize].push(WordConfEntry {
                             process_type,
                             word_conf_idx,
                             offset,
-                        ));
+                        });
                     }
                 }
             }
@@ -367,8 +378,11 @@ impl SimpleMatcher {
                 .find_overlapping_iter(processed_text.as_ref());
             for ac_dedup_result in ac_iter {
                 let pattern_idx = ac_dedup_result.pattern().as_usize();
-                for &(match_process_type, word_conf_idx, offset) in
-                    &self.ac_dedup_word_conf_list[pattern_idx]
+                for &WordConfEntry {
+                    process_type: match_process_type,
+                    word_conf_idx,
+                    offset,
+                } in &self.ac_dedup_word_conf_list[pattern_idx]
                 {
                     if process_type_mask & (1u64 << match_process_type.bits()) == 0
                         || not_word_id_set.contains(&word_conf_idx)
