@@ -6,7 +6,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use tinyvec::TinyVec;
 
-use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
+use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree,
@@ -456,6 +456,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
 
         self.is_match_preprocessed(&processed_text_process_type_masks)
     }
+
     /// Processes the given text and returns a vector of matching results.
     ///
     /// This function applies the process type tree to the text and passes the processed text
@@ -491,44 +492,6 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         self.process_preprocessed(&processed_text_process_type_masks)
     }
 
-    /// Processes the given text and returns an iterator over [`SimpleResult`] matches.
-    ///
-    /// # Details
-    /// The Aho-Corasick automaton with AND/NOT logical operators requires a **two-pass** algorithm:
-    ///
-    /// - **Pass 1** (scan): Traverse the entire input and accumulate the `word_id_split_bit_map`
-    ///   (counting which sub-patterns were seen) and the `not_word_id_set` (patterns that triggered
-    ///   a NOT-exclusion). A NOT-exclusion token can appear *after* a positive match token anywhere
-    ///   in the text, so no result can be emitted until the full scan is complete.
-    ///
-    /// - **Pass 2** (emit): Walk `word_id_split_bit_map` and yield entries whose split-bit
-    ///   matrices satisfy the AND conditions.
-    ///
-    /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
-    ///
-    /// # Returns
-    /// An iterator over [`SimpleResult`] matches.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "find me")
-    ///     .build();
-    ///
-    /// let mut iter = matcher.process_iter("can you find me?");
-    /// assert!(iter.next().is_some());
-    /// assert!(iter.next().is_none());
-    /// ```
-    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimpleResult<'a>> + 'a {
-        self.process(text).into_iter()
-    }
-}
-
-impl<'a> TextMatcherInternal<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Checks if any pattern matches the processed text.
     ///
     /// # Algorithm (Pass 2)

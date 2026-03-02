@@ -25,13 +25,13 @@ crate-type = ["rlib"]
 aho-corasick = "1.1.4"
 bitflags = "2.11.0"
 daachorse = "1.0.0"
-fancy-regex = "0.17.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 rapidfuzz = "0.5.0"
 regex = { version = "1.12.3", features = ["perf-dfa-full"] }
 rustc-hash = "2.1.1"
 serde = { version = "1.0.228", features = ["derive"] }
 tinyvec = { version = "1.10.0", features = ["alloc"] }
+vectorscan-rs-sys = { version = "0.0.5", optional = true }
 
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dev-dependencies]
@@ -49,11 +49,13 @@ fastrand = "2.3.0"
 proptest = "1.10.0"
 
 [features]
-default = ["dfa"]
+default = ["vectorscan"]
 # By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
 runtime_build = []
 # By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
 dfa = []
+# By enable vectorscan feature, we could use vectorscan to perform simple and regex matching.
+vectorscan = ["vectorscan-rs-sys"]
 
 [[bench]]
 name = "bench"

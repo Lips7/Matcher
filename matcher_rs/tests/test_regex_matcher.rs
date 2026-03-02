@@ -156,3 +156,21 @@ fn regex_match_regex_set() {
 
     assert_eq!(words, vec!["beta", "gamma"]);
 }
+
+#[test]
+fn regex_match_duplicated_pattern() {
+    let regex_matcher = RegexMatcher::new(&[RegexTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        regex_match_type: RegexMatchType::Regex,
+        word_list: vec!["duplicate", "duplicate", "different"],
+    }]);
+
+    let results = regex_matcher.process("this is a duplicate pattern");
+    let mut word_ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
+    word_ids.sort();
+
+    // We expect both word_id 0 and 1 to be returned because both have the same pattern "duplicate"
+    assert_eq!(word_ids, vec![0, 1]);
+}

@@ -28,25 +28,12 @@ use crate::simple_matcher::{SimpleMatcher, SimpleTable};
     note = "implement `TextMatcherTrait` or use one of the built-in matchers: `SimpleMatcher`, `RegexMatcher`, `SimMatcher`, or `Matcher`"
 )]
 pub trait TextMatcherTrait<'a, T: MatchResultTrait<'a> + 'a> {
-    fn is_match(&'a self, text: &'a str) -> bool {
-        self.process_iter(text).next().is_some()
+    fn is_match(&'a self, text: &'a str) -> bool;
+    fn process(&'a self, text: &'a str) -> Vec<T>;
+    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a {
+        self.process(text).into_iter()
     }
-    fn process(&'a self, text: &'a str) -> Vec<T> {
-        self.process_iter(text).collect()
-    }
-    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = T> + 'a;
-}
 
-/// Internal trait for preprocessed-text matching. Not part of the public API.
-///
-/// These methods accept already-reduced text (a [`ProcessedTextMasks`]) rather than
-/// raw input, avoiding redundant preprocessing when the same reduced text is reused
-/// across multiple matchers (e.g. inside [`Matcher`]).
-///
-/// # Type Parameters
-/// * `'a` - Lifetime parameter associated with the trait and match results.
-/// * `T` - A type that implements [`MatchResultTrait<'a>`] and has the same lifetime as `'a`.
-pub(crate) trait TextMatcherInternal<'a, T: MatchResultTrait<'a> + 'a> {
     fn is_match_preprocessed(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -819,69 +806,6 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
         self.process_preprocessed(&processed_text_process_type_masks)
     }
 
-    /// Processes the given text and returns a **lazy** iterator over [`MatchResult`] matches.
-    ///
-    /// # Design note — why the word-match map is still eager
-    ///
-    /// The [`Matcher`] applies **exemption logic**: a simple-matcher hit on an exemption word for a
-    /// given `(match_id, table_id)` pair must *retroactively remove* previously accumulated
-    /// results for that pair. This is implemented via `_word_match_with_processed_text_process_type_masks`,
-    /// which returns a [`HashMap<u32, Vec<MatchResult>>`] only after processing the entire input.
-    ///
-    /// Because all results must be seen before any can be safely emitted (an exemption hit in the
-    /// middle of the input would invalidate earlier simple-match results), the aggregation into the
-    /// [`HashMap`] must remain eager.
-    ///
-    /// The benefit over calling [`TextMatcherTrait::process`] is that the final `collect()` step is avoided: results
-    /// are yielded lazily to the caller as it advances the iterator. Callers that short-circuit
-    /// (e.g., looking for the *first* result satisfying some predicate) pay no allocation cost for
-    /// the results they never consume.
-    ///
-    /// # Arguments
-    ///
-    /// * `text` - A reference to the input text string to be processed.
-    ///
-    /// # Returns
-    ///
-    /// * An `impl Iterator<Item = MatchResult<'a>>` — a lazy iterator of match results.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{MatchTableBuilder, MatchTableType, ProcessType, MatcherBuilder, TextMatcherTrait};
-    ///
-    /// let match_table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::None })
-    ///     .add_word("find")
-    ///     .build();
-    ///
-    /// let matcher = MatcherBuilder::new().add_table(1, match_table).build();
-    ///
-    /// let mut iter = matcher.process_iter("find me");
-    /// assert!(iter.next().is_some());
-    /// assert!(iter.next().is_none());
-    /// ```
-    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = MatchResult<'a>> + 'a {
-        gen move {
-            if text.is_empty() {
-                return;
-            }
-
-            let processed_text_process_type_masks =
-                reduce_text_process_with_tree(&self.process_type_tree, text);
-
-            let matches = self._word_match_with_processed_text_process_type_masks(
-                &processed_text_process_type_masks,
-            );
-            for value_list in matches.into_values() {
-                for match_result in value_list {
-                    yield match_result;
-                }
-            }
-        }
-    }
-}
-
-impl<'a> TextMatcherInternal<'a, MatchResult<'a>> for Matcher {
     /// Checks if there are any matches for the processed text within the configured match tables.
     ///
     /// This function takes a reference to a processed text set and determines if any matches

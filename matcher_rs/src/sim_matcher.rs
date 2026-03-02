@@ -4,7 +4,7 @@ use rapidfuzz::distance;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait},
+    matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
         ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
         reduce_text_process_with_tree,
@@ -240,22 +240,17 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
 
         self.is_match_preprocessed(&processed_text_process_type_masks)
     }
-    /// Returns a **lazy** iterator over [`SimResult`] matches for the given text.
+
+    /// Processes the given text and returns a vector of matching results.
     ///
-    /// Text preprocessing (`reduce_text_process_with_tree`) is performed once upfront.
-    /// Each similarity comparison is then driven lazily — one word at a time — as the
-    /// caller advances the iterator. Early termination (e.g. `.next()`, `.take(n)`,
-    /// `.find()`) avoids unnecessary similarity computations.
-    ///
-    /// Internally a 3-level index state machine (`processed_text` → `table` → `word`)
-    /// tracks progress. A [`HashSet`] deduplicates `(table_id, word_index)` pairs across
-    /// processed-text variants.
+    /// This function applies the process type tree to the text and passes the processed text
+    /// variants to the `process_preprocessed` helper function for matching against the similarity tables.
     ///
     /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
+    /// * `text` - A string slice representing the input text to be processed.
     ///
     /// # Returns
-    /// An `impl Iterator<Item = SimResult<'a>>` — a lazy iterator of similarity results.
+    /// A vector of [`SimResult`] containing the matched words and their identifiers.
     ///
     /// # Examples
     ///
@@ -267,67 +262,23 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
     ///     match_id: 1,
     ///     process_type: ProcessType::None,
     ///     sim_match_type: SimMatchType::Levenshtein,
-    ///     word_list: vec!["apple"],
-    ///     threshold: 0.8,
+    ///     word_list: vec!["hello"],
+    ///     threshold: 0.6,
     /// };
     ///
     /// let matcher = SimMatcher::new(&[sim_table]);
     ///
-    /// let mut iter = matcher.process_iter("appple"); // Minor typo
-    /// assert!(iter.next().is_some());
-    /// assert!(iter.next().is_none());
+    /// let results = matcher.process("helo");
+    /// assert_eq!(results.len(), 1);
+    /// assert_eq!(results[0].word, "hello");
     /// ```
-    fn process_iter(&'a self, text: &'a str) -> impl Iterator<Item = SimResult<'a>> + 'a {
-        gen move {
-            if text.is_empty() {
-                return;
-            }
+    fn process(&'a self, text: &'a str) -> Vec<SimResult<'a>> {
+        let processed_text_process_type_masks =
+            reduce_text_process_with_tree(&self.process_type_tree, text);
 
-            let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
-            let mut table_id_index_set = HashSet::new();
-
-            for (processed_text, process_type_mask) in processed {
-                for sim_processed_table in self.sim_processed_table_list.iter() {
-                    if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0
-                    {
-                        continue;
-                    }
-
-                    match sim_processed_table.sim_match_type {
-                        SimMatchType::Levenshtein => {
-                            for (index, sim_text) in
-                                sim_processed_table.word_list.iter().enumerate()
-                            {
-                                let table_id_index =
-                                    ((sim_processed_table.table_id as usize) << 32) | index;
-
-                                if table_id_index_set.insert(table_id_index)
-                                    && let Some(similarity) =
-                                        distance::levenshtein::normalized_similarity_with_args(
-                                            sim_text.chars(),
-                                            processed_text.chars(),
-                                            &distance::levenshtein::Args::default()
-                                                .score_cutoff(sim_processed_table.threshold),
-                                        )
-                                {
-                                    yield SimResult {
-                                        match_id: sim_processed_table.match_id,
-                                        table_id: sim_processed_table.table_id,
-                                        word_id: index as u32,
-                                        word: Cow::Borrowed(sim_text),
-                                        similarity,
-                                    };
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        self.process_preprocessed(&processed_text_process_type_masks)
     }
-}
 
-impl<'a> TextMatcherInternal<'a, SimResult<'a>> for SimMatcher {
     /// Checks if any processed text variant matches an entry in the similarity tables.
     ///
     /// # Algorithm
