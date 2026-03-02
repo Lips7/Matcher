@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use tinyvec::TinyVec;
 
 use crate::matcher::{MatchResultTrait, TextMatcherInternal, TextMatcherTrait};
 use crate::process::process_matcher::{
@@ -345,14 +346,14 @@ impl SimpleMatcher {
     /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
     ///
     /// # Returns
-    /// * `Vec<(usize, Vec<i32>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
+    /// * `Vec<(usize, TinyVec<[i32; 16]>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
     ///   for matched patterns, used in pass 2 to evaluate complex AND/NOT logic conditions.
     ///   The flat matrix has layout `[num_splits × processed_times]` with stride = `processed_times`.
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-    ) -> Vec<(usize, Vec<i32>)> {
-        let mut split_bit_store: FxHashMap<usize, Vec<i32>> =
+    ) -> Vec<(usize, TinyVec<[i32; 16]>)> {
+        let mut split_bit_store: FxHashMap<usize, TinyVec<[i32; 16]>> =
             FxHashMap::with_capacity_and_hasher(16, Default::default());
         let mut not_word_id_set: FxHashSet<usize> = FxHashSet::default();
 
@@ -379,12 +380,11 @@ impl SimpleMatcher {
 
                     let flat_matrix = split_bit_store.entry(word_conf_idx).or_insert_with(|| {
                         let num_splits = word_conf.split_bit.len();
-                        let mut flat = vec![0i32; num_splits * processed_times];
+                        let mut flat = TinyVec::new();
+                        flat.resize(num_splits * processed_times, 0i32);
                         for (s, &bit) in word_conf.split_bit.iter().enumerate() {
                             let row_start = s * processed_times;
-                            for t in 0..processed_times {
-                                flat[row_start + t] = bit;
-                            }
+                            flat[row_start..row_start + processed_times].fill(bit);
                         }
                         flat
                     });

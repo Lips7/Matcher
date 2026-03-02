@@ -380,6 +380,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "tikv-jemallocator",
+ "tinyvec",
 ]
 
 [[package]]
