@@ -1,3 +1,16 @@
+//! # Matcher
+//!
+//! A high-performance, multi-language word-matching library implemented in Rust.
+//!
+//! This library provides several engines for matching patterns in text:
+//! - **`SimpleMatcher`**: Fast Aho-Corasick based matcher supporting AND (`&`) and NOT (`~`) logic.
+//! - **`RegexMatcher`**: Matcher using regular expressions.
+//! - **`SimMatcher`**: Similarity-based matcher for fuzzy matching.
+//! - **`Matcher`**: A high-level orchestrator that combines all of the above.
+//!
+//! The library also includes a comprehensive text processing pipeline (Fanjian, Pinyin, etc.)
+//! to normalize text before matching.
+
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

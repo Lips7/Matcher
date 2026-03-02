@@ -15,7 +15,7 @@ use matcher_rs::{
 /// that `match_table_map_bytes` points to a valid null-terminated C string containing a
 /// serialized [`MatchTableMap`], and that the string remains valid for the duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `match_table_map_bytes`: A pointer to a C string containing the serialized [`MatchTableMap`].
 ///
 /// # Returns
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be checked for matches.
 ///
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn matcher_process_as_string(
 /// null-terminated C string. Both the `matcher` and the `text` must remain valid for the
 /// duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `matcher`: A pointer to the [`Matcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
 /// of the raw pointer and deallocates the memory, so the caller must not use the `matcher`
 /// pointer after calling this function.
 ///
-/// # Parameters
+/// # Arguments
 /// - `matcher`: A pointer to the [`Matcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 /// [`SimpleMatcher`] pointer must be properly managed and eventually deallocated by calling
 /// `drop_simple_matcher`.
 ///
-/// # Parameters
+/// # Arguments
 /// - `simple_table_bytes`: A pointer to a C string containing the serialized table bytes.
 ///
 /// # Returns
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn init_simple_matcher(
 /// valid null-terminated C string. Both the `simple_matcher` and the `text` must remain valid for
 /// the duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// valid null-terminated C string. Both `simple_matcher` and `text` must remain valid for the
 /// duration of the call.
 ///
-/// # Parameters
+/// # Arguments
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
@@ -343,7 +343,7 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
 /// by [`init_simple_matcher`]. After calling this function, the `simple_matcher` pointer must not be
 /// used again as it points to deallocated memory.
 ///
-/// # Parameters
+/// # Arguments
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
@@ -362,7 +362,7 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 /// [`CString::into_raw`] or a similar method. After calling this function, the `ptr` pointer must
 /// not be used again as it points to deallocated memory.
 ///
-/// # Parameters
+/// # Arguments
 /// - `ptr`: A pointer to the C string to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {

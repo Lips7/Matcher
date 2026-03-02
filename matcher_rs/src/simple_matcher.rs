@@ -125,37 +125,42 @@ struct WordConfEntry {
     offset: usize,
 }
 
-/// Represents a simple matcher for processing words based on process types.
+/// Represents a simple matcher for processing words using Aho-Corasick.
 ///
-/// The [`SimpleMatcher`] structure is designed to perform efficient word matching, supporting logical operators
-/// like AND and NOT, and allowing seamless integration with various process types. Word configurations are
-/// stored and managed internally, providing a flexible and powerful matching system.
+/// The [`SimpleMatcher`] is optimized for exact matching of multiple patterns simultaneously.
+/// It supports complex logical operators within a single pattern entry:
+/// - **AND (`&`)**: All sub-patterns separated by `&` must match for the rule to trigger.
+/// - **NOT (`~`)**: If any sub-pattern preceded by `~` matches, the rule is disqualified.
 ///
-/// # Algorithm
-/// 1. Iterates through the `process_type_word_map`.
-/// 2. For each `word`, parses the logical operators `&` (AND) and `~` (NOT).
-///    - It splits the word into sub-patterns (`ac_split_word_and_counter` and `ac_split_word_not_counter`).
-///    - It assigns a `split_bit` vector: positive numbers represent AND counts, negative numbers represent NOT counts.
-///    - Calculates the `not_offset`: the index delineating AND sub-patterns from NOT sub-patterns.
-/// 3. Normalizes and deduplicates each parsed sub-pattern across different `ProcessType`s into an `ac_dedup_word_list`.
-/// 4. Compiles the `ac_dedup_word_list` into a highly optimized Aho-Corasick DFA (`AhoCorasickKind::DFA` if enabled) for simultaneous multi-pattern search.
+/// # Detailed Explanation / Algorithm
+/// 1. **Initialization**:
+///    - Parses logical operators in each pattern, splitting them into AND and NOT sub-patterns.
+///    - Assigns a `split_bit` vector tracking the state of each logical segment.
+///    - Deduplicates all unique sub-patterns across all `ProcessType` variants.
+///    - Compiles an optimized Aho-Corasick automaton (DFA or NFA) from the unique sub-patterns.
+/// 2. **Matching (Two-Pass Logic)**:
+///    - **Pass 1**: Scans the text using the AC automaton. For each hit, it updates a state matrix
+///      representing which logical segments for which rules have been satisfied in which text variant.
+///    - **Pass 2**: Evaluates the state matrix. A rule matches if all its AND segments were satisfied
+///      in at least one text variant AND none of its NOT segments were found.
 ///
 /// # Fields
-/// * `process_type_tree` - The compiled workflow tree ensuring text transforms happen exactly once per distinct branch sequence.
-/// * `ac_matcher` - The inner compiled `AhoCorasick` automaton used for overlapping parallel matching passes.
-/// * `ac_dedup_word_conf_list` - Deduplicated configuration references grouped by automaton match indexes.
-/// * `word_conf_list` - The unified metadata mapping each parsed split word block back to its core rule set mapping.
+/// * `process_type_tree` - Workflow tree for efficient text transforms.
+/// * `ac_matcher` - Compiled Aho-Corasick automaton.
+/// * `ac_dedup_word_conf_list` - References from automaton hits back to original rules.
+/// * `word_conf_list` - Unified metadata for each parsed split pattern block.
 ///
 /// # Examples
-///
 /// ```rust
-/// use std::collections::HashMap;
-/// use matcher_rs::{SimpleMatcher, SimpleMatcherBuilder, ProcessType};
+/// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
 ///
-/// // Recommended: Using SimpleMatcherBuilder
 /// let matcher = SimpleMatcherBuilder::new()
-///     .add_word(ProcessType::None, 1, "example&word")
+///     .add_word(ProcessType::None, 1, "apple&pie")
+///     .add_word(ProcessType::None, 2, "banana~peel")
 ///     .build();
+///
+/// assert!(matcher.is_match("I like apple and pie"));
+/// assert!(!matcher.is_match("I like banana peel"));
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
@@ -166,24 +171,25 @@ pub struct SimpleMatcher {
 }
 
 impl SimpleMatcher {
-    /// Creates a new instance of [`SimpleMatcher`] from a given process type to word map.
+    /// Creates a new [`SimpleMatcher`] from a mapping of process types to words.
     ///
-    /// This method initializes the [`SimpleMatcher`] by constructing the internal structures necessary for efficient word matching.
-    /// It heavily preconditions the input data to facilitate the 2-pass AND/NOT matching logic.
+    /// It is recommended to use [`SimpleMatcherBuilder`] instead.
     ///
-    /// Note: It is highly recommended to use [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder)
-    /// to construct a [`SimpleMatcher`] without dealing with nested HashMaps manually.
+    /// # Detailed Explanation / Algorithm
+    /// This method is computationally intensive. It iterates through all patterns,
+    /// performs manual parsing of `&` and `~` (ignoring escaped versions if implemented),
+    /// generates all required normalized variants for each sub-pattern, and finally
+    /// builds the Aho-Corasick automaton.
     ///
     /// # Type Parameters
-    /// * `I` - An iterator type whose items can be converted to string slices.
-    /// * `S1` - A hasher type for the inner [`HashMap`].
-    /// * `S2` - A hasher type for the outer [`HashMap`].
+    /// * `I` - Iterator yielding string slices.
+    /// * `S1`, `S2` - Hashers for the input maps.
     ///
     /// # Arguments
-    /// * `process_type_word_map` - A mapped Hash map structure linking [`ProcessType`] to maps of [`u32`] to word identifiers.
+    /// * `process_type_word_map` - Maps [`ProcessType`] to identifiers and their patterns.
     ///
     /// # Returns
-    /// An initialized [`SimpleMatcher`] with all its internal structures set up for use.
+    /// An initialized and compiled [`SimpleMatcher`].
     pub fn new<I, S1, S2>(
         process_type_word_map: &HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -334,32 +340,22 @@ impl SimpleMatcher {
         }
     }
 
-    /// Core matching logic for `SimpleMatcher`, processing multiple text variants and process types.
+    /// Pass 1: Scans text variants and records sub-pattern hits in a state matrix.
     ///
-    /// This function scans the provided processed text variants using the internal Aho-Corasick automaton.
-    /// It keeps track of sub-pattern matches (AND logic `&`) and handles exclusions (NOT logic `~`).
-    /// The returned data structure maps each `word_id` to a nested vector tracking which split-bits
-    /// matched across the different text variants.
-    ///
-    /// # Algorithm
-    /// 1. Iterate over each tuple of `(processed_text, process_type_mask)`.
-    /// 2. Use `find_overlapping_iter` with the internal Aho-Corasick automaton to locate *all*
-    ///    sub-pattern matches within the `processed_text`.
-    /// 3. For each sub-pattern match, check if its [`ProcessType`] aligns with the current text variant's `process_type_mask`.
-    /// 4. Maintain a 2D split-bit matrix for each `word_id` to record which tokens condition the text satisfies.
-    ///    - **AND Tokens (`&`)**: Decrements their state towards `< 0`. The token count dictates how negative it goes.
-    ///      Every time the exact sub-pattern occurs, it brings the count closer.
-    ///    - **NOT Tokens (`~`)**: Checks if they exist (offset >= `not_offset`). If a NOT token appears,
-    ///      the `word_id` is disqualified and immediately discarded from further checks using `not_word_id_set`.
-    /// 5. Return the map of matched patterns which is later used in *Pass 2* to evaluate conditions.
+    /// # Detailed Explanation / Algorithm
+    /// 1. Iterates over each text variant and its bitmask.
+    /// 2. Performs overlapping search using Aho-Corasick.
+    /// 3. For each hit:
+    ///    - Checks if the hit's `ProcessType` is allowed for the current variant.
+    ///    - Increments or decrements the state in a `flat_matrix` (`split_bit_store`).
+    ///    - **NOT Check**: If a `~` sub-pattern is hit, the rule is immediately disqualified
+    ///      (`not_word_id_set`).
     ///
     /// # Arguments
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
+    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
     ///
     /// # Returns
-    /// * `Vec<(usize, TinyVec<[i32; 16]>)>` - A list of `(word_conf_idx, flat_split_bit_matrix)` pairs
-    ///   for matched patterns, used in pass 2 to evaluate complex AND/NOT logic conditions.
-    ///   The flat matrix has layout `[num_splits × processed_times]` with stride = `processed_times`.
+    /// A list of rule identifiers and their corresponding state matrices (`flat_split_bit_matrix`).
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -492,20 +488,19 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         self.process_preprocessed(&processed_text_process_type_masks)
     }
 
-    /// Checks if any pattern matches the processed text.
+    /// Pass 2: Evaluates the state matrix to determine if any rule is fully satisfied.
     ///
-    /// # Algorithm (Pass 2)
-    /// 1. Calls `_word_match_with_processed_text_process_type_masks` to run the Aho-Corasick scan (Pass 1), which returns a list of candidate matrix states (`flat_matrix`) mapped to each `word_conf_idx`.
-    /// 2. Iterates over the candidate mappings.
-    /// 3. For each word configuration, evaluates the `flat_matrix` which holds the state of every sub-pattern split over `processed_times`.
-    /// 4. A split condition is satisfied if `any(|&bit| bit <= 0)` for any of the processed text variants.
-    /// 5. The full word is a match if `all()` split conditions are satisfied. Short-circuits returning `true` on the first fully satisfied word.
+    /// # Detailed Explanation / Algorithm
+    /// 1. Executes Pass 1 to get candidate matrix states.
+    /// 2. For each rule candidate, checks if every logical segment (row in the matrix)
+    ///    has been satisfied (`bit <= 0`) in at least one text variant (column in the matrix).
+    /// 3. Returns `true` on the first rule that meets these criteria.
     ///
     /// # Arguments
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
+    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
     ///
     /// # Returns
-    /// * `true` if any pattern matches the processed text, otherwise `false`.
+    /// `true` if any rule matches.
     fn is_match_preprocessed(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -524,27 +519,18 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         })
     }
 
-    /// Processes the given processed text and type sets to produce matching results.
+    /// Pass 2: Evaluates the state matrix and returns all satisfied rules.
     ///
-    /// # Algorithm (Pass 2)
-    /// 1. Calls `_word_match_with_processed_text_process_type_masks` to run the Aho-Corasick scan (Pass 1).
-    /// 2. Filters the collected metadata mapping (`word_conf_idx` to `flat_matrix`).
-    /// 3. Extracts the number of logical split chunks (`num_splits`).
-    /// 4. Validates each word: For every logical segment (`s`), at least one variation (`processed_times`)
-    ///    must have seen its required target frequency (reaching `bit <= 0`).
-    /// 5. If `all()` segments within the word are valid, projects the `word_conf` into a `SimpleResult` to be pushed to the result payload.
+    /// # Detailed Explanation / Algorithm
+    /// 1. Executes Pass 1 to get candidate matrix states.
+    /// 2. Filters rules where all logical segments were satisfied.
+    /// 3. Projects satisfied rules into [`SimpleResult`] objects.
     ///
     /// # Arguments
-    /// * `processed_text_process_type_masks` - A reference to a slice of tuples, where each tuple contains a processed text variant (as [`Cow<'a, str>`]) and a `u64` bitmask of applicable process type IDs.
+    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
     ///
     /// # Returns
-    /// * A vector of [`SimpleResult`] containing the word ID and the matched word for each successful match found. If no matches are found, it returns an empty vector.
-    ///
-    /// # Panics
-    /// If the internal invariants are violated, the function may cause undefined behavior or panic.
-    ///
-    /// For example, if `processed_text_process_type_masks` has invalid data or the internal Aho-Corasick matcher
-    /// encounters unexpected states, this could lead to issues.
+    /// A vector of [`SimpleResult`] matches.
     fn process_preprocessed(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,

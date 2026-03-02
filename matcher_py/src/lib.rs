@@ -79,7 +79,7 @@ impl<'py> IntoPyObject<'py> for MatchResult<'py> {
 /// The `process_type` is expected to be a bitmask representing different processing
 /// options as defined by the [`ProcessType`] enum from `matcher_rs`.
 ///
-/// # Parameters
+/// # Arguments
 /// - `process_type` (u8): An 8-bit unsigned integer specifying the type of processing
 ///   to be applied to the text. This should be a valid bitmask for [`ProcessType`].
 /// - `text` (&str): A string slice reference to the text that needs processing.
@@ -107,7 +107,7 @@ fn text_process(process_type: u8, text: &str) -> PyResult<Cow<'_, str>> {
 /// to process the input text according to the provided `process_type`. The reduced text segments
 /// are collected into a vector and returned as [`Cow`] string slices.
 ///
-/// # Parameters
+/// # Arguments
 /// - `process_type` (u8): An 8-bit unsigned integer specifying the type of processing to be
 ///   applied to the text. This should be a valid bitmask for [`ProcessType`].
 /// - `text` (&str): A string slice reference to the text that needs to be reduced.
@@ -152,7 +152,7 @@ impl Matcher {
     /// a [`MatchTableMapRs`] object using the [`sonic_rs`] library. The resulting map is then used
     /// to instantiate the actual [`MatcherRs`] object.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `match_table_map_bytes` (&[u8]): A byte slice representing the serialized match table map.
     ///
     /// # Returns
@@ -212,7 +212,7 @@ impl Matcher {
     /// deserializes the given `match_table_map_bytes` into a [`MatchTableMapRs`] object
     /// and reinitializes the internal `matcher` field with this new map.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `match_table_map_bytes` (&[u8]): A byte slice representing the serialized match table map.
     ///
     /// # Panics
@@ -231,7 +231,7 @@ impl Matcher {
     /// This function utilizes the internal `matcher` to determine if any part of the
     /// provided `text` conforms to the patterns defined within the matcher.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&str): The input text to be checked against the match patterns.
     ///
     /// # Returns
@@ -246,7 +246,7 @@ impl Matcher {
     /// This function uses the internal `matcher` to analyze the provided `text`
     /// and generate a list of [`MatchResult`] instances that represent the matches found.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&str): The input text to be processed and checked for matches.
     ///
     /// # Returns
@@ -267,7 +267,7 @@ impl Matcher {
     /// are organized in a [`HashMap`] where each key is a match ID (u32) and its value is a vector of
     /// [`MatchResult`] instances corresponding to that match ID.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&str): The input text to be checked against the match patterns.
     ///
     /// # Returns
@@ -293,7 +293,7 @@ impl Matcher {
     /// returns a string that represents the match results. The format of the string will depend
     /// on the internal implementation of the `word_match` method in the matcher.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&str): The input text to be checked against the match patterns.
     ///
     /// # Returns
@@ -334,7 +334,7 @@ impl SimpleMatcher {
     /// of the bytes into a [`SimpleTableRs`] structure and uses it to create an internal
     /// `SimpleMatcherRs`.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `simple_table_bytes` (&[u8]): A byte slice containing the serialized match table data.
     ///
     /// # Returns
@@ -394,7 +394,7 @@ impl SimpleMatcher {
     /// It deserializes the given bytes into a [`SimpleTableRs`] and then reinitializes the
     /// `simple_matcher` with the deserialized table.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `simple_table_bytes` (&[u8]): A byte slice containing the serialized match table data.
     ///
     /// # Errors
@@ -412,7 +412,7 @@ impl SimpleMatcher {
     /// This method uses the internal `simple_matcher` to determine if the given
     /// text contains any matches according to the match table.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&str): A string slice representing the text to be checked for matches.
     ///
     /// # Returns
@@ -428,7 +428,7 @@ impl SimpleMatcher {
     /// text, producing a list of [`SimpleResult`] instances. Each result
     /// represents a match found according to the match table.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `text` (&'a str): A string slice representing the text to be processed for matches.
     ///
     /// # Returns
