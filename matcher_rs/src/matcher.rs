@@ -730,9 +730,6 @@ impl Matcher {
                     result_list.push(MatchResult {
                         match_id: word_table_conf.match_id,
                         table_id: word_table_conf.table_id,
-                        // SAFETY: `simple_result.word_id` is an aggregated count offset by `word_table_conf.offset`.
-                        // Because words matched belong strictly to their relative simple word ID table configurations,
-                        // `simple_result.word_id` is computationally guaranteed to be >= `offset`.
                         word_id: simple_result.word_id - word_table_conf.offset,
                         word: simple_result.word,
                         similarity: None,
