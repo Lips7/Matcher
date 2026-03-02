@@ -215,11 +215,11 @@ impl SimpleMatcher {
     ///
     /// # Returns
     /// An initialized and compiled [`SimpleMatcher`].
-    pub fn new<I, S1, S2>(
-        process_type_word_map: &HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
+    pub fn new<'a, I, S1, S2>(
+        process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
     where
-        I: AsRef<str>,
+        I: AsRef<str> + 'a,
     {
         let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
@@ -244,60 +244,27 @@ impl SimpleMatcher {
                 let mut ac_split_word_not_counter = HashMap::new();
 
                 let mut start = 0;
-                let mut is_and = false;
-                let mut is_not = false;
+                let mut current_is_not = false;
+
+                let mut add_sub_word = |word: &'a str, is_not: bool| {
+                    if word.is_empty() {
+                        return;
+                    }
+                    if is_not {
+                        let entry = ac_split_word_not_counter.entry(word).or_insert(1);
+                        *entry -= 1;
+                    } else {
+                        let entry = ac_split_word_and_counter.entry(word).or_insert(0);
+                        *entry += 1;
+                    }
+                };
 
                 for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
-                    if (is_and || start == 0) && start != index {
-                        let word = &simple_word.as_ref()[start..index];
-                        if !word.is_empty() {
-                            ac_split_word_and_counter
-                                .entry(word)
-                                .and_modify(|cnt| *cnt += 1)
-                                .or_insert(1);
-                        }
-                    }
-                    if is_not && start != index {
-                        let word = &simple_word.as_ref()[start..index];
-                        if !word.is_empty() {
-                            ac_split_word_not_counter
-                                .entry(word)
-                                .and_modify(|cnt| *cnt -= 1)
-                                .or_insert(0);
-                        }
-                    }
-                    match char {
-                        "&" => {
-                            is_and = true;
-                            is_not = false;
-                            start = index + 1;
-                        }
-                        "~" => {
-                            is_and = false;
-                            is_not = true;
-                            start = index + 1
-                        }
-                        _ => {}
-                    }
+                    add_sub_word(&simple_word.as_ref()[start..index], current_is_not);
+                    current_is_not = char == "~";
+                    start = index + 1;
                 }
-                if (is_and || start == 0) && start != simple_word.as_ref().len() {
-                    let word = &simple_word.as_ref()[start..];
-                    if !word.is_empty() {
-                        ac_split_word_and_counter
-                            .entry(word)
-                            .and_modify(|cnt| *cnt += 1)
-                            .or_insert(1);
-                    }
-                }
-                if is_not && start != simple_word.as_ref().len() {
-                    let word = &simple_word.as_ref()[start..];
-                    if !word.is_empty() {
-                        ac_split_word_not_counter
-                            .entry(word)
-                            .and_modify(|cnt| *cnt -= 1)
-                            .or_insert(0);
-                    }
-                }
+                add_sub_word(&simple_word.as_ref()[start..], current_is_not);
 
                 if ac_split_word_and_counter.is_empty() && ac_split_word_not_counter.is_empty() {
                     continue;
