@@ -204,10 +204,11 @@ mod search_match {
         });
     }
 
-    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-    fn en_by_size(bencher: Bencher, size: usize) {
+    #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
+    fn cn_by_combinations(bencher: Bencher, combined_times: usize) {
         let mut simple_table = HashMap::new();
-        let simple_word_map = build_deterministic_map("en", size, DEFAULT_COMBINED_TIMES, true);
+        let simple_word_map =
+            build_deterministic_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, true);
         simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
 
@@ -228,6 +229,20 @@ mod search_match {
             true,
         );
         simple_table.insert(process_type, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_table);
+
+        bencher.bench(|| {
+            for line in EN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
+
+    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
+    fn en_by_size(bencher: Bencher, size: usize) {
+        let mut simple_table = HashMap::new();
+        let simple_word_map = build_deterministic_map("en", size, DEFAULT_COMBINED_TIMES, true);
+        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
         let simple_matcher = SimpleMatcher::new(&simple_table);
 
         bencher.bench(|| {
@@ -284,6 +299,21 @@ mod search_no_match {
 
         bencher.bench(|| {
             for line in CN_HAYSTACK.lines() {
+                simple_matcher.process(line);
+            }
+        });
+    }
+
+    #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
+    fn cn_by_combinations(bencher: Bencher, combined_times: usize) {
+        let mut simple_table = HashMap::new();
+        let simple_word_map =
+            build_deterministic_map("cn", DEFAULT_SIMPLE_WORD_MAP_SIZE, combined_times, false);
+        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
+        let simple_matcher = SimpleMatcher::new(&simple_table);
+
+        bencher.bench(|| {
+            for line in EN_HAYSTACK.lines() {
                 simple_matcher.process(line);
             }
         });
