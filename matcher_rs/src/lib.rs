@@ -27,6 +27,9 @@ pub use process::process_matcher::{
 mod simple_matcher;
 pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};
 
+#[cfg(feature = "vectorscan")]
+pub mod vectorscan_matcher;
+
 mod regex_matcher;
 pub use regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 

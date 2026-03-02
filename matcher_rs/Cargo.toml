@@ -43,7 +43,7 @@ fastrand = "2.3.0"
 proptest = "1.10.0"
 
 [features]
-default = ["vectorscan"]
+default = ["vectorscan", "dfa"]
 # By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
 runtime_build = []
 # By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.

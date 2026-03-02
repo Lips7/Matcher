@@ -1,7 +1,11 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
+#[cfg(not(feature = "vectorscan"))]
+use aho_corasick::AhoCorasickKind;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use tinyvec::TinyVec;
@@ -11,6 +15,8 @@ use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree,
 };
+#[cfg(feature = "vectorscan")]
+use crate::vectorscan_matcher::VectorscanMatcher;
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
@@ -125,7 +131,15 @@ struct WordConfEntry {
     offset: usize,
 }
 
-/// Represents a simple matcher for processing words using Aho-Corasick.
+#[derive(Debug, Clone)]
+enum AcMatcher {
+    #[cfg_attr(feature = "vectorscan", allow(dead_code))]
+    AhoCorasick(AhoCorasick),
+    #[cfg(feature = "vectorscan")]
+    Vectorscan(Arc<VectorscanMatcher>),
+}
+
+/// Represents a simple matcher for processing words using Aho-Corasick or Vectorscan.
 ///
 /// The [`SimpleMatcher`] is optimized for exact matching of multiple patterns simultaneously.
 /// It supports complex logical operators within a single pattern entry:
@@ -137,16 +151,16 @@ struct WordConfEntry {
 ///    - Parses logical operators in each pattern, splitting them into AND and NOT sub-patterns.
 ///    - Assigns a `split_bit` vector tracking the state of each logical segment.
 ///    - Deduplicates all unique sub-patterns across all `ProcessType` variants.
-///    - Compiles an optimized Aho-Corasick automaton (DFA or NFA) from the unique sub-patterns.
+///    - Compiles an optimized Aho-Corasick automaton (DFA or NFA) or Vectorscan database from the unique sub-patterns.
 /// 2. **Matching (Two-Pass Logic)**:
-///    - **Pass 1**: Scans the text using the AC automaton. For each hit, it updates a state matrix
+///    - **Pass 1**: Scans the text using the AC/Vectorscan automaton. For each hit, it updates a state matrix
 ///      representing which logical segments for which rules have been satisfied in which text variant.
 ///    - **Pass 2**: Evaluates the state matrix. A rule matches if all its AND segments were satisfied
 ///      in at least one text variant AND none of its NOT segments were found.
 ///
 /// # Fields
 /// * `process_type_tree` - Workflow tree for efficient text transforms.
-/// * `ac_matcher` - Compiled Aho-Corasick automaton.
+/// * `ac_matcher` - Compiled Aho-Corasick or Vectorscan automaton.
 /// * `ac_dedup_word_conf_list` - References from automaton hits back to original rules.
 /// * `word_conf_list` - Unified metadata for each parsed split pattern block.
 ///
@@ -162,12 +176,23 @@ struct WordConfEntry {
 /// assert!(matcher.is_match("I like apple and pie"));
 /// assert!(!matcher.is_match("I like banana peel"));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SimpleMatcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
-    ac_matcher: AhoCorasick,
+    ac_matcher: AssertUnwindSafe<AcMatcher>,
     ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
     word_conf_list: Box<[WordConf]>,
+}
+
+impl Clone for SimpleMatcher {
+    fn clone(&self) -> Self {
+        Self {
+            process_type_tree: self.process_type_tree.clone(),
+            ac_matcher: AssertUnwindSafe((*self.ac_matcher).clone()),
+            ac_dedup_word_conf_list: self.ac_dedup_word_conf_list.clone(),
+            word_conf_list: self.word_conf_list.clone(),
+        }
+    }
 }
 
 impl SimpleMatcher {
@@ -212,6 +237,9 @@ impl SimpleMatcher {
             process_type_set.insert(process_type.bits());
 
             for (&simple_word_id, simple_word) in simple_word_map {
+                if simple_word.as_ref().is_empty() {
+                    continue;
+                }
                 let mut ac_split_word_and_counter = HashMap::new();
                 let mut ac_split_word_not_counter = HashMap::new();
 
@@ -221,16 +249,22 @@ impl SimpleMatcher {
 
                 for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
                     if (is_and || start == 0) && start != index {
-                        ac_split_word_and_counter
-                            .entry(&simple_word.as_ref()[start..index])
-                            .and_modify(|cnt| *cnt += 1)
-                            .or_insert(1);
+                        let word = &simple_word.as_ref()[start..index];
+                        if !word.is_empty() {
+                            ac_split_word_and_counter
+                                .entry(word)
+                                .and_modify(|cnt| *cnt += 1)
+                                .or_insert(1);
+                        }
                     }
                     if is_not && start != index {
-                        ac_split_word_not_counter
-                            .entry(&simple_word.as_ref()[start..index])
-                            .and_modify(|cnt| *cnt -= 1)
-                            .or_insert(0);
+                        let word = &simple_word.as_ref()[start..index];
+                        if !word.is_empty() {
+                            ac_split_word_not_counter
+                                .entry(word)
+                                .and_modify(|cnt| *cnt -= 1)
+                                .or_insert(0);
+                        }
                     }
                     match char {
                         "&" => {
@@ -247,16 +281,26 @@ impl SimpleMatcher {
                     }
                 }
                 if (is_and || start == 0) && start != simple_word.as_ref().len() {
-                    ac_split_word_and_counter
-                        .entry(&simple_word.as_ref()[start..])
-                        .and_modify(|cnt| *cnt += 1)
-                        .or_insert(1);
+                    let word = &simple_word.as_ref()[start..];
+                    if !word.is_empty() {
+                        ac_split_word_and_counter
+                            .entry(word)
+                            .and_modify(|cnt| *cnt += 1)
+                            .or_insert(1);
+                    }
                 }
                 if is_not && start != simple_word.as_ref().len() {
-                    ac_split_word_not_counter
-                        .entry(&simple_word.as_ref()[start..])
-                        .and_modify(|cnt| *cnt -= 1)
-                        .or_insert(0);
+                    let word = &simple_word.as_ref()[start..];
+                    if !word.is_empty() {
+                        ac_split_word_not_counter
+                            .entry(word)
+                            .and_modify(|cnt| *cnt -= 1)
+                            .or_insert(0);
+                    }
+                }
+
+                if ac_split_word_and_counter.is_empty() && ac_split_word_not_counter.is_empty() {
+                    continue;
                 }
 
                 let not_offset = ac_split_word_and_counter.len();
@@ -317,15 +361,34 @@ impl SimpleMatcher {
 
         let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
-        #[cfg(feature = "dfa")]
-        let aho_corasick_kind = AhoCorasickKind::DFA;
-        #[cfg(not(feature = "dfa"))]
-        let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+        #[cfg(feature = "vectorscan")]
+        let ac_matcher = if ac_dedup_word_list.is_empty() {
+            AcMatcher::AhoCorasick(AhoCorasickBuilder::new().build([""]).unwrap())
+        } else {
+            AcMatcher::Vectorscan(Arc::new(
+                VectorscanMatcher::new(
+                    &ac_dedup_word_list
+                        .iter()
+                        .map(|ac_word| ac_word.as_ref())
+                        .collect::<Vec<_>>(),
+                ),
+            ))
+        };
 
-        let ac_matcher = AhoCorasickBuilder::new()
-            .kind(Some(aho_corasick_kind))
-            .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
-            .unwrap();
+        #[cfg(not(feature = "vectorscan"))]
+        let ac_matcher = {
+            #[cfg(feature = "dfa")]
+            let aho_corasick_kind = AhoCorasickKind::DFA;
+            #[cfg(not(feature = "dfa"))]
+            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+
+            AcMatcher::AhoCorasick(
+                AhoCorasickBuilder::new()
+                    .kind(Some(aho_corasick_kind))
+                    .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
+                    .unwrap(),
+            )
+        };
 
         let ac_dedup_word_conf_list = ac_dedup_word_conf_list
             .into_iter()
@@ -334,7 +397,7 @@ impl SimpleMatcher {
 
         SimpleMatcher {
             process_type_tree,
-            ac_matcher,
+            ac_matcher: AssertUnwindSafe(ac_matcher),
             ac_dedup_word_conf_list,
             word_conf_list: word_conf_list.into_boxed_slice(),
         }
@@ -344,7 +407,7 @@ impl SimpleMatcher {
     ///
     /// # Detailed Explanation / Algorithm
     /// 1. Iterates over each text variant and its bitmask.
-    /// 2. Performs overlapping search using Aho-Corasick.
+    /// 2. Performs overlapping search using Aho-Corasick or Vectorscan.
     /// 3. For each hit:
     ///    - Checks if the hit's `ProcessType` is allowed for the current variant.
     ///    - Increments or decrements the state in a `flat_matrix` (`split_bit_store`).
@@ -360,6 +423,9 @@ impl SimpleMatcher {
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<(usize, TinyVec<[i32; 16]>)> {
+        if self.ac_dedup_word_conf_list.is_empty() {
+            return Vec::new();
+        }
         let mut split_bit_store: FxHashMap<usize, TinyVec<[i32; 16]>> =
             FxHashMap::with_capacity_and_hasher(16, Default::default());
         let mut not_word_id_set: FxHashSet<usize> = FxHashSet::default();
@@ -369,48 +435,83 @@ impl SimpleMatcher {
         for (index, (processed_text, process_type_mask)) in
             processed_text_process_type_masks.iter().enumerate()
         {
-            let ac_iter = self
-                .ac_matcher
-                .find_overlapping_iter(processed_text.as_ref());
-            for ac_dedup_result in ac_iter {
-                let pattern_idx = ac_dedup_result.pattern().as_usize();
-                for &WordConfEntry {
-                    process_type: match_process_type,
-                    word_conf_idx,
-                    offset,
-                } in &self.ac_dedup_word_conf_list[pattern_idx]
-                {
-                    if process_type_mask & (1u64 << match_process_type.bits()) == 0
-                        || not_word_id_set.contains(&word_conf_idx)
+            match &*self.ac_matcher {
+                AcMatcher::AhoCorasick(ac_matcher) => {
+                    for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text.as_ref())
                     {
-                        continue;
+                        let pattern_idx = ac_dedup_result.pattern().as_usize();
+                        self.process_match(
+                            pattern_idx,
+                            index,
+                            *process_type_mask,
+                            processed_times,
+                            &mut split_bit_store,
+                            &mut not_word_id_set,
+                        );
                     }
-
-                    let word_conf = &self.word_conf_list[word_conf_idx];
-
-                    let flat_matrix = split_bit_store.entry(word_conf_idx).or_insert_with(|| {
-                        let num_splits = word_conf.split_bit.len();
-                        let mut flat = TinyVec::new();
-                        flat.resize(num_splits * processed_times, 0i32);
-                        for (s, &bit) in word_conf.split_bit.iter().enumerate() {
-                            let row_start = s * processed_times;
-                            flat[row_start..row_start + processed_times].fill(bit);
-                        }
-                        flat
-                    });
-
-                    let bit = &mut flat_matrix[offset * processed_times + index];
-                    *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
-
-                    if offset >= word_conf.not_offset && *bit > 0 {
-                        not_word_id_set.insert(word_conf_idx);
-                        split_bit_store.remove(&word_conf_idx);
+                }
+                #[cfg(feature = "vectorscan")]
+                AcMatcher::Vectorscan(vs_matcher) => {
+                    for pattern_idx in vs_matcher.find_overlapping_iter(processed_text.as_ref()) {
+                        self.process_match(
+                            pattern_idx,
+                            index,
+                            *process_type_mask,
+                            processed_times,
+                            &mut split_bit_store,
+                            &mut not_word_id_set,
+                        );
                     }
                 }
             }
         }
 
         split_bit_store.into_iter().collect()
+    }
+
+    #[inline]
+    fn process_match(
+        &self,
+        pattern_idx: usize,
+        text_index: usize,
+        process_type_mask: u64,
+        processed_times: usize,
+        split_bit_store: &mut FxHashMap<usize, TinyVec<[i32; 16]>>,
+        not_word_id_set: &mut FxHashSet<usize>,
+    ) {
+        for &WordConfEntry {
+            process_type: match_process_type,
+            word_conf_idx,
+            offset,
+        } in &self.ac_dedup_word_conf_list[pattern_idx]
+        {
+            if process_type_mask & (1u64 << match_process_type.bits()) == 0
+                || not_word_id_set.contains(&word_conf_idx)
+            {
+                continue;
+            }
+
+            let word_conf = &self.word_conf_list[word_conf_idx];
+
+            let flat_matrix = split_bit_store.entry(word_conf_idx).or_insert_with(|| {
+                let num_splits = word_conf.split_bit.len();
+                let mut flat = TinyVec::new();
+                flat.resize(num_splits * processed_times, 0i32);
+                for (s, &bit) in word_conf.split_bit.iter().enumerate() {
+                    let row_start = s * processed_times;
+                    flat[row_start..row_start + processed_times].fill(bit);
+                }
+                flat
+            });
+
+            let bit = &mut flat_matrix[offset * processed_times + text_index];
+            *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
+
+            if offset >= word_conf.not_offset && *bit > 0 {
+                not_word_id_set.insert(word_conf_idx);
+                split_bit_store.remove(&word_conf_idx);
+            }
+        }
     }
 }
 
