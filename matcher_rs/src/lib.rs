@@ -1,4 +1,5 @@
-#![feature(gen_blocks)]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod builder;
 pub use builder::{MatchTableBuilder, MatcherBuilder, SimpleMatcherBuilder};

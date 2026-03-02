@@ -19,9 +19,3 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 matcher_rs = { path = "../matcher_rs", version = "0.8.1" }
 sonic-rs = "0.5.7"
-
-[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
-tikv-jemallocator = "0.6.1"
-
-[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
-mimalloc = "0.1.48"

@@ -25,6 +25,7 @@ crate-type = ["rlib"]
 aho-corasick = "1.1.4"
 bitflags = "2.11.0"
 daachorse = "1.0.0"
+mimalloc = { version = "0.1.48", features = ["v3"] }
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 rapidfuzz = "0.5.0"
 regex = { version = "1.12.3", features = ["perf-dfa-full"] }
@@ -32,13 +33,6 @@ rustc-hash = "2.1.1"
 serde = { version = "1.0.228", features = ["derive"] }
 tinyvec = { version = "1.10.0", features = ["alloc"] }
 vectorscan-rs-sys = { version = "0.0.5", optional = true }
-
-
-[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dev-dependencies]
-tikv-jemallocator = "0.6.1"
-
-[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dev-dependencies]
-mimalloc = "0.1.48"
 
 [build-dependencies]
 daachorse = "1.0.0"
