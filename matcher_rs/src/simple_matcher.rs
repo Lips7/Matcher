@@ -185,7 +185,7 @@ pub struct SimpleMatcher {
 impl SimpleMatcher {
     /// Creates a new [`SimpleMatcher`] from a mapping of process types to words.
     ///
-    /// It is recommended to use [`SimpleMatcherBuilder`] instead.
+    /// It is recommended to use [`crate::SimpleMatcherBuilder`] instead.
     ///
     /// # Detailed Explanation / Algorithm
     /// This method is computationally intensive. It iterates through all patterns,

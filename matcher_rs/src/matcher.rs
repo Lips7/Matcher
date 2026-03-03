@@ -395,11 +395,11 @@ pub struct Matcher {
 impl Matcher {
     /// Constructs a new [`Matcher`] from a map of tables.
     ///
-    /// It is recommended to use [`MatcherBuilder`] instead of calling this directly.
+    /// It is recommended to use [`crate::MatcherBuilder`] instead of calling this directly.
     ///
     /// # Type Parameters
     /// * `S` - Hasher for the map.
-    /// * `M` - The table type (implements [`MatchTableTrait`]).
+    /// * `M` - The table type (implements `MatchTableTrait`).
     /// * `T` - The string type in the table (implements `AsRef<str>`).
     ///
     /// # Arguments

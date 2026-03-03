@@ -13,6 +13,7 @@ test:
 
 	cd matcher_rs && cargo test --no-default-features
 	cd matcher_rs && cargo test --no-default-features --features "dfa"
+	cd matcher_rs && cargo test --no-default-features --features "vectorscan"
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build"
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build,dfa"
 
