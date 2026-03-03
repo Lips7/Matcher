@@ -1,6 +1,7 @@
 use std::{
     ffi::{CStr, CString, c_char},
-    panic, ptr, str,
+    panic::{self, AssertUnwindSafe},
+    ptr, str,
 };
 
 use matcher_rs::{
@@ -26,7 +27,7 @@ use matcher_rs::{
 /// This function will panic if the input data cannot be deserialized into a [`MatchTableMap`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *mut Matcher {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let match_table_map: MatchTableMap =
             match sonic_rs::from_slice(CStr::from_ptr(match_table_map_bytes).to_bytes()) {
                 Ok(match_table_map) => match_table_map,
@@ -37,7 +38,7 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
             };
 
         Box::into_raw(Box::new(Matcher::new(&match_table_map)))
-    });
+    }));
 
     match result {
         Ok(ptr) => ptr,
@@ -68,7 +69,7 @@ pub unsafe extern "C" fn init_matcher(match_table_map_bytes: *const c_char) -> *
 /// This function will panic if the input `text` is not a valid UTF-8 string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_char) -> bool {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -78,7 +79,7 @@ pub unsafe extern "C" fn matcher_is_match(matcher: *mut Matcher, text: *const c_
             }
         };
         matcher.as_ref().is_some_and(|m| m.is_match(text_str))
-    });
+    }));
 
     result.unwrap_or_else(|_| {
         eprintln!("matcher_is_match panicked");
@@ -111,7 +112,7 @@ pub unsafe extern "C" fn matcher_process_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
 ) -> *mut c_char {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -127,7 +128,7 @@ pub unsafe extern "C" fn matcher_process_as_string(
         let res = m.process(text_str);
         let res_cstring = CString::new(sonic_rs::to_vec(&res).unwrap_unchecked()).unwrap();
         res_cstring.into_raw()
-    });
+    }));
 
     result.unwrap_or_else(|_| {
         eprintln!("matcher_process_as_string panicked");
@@ -159,7 +160,7 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
     matcher: *mut Matcher,
     text: *const c_char,
 ) -> *mut c_char {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -175,7 +176,7 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
         let res = sonic_rs::to_string(&m.word_match(text_str)).unwrap_unchecked();
         let res_cstring = CString::new(res).unwrap();
         res_cstring.into_raw()
-    });
+    }));
 
     result.unwrap_or_else(|_| {
         eprintln!("matcher_word_match_as_string panicked");
@@ -195,11 +196,11 @@ pub unsafe extern "C" fn matcher_word_match_as_string(
 /// - `matcher`: A pointer to the [`Matcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
-    let _ = panic::catch_unwind(|| unsafe {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !matcher.is_null() {
             drop(Box::from_raw(matcher))
         }
-    });
+    }));
 }
 
 /// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
@@ -223,7 +224,7 @@ pub unsafe extern "C" fn drop_matcher(matcher: *mut Matcher) {
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let simple_table: SimpleTable =
             match sonic_rs::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
                 Ok(simple_table) => simple_table,
@@ -234,7 +235,7 @@ pub unsafe extern "C" fn init_simple_matcher(
             };
 
         Box::into_raw(Box::new(SimpleMatcher::new(&simple_table)))
-    });
+    }));
 
     match result {
         Ok(ptr) => ptr,
@@ -267,7 +268,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> bool {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -279,7 +280,7 @@ pub unsafe extern "C" fn simple_matcher_is_match(
         simple_matcher
             .as_ref()
             .is_some_and(|m| m.is_match(text_str))
-    });
+    }));
 
     result.unwrap_or_else(|_| {
         eprintln!("simple_matcher_is_match panicked");
@@ -311,7 +312,7 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
     simple_matcher: *mut SimpleMatcher,
     text: *const c_char,
 ) -> *mut c_char {
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -327,7 +328,7 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
         let res = m.process(text_str);
         let res_cstring = CString::new(sonic_rs::to_vec(&res).unwrap_unchecked()).unwrap();
         res_cstring.into_raw()
-    });
+    }));
 
     result.unwrap_or_else(|_| {
         eprintln!("simple_matcher_process_as_string panicked");
@@ -347,11 +348,11 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
-    let _ = panic::catch_unwind(|| unsafe {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !simple_matcher.is_null() {
             drop(Box::from_raw(simple_matcher))
         }
-    });
+    }));
 }
 
 /// Deallocates a C string that was previously allocated by the Rust code and passed to C.
@@ -366,9 +367,9 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
 /// - `ptr`: A pointer to the C string to be deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
-    let _ = panic::catch_unwind(|| unsafe {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !ptr.is_null() {
             drop(CString::from_raw(ptr))
         }
-    });
+    }));
 }
