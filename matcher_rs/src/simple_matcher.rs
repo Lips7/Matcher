@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 #[cfg(not(feature = "vectorscan"))]
-use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind};
+use aho_corasick::AhoCorasickKind;
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use tinyvec::TinyVec;
@@ -14,7 +14,7 @@ use crate::process::process_matcher::{
     reduce_text_process_emit, reduce_text_process_with_tree,
 };
 #[cfg(feature = "vectorscan")]
-use crate::vectorscan::VectorscanMatcher;
+use crate::vectorscan::VectorscanScanner;
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
@@ -134,7 +134,7 @@ enum AcMatcher {
     #[cfg_attr(feature = "vectorscan", allow(dead_code))]
     AhoCorasick(AhoCorasick),
     #[cfg(feature = "vectorscan")]
-    Vectorscan(VectorscanMatcher),
+    Vectorscan(VectorscanScanner),
 }
 
 /// Represents a simple matcher for processing words using Aho-Corasick or Vectorscan.
@@ -324,7 +324,11 @@ impl SimpleMatcher {
         let ac_matcher = if patterns.is_empty() {
             AcMatcher::AhoCorasick(AhoCorasickBuilder::new().build(&patterns).unwrap())
         } else {
-            AcMatcher::Vectorscan(crate::vectorscan::VectorscanMatcher::new(&patterns))
+            let flags = vec![0u32; patterns.len()];
+            AcMatcher::Vectorscan(
+                VectorscanScanner::new_literal(&patterns, &flags)
+                    .expect("failed to compile vectorscan literal database"),
+            )
         };
 
         #[cfg(not(feature = "vectorscan"))]
@@ -401,19 +405,17 @@ impl SimpleMatcher {
                     }
                 }
                 #[cfg(feature = "vectorscan")]
-                AcMatcher::Vectorscan(vs_matcher) => {
-                    vs_matcher
-                        .find_overlapping_iter(processed_text.as_ref())
-                        .for_each(|pattern_idx| {
-                            self.process_match(
-                                pattern_idx,
-                                index,
-                                *process_type_mask,
-                                processed_times,
-                                &mut split_bit_store,
-                                &mut not_word_id_set,
-                            );
-                        });
+                AcMatcher::Vectorscan(scanner) => {
+                    let _ = scanner.scan(processed_text.as_ref().as_bytes(), |pattern_idx| {
+                        self.process_match(
+                            pattern_idx,
+                            index,
+                            *process_type_mask,
+                            processed_times,
+                            &mut split_bit_store,
+                            &mut not_word_id_set,
+                        );
+                    });
                 }
             }
         }

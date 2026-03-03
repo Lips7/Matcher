@@ -420,6 +420,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "serde",
+ "thiserror",
  "tinyvec",
  "vectorscan-rs-sys",
 ]
