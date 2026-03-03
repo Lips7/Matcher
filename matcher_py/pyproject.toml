@@ -40,7 +40,5 @@ dev = ["pytest", "pip"]
 [tool.maturin]
 python-source = "python"
 bindings = "pyo3"
-strip = true
-profile = "release"
 module-name = "matcher_py"
 rustc-args = ["-C", "target-cpu=native"]
