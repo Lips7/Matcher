@@ -6,8 +6,14 @@ use vectorscan_rs_sys as hs;
 use crate::vectorscan::error::{AsResult, Error, extract_compile_error};
 
 /// Trait defining the core interface for any Vectorscan database implementation.
+///
+/// This trait ensures that any database type can provide a raw pointer to its
+/// underlying Vectorscan database for use in scanning operations.
 pub trait VectorscanDatabase: Send + Sync + std::fmt::Debug {
     /// Returns the raw pointer to the compiled Vectorscan database.
+    ///
+    /// # Returns
+    /// A raw pointer to the underlying [`hs::hs_database_t`].
     fn as_ptr(&self) -> *mut hs::hs_database_t;
 }
 
@@ -30,10 +36,26 @@ unsafe impl Sync for LiteralDatabase {}
 impl LiteralDatabase {
     /// Compiles a literal database from the given patterns and per-pattern flags.
     ///
+    /// This function takes a slice of literal strings and corresponding flags,
+    /// and compiles them into a Vectorscan database optimized for literal matching.
+    ///
     /// # Arguments
-    /// * `patterns` — Literal byte patterns (no regex interpretation).
-    /// * `flags` — Per-pattern flags (e.g. `HS_FLAG_CASELESS`, `HS_FLAG_SINGLEMATCH`).
+    /// * `patterns` - Literal byte patterns (no regex interpretation).
+    /// * `flags` - Per-pattern flags (e.g. `HS_FLAG_CASELESS`, `HS_FLAG_SINGLEMATCH`).
     ///   Must have the same length as `patterns`.
+    ///
+    /// # Returns
+    /// A [`Result<Self, Error>`] containing the compiled literal database.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::vectorscan::database::LiteralDatabase;
+    ///
+    /// let patterns = vec!["apple", "banana"];
+    /// let flags = vec![0, 0]; // No special flags
+    /// let db = LiteralDatabase::new(&patterns, &flags).unwrap();
+    /// ```
     pub fn new(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         debug_assert_eq!(patterns.len(), flags.len());
 
@@ -72,6 +94,10 @@ impl LiteralDatabase {
 }
 
 impl VectorscanDatabase for LiteralDatabase {
+    /// Returns the raw pointer to the compiled Vectorscan database.
+    ///
+    /// # Returns
+    /// A raw pointer to the underlying [`hs::hs_database_t`].
     fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.db
     }
@@ -105,10 +131,26 @@ unsafe impl Sync for RegexDatabase {}
 impl RegexDatabase {
     /// Compiles a regex database from the given patterns and per-pattern flags.
     ///
+    /// This function takes a slice of regex strings and corresponding flags,
+    /// and compiles them into a Vectorscan database optimized for regex matching.
+    ///
     /// # Arguments
-    /// * `patterns` — Regex expressions (PCRE-like subset understood by Vectorscan).
-    /// * `flags` — Per-pattern flags (e.g. `HS_FLAG_CASELESS | HS_FLAG_UTF8`).
+    /// * `patterns` - Regex expressions (PCRE-like subset understood by Vectorscan).
+    /// * `flags` - Per-pattern flags (e.g. `HS_FLAG_CASELESS | HS_FLAG_UTF8`).
     ///   Must have the same length as `patterns`.
+    ///
+    /// # Returns
+    /// A [`Result<Self, Error>`] containing the compiled regex database.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::vectorscan::database::RegexDatabase;
+    ///
+    /// let patterns = vec!["apple.*", "banana.+"];
+    /// let flags = vec![0, 0]; // No special flags
+    /// let db = RegexDatabase::new(&patterns, &flags).unwrap();
+    /// ```
     pub fn new(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         debug_assert_eq!(patterns.len(), flags.len());
 
@@ -149,6 +191,10 @@ impl RegexDatabase {
 }
 
 impl VectorscanDatabase for RegexDatabase {
+    /// Returns the raw pointer to the compiled Vectorscan database.
+    ///
+    /// # Returns
+    /// A raw pointer to the underlying [`hs::hs_database_t`].
     fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.db
     }

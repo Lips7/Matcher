@@ -12,14 +12,14 @@ use vectorscan_rs_sys as hs;
 
 /// Unified error type for all Vectorscan operations.
 ///
-/// Covers both runtime errors (returned by `hs_scan`, `hs_alloc_scratch`, etc.)
-/// and compile-time errors (returned by `hs_compile_multi`, `hs_compile_lit_multi`).
+/// This enum covers both runtime errors returned by the Vectorscan API and
+/// compile-time errors returned when building databases.
 ///
 /// # Variants
-/// * `Vectorscan` — A runtime error from the Vectorscan API, carrying the
-///   typed [`VectorscanErrorCode`] and the raw integer code.
-/// * `VectorscanCompile` — A pattern compilation error, carrying the
-///   human-readable message and the zero-based index of the offending pattern.
+/// * `Vectorscan` - A runtime error from the Vectorscan API, carrying a typed
+///   [`VectorscanErrorCode`] and the raw integer code.
+/// * `VectorscanCompile` - A pattern compilation error, carrying the
+///   diagnostic message and the zero-based index of the pattern that failed.
 #[derive(Debug, Error)]
 pub enum Error {
     /// A runtime error originating from a Vectorscan API call.
@@ -34,39 +34,37 @@ pub enum Error {
 
 /// Typed representation of Vectorscan/Hyperscan error codes.
 ///
-/// Each variant maps one-to-one to a `HS_*` constant from the C API.
-/// The [`Display`](fmt::Display) implementation provides human-readable descriptions.
-///
-/// # Variants
-/// * `Invalid` — A parameter passed to the function was invalid.
-/// * `Nomem` — A memory allocation failed.
-/// * `ScanTerminated` — The scan was terminated by a match callback returning non-zero.
-/// * `CompileError` — The pattern compiler failed.
-/// * `DbVersionError` — The database was built for a different version of Vectorscan.
-/// * `DbPlatformError` — The database was built for a different platform.
-/// * `DbModeError` — The database was built for a different mode.
-/// * `BadAlign` — A parameter was not correctly aligned.
-/// * `BadAlloc` — The memory allocator returned misaligned memory.
-/// * `ScratchInUse` — The scratch space was already in use by another scan call.
-/// * `ArchError` — The current CPU architecture is unsupported.
-/// * `InsufficientSpace` — Provided buffer was too small.
-/// * `UnknownError` — An unknown internal error occurred.
-/// * `UnknownErrorCode` — The raw code does not match any known constant.
+/// Each variant represents a specific error condition that can be returned
+/// by the Vectorscan C API.
 #[derive(Debug, PartialEq, Eq)]
 pub enum VectorscanErrorCode {
+    /// A parameter passed to the function was invalid.
     Invalid,
+    /// A memory allocation failed.
     Nomem,
+    /// The scan was terminated by a match callback returning non-zero.
     ScanTerminated,
+    /// The pattern compiler failed.
     CompileError,
+    /// The database was built for a different version of Vectorscan.
     DbVersionError,
+    /// The database was built for a different platform.
     DbPlatformError,
+    /// The database was built for a different mode.
     DbModeError,
+    /// A parameter was not correctly aligned.
     BadAlign,
+    /// The memory allocator returned misaligned memory.
     BadAlloc,
+    /// The scratch space was already in use by another scan call.
     ScratchInUse,
+    /// The current CPU architecture is unsupported.
     ArchError,
+    /// Provided buffer was too small.
     InsufficientSpace,
+    /// An unknown internal error occurred.
     UnknownError,
+    /// The raw code does not match any known constant.
     UnknownErrorCode,
 }
 
@@ -125,17 +123,23 @@ impl From<hs::hs_error_t> for Error {
 
 /// Extension trait for converting a raw `hs_error_t` return code into a `Result`.
 ///
-/// `HS_SUCCESS` maps to `Ok(())`; any other value maps to `Err(Error)`.
+/// This trait provides a convenient way to check the return status of
+/// Vectorscan FFI calls and convert them into idiomatic Rust [`Result`] values.
 pub trait AsResult: Sized {
     /// Converts this value into a `Result`.
     ///
     /// # Returns
-    /// * `Ok(())` — if the value represents `HS_SUCCESS`.
-    /// * `Err(Error)` — for any non-success error code.
+    /// * `Ok(())` - If the value represents `HS_SUCCESS`.
+    /// * `Err(Error)` - For any non-success error code.
     fn ok(self) -> Result<(), Error>;
 }
 
 impl AsResult for hs::hs_error_t {
+    /// Converts this value into a `Result`.
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the value represents `HS_SUCCESS`.
+    /// * `Err(Error)` - For any non-success error code.
     fn ok(self) -> Result<(), Error> {
         if self == hs::HS_SUCCESS as hs::hs_error_t {
             Ok(())
@@ -146,11 +150,13 @@ impl AsResult for hs::hs_error_t {
 }
 
 /// Extracts the compile error message and expression index from an
-/// `hs_compile_error_t` pointer, frees the compile error, and returns
-/// an [`Error::VectorscanCompile`].
+/// `hs_compile_error_t` pointer.
+///
+/// This function converts the raw FFI error into a structured [`Error::VectorscanCompile`],
+/// and ensures that the memory allocated by Vectorscan for the error message is freed.
 ///
 /// # Arguments
-/// * `compile_error` — A non-null pointer to the compile error returned
+/// * `compile_error` - A non-null pointer to the compile error returned
 ///   by a Vectorscan compiler function.
 ///
 /// # Returns

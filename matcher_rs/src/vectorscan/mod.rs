@@ -19,8 +19,11 @@ static INIT_ALLOCATOR: Once = Once::new();
 
 /// Configures Vectorscan to use mimalloc for all internal memory allocations.
 ///
-/// Safe to call multiple times — only the first invocation takes effect.
-/// Called automatically by [`VectorscanScanner::new`].
+/// This function sets the internal memory allocator for Vectorscan to use `mimalloc`,
+/// which is used throughout this library. It is safe to call multiple times, as
+/// the initialization is protected by a `Once` synchronization primitive.
+///
+/// This is called automatically by [`VectorscanScanner::new`].
 pub(crate) fn init_allocator() {
     INIT_ALLOCATOR.call_once(|| unsafe {
         let status = hs::hs_set_allocator(Some(mi_malloc), Some(mi_free));
