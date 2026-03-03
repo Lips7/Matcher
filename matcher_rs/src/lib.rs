@@ -28,7 +28,7 @@ mod simple_matcher;
 pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};
 
 #[cfg(feature = "vectorscan")]
-pub mod vectorscan_matcher;
+pub mod vectorscan;
 
 mod regex_matcher;
 pub use regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};

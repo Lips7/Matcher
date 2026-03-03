@@ -1,11 +1,9 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 #[cfg(not(feature = "vectorscan"))]
-use aho_corasick::AhoCorasickKind;
+use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use tinyvec::TinyVec;
@@ -16,7 +14,7 @@ use crate::process::process_matcher::{
     reduce_text_process_emit, reduce_text_process_with_tree,
 };
 #[cfg(feature = "vectorscan")]
-use crate::vectorscan_matcher::VectorscanMatcher;
+use crate::vectorscan::VectorscanMatcher;
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
@@ -136,7 +134,7 @@ enum AcMatcher {
     #[cfg_attr(feature = "vectorscan", allow(dead_code))]
     AhoCorasick(AhoCorasick),
     #[cfg(feature = "vectorscan")]
-    Vectorscan(Arc<VectorscanMatcher>),
+    Vectorscan(VectorscanMatcher),
 }
 
 /// Represents a simple matcher for processing words using Aho-Corasick or Vectorscan.
@@ -176,23 +174,12 @@ enum AcMatcher {
 /// assert!(matcher.is_match("I like apple and pie"));
 /// assert!(!matcher.is_match("I like banana peel"));
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Box<[ProcessTypeBitNode]>,
-    ac_matcher: AssertUnwindSafe<AcMatcher>,
+    ac_matcher: AcMatcher,
     ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
     word_conf_list: Box<[WordConf]>,
-}
-
-impl Clone for SimpleMatcher {
-    fn clone(&self) -> Self {
-        Self {
-            process_type_tree: self.process_type_tree.clone(),
-            ac_matcher: AssertUnwindSafe((*self.ac_matcher).clone()),
-            ac_dedup_word_conf_list: self.ac_dedup_word_conf_list.clone(),
-            word_conf_list: self.word_conf_list.clone(),
-        }
-    }
 }
 
 impl SimpleMatcher {
@@ -328,18 +315,16 @@ impl SimpleMatcher {
 
         let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
+        let patterns = ac_dedup_word_list
+            .iter()
+            .map(|ac_word| ac_word.as_ref())
+            .collect::<Vec<_>>();
+
         #[cfg(feature = "vectorscan")]
-        let ac_matcher = if ac_dedup_word_list.is_empty() {
-            AcMatcher::AhoCorasick(AhoCorasickBuilder::new().build([""]).unwrap())
+        let ac_matcher = if patterns.is_empty() {
+            AcMatcher::AhoCorasick(AhoCorasickBuilder::new().build(&patterns).unwrap())
         } else {
-            AcMatcher::Vectorscan(Arc::new(
-                VectorscanMatcher::new(
-                    &ac_dedup_word_list
-                        .iter()
-                        .map(|ac_word| ac_word.as_ref())
-                        .collect::<Vec<_>>(),
-                ),
-            ))
+            AcMatcher::Vectorscan(crate::vectorscan::VectorscanMatcher::new(&patterns))
         };
 
         #[cfg(not(feature = "vectorscan"))]
@@ -352,20 +337,18 @@ impl SimpleMatcher {
             AcMatcher::AhoCorasick(
                 AhoCorasickBuilder::new()
                     .kind(Some(aho_corasick_kind))
-                    .build(ac_dedup_word_list.iter().map(|ac_word| ac_word.as_ref()))
+                    .build(&patterns)
                     .unwrap(),
             )
         };
 
-        let ac_dedup_word_conf_list = ac_dedup_word_conf_list
-            .into_iter()
-            .map(|v| v.into_boxed_slice())
-            .collect::<Box<[_]>>();
-
         SimpleMatcher {
             process_type_tree,
-            ac_matcher: AssertUnwindSafe(ac_matcher),
-            ac_dedup_word_conf_list,
+            ac_matcher,
+            ac_dedup_word_conf_list: ac_dedup_word_conf_list
+                .into_iter()
+                .map(|v| v.into_boxed_slice())
+                .collect::<Box<[_]>>(),
             word_conf_list: word_conf_list.into_boxed_slice(),
         }
     }
@@ -402,7 +385,7 @@ impl SimpleMatcher {
         for (index, (processed_text, process_type_mask)) in
             processed_text_process_type_masks.iter().enumerate()
         {
-            match &*self.ac_matcher {
+            match &self.ac_matcher {
                 AcMatcher::AhoCorasick(ac_matcher) => {
                     for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text.as_ref())
                     {
@@ -419,16 +402,18 @@ impl SimpleMatcher {
                 }
                 #[cfg(feature = "vectorscan")]
                 AcMatcher::Vectorscan(vs_matcher) => {
-                    for pattern_idx in vs_matcher.find_overlapping_iter(processed_text.as_ref()) {
-                        self.process_match(
-                            pattern_idx,
-                            index,
-                            *process_type_mask,
-                            processed_times,
-                            &mut split_bit_store,
-                            &mut not_word_id_set,
-                        );
-                    }
+                    vs_matcher
+                        .find_overlapping_iter(processed_text.as_ref())
+                        .for_each(|pattern_idx| {
+                            self.process_match(
+                                pattern_idx,
+                                index,
+                                *process_type_mask,
+                                processed_times,
+                                &mut split_bit_store,
+                                &mut not_word_id_set,
+                            );
+                        });
                 }
             }
         }
