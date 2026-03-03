@@ -81,13 +81,11 @@ struct RegexConf {
 /// # Fields
 /// * `match_id` - A unique identifier for the match operation.
 /// * `table_id` - A unique identifier for the specific matching table.
-/// * `word_id` - A unique identifier for the word within the table.
 /// * `word` - The matched word, represented as a [`Cow`] (clone-on-write) type.
 #[derive(Debug, Clone)]
 pub struct RegexResult<'a> {
     pub match_id: u32,
     pub table_id: u32,
-    pub word_id: u32,
     pub word: Cow<'a, str>,
 }
 
@@ -99,7 +97,7 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
         self.table_id
     }
     fn word_id(&self) -> u32 {
-        self.word_id
+        0
     }
     fn word(&self) -> &str {
         &self.word
@@ -200,13 +198,13 @@ impl RegexMatcher {
                     }
 
                     if Regex::new(&pattern).is_ok() {
-                        regex_pattern_list.push(pattern);
+                        regex_pattern_list.push(pattern.clone());
                         regex_conf_list.push(RegexConf {
                             table_id: regex_table.table_id,
                             match_id: regex_table.match_id,
                             process_type: regex_table.process_type,
                             word_id: 0,
-                            word: regex_table.word_list.join(""),
+                            word: pattern,
                         });
                     }
                 }
@@ -259,13 +257,10 @@ impl RegexMatcher {
 
         let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
 
-        let regex_set = match RegexSet::new(&regex_pattern_list) {
-            Ok(regex_set) => regex_set,
-            Err(e) => {
-                eprintln!("Failed to compile regex set: {}", e);
-                RegexSet::empty()
-            }
-        };
+        let regex_set = RegexSet::new(&regex_pattern_list).unwrap_or_else(|e| {
+            eprintln!("Failed to compile regex set: {}", e);
+            RegexSet::empty()
+        });
 
         RegexMatcher {
             process_type_tree,
@@ -404,13 +399,8 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let mut table_id_index_set = HashSet::new();
 
         for (processed_text, process_type_mask) in processed_text_process_type_masks {
-            let matches = self.regex_set.matches(processed_text);
-            if !matches.matched_any() {
-                continue;
-            }
-
-            for index in matches {
-                let conf = &self.regex_dedup_conf_list[index];
+            for pattern_id in self.regex_set.matches(processed_text).iter() {
+                let conf = &self.regex_dedup_conf_list[pattern_id];
                 if (process_type_mask & (1u64 << conf.process_type.bits())) == 0 {
                     continue;
                 }
@@ -422,7 +412,6 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
                     result_list.push(RegexResult {
                         match_id: conf.match_id,
                         table_id: conf.table_id,
-                        word_id: conf.word_id,
                         word: Cow::Owned(conf.word.clone()),
                     });
                 }

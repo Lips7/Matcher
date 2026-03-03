@@ -57,12 +57,15 @@ fn regex_process_iter_matches_process() {
 
     let text = "hello world hallo";
 
-    let mut via_process: Vec<u32> = matcher
+    let mut via_process: Vec<String> = matcher
         .process(text)
         .into_iter()
-        .map(|r| r.word_id)
+        .map(|r| r.word.to_string())
         .collect();
-    let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+    let mut via_iter: Vec<String> = matcher
+        .process_iter(text)
+        .map(|r| r.word.to_string())
+        .collect();
 
     via_process.sort();
     via_iter.sort();
@@ -85,12 +88,15 @@ fn regex_process_iter_acrostic() {
 
     let text = "hope, endures, love, lasts, onward.";
     // process_iter should find the same results as process
-    let via_process: Vec<u32> = matcher
+    let via_process: Vec<String> = matcher
         .process(text)
         .into_iter()
-        .map(|r| r.word_id)
+        .map(|r| r.word.to_string())
         .collect();
-    let via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+    let via_iter: Vec<String> = matcher
+        .process_iter(text)
+        .map(|r| r.word.to_string())
+        .collect();
     assert_eq!(via_process, via_iter);
 }
 
@@ -168,9 +174,9 @@ fn regex_match_duplicated_pattern() {
     }]);
 
     let results = regex_matcher.process("this is a duplicate pattern");
-    let mut word_ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
-    word_ids.sort();
+    let mut words: Vec<String> = results.into_iter().map(|r| r.word.to_string()).collect();
+    words.sort();
 
     // We expect both word_id 0 and 1 to be returned because both have the same pattern "duplicate"
-    assert_eq!(word_ids, vec![0, 1]);
+    assert_eq!(words, vec!["duplicate", "duplicate"]);
 }

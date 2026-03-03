@@ -317,7 +317,7 @@ impl<'a, 'b: 'a> From<SimResult<'b>> for MatchResult<'a> {
         MatchResult {
             match_id: sim_result.match_id,
             table_id: sim_result.table_id,
-            word_id: sim_result.word_id,
+            word_id: 0,
             word: sim_result.word,
             similarity: Some(sim_result.similarity),
         }
@@ -329,7 +329,7 @@ impl<'a, 'b: 'a> From<RegexResult<'b>> for MatchResult<'a> {
         MatchResult {
             match_id: regex_result.match_id,
             table_id: regex_result.table_id,
-            word_id: regex_result.word_id,
+            word_id: 0,
             word: regex_result.word,
             similarity: None,
         }

@@ -104,7 +104,10 @@ def test_similar_char():
     assert matcher.is_match("helloworld")
     assert matcher.is_match("hi世界")
     assert matcher.word_match("helloworld")[1][0]["table_id"] == 1
-    assert matcher.word_match("helloworld")[1][0]["word"] == "helloworld"
+    assert (
+        matcher.word_match("helloworld")[1][0]["word"]
+        == "(?:hello|hi|H|你好).?(?:world|word|🌍|世界)"
+    )
 
 
 def test_similar_text_levenshtein():

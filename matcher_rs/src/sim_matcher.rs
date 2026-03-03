@@ -84,14 +84,12 @@ struct SimProcessedTable {
 /// # Fields
 /// * `match_id` - A unique identifier for the match operation.
 /// * `table_id` - A unique identifier for the specific matching table.
-/// * `word_id` - A unique identifier for the word within the table.
 /// * `word` - The word that was matched, represented as a `Cow`.
 /// * `similarity` - A float value representing the similarity score of the match.
 #[derive(Debug, Clone)]
 pub struct SimResult<'a> {
     pub match_id: u32,
     pub table_id: u32,
-    pub word_id: u32,
     pub word: Cow<'a, str>,
     pub similarity: f64,
 }
@@ -367,7 +365,6 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                                 result_list.push(SimResult {
                                     match_id: sim_processed_table.match_id,
                                     table_id: sim_processed_table.table_id,
-                                    word_id: index as u32,
                                     word: Cow::Borrowed(text),
                                     similarity,
                                 });

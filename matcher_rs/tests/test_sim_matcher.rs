@@ -30,12 +30,15 @@ fn sim_process_iter_matches_process() {
 
     let text = "helloworl"; // close to "helloworld"
 
-    let mut via_process: Vec<u32> = matcher
+    let mut via_process: Vec<String> = matcher
         .process(text)
         .into_iter()
-        .map(|r| r.word_id)
+        .map(|r| r.word.to_string())
         .collect();
-    let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
+    let mut via_iter: Vec<String> = matcher
+        .process_iter(text)
+        .map(|r| r.word.to_string())
+        .collect();
 
     via_process.sort();
     via_iter.sort();

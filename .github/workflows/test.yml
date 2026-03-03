@@ -56,6 +56,10 @@ jobs:
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features
       - name: Test dfa
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "dfa"
+      - name: Test vectorscan
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "vectorscan"
+      - name: Test runtime_build
+        run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build"
       - name: Test runtime_build and dfa
         run: cargo test -p matcher_rs --target ${{ matrix.platform.target }} --verbose --no-default-features --features "runtime_build,dfa"
       - name: Run doc

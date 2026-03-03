@@ -17,7 +17,7 @@ test:
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build"
 	cd matcher_rs && cargo test --no-default-features --features "runtime_build,dfa"
 
-	cd matcher_py && ruff format . && uv sync && pytest
+	cd matcher_py && ruff format . && uv sync && maturin build --release -i python3.12 && pip3 install ../target/wheels/*.whl && pytest test
 
 update:
 	cargo update --verbose --recursive --breaking
