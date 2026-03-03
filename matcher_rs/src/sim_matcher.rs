@@ -1,6 +1,7 @@
 use std::{borrow::Cow, collections::HashSet};
 
 use rapidfuzz::distance;
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -340,7 +341,7 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = HashSet::new();
+        let mut table_id_index_set = FxHashSet::default();
 
         for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for sim_processed_table in &self.sim_processed_table_list {

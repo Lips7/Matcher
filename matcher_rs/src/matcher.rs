@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::process::process_matcher::{
@@ -557,9 +558,9 @@ impl Matcher {
     /// let result = matcher.word_match("we should detect this");
     /// assert!(result.contains_key(&1));
     /// ```
-    pub fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
+    pub fn word_match<'a>(&'a self, text: &'a str) -> FxHashMap<u32, Vec<MatchResult<'a>>> {
         if text.is_empty() {
-            return HashMap::new();
+            return FxHashMap::default();
         }
 
         let processed_text_process_type_masks =
@@ -586,9 +587,9 @@ impl Matcher {
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-    ) -> HashMap<u32, Vec<MatchResult<'a>>> {
-        let mut match_result_dict = HashMap::new();
-        let mut failed_match_table_id_set = HashSet::new();
+    ) -> FxHashMap<u32, Vec<MatchResult<'a>>> {
+        let mut match_result_dict = FxHashMap::default();
+        let mut failed_match_table_id_set = FxHashSet::default();
 
         if let Some(regex_matcher) = &self.regex_matcher {
             for regex_result in

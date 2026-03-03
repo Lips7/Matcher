@@ -2,6 +2,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 use regex::{Regex, RegexSet, escape};
 
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -364,13 +365,8 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
         for (processed_text, process_type_mask) in processed_text_process_type_masks {
-            let matches = self.regex_set.matches(processed_text);
-            if !matches.matched_any() {
-                continue;
-            }
-
-            for index in matches {
-                let conf = &self.regex_dedup_conf_list[index];
+            for pattern_id in self.regex_set.matches(processed_text) {
+                let conf = &self.regex_dedup_conf_list[pattern_id];
                 if (process_type_mask & (1u64 << conf.process_type.bits())) != 0 {
                     return true;
                 }
@@ -396,7 +392,7 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = HashSet::new();
+        let mut table_id_index_set = FxHashSet::default();
 
         for (processed_text, process_type_mask) in processed_text_process_type_masks {
             for pattern_id in self.regex_set.matches(processed_text).iter() {
