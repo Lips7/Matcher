@@ -78,10 +78,18 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Test
+        if: runner.os != 'Windows'
         run: cargo all-features test
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
           RUST_BACKTRACE: 1
+      - name: Test (Windows, no vectorscan)
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --no-default-features
+          cargo test --features dfa
+          cargo test --features runtime_build
+          cargo test --features dfa,runtime_build
       - name: Run doc
         run: cargo doc
       - name: Rename & move

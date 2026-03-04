@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void};
 use std::sync::Arc;
 
 use vectorscan_rs_sys as hs;
@@ -107,7 +107,7 @@ impl VectorscanScanner {
         unsafe {
             let status = hs::hs_scan(
                 self.db.as_ptr(),
-                haystack.as_ptr() as *const i8,
+                haystack.as_ptr() as *const c_char,
                 haystack.len() as u32,
                 0,
                 scratch.as_ptr(),

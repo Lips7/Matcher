@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CString, c_char};
 use std::ptr;
 
 use vectorscan_rs_sys as hs;
@@ -59,8 +59,10 @@ impl LiteralDatabase {
     pub fn new(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         debug_assert_eq!(patterns.len(), flags.len());
 
-        let patterns_ptr: Vec<*const i8> =
-            patterns.iter().map(|s| s.as_ptr() as *const i8).collect();
+        let patterns_ptr: Vec<*const c_char> = patterns
+            .iter()
+            .map(|s| s.as_ptr() as *const c_char)
+            .collect();
         let patterns_len: Vec<usize> = patterns.iter().map(|s| s.len()).collect();
         let ids: Vec<u32> = (0..patterns.len() as u32).collect();
 
@@ -159,7 +161,7 @@ impl RegexDatabase {
             .iter()
             .map(|s| CString::new(*s).expect("pattern must not contain NUL bytes"))
             .collect();
-        let c_pattern_ptrs: Vec<*const i8> = c_patterns.iter().map(|cs| cs.as_ptr()).collect();
+        let c_pattern_ptrs: Vec<*const c_char> = c_patterns.iter().map(|cs| cs.as_ptr()).collect();
         let ids: Vec<u32> = (0..patterns.len() as u32).collect();
 
         let mut db: *mut hs::hs_database_t = ptr::null_mut();
