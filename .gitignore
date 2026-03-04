@@ -147,6 +147,7 @@ cython_debug/
 
 # Added by cargo
 /target
+Cargo.lock
 
 .ruff_cache
 test.py
