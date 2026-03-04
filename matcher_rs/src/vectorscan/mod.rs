@@ -5,16 +5,21 @@ pub mod scratch;
 
 pub use crate::vectorscan::scanner::VectorscanScanner;
 
+#[cfg(target_os = "macos")]
 use std::ffi::c_void;
+#[cfg(target_os = "macos")]
 use std::sync::Once;
 
+#[cfg(target_os = "macos")]
 use vectorscan_rs_sys as hs;
 
+#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn mi_malloc(size: usize) -> *mut c_void;
     fn mi_free(ptr: *mut c_void);
 }
 
+#[cfg(target_os = "macos")]
 static INIT_ALLOCATOR: Once = Once::new();
 
 /// Configures Vectorscan to use mimalloc for all internal memory allocations.
@@ -24,6 +29,7 @@ static INIT_ALLOCATOR: Once = Once::new();
 /// the initialization is protected by a `Once` synchronization primitive.
 ///
 /// This is called automatically by [`VectorscanScanner::new`].
+#[cfg(target_os = "macos")]
 pub(crate) fn init_allocator() {
     INIT_ALLOCATOR.call_once(|| unsafe {
         let status = hs::hs_set_allocator(Some(mi_malloc), Some(mi_free));

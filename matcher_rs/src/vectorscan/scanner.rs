@@ -5,6 +5,7 @@ use vectorscan_rs_sys as hs;
 
 use crate::vectorscan::database::{LiteralDatabase, RegexDatabase, VectorscanDatabase};
 use crate::vectorscan::error::{AsResult, Error};
+#[cfg(target_os = "macos")]
 use crate::vectorscan::init_allocator;
 use crate::vectorscan::scratch::Scratch;
 
