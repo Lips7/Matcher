@@ -31,6 +31,7 @@ impl VectorscanScanner {
     /// # Returns
     /// A [`Result<Self, Error>`] containing the initialized scanner.
     pub fn new(db: Arc<dyn VectorscanDatabase>) -> Result<Self, Error> {
+        #[cfg(target_os = "macos")]
         init_allocator();
         let scratch = unsafe { Scratch::new(db.as_ptr())? };
         Ok(Self { db, scratch })
