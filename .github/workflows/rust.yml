@@ -27,20 +27,15 @@ jobs:
         id: install-boost
         with:
           boost_version: 1.89.0
+      - name: Install cargo-all-features
+        run: cargo install cargo-all-features
       - name: Build
         run: cargo build --release --verbose
       - name: Test
-        run: cargo test -p matcher_rs --verbose --no-default-features
-      - name: Test dfa
-        run: cargo test -p matcher_rs --verbose --no-default-features --features "dfa"
-      - name: Test vectorscan
-        run: cargo test -p matcher_rs --verbose --no-default-features --features "vectorscan"
+        run: cargo all-features test
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
-      - name: Test runtime_build
-        run: cargo test -p matcher_rs --verbose --no-default-features --features "runtime_build"
-      - name: Test runtime_build and dfa
-        run: cargo test -p matcher_rs --verbose --no-default-features --features "runtime_build,dfa"
+          RUST_BACKTRACE: 1
       - name: Run doc
         run: cargo doc
       - name: Release
