@@ -11,11 +11,7 @@ test:
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo doc
 
-	cd matcher_rs && cargo test --no-default-features
-	cd matcher_rs && cargo test --no-default-features --features "dfa"
-	cd matcher_rs && cargo test --no-default-features --features "vectorscan"
-	cd matcher_rs && cargo test --no-default-features --features "runtime_build"
-	cd matcher_rs && cargo test --no-default-features --features "runtime_build,dfa"
+	cd matcher_rs && cargo all-features test
 
 	cd matcher_py && unset CONDA_PREFIX && uv run maturin develop && uv run pytest
 
