@@ -17,7 +17,7 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             target: aarch64
         python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
@@ -52,7 +52,7 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             target: aarch64
         python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
@@ -117,7 +117,7 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - runner: macos-15
+          - runner: macos-latest
             target: aarch64
         python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
