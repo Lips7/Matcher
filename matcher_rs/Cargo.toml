@@ -50,7 +50,7 @@ runtime_build = []
 # By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
 dfa = []
 # By enable vectorscan feature, we could use vectorscan to perform simple and regex matching.
-vectorscan = ["vectorscan-rs-sys"]
+vectorscan = ["dep:vectorscan-rs-sys"]
 
 [[bench]]
 name = "bench"
