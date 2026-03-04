@@ -18,10 +18,10 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: so
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             suffix: so
-          - runner: macos-15
+          - runner: macos-latest
             target: aarch64-apple-darwin
             suffix: dylib
           - runner: windows-latest
@@ -37,11 +37,15 @@ jobs:
         with:
           toolchain: nightly
           targets: ${{ matrix.platform.target }}
-      - name: Install dependencies
-        if: matrix.platform.runner == 'ubuntu-latest' && matrix.platform.target == 'aarch64-unknown-linux-gnu'
-        run: sudo apt-get install gcc-aarch64-linux-gnu
+      - name: Install boost
+        uses: MarkusJx/install-boost@v2
+        id: install-boost
+        with:
+          boost_version: 1.89.0
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
       - name: List files
         run: ls ./target/${{ matrix.platform.target }}/release/
       - name: Rename

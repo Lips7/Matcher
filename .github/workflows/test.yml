@@ -78,7 +78,7 @@ jobs:
       - name: Install cargo-all-features
         run: cargo install cargo-all-features
       - name: Build
-        run: cargo build --release --verbose
+        run: cargo build --release --target ${{ matrix.platform.target }}
       - name: Test
         run: cargo all-features test
         env:
@@ -107,7 +107,6 @@ jobs:
           working-directory: matcher_py
       - name: Python Test
         shell: bash
-        if: matrix.platform.runner == 'ubuntu-latest'
         run: |
           pip install -U pytest typing_extensions
           pip install ./target/wheels/*.whl
