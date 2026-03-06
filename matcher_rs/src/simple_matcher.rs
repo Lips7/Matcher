@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::simd::prelude::*;
 
 #[cfg(not(feature = "vectorscan"))]
 use aho_corasick::AhoCorasickKind;
@@ -564,9 +565,23 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         matched.iter().any(|(word_conf_idx, flat_matrix)| {
             let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
             (0..num_splits).all(|s| {
-                flat_matrix[s * processed_times..(s + 1) * processed_times]
-                    .iter()
-                    .any(|&bit| bit <= 0)
+                let row_start = s * processed_times;
+                let row_end = row_start + processed_times;
+                let row = &flat_matrix[row_start..row_end];
+
+                if processed_times <= 8 && processed_times > 0 {
+                    let mut data = [i32::MAX; 8];
+                    data[..processed_times].copy_from_slice(row);
+                    let v = i32x8::from_array(data);
+                    v.simd_le(i32x8::splat(0)).any()
+                } else if processed_times <= 16 {
+                    let mut data = [i32::MAX; 16];
+                    data[..processed_times].copy_from_slice(row);
+                    let v = i32x16::from_array(data);
+                    v.simd_le(i32x16::splat(0)).any()
+                } else {
+                    row.iter().any(|&bit| bit <= 0)
+                }
             })
         })
     }
@@ -598,9 +613,23 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
                 let num_splits = word_conf.split_bit.len();
                 (0..num_splits)
                     .all(|s| {
-                        flat_matrix[s * processed_times..(s + 1) * processed_times]
-                            .iter()
-                            .any(|&bit| bit <= 0)
+                        let row_start = s * processed_times;
+                        let row_end = row_start + processed_times;
+                        let row = &flat_matrix[row_start..row_end];
+
+                        if processed_times <= 8 && processed_times > 0 {
+                            let mut data = [i32::MAX; 8];
+                            data[..processed_times].copy_from_slice(row);
+                            let v = i32x8::from_array(data);
+                            v.simd_le(i32x8::splat(0)).any()
+                        } else if processed_times <= 16 {
+                            let mut data = [i32::MAX; 16];
+                            data[..processed_times].copy_from_slice(row);
+                            let v = i32x16::from_array(data);
+                            v.simd_le(i32x16::splat(0)).any()
+                        } else {
+                            row.iter().any(|&bit| bit <= 0)
+                        }
                     })
                     .then_some(SimpleResult {
                         word_id: word_conf.word_id,
