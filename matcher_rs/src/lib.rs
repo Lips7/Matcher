@@ -1,4 +1,3 @@
-#![feature(portable_simd)]
 //! # Matcher
 //!
 //! A high-performance, multi-language word-matching library implemented in Rust.
