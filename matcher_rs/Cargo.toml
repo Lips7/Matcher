@@ -53,5 +53,21 @@ dfa = []
 vectorscan = ["dep:vectorscan-rs-sys"]
 
 [[bench]]
-name = "bench"
+name = "bench_simple_matcher"
+harness = false
+
+[[bench]]
+name = "bench_matcher"
+harness = false
+
+[[bench]]
+name = "bench_process_matcher"
+harness = false
+
+[[bench]]
+name = "bench_regex_matcher"
+harness = false
+
+[[bench]]
+name = "bench_sim_matcher"
 harness = false
