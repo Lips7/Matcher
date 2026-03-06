@@ -162,3 +162,25 @@ fn sim_match_zero_threshold() {
     // Given the formula 1.0 - (distance / max_len), it might only be exact 0.0 if there are no common chars.
     assert!(sim_matcher.is_match("banana"));
 }
+
+#[test]
+fn test_sim_match_length_prefilter() {
+    let sim_matcher = SimMatcher::new(&[SimTable {
+        table_id: 1,
+        match_id: 1,
+        process_type: ProcessType::None,
+        sim_match_type: SimMatchType::Levenshtein,
+        word_list: vec!["helloworld"], // len 10
+        threshold: 0.8,
+    }]);
+
+    // threshold 0.8 means max distance allowed is 10 * (1 - 0.8) = 2.
+    // Length difference of 3 should be filtered.
+    assert!(!sim_matcher.is_match("hello")); // len 5, diff 5
+    assert!(!sim_matcher.is_match("hellowo")); // len 7, diff 3
+    assert!(sim_matcher.is_match("helloworl")); // len 9, diff 1
+    assert!(sim_matcher.is_match("helloworld")); // len 10, diff 0
+    assert!(sim_matcher.is_match("helloworld1")); // len 11, diff 1
+    assert!(sim_matcher.is_match("helloworld12")); // len 12, diff 2
+    assert!(!sim_matcher.is_match("helloworld123")); // len 13, diff 3
+}
