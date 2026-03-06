@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 #[cfg(not(feature = "vectorscan"))]
 use aho_corasick::AhoCorasickKind;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
-use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use tinyvec::TinyVec;
 
@@ -17,14 +16,75 @@ use crate::process::process_matcher::{
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::VectorscanScanner;
 
+/// Internal state used for tracking matches in `SimpleMatcher`.
+///
+/// This structure implements a sparse-set like optimization to avoid full clearing
+/// of state between matching calls. It uses generation IDs to determine if an
+/// entry is valid for the current query.
+///
+/// # Fields
+/// * `matrix` - A flat vector of state matrices for each word configuration. Each entry is indexed by `word_conf_idx`.
+/// * `matrix_generation` - Stores the generation ID for each entry in `matrix`.
+/// * `not_flags_generation` - Stores the generation ID indicating if a word is blocked by a "NOT" (`~`) pattern.
+/// * `touched_indices` - A list of indices in `word_conf_list` that were modified during the current search.
+/// * `generation` - The current search's unique generation ID.
+struct SimpleMatchState {
+    matrix: Vec<TinyVec<[i32; 16]>>,
+    matrix_generation: Vec<u32>,
+    not_flags_generation: Vec<u32>,
+    touched_indices: Vec<usize>,
+    generation: u32,
+}
+
+impl SimpleMatchState {
+    /// Creates a new, empty `SimpleMatchState`.
+    ///
+    /// # Returns
+    /// A new instance of `SimpleMatchState` with default values.
+    fn new() -> Self {
+        Self {
+            matrix: Vec::new(),
+            matrix_generation: Vec::new(),
+            not_flags_generation: Vec::new(),
+            touched_indices: Vec::new(),
+            generation: 0,
+        }
+    }
+
+    /// Prepares the state for a new search operation.
+    ///
+    /// This increments the generation ID and ensures the internal buffers are
+    /// large enough for the given number of word configurations.
+    ///
+    /// # Detailed Explanation / Algorithm
+    /// 1. Increments `self.generation`. If it overflows `u32::MAX`, resets all generation tracking arrays to 0.
+    /// 2. Resizes `matrix`, `matrix_generation`, and `not_flags_generation` to `size` if they are smaller.
+    /// 3. Clears `touched_indices`.
+    ///
+    /// # Arguments
+    /// * `size` - The number of word configurations to accommodate.
+    fn prepare(&mut self, size: usize) {
+        if self.generation == u32::MAX {
+            self.matrix_generation.fill(0);
+            self.not_flags_generation.fill(0);
+            self.generation = 1;
+        } else {
+            self.generation += 1;
+        }
+
+        if self.matrix.len() < size {
+            self.matrix.resize(size, TinyVec::new());
+            self.matrix_generation.resize(size, 0);
+            self.not_flags_generation.resize(size, 0);
+        }
+
+        self.touched_indices.clear();
+    }
+}
+
 thread_local! {
-    static SIMPLE_MATCH_STATE: RefCell<(
-        FxHashMap<usize, TinyVec<[i32; 16]>>,
-        FxHashSet<usize>
-    )> = RefCell::new((
-        FxHashMap::with_capacity_and_hasher(16, Default::default()),
-        FxHashSet::default(),
-    ));
+    /// Thread-local cache for `SimpleMatchState` to avoid repeated allocations.
+    static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> = RefCell::new(SimpleMatchState::new());
 }
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
@@ -140,10 +200,13 @@ struct WordConfEntry {
     offset: usize,
 }
 
+/// Wrapper for the underlying string matching engine.
 #[derive(Debug, Clone)]
 enum AcMatcher {
+    /// Standard Aho-Corasick implementation.
     #[cfg_attr(feature = "vectorscan", allow(dead_code))]
     AhoCorasick(AhoCorasick),
+    /// Intel Vectorscan (Hyperscan) implementation for SIMD-accelerated matching.
     #[cfg(feature = "vectorscan")]
     Vectorscan(VectorscanScanner),
 }
@@ -378,14 +441,11 @@ impl SimpleMatcher {
     ///
     /// # Arguments
     /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
-    ///
-    /// # Returns
-    /// A list of rule identifiers and their corresponding state matrices (`flat_split_bit_matrix`).
+    /// * `state` - The internal `SimpleMatchState` used to track hits and disqualifications.
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        split_bit_store: &mut FxHashMap<usize, TinyVec<[i32; 16]>>,
-        not_word_id_set: &mut FxHashSet<usize>,
+        state: &mut SimpleMatchState,
     ) {
         if self.ac_dedup_word_conf_list.is_empty() {
             return;
@@ -406,8 +466,7 @@ impl SimpleMatcher {
                             index,
                             *process_type_mask,
                             processed_times,
-                            split_bit_store,
-                            not_word_id_set,
+                            state,
                         );
                     }
                 }
@@ -419,8 +478,7 @@ impl SimpleMatcher {
                             index,
                             *process_type_mask,
                             processed_times,
-                            split_bit_store,
-                            not_word_id_set,
+                            state,
                         );
                     });
                 }
@@ -428,6 +486,24 @@ impl SimpleMatcher {
         }
     }
 
+    /// Records a sub-pattern match and updates the logical state of affected rules.
+    ///
+    /// # Detailed Explanation / Algorithm
+    /// 1. Retrieves all rules (`WordConfEntry`) associated with the matched `pattern_idx`.
+    /// 2. Skips rules that don't match the current `process_type_mask` or are already disqualified.
+    /// 3. If a rule is touched for the first time in this search (checked via `matrix_generation`):
+    ///    - Marks it as touched and adds it to `touched_indices`.
+    ///    - Initializes its row in the state matrix with the default `split_bit` values.
+    /// 4. Updates the specific bit in the rule's state matrix corresponding to the `text_index`.
+    /// 5. If the match belongs to a "NOT" (`~`) logical segment and the bit becomes satisfied (`> 0`),
+    ///    the rule is marked as disqualified in `not_flags_generation`.
+    ///
+    /// # Arguments
+    /// * `pattern_idx` - The index of the matched sub-pattern in `ac_dedup_word_conf_list`.
+    /// * `text_index` - The index of the current text variant being scanned.
+    /// * `process_type_mask` - Bitmask of active process types for the current variant.
+    /// * `processed_times` - Total number of text variants in the search.
+    /// * `state` - The internal `SimpleMatchState` to update.
     #[inline]
     fn process_match(
         &self,
@@ -435,9 +511,9 @@ impl SimpleMatcher {
         text_index: usize,
         process_type_mask: u64,
         processed_times: usize,
-        split_bit_store: &mut FxHashMap<usize, TinyVec<[i32; 16]>>,
-        not_word_id_set: &mut FxHashSet<usize>,
+        state: &mut SimpleMatchState,
     ) {
+        let generation = state.generation;
         for &WordConfEntry {
             process_type: match_process_type,
             word_conf_idx,
@@ -445,30 +521,33 @@ impl SimpleMatcher {
         } in &self.ac_dedup_word_conf_list[pattern_idx]
         {
             if process_type_mask & (1u64 << match_process_type.bits()) == 0
-                || not_word_id_set.contains(&word_conf_idx)
+                || state.not_flags_generation[word_conf_idx] == generation
             {
                 continue;
             }
 
             let word_conf = &self.word_conf_list[word_conf_idx];
 
-            let flat_matrix = split_bit_store.entry(word_conf_idx).or_insert_with(|| {
+            if state.matrix_generation[word_conf_idx] != generation {
+                state.matrix_generation[word_conf_idx] = generation;
+                state.touched_indices.push(word_conf_idx);
+
                 let num_splits = word_conf.split_bit.len();
-                let mut flat = TinyVec::new();
-                flat.resize(num_splits * processed_times, 0i32);
+                let flat_matrix = &mut state.matrix[word_conf_idx];
+                flat_matrix.clear();
+                flat_matrix.resize(num_splits * processed_times, 0i32);
                 for (s, &bit) in word_conf.split_bit.iter().enumerate() {
                     let row_start = s * processed_times;
-                    flat[row_start..row_start + processed_times].fill(bit);
+                    flat_matrix[row_start..row_start + processed_times].fill(bit);
                 }
-                flat
-            });
+            }
 
+            let flat_matrix = &mut state.matrix[word_conf_idx];
             let bit = &mut flat_matrix[offset * processed_times + text_index];
             *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
             if offset >= word_conf.not_offset && *bit > 0 {
-                not_word_id_set.insert(word_conf_idx);
-                split_bit_store.remove(&word_conf_idx);
+                state.not_flags_generation[word_conf_idx] = generation;
             }
         }
     }
@@ -559,10 +638,12 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Pass 2: Evaluates the state matrix to determine if any rule is fully satisfied.
     ///
     /// # Detailed Explanation / Algorithm
-    /// 1. Executes Pass 1 to get candidate matrix states.
-    /// 2. For each rule candidate, checks if every logical segment (row in the matrix)
+    /// 1. Executes Pass 1 to populate `SimpleMatchState` with candidate matrix states.
+    /// 2. Iterates over `touched_indices` in the state.
+    /// 3. Skips rules that were disqualified by "NOT" patterns.
+    /// 4. For each rule candidate, checks if every logical segment (row in the matrix)
     ///    has been satisfied (`bit <= 0`) in at least one text variant (column in the matrix).
-    /// 3. Returns `true` on the first rule that meets these criteria.
+    /// 5. Returns `true` on the first rule that meets these criteria.
     ///
     /// # Arguments
     /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
@@ -575,20 +656,22 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ) -> bool {
         SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
-            let (split_bit_store, not_word_id_set) = &mut *state;
-            split_bit_store.clear();
-            not_word_id_set.clear();
+            state.prepare(self.word_conf_list.len());
 
             self._word_match_with_processed_text_process_type_masks(
                 processed_text_process_type_masks,
-                split_bit_store,
-                not_word_id_set,
+                &mut state,
             );
 
+            let generation = state.generation;
             let processed_times = processed_text_process_type_masks.len();
 
-            split_bit_store.iter().any(|(word_conf_idx, flat_matrix)| {
-                let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
+            state.touched_indices.iter().any(|&word_conf_idx| {
+                if state.not_flags_generation[word_conf_idx] == generation {
+                    return false;
+                }
+                let num_splits = self.word_conf_list[word_conf_idx].split_bit.len();
+                let flat_matrix = &state.matrix[word_conf_idx];
                 (0..num_splits).all(|s| {
                     flat_matrix[s * processed_times..(s + 1) * processed_times]
                         .iter()
@@ -601,8 +684,8 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Pass 2: Evaluates the state matrix and returns all satisfied rules.
     ///
     /// # Detailed Explanation / Algorithm
-    /// 1. Executes Pass 1 to get candidate matrix states.
-    /// 2. Filters rules where all logical segments were satisfied.
+    /// 1. Executes Pass 1 to populate `SimpleMatchState` with candidate matrix states.
+    /// 2. Filters rules where all logical segments were satisfied and no "NOT" segments were triggered.
     /// 3. Projects satisfied rules into [`SimpleResult`] objects.
     ///
     /// # Arguments
@@ -616,23 +699,26 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ) -> Vec<SimpleResult<'a>> {
         SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
-            let (split_bit_store, not_word_id_set) = &mut *state;
-            split_bit_store.clear();
-            not_word_id_set.clear();
+            state.prepare(self.word_conf_list.len());
 
             self._word_match_with_processed_text_process_type_masks(
                 processed_text_process_type_masks,
-                split_bit_store,
-                not_word_id_set,
+                &mut state,
             );
 
+            let generation = state.generation;
             let processed_times = processed_text_process_type_masks.len();
 
-            split_bit_store
+            state
+                .touched_indices
                 .iter()
-                .filter_map(|(&word_conf_idx, flat_matrix)| {
+                .filter_map(|&word_conf_idx| {
+                    if state.not_flags_generation[word_conf_idx] == generation {
+                        return None;
+                    }
                     let word_conf = &self.word_conf_list[word_conf_idx];
                     let num_splits = word_conf.split_bit.len();
+                    let flat_matrix = &state.matrix[word_conf_idx];
                     (0..num_splits)
                         .all(|s| {
                             flat_matrix[s * processed_times..(s + 1) * processed_times]
