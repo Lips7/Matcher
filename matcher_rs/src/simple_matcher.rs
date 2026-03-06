@@ -176,10 +176,10 @@ enum AcMatcher {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
-    process_type_tree: Box<[ProcessTypeBitNode]>,
+    process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AcMatcher,
-    ac_dedup_word_conf_list: Box<[Box<[WordConfEntry]>]>,
-    word_conf_list: Box<[WordConf]>,
+    ac_dedup_word_conf_list: Vec<Vec<WordConfEntry>>,
+    word_conf_list: Vec<WordConf>,
 }
 
 impl SimpleMatcher {
@@ -313,7 +313,7 @@ impl SimpleMatcher {
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         let patterns = ac_dedup_word_list
             .iter()
@@ -349,11 +349,8 @@ impl SimpleMatcher {
         SimpleMatcher {
             process_type_tree,
             ac_matcher,
-            ac_dedup_word_conf_list: ac_dedup_word_conf_list
-                .into_iter()
-                .map(|v| v.into_boxed_slice())
-                .collect::<Box<[_]>>(),
-            word_conf_list: word_conf_list.into_boxed_slice(),
+            ac_dedup_word_conf_list,
+            word_conf_list,
         }
     }
 

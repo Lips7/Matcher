@@ -152,8 +152,8 @@ impl MatchResultTrait<'_> for SimResult<'_> {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimMatcher {
-    process_type_tree: Box<[ProcessTypeBitNode]>,
-    sim_processed_table_list: Box<[SimProcessedTable]>,
+    process_type_tree: Vec<ProcessTypeBitNode>,
+    sim_processed_table_list: Vec<SimProcessedTable>,
 }
 
 impl SimMatcher {
@@ -189,11 +189,11 @@ impl SimMatcher {
             })
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         SimMatcher {
             process_type_tree,
-            sim_processed_table_list: sim_processed_table_list.into_boxed_slice(),
+            sim_processed_table_list,
         }
     }
 }

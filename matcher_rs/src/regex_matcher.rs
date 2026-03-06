@@ -152,9 +152,9 @@ impl MatchResultTrait<'_> for RegexResult<'_> {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RegexMatcher {
-    process_type_tree: Box<[ProcessTypeBitNode]>,
+    process_type_tree: Vec<ProcessTypeBitNode>,
     regex_set: RegexSet,
-    regex_dedup_conf_list: Box<[RegexConf]>,
+    regex_dedup_conf_list: Vec<RegexConf>,
 }
 
 impl RegexMatcher {
@@ -256,7 +256,7 @@ impl RegexMatcher {
             };
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set).into_boxed_slice();
+        let process_type_tree = build_process_type_tree(&process_type_set);
 
         let regex_set = RegexSet::new(&regex_pattern_list).unwrap_or_else(|e| {
             eprintln!("Failed to compile regex set: {}", e);
@@ -266,7 +266,7 @@ impl RegexMatcher {
         RegexMatcher {
             process_type_tree,
             regex_set,
-            regex_dedup_conf_list: regex_conf_list.into_boxed_slice(),
+            regex_dedup_conf_list: regex_conf_list,
         }
     }
 }
