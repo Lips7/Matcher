@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
@@ -18,6 +19,41 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::process::constants::*;
+
+thread_local! {
+    static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(16));
+}
+
+pub fn get_string_from_pool(capacity: usize) -> String {
+    STRING_POOL.with(|pool| {
+        if let Some(mut s) = pool.borrow_mut().pop() {
+            s.clear();
+            if s.capacity() < capacity {
+                s.reserve(capacity - s.capacity());
+            }
+            s
+        } else {
+            String::with_capacity(capacity)
+        }
+    })
+}
+
+pub fn return_string_to_pool(s: String) {
+    STRING_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < 128 {
+            pool.push(s);
+        }
+    });
+}
+
+pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: ProcessedTextMasks) {
+    for (cow, _) in processed_text_process_type_masks.drain(..) {
+        if let Cow::Owned(s) = cow {
+            return_string_to_pool(s);
+        }
+    }
+}
 
 bitflags! {
     /// Represents different types of text processing operations.
@@ -218,7 +254,7 @@ impl ProcessMatcher {
             ($iter:expr, $idx:expr) => {{
                 let mut iter = $iter;
                 if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
+                    let mut result = get_string_from_pool(text.len());
                     result.push_str(&text[0..first_mat.start()]);
                     result.push_str(process_replace_list[$idx(&first_mat)]);
                     let mut last_end = first_mat.end();
@@ -274,7 +310,7 @@ impl ProcessMatcher {
             ($iter:expr) => {{
                 let mut iter = $iter;
                 if let Some(first_mat) = iter.next() {
-                    let mut result = String::with_capacity(text.len());
+                    let mut result = get_string_from_pool(text.len());
                     result.push_str(&text[0..first_mat.start()]);
                     let mut last_end = first_mat.end();
                     for mat in iter {

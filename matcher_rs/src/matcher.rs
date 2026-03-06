@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -6,11 +7,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
-    reduce_text_process_with_tree,
+    reduce_text_process_with_tree, return_processed_string_to_pool,
 };
 use crate::regex_matcher::{RegexMatchType, RegexMatcher, RegexResult, RegexTable};
 use crate::sim_matcher::{SimMatchType, SimMatcher, SimResult, SimTable};
 use crate::simple_matcher::{SimpleMatcher, SimpleTable};
+
+thread_local! {
+    static MATCHER_FAILED_SET: RefCell<FxHashSet<usize>> = RefCell::new(FxHashSet::default());
+}
 
 /// Text-matching trait shared by all matcher types.
 ///
@@ -589,7 +594,6 @@ impl Matcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> FxHashMap<u32, Vec<MatchResult<'a>>> {
         let mut match_result_dict = FxHashMap::default();
-        let mut failed_match_table_id_set = FxHashSet::default();
 
         if let Some(regex_matcher) = &self.regex_matcher {
             for regex_result in
@@ -611,36 +615,41 @@ impl Matcher {
         }
 
         if let Some(simple_matcher) = &self.simple_matcher {
-            for simple_result in
-                simple_matcher.process_preprocessed(processed_text_process_type_masks)
-            {
-                let word_table_conf = self.simple_word_table_conf_list.get(
-                    self.simple_word_table_conf_index_list[simple_result.word_id as usize],
-                ).expect("simple_word_table_conf_index_list` is pre-populated guaranteeing index mapping corresponds directly to valid indices mapped within `simple_word_table_conf_list`.");
-                let match_table_id = ((word_table_conf.match_id as usize) << 32)
-                    | (word_table_conf.table_id as usize);
+            MATCHER_FAILED_SET.with(|failed_set| {
+                let mut failed_match_table_id_set = failed_set.borrow_mut();
+                failed_match_table_id_set.clear();
 
-                if failed_match_table_id_set.contains(&match_table_id) {
-                    continue;
-                }
+                for simple_result in
+                    simple_matcher.process_preprocessed(processed_text_process_type_masks)
+                {
+                    let word_table_conf = self.simple_word_table_conf_list.get(
+                        self.simple_word_table_conf_index_list[simple_result.word_id as usize],
+                    ).expect("simple_word_table_conf_index_list` is pre-populated guaranteeing index mapping corresponds directly to valid indices mapped within `simple_word_table_conf_list`.");
+                    let match_table_id = ((word_table_conf.match_id as usize) << 32)
+                        | (word_table_conf.table_id as usize);
 
-                let result_list = match_result_dict
-                    .entry(word_table_conf.match_id)
-                    .or_default();
-                if word_table_conf.is_exemption {
-                    failed_match_table_id_set.insert(match_table_id);
-                    result_list
-                        .retain(|match_result| match_result.table_id != word_table_conf.table_id);
-                } else {
-                    result_list.push(MatchResult {
-                        match_id: word_table_conf.match_id,
-                        table_id: word_table_conf.table_id,
-                        word_id: simple_result.word_id - word_table_conf.offset,
-                        word: simple_result.word,
-                        similarity: None,
-                    });
+                    if failed_match_table_id_set.contains(&match_table_id) {
+                        continue;
+                    }
+
+                    let result_list = match_result_dict
+                        .entry(word_table_conf.match_id)
+                        .or_default();
+                    if word_table_conf.is_exemption {
+                        failed_match_table_id_set.insert(match_table_id);
+                        result_list
+                            .retain(|match_result| match_result.table_id != word_table_conf.table_id);
+                    } else {
+                        result_list.push(MatchResult {
+                            match_id: word_table_conf.match_id,
+                            table_id: word_table_conf.table_id,
+                            word_id: simple_result.word_id - word_table_conf.offset,
+                            word: simple_result.word,
+                            similarity: None,
+                        });
+                    }
                 }
-            }
+            });
         }
 
         match_result_dict.retain(|_, match_result_list| !match_result_list.is_empty());
@@ -677,10 +686,18 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// assert!(!matcher.is_match("clean text"));
     /// ```
     fn is_match(&self, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_masks)
+        let result = self.is_match_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
     /// Processes the input text to generate a list of match results.
     ///
@@ -718,10 +735,18 @@ impl<'a> TextMatcherTrait<'a, MatchResult<'a>> for Matcher {
     /// assert_eq!(results.len(), 2);
     /// ```
     fn process(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_masks)
+        let result = self.process_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Checks if there are any matches for the processed text within the configured match tables.

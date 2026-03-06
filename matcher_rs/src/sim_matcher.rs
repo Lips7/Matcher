@@ -1,4 +1,6 @@
-use std::{borrow::Cow, collections::HashSet};
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use rapidfuzz::distance;
 use rustc_hash::FxHashSet;
@@ -8,9 +10,13 @@ use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
         ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
-        reduce_text_process_with_tree,
+        reduce_text_process_with_tree, return_processed_string_to_pool,
     },
 };
+
+thread_local! {
+    static SIM_MATCH_SET: RefCell<FxHashSet<usize>> = RefCell::new(FxHashSet::default());
+}
 
 /// Enumeration representing the types of similarity matching algorithms available.
 ///
@@ -239,7 +245,11 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_masks)
+        let result = self.is_match_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Processes the given text and returns a vector of matching results.
@@ -277,7 +287,11 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_masks)
+        let result = self.process_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Checks if any pre-processed text variant is similar enough to any rule pattern.
@@ -341,40 +355,45 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = FxHashSet::default();
 
-        for (processed_text, process_type_mask) in processed_text_process_type_masks {
-            for sim_processed_table in &self.sim_processed_table_list {
-                if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0 {
-                    continue;
-                }
-                match sim_processed_table.sim_match_type {
-                    SimMatchType::Levenshtein => {
-                        for (index, text) in sim_processed_table.word_list.iter().enumerate() {
-                            let table_id_index =
-                                ((sim_processed_table.table_id as usize) << 32) | index;
+        SIM_MATCH_SET.with(|match_set| {
+            let mut table_id_index_set = match_set.borrow_mut();
+            table_id_index_set.clear();
 
-                            if table_id_index_set.insert(table_id_index)
-                                && let Some(similarity) =
-                                    distance::levenshtein::normalized_similarity_with_args(
-                                        text.chars(),
-                                        processed_text.chars(),
-                                        &distance::levenshtein::Args::default()
-                                            .score_cutoff(sim_processed_table.threshold),
-                                    )
-                            {
-                                result_list.push(SimResult {
-                                    match_id: sim_processed_table.match_id,
-                                    table_id: sim_processed_table.table_id,
-                                    word: Cow::Borrowed(text),
-                                    similarity,
-                                });
+            for (processed_text, process_type_mask) in processed_text_process_type_masks {
+                for sim_processed_table in &self.sim_processed_table_list {
+                    if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0
+                    {
+                        continue;
+                    }
+                    match sim_processed_table.sim_match_type {
+                        SimMatchType::Levenshtein => {
+                            for (index, text) in sim_processed_table.word_list.iter().enumerate() {
+                                let table_id_index =
+                                    ((sim_processed_table.table_id as usize) << 32) | index;
+
+                                if table_id_index_set.insert(table_id_index)
+                                    && let Some(similarity) =
+                                        distance::levenshtein::normalized_similarity_with_args(
+                                            text.chars(),
+                                            processed_text.chars(),
+                                            &distance::levenshtein::Args::default()
+                                                .score_cutoff(sim_processed_table.threshold),
+                                        )
+                                {
+                                    result_list.push(SimResult {
+                                        match_id: sim_processed_table.match_id,
+                                        table_id: sim_processed_table.table_id,
+                                        word: Cow::Borrowed(text),
+                                        similarity,
+                                    });
+                                }
                             }
                         }
                     }
                 }
             }
-        }
+        });
 
         result_list
     }

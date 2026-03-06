@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(not(feature = "vectorscan"))]
@@ -11,10 +12,20 @@ use tinyvec::TinyVec;
 use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
-    reduce_text_process_emit, reduce_text_process_with_tree,
+    reduce_text_process_emit, reduce_text_process_with_tree, return_processed_string_to_pool,
 };
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::VectorscanScanner;
+
+thread_local! {
+    static SIMPLE_MATCH_STATE: RefCell<(
+        FxHashMap<usize, TinyVec<[i32; 16]>>,
+        FxHashSet<usize>
+    )> = RefCell::new((
+        FxHashMap::with_capacity_and_hasher(16, Default::default()),
+        FxHashSet::default(),
+    ));
+}
 
 /// A type alias for a nested integer map structure used for mapping process types to words.
 ///
@@ -373,13 +384,12 @@ impl SimpleMatcher {
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-    ) -> Vec<(usize, TinyVec<[i32; 16]>)> {
+        split_bit_store: &mut FxHashMap<usize, TinyVec<[i32; 16]>>,
+        not_word_id_set: &mut FxHashSet<usize>,
+    ) {
         if self.ac_dedup_word_conf_list.is_empty() {
-            return Vec::new();
+            return;
         }
-        let mut split_bit_store: FxHashMap<usize, TinyVec<[i32; 16]>> =
-            FxHashMap::with_capacity_and_hasher(16, Default::default());
-        let mut not_word_id_set: FxHashSet<usize> = FxHashSet::default();
 
         let processed_times = processed_text_process_type_masks.len();
 
@@ -396,8 +406,8 @@ impl SimpleMatcher {
                             index,
                             *process_type_mask,
                             processed_times,
-                            &mut split_bit_store,
-                            &mut not_word_id_set,
+                            split_bit_store,
+                            not_word_id_set,
                         );
                     }
                 }
@@ -409,15 +419,13 @@ impl SimpleMatcher {
                             index,
                             *process_type_mask,
                             processed_times,
-                            &mut split_bit_store,
-                            &mut not_word_id_set,
+                            split_bit_store,
+                            not_word_id_set,
                         );
                     });
                 }
             }
         }
-
-        split_bit_store.into_iter().collect()
     }
 
     #[inline]
@@ -502,7 +510,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_masks)
+        let result = self.is_match_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Processes the given text and returns a vector of matching results.
@@ -537,7 +549,11 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_masks)
+        let result = self.process_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Pass 2: Evaluates the state matrix to determine if any rule is fully satisfied.
@@ -557,16 +573,27 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
-        let matched = self
-            ._word_match_with_processed_text_process_type_masks(processed_text_process_type_masks);
-        let processed_times = processed_text_process_type_masks.len();
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let (split_bit_store, not_word_id_set) = &mut *state;
+            split_bit_store.clear();
+            not_word_id_set.clear();
 
-        matched.iter().any(|(word_conf_idx, flat_matrix)| {
-            let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
-            (0..num_splits).all(|s| {
-                flat_matrix[s * processed_times..(s + 1) * processed_times]
-                    .iter()
-                    .any(|&bit| bit <= 0)
+            self._word_match_with_processed_text_process_type_masks(
+                processed_text_process_type_masks,
+                split_bit_store,
+                not_word_id_set,
+            );
+
+            let processed_times = processed_text_process_type_masks.len();
+
+            split_bit_store.iter().any(|(word_conf_idx, flat_matrix)| {
+                let num_splits = self.word_conf_list[*word_conf_idx].split_bit.len();
+                (0..num_splits).all(|s| {
+                    flat_matrix[s * processed_times..(s + 1) * processed_times]
+                        .iter()
+                        .any(|&bit| bit <= 0)
+                })
             })
         })
     }
@@ -587,26 +614,37 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimpleResult<'a>> {
-        let matched = self
-            ._word_match_with_processed_text_process_type_masks(processed_text_process_type_masks);
-        let processed_times = processed_text_process_type_masks.len();
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let (split_bit_store, not_word_id_set) = &mut *state;
+            split_bit_store.clear();
+            not_word_id_set.clear();
 
-        matched
-            .into_iter()
-            .filter_map(|(word_conf_idx, flat_matrix)| {
-                let word_conf = &self.word_conf_list[word_conf_idx];
-                let num_splits = word_conf.split_bit.len();
-                (0..num_splits)
-                    .all(|s| {
-                        flat_matrix[s * processed_times..(s + 1) * processed_times]
-                            .iter()
-                            .any(|&bit| bit <= 0)
-                    })
-                    .then_some(SimpleResult {
-                        word_id: word_conf.word_id,
-                        word: Cow::Borrowed(&word_conf.word),
-                    })
-            })
-            .collect()
+            self._word_match_with_processed_text_process_type_masks(
+                processed_text_process_type_masks,
+                split_bit_store,
+                not_word_id_set,
+            );
+
+            let processed_times = processed_text_process_type_masks.len();
+
+            split_bit_store
+                .iter()
+                .filter_map(|(&word_conf_idx, flat_matrix)| {
+                    let word_conf = &self.word_conf_list[word_conf_idx];
+                    let num_splits = word_conf.split_bit.len();
+                    (0..num_splits)
+                        .all(|s| {
+                            flat_matrix[s * processed_times..(s + 1) * processed_times]
+                                .iter()
+                                .any(|&bit| bit <= 0)
+                        })
+                        .then_some(SimpleResult {
+                            word_id: word_conf.word_id,
+                            word: Cow::Borrowed(&word_conf.word),
+                        })
+                })
+                .collect()
+        })
     }
 }

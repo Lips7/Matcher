@@ -1,4 +1,6 @@
-use std::{borrow::Cow, collections::HashSet};
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use regex::{Regex, RegexSet, escape};
 
@@ -9,9 +11,13 @@ use crate::{
     matcher::{MatchResultTrait, TextMatcherTrait},
     process::process_matcher::{
         ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
-        reduce_text_process_with_tree,
+        reduce_text_process_with_tree, return_processed_string_to_pool,
     },
 };
+
+thread_local! {
+    static REGEX_MATCH_SET: RefCell<FxHashSet<usize>> = RefCell::new(FxHashSet::default());
+}
 
 /// Enum representing different types of regular expression matches, each with a unique strategy.
 ///
@@ -307,7 +313,11 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.is_match_preprocessed(&processed_text_process_type_masks)
+        let result = self.is_match_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Processes the given text and returns a vector of matching results.
@@ -345,7 +355,11 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
 
-        self.process_preprocessed(&processed_text_process_type_masks)
+        let result = self.process_preprocessed(&processed_text_process_type_masks);
+
+        return_processed_string_to_pool(processed_text_process_type_masks);
+
+        result
     }
 
     /// Checks if any pre-processed text variant matches a regex pattern.
@@ -392,27 +406,31 @@ impl<'a> TextMatcherTrait<'a, RegexResult<'a>> for RegexMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<RegexResult<'a>> {
         let mut result_list = Vec::new();
-        let mut table_id_index_set = FxHashSet::default();
 
-        for (processed_text, process_type_mask) in processed_text_process_type_masks {
-            for pattern_id in self.regex_set.matches(processed_text).iter() {
-                let conf = &self.regex_dedup_conf_list[pattern_id];
-                if (process_type_mask & (1u64 << conf.process_type.bits())) == 0 {
-                    continue;
-                }
+        REGEX_MATCH_SET.with(|match_set| {
+            let mut table_id_index_set = match_set.borrow_mut();
+            table_id_index_set.clear();
 
-                // A match is deduped based on its table ID and word ID.
-                let table_id_index = ((conf.table_id as usize) << 32) | (conf.word_id as usize);
+            for (processed_text, process_type_mask) in processed_text_process_type_masks {
+                for pattern_id in self.regex_set.matches(processed_text).iter() {
+                    let conf = &self.regex_dedup_conf_list[pattern_id];
+                    if (process_type_mask & (1u64 << conf.process_type.bits())) == 0 {
+                        continue;
+                    }
 
-                if table_id_index_set.insert(table_id_index) {
-                    result_list.push(RegexResult {
-                        match_id: conf.match_id,
-                        table_id: conf.table_id,
-                        word: Cow::Owned(conf.word.clone()),
-                    });
+                    // A match is deduped based on its table ID and word ID.
+                    let table_id_index = ((conf.table_id as usize) << 32) | (conf.word_id as usize);
+
+                    if table_id_index_set.insert(table_id_index) {
+                        result_list.push(RegexResult {
+                            match_id: conf.match_id,
+                            table_id: conf.table_id,
+                            word: Cow::Owned(conf.word.clone()),
+                        });
+                    }
                 }
             }
-        }
+        });
 
         result_list
     }
