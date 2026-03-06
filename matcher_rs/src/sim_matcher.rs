@@ -75,7 +75,6 @@ struct SimProcessedTable {
     process_type: ProcessType,
     sim_match_type: SimMatchType,
     word_list: Vec<String>,
-    word_len_list: Vec<usize>,
     threshold: f64,
 }
 
@@ -182,21 +181,16 @@ impl SimMatcher {
 
         for sim_table in sim_table_list {
             process_type_set.insert(sim_table.process_type.bits());
-            let mut word_list = Vec::with_capacity(sim_table.word_list.len());
-            let mut word_len_list = Vec::with_capacity(sim_table.word_list.len());
-
-            for &word in &sim_table.word_list {
-                word_list.push(word.to_owned());
-                word_len_list.push(word.chars().count());
-            }
-
             sim_processed_table_list.push(SimProcessedTable {
                 table_id: sim_table.table_id,
                 match_id: sim_table.match_id,
                 process_type: sim_table.process_type,
                 sim_match_type: sim_table.sim_match_type,
-                word_list,
-                word_len_list,
+                word_list: sim_table
+                    .word_list
+                    .iter()
+                    .map(|&word| word.to_owned())
+                    .collect::<Vec<String>>(),
                 threshold: sim_table.threshold,
             })
         }
@@ -318,40 +312,20 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
         for (processed_text, process_type_mask) in processed_text_process_type_masks {
-            let processed_text_len = processed_text.chars().count();
             for sim_processed_table in &self.sim_processed_table_list {
                 if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0 {
                     continue;
                 }
                 let is_match = match sim_processed_table.sim_match_type {
-                    SimMatchType::Levenshtein => sim_processed_table
-                        .word_list
-                        .iter()
-                        .zip(&sim_processed_table.word_len_list)
-                        .any(|(text, &word_len)| {
-                            let max_len = word_len.max(processed_text_len);
-                            if max_len == 0 {
-                                return sim_processed_table.threshold <= 1.0;
-                            }
-                            let min_dist = if word_len > processed_text_len {
-                                word_len - processed_text_len
-                            } else {
-                                processed_text_len - word_len
-                            };
-                            if 1.0 - (min_dist as f64 / max_len as f64)
-                                < sim_processed_table.threshold
-                            {
-                                return false;
-                            }
-
-                            distance::levenshtein::normalized_similarity_with_args(
-                                text.chars(),
-                                processed_text.chars(),
-                                &distance::levenshtein::Args::default()
-                                    .score_cutoff(sim_processed_table.threshold),
-                            )
-                            .is_some()
-                        }),
+                    SimMatchType::Levenshtein => sim_processed_table.word_list.iter().any(|text| {
+                        distance::levenshtein::normalized_similarity_with_args(
+                            text.chars(),
+                            processed_text.chars(),
+                            &distance::levenshtein::Args::default()
+                                .score_cutoff(sim_processed_table.threshold),
+                        )
+                        .is_some()
+                    }),
                 };
 
                 if is_match {
@@ -387,7 +361,6 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
             table_id_index_set.clear();
 
             for (processed_text, process_type_mask) in processed_text_process_type_masks {
-                let processed_text_len = processed_text.chars().count();
                 for sim_processed_table in &self.sim_processed_table_list {
                     if (process_type_mask & (1u64 << sim_processed_table.process_type.bits())) == 0
                     {
@@ -395,54 +368,25 @@ impl<'a> TextMatcherTrait<'a, SimResult<'a>> for SimMatcher {
                     }
                     match sim_processed_table.sim_match_type {
                         SimMatchType::Levenshtein => {
-                            for (index, (text, &word_len)) in sim_processed_table
-                                .word_list
-                                .iter()
-                                .zip(&sim_processed_table.word_len_list)
-                                .enumerate()
-                            {
+                            for (index, text) in sim_processed_table.word_list.iter().enumerate() {
                                 let table_id_index =
                                     ((sim_processed_table.table_id as usize) << 32) | index;
 
-                                if table_id_index_set.insert(table_id_index) {
-                                    let max_len = word_len.max(processed_text_len);
-                                    if max_len == 0 {
-                                        if sim_processed_table.threshold <= 1.0 {
-                                            result_list.push(SimResult {
-                                                match_id: sim_processed_table.match_id,
-                                                table_id: sim_processed_table.table_id,
-                                                word: Cow::Borrowed(text),
-                                                similarity: 1.0,
-                                            });
-                                        }
-                                        continue;
-                                    }
-                                    let min_dist = if word_len > processed_text_len {
-                                        word_len - processed_text_len
-                                    } else {
-                                        processed_text_len - word_len
-                                    };
-                                    if 1.0 - (min_dist as f64 / max_len as f64)
-                                        < sim_processed_table.threshold
-                                    {
-                                        continue;
-                                    }
-
-                                    if let Some(similarity) =
+                                if table_id_index_set.insert(table_id_index)
+                                    && let Some(similarity) =
                                         distance::levenshtein::normalized_similarity_with_args(
                                             text.chars(),
                                             processed_text.chars(),
                                             &distance::levenshtein::Args::default()
                                                 .score_cutoff(sim_processed_table.threshold),
                                         )
-                                    {
-                                        result_list.push(SimResult {
-                                            match_id: sim_processed_table.match_id,
-                                            table_id: sim_processed_table.table_id,
-                                            word: Cow::Borrowed(text),
-                                            similarity,
-                                        });
-                                    }
+                                {
+                                    result_list.push(SimResult {
+                                        match_id: sim_processed_table.match_id,
+                                        table_id: sim_processed_table.table_id,
+                                        word: Cow::Borrowed(text),
+                                        similarity,
+                                    });
                                 }
                             }
                         }
