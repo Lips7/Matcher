@@ -1,6 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::sys::{jboolean, jint, jlong, jobjectArray, jsize, jstring};
 use matcher_rs::{
     ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
@@ -37,11 +37,11 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass,
     process_type: jint,
     text_bytes: JByteArray,
-) -> jstring {
+) -> jobjectArray {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         let bytes = env.convert_byte_array(text_bytes).unwrap();
         let text_str = std::str::from_utf8(&bytes).unwrap();
@@ -50,9 +50,19 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local
 
         let variants = reduce_text_process_rs(p_type, text_str);
 
-        let res_json = sonic_rs::to_string(&variants).unwrap();
-        let j_string: JString = env.new_string(res_json).unwrap();
-        j_string.into_raw()
+        let string_class = env.find_class("java/lang/String").unwrap();
+        let initial_string = env.new_string("").unwrap();
+        let obj_array = env
+            .new_object_array(variants.len() as jsize, &string_class, initial_string)
+            .unwrap();
+
+        for (i, variant) in variants.iter().enumerate() {
+            let j_str = env.new_string(variant.as_ref()).unwrap();
+            env.set_object_array_element(&obj_array, i as jsize, j_str)
+                .unwrap();
+        }
+
+        obj_array.into_raw()
     }));
 
     result.unwrap_or_else(|_| {

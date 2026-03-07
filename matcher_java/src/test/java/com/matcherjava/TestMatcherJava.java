@@ -17,7 +17,7 @@ public class TestMatcherJava {
     assertEquals("A B 测试 Ａ １", result1);
 
     int combinedType = ProcessType.MatchFanjianDeleteNormalize.getValue();
-    String jsonVariants = MatcherJava.reduceTextProcess(combinedType, text.getBytes(StandardCharsets.UTF_8));
-    assertEquals("[\"A B 測試 Ａ １\",\"A B 测试 Ａ １\",\"AB测试Ａ１\",\"ab测试a1\"]", jsonVariants);
+    String[] variants = MatcherJava.reduceTextProcess(combinedType, text.getBytes(StandardCharsets.UTF_8));
+    assertArrayEquals(new String[] { "A B 測試 Ａ １", "A B 测试 Ａ １", "AB测试Ａ１", "ab测试a1" }, variants);
   }
 }

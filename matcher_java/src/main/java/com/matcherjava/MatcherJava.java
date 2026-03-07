@@ -17,7 +17,7 @@ public class MatcherJava {
 
   public static native String textProcess(int processType, byte[] textBytes);
 
-  public static native String reduceTextProcess(int processType, byte[] textBytes);
+  public static native String[] reduceTextProcess(int processType, byte[] textBytes);
 
   public static native long initSimpleMatcher(byte[] simpleTableBytes);
 
