@@ -139,13 +139,14 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Build Outputs
+**/target/
+**/dist/
+
 # custom files
 **/.DS_Store
 .idea
 .metals
 .vscode
 *.zip
-
-# Build Outputs
-**/target/
-**/dist/
+matcher_c/tests/test_matcher
