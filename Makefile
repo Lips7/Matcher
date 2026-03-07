@@ -10,15 +10,15 @@ build:
 lint:
 	cargo fmt --all
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
-	cargo doc
 
 	cd matcher_py && uv run ruff check --fix && uv run ty check
+	cd matcher_java && mvn checkstyle:check
 test:
+	cargo doc
 	cd matcher_rs && cargo all-features test
-	cd matcher_java && mvn test
 
 	cd matcher_py && unset CONDA_PREFIX && uv run maturin develop && uv run pytest
-
+	cd matcher_java && mvn test
 update:
 	cargo update --verbose --recursive --breaking -Z unstable-options
 	cargo upgrade --verbose --recursive

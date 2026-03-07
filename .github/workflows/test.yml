@@ -16,6 +16,10 @@ on:
       - 'matcher_rs/Cargo.toml'
       - 'matcher_c/src/**'
       - 'matcher_c/Cargo.toml'
+      - 'matcher_java/rust_src/**'
+      - 'matcher_java/src/**'
+      - 'matcher_java/Cargo.toml'
+      - 'matcher_java/pom.xml'
       - '.github/workflows/test.yml'
       - '.cargo/config.toml'
   pull_request:
@@ -33,6 +37,10 @@ on:
       - 'matcher_rs/Cargo.toml'
       - 'matcher_c/src/**'
       - 'matcher_c/Cargo.toml'
+      - 'matcher_java/rust_src/**'
+      - 'matcher_java/src/**'
+      - 'matcher_java/Cargo.toml'
+      - 'matcher_java/pom.xml'
       - '.github/workflows/test.yml'
       - '.cargo/config.toml'
 
@@ -63,11 +71,7 @@ jobs:
             suffix: dll
     steps:
       - uses: actions/checkout@v4
-      - name: Install boost
-        uses: MarkusJx/install-boost@v2
-        id: install-boost
-        with:
-          boost_version: 1.89.0
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -77,26 +81,36 @@ jobs:
         run: cargo install cargo-all-features
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Install boost
+        if: runner.os != 'Windows' && matrix.platform.target != 'aarch64-unknown-linux-gnu'
+        uses: MarkusJx/install-boost@v2
+        id: install-boost
+        with:
+          boost_version: 1.89.0
       - name: Test
         if: runner.os != 'Windows' && matrix.platform.target != 'aarch64-unknown-linux-gnu'
-        run: cargo all-features test
+        run: |
+          cargo doc
+          cargo all-features test
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
           RUST_BACKTRACE: 1
       - name: Test (Windows & Linux Arm, no vectorscan)
         if: runner.os == 'Windows' || matrix.platform.target == 'aarch64-unknown-linux-gnu'
         run: |
+          cargo doc
           cargo test --no-default-features
           cargo test --features dfa
           cargo test --features runtime_build
           cargo test --features dfa,runtime_build
-      - name: Run doc
-        run: cargo doc
+
       - name: Rename & move
         shell: bash
         run: |
           cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/matcher_c.so
-          cp ./target/${{ matrix.platform.target }}/release/*matcher_py.${{ matrix.platform.suffix }} matcher_py/python/matcher_py/matcher_py.so
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_java.${{ matrix.platform.suffix }} matcher_java/src/main/resources/matcher_java.${{ matrix.platform.suffix }}
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
@@ -117,3 +131,13 @@ jobs:
           pip install -U pytest typing_extensions
           pip install ./target/wheels/*.whl
           pytest matcher_py/test
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+      - name: Java Test
+        run: mvn test
+        working-directory: matcher_java
