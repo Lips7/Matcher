@@ -22,7 +22,7 @@ Visit the [release page](https://github.com/Lips7/Matcher/releases) to download 
 
 ## Java Usage
 
-We recommend using the high-level `Matcher` and `SimpleMatcher` classes, which provide a safe, idiomatic API and handle native memory management via `AutoCloseable`.
+We recommend using the high-level `SimpleMatcher` class, which provides a safe, idiomatic API and handles native memory management via `AutoCloseable`.
 
 ### SimpleMatcher Example
 
@@ -54,47 +54,15 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 // matcher.close() is called automatically here
 ```
 
-### Matcher Example
 
-```java
-import com.matcher_java.Matcher;
-import com.matcher_java.extension_types.MatchTable;
-import com.matcher_java.extension_types.MatchTableType;
-import com.matcher_java.extension_types.ProcessType;
-import com.matcher_java.extension_types.MatchResult;
-import com.alibaba.fastjson.JSON;
-import java.util.*;
-
-// Configuration mapping
-Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
-List<MatchTable> tables = List.of(
-    new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of())
-);
-matchTableMap.put("1", tables);
-
-byte[] configBytes = JSON.toJSONBytes(matchTableMap);
-
-try (Matcher matcher = new Matcher(configBytes)) {
-    String text = "hello,world";
-
-    // Boolean match
-    boolean isMatch = matcher.isMatch(text);
-
-    // Detailed match results
-    List<MatchResult> results = matcher.process(text);
-
-    // Word-wise results
-    Map<Integer, List<MatchResult>> wordResults = matcher.wordMatch(text);
-}
-```
 
 ## Low-Level API
 
-If you need direct access to the native pointers or specialized functions, you can still use `MatcherJava.INSTANCE`. However, you **must** manually free resources using `drop_matcher`, `drop_simple_matcher`, or `drop_string` to avoid memory leaks.
+If you need direct access to the native pointers or specialized functions, you can still use `MatcherJava.INSTANCE`. However, you **must** manually free resources using `drop_simple_matcher` or `drop_string` to avoid memory leaks.
 
 ```java
 MatcherJava instance = MatcherJava.INSTANCE;
-Pointer ptr = instance.init_matcher(bytes);
+Pointer ptr = instance.init_simple_matcher(bytes);
 // ...
-instance.drop_matcher(ptr);
+instance.drop_simple_matcher(ptr);
 ```

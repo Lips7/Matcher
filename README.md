@@ -24,8 +24,6 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
 
 - **Multiple Matching Methods**:
   - Simple Word Matching
-  - Regex-Based Matching
-  - Similarity-Based Matching
 - **Text Transformation**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫草`
@@ -87,8 +85,6 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
   - [x] ~~Test char-wise HashMap transformation for Chinese Characters. (Too slow)~~
 - [x] Make aho-corasick unsafe.
   - [x] See https://github.com/Lips7/aho-corasick.
-- [x] Optimize NOT logic word-wise.
-- [x] Optimize `RegexMatcher` using `RegexSet`.
 - [x] Optimize `SimpleMatcher` when multiple `ProcessType` are used.
   1. Consider if there are multiple `ProcessType`
    * None
@@ -107,27 +103,21 @@ Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
 - [x] Merge multiple aho-corasick matcher into one when multiple `ProcessType` are used.
 - [x] When `dfa` feature is disabled, use daachorse to perform text processing.
   - [x] Do not use it for simple process function, too slow to build.
-- [x] Use more regex set to optimize regex matcher.
 
 ### Flexibility
 - [x] Cache `get_process_matcher` results globally, instead of caching result inside SimpleMatcher.
 - [x] Expose `reduce_process_text` to Python.
 - [x] Add a new function that can handle single simple match type.
   - [x] `text_process` now is available.
-- [x] Add fuzzy matcher, https://github.com/lotabout/fuzzy-matcher.
-  - [x] Use `rapidfuzz` instead.
-- [x] Make `SimpleMatcher` and `Matcher` serializable.
+- [x] Make `SimpleMatcher` serializable.
   - [x] Make aho-corasick serializable.
-  - [x] See https://github.com/Lips7/aho-corasick.
 - [x] Implement NOT logic word-wise.
 - [x] Support stable rust.
 - [x] Support iterator.
 - [x] A real java package.
 - [x] Multiple Python version wheel build.
 - [ ] Customize str conversion map.
-- [x] Add Matcher process function to py, c and java.
-- [x] ~~For simple matcher, is it possible to use regex-automata to replace aho-corasick? and support regex. (Keep it simple and efficient)~~
-- [x] Add simple match type to `RegexMatcher` and `SimMatcher` to pre-process a text.
+- [x] Add SimpleMatcher process function to py, c and java.
 - [x] Try to replace msgpack.
 
 ### Readability

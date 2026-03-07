@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use vectorscan_rs_sys as hs;
 
-use crate::vectorscan::database::{LiteralDatabase, RegexDatabase, VectorscanDatabase};
+use crate::vectorscan::database::{LiteralDatabase, VectorscanDatabase};
 use crate::vectorscan::error::{AsResult, Error};
 #[cfg(target_os = "macos")]
 use crate::vectorscan::init_allocator;
@@ -51,22 +51,6 @@ impl VectorscanScanner {
     /// A [`Result<Self, Error>`] containing the initialized scanner.
     pub fn new_literal(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         let db = Arc::new(LiteralDatabase::new(patterns, flags)?);
-        Self::new(db)
-    }
-
-    /// Convenience: compiles a regex database and returns a ready scanner.
-    ///
-    /// This function provides a simple way to create a scanner from a list of
-    /// regular expressions without needing to manually build the database first.
-    ///
-    /// # Arguments
-    /// * `patterns` - Regex expressions to be matched.
-    /// * `flags` - Per-pattern flags.
-    ///
-    /// # Returns
-    /// A [`Result<Self, Error>`] containing the initialized scanner.
-    pub fn new_regex(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
-        let db = Arc::new(RegexDatabase::new(patterns, flags)?);
         Self::new(db)
     }
 

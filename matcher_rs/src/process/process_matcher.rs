@@ -803,7 +803,7 @@ pub struct ProcessTypeBitNode {
 ///
 /// The resulting stricture is a Trie/DAG representing distinct permutation chains of text-processing rules.
 /// This guarantees that overlapping intermediate sequences (e.g. `None -> Fanjian -> Delete` vs `None -> Fanjian`)
-/// are evaluated cleanly by a runner, heavily optimizing regex evaluation against distinct variations.
+/// are evaluated cleanly by a runner, heavily optimizing pattern evaluation against distinct variations.
 ///
 /// # Arguments
 ///

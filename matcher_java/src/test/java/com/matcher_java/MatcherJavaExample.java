@@ -11,8 +11,6 @@ public class MatcherJavaExample {
         System.out.println("--- Simple Matcher High-Level API Test ---");
         simpleMatcherHighLevelDemo();
 
-        System.out.println("\n--- Matcher High-Level API Test ---");
-        matcherHighLevelDemo();
     }
 
     public static void simpleMatcherHighLevelDemo() throws IOException {
@@ -37,29 +35,4 @@ public class MatcherJavaExample {
         }
     }
 
-    public static void matcherHighLevelDemo() throws IOException {
-        SerializeConfig config = new SerializeConfig();
-        config.put(ProcessType.class, new ProcessTypeSerializer());
-
-        Map<String, List<MatchTable>> matchTableMap = new HashMap<>();
-        List<MatchTable> tables = List.of(
-            new MatchTable(1, MatchTableType.Simple(ProcessType.MatchNone), List.of("hello&world"), ProcessType.MatchNone, List.of())
-        );
-        matchTableMap.put("1", tables);
-
-        byte[] configBytes = JSON.toJSONBytes(matchTableMap, config);
-
-        try (Matcher matcher = new Matcher(configBytes)) {
-            String text = "hello,world";
-
-            boolean isMatch = matcher.isMatch(text);
-            System.out.printf("isMatch: %s\n", isMatch);
-
-            List<MatchResult> results = matcher.process(text);
-            System.out.printf("Process Results: %s\n", JSON.toJSONString(results));
-
-            Map<Integer, List<MatchResult>> wordResults = matcher.wordMatch(text);
-            System.out.printf("Word Match Results: %s\n", JSON.toJSONString(wordResults));
-        }
-    }
 }

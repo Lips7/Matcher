@@ -8,7 +8,6 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use serde::Serialize;
 use tinyvec::TinyVec;
 
-use crate::matcher::{MatchResultTrait, TextMatcherTrait};
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree, return_processed_string_to_pool,
@@ -166,24 +165,6 @@ pub struct SimpleResult<'a> {
     pub word: Cow<'a, str>,
 }
 
-impl MatchResultTrait<'_> for SimpleResult<'_> {
-    fn match_id(&self) -> u32 {
-        0
-    }
-    fn table_id(&self) -> u32 {
-        0
-    }
-    fn word_id(&self) -> u32 {
-        self.word_id
-    }
-    fn word(&self) -> &str {
-        &self.word
-    }
-    fn similarity(&self) -> Option<f64> {
-        None
-    }
-}
-
 /// Represents a single entry in the deduplicated word configuration list.
 ///
 /// [`WordConfEntry`] provides a mapping between a matched pattern and its original
@@ -238,7 +219,7 @@ enum AcMatcher {
 ///
 /// # Examples
 /// ```rust
-/// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
 ///
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "apple&pie")
@@ -551,9 +532,7 @@ impl SimpleMatcher {
             }
         }
     }
-}
 
-impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// Determines if the given text matches any pattern.
     ///
     /// This function first checks if the provided text is empty. If it is, the function
@@ -570,7 +549,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
@@ -581,7 +560,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// assert!(matcher.is_match("beautiful world"));
     /// assert!(!matcher.is_match("hi planet!"));
     /// ```
-    fn is_match(&'a self, text: &'a str) -> bool {
+    pub fn is_match<'a>(&'a self, text: &'a str) -> bool {
         if text.is_empty() {
             return false;
         }
@@ -610,7 +589,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, TextMatcherTrait};
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "apple")
@@ -620,7 +599,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     /// let results = matcher.process("I have an apple and a banana");
     /// assert_eq!(results.len(), 2);
     /// ```
-    fn process(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
+    pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         if text.is_empty() {
             return Vec::new();
         }
@@ -650,7 +629,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     /// `true` if any rule matches.
-    fn is_match_preprocessed(
+    fn is_match_preprocessed<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> bool {
@@ -693,7 +672,7 @@ impl<'a> TextMatcherTrait<'a, SimpleResult<'a>> for SimpleMatcher {
     ///
     /// # Returns
     /// A vector of [`SimpleResult`] matches.
-    fn process_preprocessed(
+    fn process_preprocessed<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
     ) -> Vec<SimpleResult<'a>> {

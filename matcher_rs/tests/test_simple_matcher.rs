@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, TextMatcherTrait};
+use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
 
 #[test]
 fn simple_match_init() {
@@ -103,41 +103,6 @@ fn simple_match_combination() {
     assert!(simple_matcher.is_match("hello world"));
     assert!(simple_matcher.is_match("hello hello world"));
     assert!(simple_matcher.is_match("hello word"));
-}
-
-#[test]
-fn simple_process_iter_matches_process() {
-    let matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1u32, "hello"), (2u32, "world")]),
-    )]));
-
-    let text = "say hello to the world";
-
-    let mut via_process: Vec<u32> = matcher
-        .process(text)
-        .into_iter()
-        .map(|r| r.word_id)
-        .collect();
-    let mut via_iter: Vec<u32> = matcher.process_iter(text).map(|r| r.word_id).collect();
-
-    via_process.sort();
-    via_iter.sort();
-
-    assert_eq!(
-        via_process, via_iter,
-        "process_iter must yield same word_ids as process"
-    );
-}
-
-#[test]
-fn simple_process_iter_empty() {
-    let matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1u32, "hello")]),
-    )]));
-
-    assert_eq!(matcher.process_iter("").count(), 0);
 }
 
 #[test]

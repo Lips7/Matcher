@@ -12,8 +12,6 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
 
 - **Multiple Matching Methods**:
   - Simple Word Matching
-  - Regex-Based Matching
-  - Similarity-Based Matching
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
@@ -79,68 +77,7 @@ print(reduce_text_process(ProcessType.MatchDeleteNormalize, "hello, world!"))
 print(text_process(ProcessType.MatchDelete, "hello, world!"))
 ```
 
-### Matcher Basic Usage
 
-Here’s an example of how to use the `Matcher`:
-
-```python
-import json
-
-from matcher_py import Matcher
-from matcher_py.extension_types import MatchTable, MatchTableType, ProcessType, RegexMatchType, SimMatchType
-
-matcher = Matcher(
-    json.dumps({
-        1: [
-            MatchTable(
-                table_id=1,
-                match_table_type=MatchTableType.Simple(process_type=ProcessType.MatchFanjianDeleteNormalize),
-                word_list=["hello", "world"],
-                exemption_process_type=ProcessType.MatchNone,
-                exemption_word_list=["word"],
-            ),
-            MatchTable(
-                table_id=2,
-                match_table_type=MatchTableType.Regex(
-                    process_type=ProcessType.MatchFanjianDeleteNormalize,
-                    regex_match_type=RegexMatchType.MatchRegex
-                ),
-                word_list=["h[aeiou]llo"],
-                exemption_process_type=ProcessType.MatchNone,
-                exemption_word_list=[],
-            )
-        ],
-        2: [
-            MatchTable(
-                table_id=3,
-                match_table_type=MatchTableType.Similar(
-                    process_type=ProcessType.MatchFanjianDeleteNormalize,
-                    sim_match_type=SimMatchType.MatchLevenshtein,
-                    threshold=0.5
-                ),
-                word_list=["halxo"],
-                exemption_process_type=ProcessType.MatchNone,
-                exemption_word_list=[],
-            )
-        ]
-    }).encode()
-)
-# Check if a text matches
-assert matcher.is_match("hello")
-assert not matcher.is_match("word")
-
-# Perform process as a list
-result = matcher.process("hello")
-print(result)
-
-# Perform word matching as a dict
-match_result = matcher.word_match(r"hello, world")
-print(match_result)
-
-# Perform word matching as a string
-result_str = matcher.word_match_as_string("hello")
-print(result_str)
-```
 
 ### Simple Matcher Basic Usage
 
@@ -174,32 +111,9 @@ print(result)
 
 ## Explanation of the configuration
 
-* `Matcher`'s configuration is defined by the `MatchTableMap = Dict[int, List[MatchTable]]` type, the key of `MatchTableMap` is called `match_id`, **for each `match_id`, the `table_id` inside is required to be unique**.
 * `SimpleMatcher`'s configuration is defined by the `SimpleTable = Dict[ProcessType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
-### MatchTable
 
-* `table_id`: The unique ID of the match table.
-* `match_table_type`: The type of the match table.
-* `word_list`: The word list of the match table.
-* `exemption_process_type`: The type of the exemption simple match.
-* `exemption_word_list`: The exemption word list of the match table.
-
-For each match table, word matching is performed over the `word_list`, and exemption word matching is performed over the `exemption_word_list`. If the exemption word matching result is True, the word matching result will be False.
-
-### MatchTableType
-
-* `Simple`: Supports simple multiple patterns matching with text normalization defined by `process_type`.
-  * It can handle combination patterns and repeated times sensitive matching, delimited by `&` and `~`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
-* `Regex`: Supports regex patterns matching.
-  * `SimilarChar`: Supports similar character matching using regex.
-    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld!`, `hollowrd?`, `hi🌍~` ··· any combinations of the words split by `,` in the list.
-  * `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
-    * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
-  * `Regex`: Supports regex matching.
-    * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
-* `Similar`: Supports similar text matching based on distance and threshold.
-  * `Levenshtein`: Supports similar text matching based on Levenshtein distance.
 
 ### ProcessType
 

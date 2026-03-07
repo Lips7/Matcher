@@ -10,12 +10,9 @@ The project consists of a core Rust library (`matcher_rs`) with bindings for:
 
 ### Key Features
 - **Matching Engines**: 
-  - `SimpleMatcher`: Ultra-fast Aho-Corasick based matcher.
-  - `RegexMatcher`: Supports regular expressions and `RegexSet`.
-  - `SimMatcher`: Fuzzy/Similarity-based matching (via `rapidfuzz`).
-  - `Matcher`: A high-level orchestrator combining all engines with `MatchID` and `TableID` abstractions.
+  - `SimpleMatcher`: Ultra-fast Aho-Corasick based matcher with logical AND/NOT support.
 - **Text Transformation Pipeline**: Normalizes input text before matching (Fanjian, Pinyin, White-space removal, etc.).
-- **Logical Operators**: Supports `&` (AND), `~` (NOT), and implicit OR logic within word lists.
+- **Logical Operators**: Supports `&` (AND) and `~` (NOT) within patterns, and implicit OR logic within word lists.
 - **Performance**: Optimized with DFA (optional), `mimalloc`, and pre-compiled static automata for zero-cost initialization of transformation rules.
 
 ---
@@ -83,7 +80,6 @@ The project consists of a core Rust library (`matcher_rs`) with bindings for:
 
 ## Usage Patterns
 - **Direct Matching**: Using `SimpleMatcher` for high-throughput word list filtering.
-- **Complex Orchestration**: Using `Matcher` to define hierarchical matching rules with IDs for database integration.
 - **Text Normalization**: Utilizing the `process` module to clean or transform text independently of matching.
 
 For deep architectural details, refer to `DESIGN.md`.

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hint::black_box;
 
 use divan::Bencher;
-use matcher_rs::{ProcessType, SimpleMatcher, TextMatcherTrait};
+use matcher_rs::{ProcessType, SimpleMatcher};
 
 const CN_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::None,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 - 2026-03-07
+
+### Breaking Changes
+- Removed `Matcher`, `RegexMatcher`, and `SimMatcher` components to focus on the high-performance `SimpleMatcher`.
+- Removed `RegexDatabase` and `Regex` related types from the Vectorscan integration.
+- Updated C and Java FFI interfaces to only support `SimpleMatcher`.
+
+### Documentation
+- Updated `README.md`, `DESIGN.md`, and `GEMINI.md` to reflect the focus on `SimpleMatcher`.
+- Cleaned up documentation and examples across all language bindings.
+
 ## 0.9.0 - 2026-03-05
 
 ### Features

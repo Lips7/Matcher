@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::convert::Infallible;
 
 use pyo3::exceptions::PyValueError;
@@ -8,10 +7,9 @@ use pyo3::types::{PyDict, PyDictMethods, PyModuleMethods};
 use pyo3::{Bound, IntoPyObject, intern, pyfunction};
 
 use matcher_rs::{
-    MatchResult as MatchResultRs, MatchTableMapSerde as MatchTableMapRs, Matcher as MatcherRs,
     ProcessType, SimpleMatcher as SimpleMatcherRs, SimpleResult as SimpleResultRs,
-    SimpleTableSerde as SimpleTableRs, TextMatcherTrait,
-    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
+    SimpleTableSerde as SimpleTableRs, reduce_text_process as reduce_text_process_rs,
+    text_process as text_process_rs,
 };
 
 /// A structure representing a simple result from the SimpleMatcher.
@@ -34,38 +32,6 @@ impl<'py> IntoPyObject<'py> for SimpleResult<'py> {
         dict.set_item(intern!(py, "word_id"), self.0.word_id)
             .unwrap();
         dict.set_item(intern!(py, "word"), self.0.word.as_ref())
-            .unwrap();
-
-        Ok(dict)
-    }
-}
-
-/// A structure representing a match result from the Matcher.
-///
-/// This wraps around the [`MatchResultRs`] type from the matcher_rs library,
-/// allowing it to be used within this module's context.
-///
-/// The lifetime parameter `'a` ensures that the [`MatchResult`] does not outlive
-/// the data it references.
-pub struct MatchResult<'a>(MatchResultRs<'a>);
-
-impl<'py> IntoPyObject<'py> for MatchResult<'py> {
-    type Target = PyDict;
-    type Output = Bound<'py, Self::Target>;
-    type Error = Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-
-        dict.set_item(intern!(py, "match_id"), self.0.match_id)
-            .unwrap();
-        dict.set_item(intern!(py, "table_id"), self.0.table_id)
-            .unwrap();
-        dict.set_item(intern!(py, "word_id"), self.0.word_id)
-            .unwrap();
-        dict.set_item(intern!(py, "word"), self.0.word.as_ref())
-            .unwrap();
-        dict.set_item(intern!(py, "similarity"), self.0.similarity)
             .unwrap();
 
         Ok(dict)
@@ -121,187 +87,6 @@ fn reduce_text_process(process_type: u8, text: &str) -> Vec<Cow<'_, str>> {
     reduce_text_process_rs(process_type, text)
         .into_iter()
         .collect()
-}
-
-/// This class represents a Matcher, which provides functionality to match and process
-/// text based on a matchup table map. It leverages the [`matcher_rs`] library to perform
-/// the operations.
-///
-/// # Fields
-/// - `matcher` [`MatcherRs`]: An instance of [`MatcherRs`] that performs the actual matching logic.
-/// - `match_table_map_bytes` [`Vec<u8>`]: A byte vector representing the serialized form of the
-///   match table map.
-///
-/// The [`Matcher`] class supports several methods for:
-/// - Initializing a new instance with a serialized match table map.
-/// - Implementing state serialization and deserialization methods for Python compatibility.
-/// - Checking for matches in a given text.
-/// - Processing the text to produce match results.
-/// - Matching words in the text and returning results either as objects or strings.
-#[pyclass(module = "matcher_py")]
-pub struct Matcher {
-    matcher: MatcherRs,
-    match_table_map_bytes: Vec<u8>,
-}
-
-#[pymethods]
-impl Matcher {
-    /// Creates a new instance of the [`Matcher`] class using the provided match table map bytes.
-    ///
-    /// This function initializes a new [`Matcher`] by deserializing the provided byte slice into
-    /// a [`MatchTableMapRs`] object using the [`sonic_rs`] library. The resulting map is then used
-    /// to instantiate the actual [`MatcherRs`] object.
-    ///
-    /// # Arguments
-    /// - `match_table_map_bytes` (&[u8]): A byte slice representing the serialized match table map.
-    ///
-    /// # Returns
-    /// - [`PyResult<Matcher>`]: A Python result object wrapping the new [`Matcher`] instance, or
-    ///   a [`PyValueError`] if deserialization of the byte slice fails.
-    ///
-    /// # Errors
-    /// This function returns a [`PyValueError`] if the provided byte slice cannot be deserialized
-    /// into a [`MatchTableMapRs`] object, usually indicating that the input data is invalid or corrupted.
-    #[new]
-    #[pyo3(signature=(match_table_map_bytes))]
-    fn new(match_table_map_bytes: &[u8]) -> PyResult<Matcher> {
-        let match_table_map: MatchTableMapRs = match sonic_rs::from_slice(match_table_map_bytes) {
-            Ok(match_table_map) => match_table_map,
-            Err(e) => {
-                return Err(PyValueError::new_err(format!(
-                    "Deserialize match_table_map_bytes failed, Please check the input data.\nErr: {}",
-                    e
-                )));
-            }
-        };
-
-        Ok(Matcher {
-            matcher: MatcherRs::new(&match_table_map),
-            match_table_map_bytes: Vec::from(match_table_map_bytes),
-        })
-    }
-
-    /// Returns the argument tuple to be passed to the [`Matcher::new`] method during unpickling.
-    ///
-    /// This function provides compatibility with Python's pickling protocol by returning
-    /// the necessary arguments to reconstruct the current instance of the Matcher class.
-    ///
-    /// # Returns
-    /// - `(&[u8],)`: A single-element tuple containing a reference to the `match_table_map_bytes`
-    ///   byte slice, which is used to reinitialize the Matcher instance.
-    fn __getnewargs__(&self) -> (&[u8],) {
-        (&self.match_table_map_bytes,)
-    }
-
-    /// Returns the byte slice representing the serialized match table map.
-    ///
-    /// This function provides compatibility with Python's pickling protocol by returning
-    /// the internal `match_table_map_bytes` byte slice. This serialized form is used for
-    /// saving the state of the Matcher instance, which can later be restored using the
-    /// [`Matcher::__setstate__`] method.
-    ///
-    /// # Returns
-    /// - `&[u8]`: A reference to the byte slice containing the serialized match table map.
-    fn __getstate__(&self) -> &[u8] {
-        &self.match_table_map_bytes
-    }
-
-    /// Restores the state of the Matcher instance from the provided byte slice.
-    ///
-    /// This function is used for compatibility with Python's pickling protocol. It
-    /// deserializes the given `match_table_map_bytes` into a [`MatchTableMapRs`] object
-    /// and reinitializes the internal `matcher` field with this new map.
-    ///
-    /// # Arguments
-    /// - `match_table_map_bytes` (&[u8]): A byte slice representing the serialized match table map.
-    ///
-    /// # Panics
-    /// This function will panic if the provided byte slice cannot be deserialized into a
-    /// [`MatchTableMapRs`] object. Ensure that the input data is correct and valid.
-    #[pyo3(signature=(match_table_map_bytes))]
-    fn __setstate__(&mut self, match_table_map_bytes: &[u8]) {
-        self.matcher = MatcherRs::new(
-            &sonic_rs::from_slice::<MatchTableMapRs>(match_table_map_bytes).unwrap(),
-        );
-        self.match_table_map_bytes = match_table_map_bytes.to_vec();
-    }
-
-    /// Checks if the given text matches any pattern.
-    ///
-    /// This function utilizes the internal `matcher` to determine if any part of the
-    /// provided `text` conforms to the patterns defined within the matcher.
-    ///
-    /// # Arguments
-    /// - `text` (&str): The input text to be checked against the match patterns.
-    ///
-    /// # Returns
-    /// - `bool`: Returns `true` if the text matches any pattern, `false` otherwise.
-    #[pyo3(signature=(text))]
-    fn is_match(&self, text: &str) -> bool {
-        self.matcher.is_match(text)
-    }
-
-    /// Processes the given text and returns a list of match results.
-    ///
-    /// This function uses the internal `matcher` to analyze the provided `text`
-    /// and generate a list of [`MatchResult`] instances that represent the matches found.
-    ///
-    /// # Arguments
-    /// - `text` (&str): The input text to be processed and checked for matches.
-    ///
-    /// # Returns
-    /// - [`Vec<MatchResult<'_>>`]: A vector of [`MatchResult`] instances, where each entry
-    ///   indicates a match found within the text according to the patterns defined within the matcher.
-    #[pyo3(signature=(text))]
-    fn process<'a>(&'a self, text: &'a str) -> Vec<MatchResult<'a>> {
-        self.matcher
-            .process(text)
-            .into_iter()
-            .map(MatchResult)
-            .collect()
-    }
-
-    /// Matches words in the provided text and returns a mapping of match IDs to match results.
-    ///
-    /// This function uses the internal `matcher` to identify patterns in the given `text`. The results
-    /// are organized in a [`HashMap`] where each key is a match ID (u32) and its value is a vector of
-    /// [`MatchResult`] instances corresponding to that match ID.
-    ///
-    /// # Arguments
-    /// - `text` (&str): The input text to be checked against the match patterns.
-    ///
-    /// # Returns
-    /// - [`HashMap<u32, Vec<MatchResult<'_>>>`]: A mapping of match IDs to lists of match results,
-    ///   indicating all patterns found in the text.
-    #[pyo3(signature=(text))]
-    fn word_match<'a>(&'a self, text: &'a str) -> HashMap<u32, Vec<MatchResult<'a>>> {
-        self.matcher
-            .word_match(text)
-            .into_iter()
-            .map(|(match_id, match_result_list)| {
-                (
-                    match_id,
-                    match_result_list.into_iter().map(MatchResult).collect(),
-                )
-            })
-            .collect()
-    }
-
-    /// Matches words in the provided text and returns a string representation of the results.
-    ///
-    /// This function uses the internal `matcher` to identify patterns in the given `text` and
-    /// returns a string that represents the match results. The format of the string will depend
-    /// on the internal implementation of the `word_match` method in the matcher.
-    ///
-    /// # Arguments
-    /// - `text` (&str): The input text to be checked against the match patterns.
-    ///
-    /// # Returns
-    /// - `String`: A string representation of the match results found in the text.
-    #[pyo3(signature=(text))]
-    fn word_match_as_string(&self, text: &str) -> String {
-        sonic_rs::to_string(&self.matcher.word_match(text)).expect("It should never fail.")
-    }
 }
 
 /// A Python class that wraps the [`SimpleMatcherRs`] Rust structure, providing
@@ -446,7 +231,6 @@ impl SimpleMatcher {
 
 #[pymodule]
 fn matcher_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Matcher>()?;
     m.add_class::<SimpleMatcher>()?;
     m.add_function(wrap_pyfunction!(reduce_text_process, m)?)?;
     m.add_function(wrap_pyfunction!(text_process, m)?)?;

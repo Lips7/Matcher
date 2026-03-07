@@ -8,8 +8,6 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
 
 - **Multiple Matching Methods**:
   - Simple Word Matching
-  - Regex-Based Matching
-  - Similarity-Based Matching
 - **Text Transformation**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
@@ -43,32 +41,7 @@ cargo add matcher_rs
 
 ### Explanation of the configuration
 
-* `Matcher`'s configuration is built using `MatcherBuilder` and `MatchTableBuilder`.
-* `SimpleMatcher`'s configuration is built using `SimpleMatcherBuilder`. For each `SimpleMatcher`, the added `word_id` is required to be globally unique.
 
-#### MatchTable
-
-* `table_id`: The unique ID of the match table.
-* `match_table_type`: The type of the match table.
-* `word_list`: The word list of the match table.
-* `exemption_process_type`: The type of the exemption simple match.
-* `exemption_word_list`: The exemption word list of the match table.
-
-For each match table, word matching is performed over the `word_list`, and exemption word matching is performed over the `exemption_word_list`. If the exemption word matching result is True, the word matching result will be False.
-
-#### MatchTableType
-
-* `Simple`: Supports simple multiple patterns matching with text normalization defined by `process_type`.
-  * It can handle combination patterns and repeated times sensitive matching, delimited by `&` and `~`, such as `hello&world&hello` will match `hellohelloworld` and `worldhellohello`, but not `helloworld` due to the repeated times of `hello`.
-* `Regex`: Supports regex patterns matching.
-  * `SimilarChar`: Supports similar character matching using regex.
-    * `["hello,hallo,hollo,hi", "word,world,wrd,🌍", "!,?,~"]` will match `helloworld!`, `hollowrd?`, `hi🌍~` ··· any combinations of the words split by `,` in the list.
-  * `Acrostic`: Supports acrostic matching using regex **(currently only supports Chinese and simple English sentences)**.
-    * `["h,e,l,l,o", "你,好"]` will match `hope, endures, love, lasts, onward.` and `你的笑容温暖, 好心情常伴。`.
-  * `Regex`: Supports regex matching.
-    * `["h[aeiou]llo", "w[aeiou]rd"]` will match `hello`, `world`, `hillo`, `wurld` ··· any text that matches the regex in the list.
-* `Similar`: Supports similar text matching based on distance and threshold.
-  * `Levenshtein`: Supports similar text matching based on Levenshtein distance.
 
 #### ProcessType
 
@@ -95,29 +68,15 @@ Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited
 
 ### Basic Example
 
-Here’s a basic example of how to use the `Matcher` struct for text matching:
+Here’s a basic example of how to use the `SimpleMatcher` for text matching:
 
 ```rust
 use matcher_rs::{text_process, reduce_text_process, ProcessType};
 
 let result = text_process(ProcessType::Delete, "你好，世界！");
-let result = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好，世界！");
+let results = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好，世界！");
 ```
 
-```rust
-use matcher_rs::{MatcherBuilder, MatchTableBuilder, MatchTableType, ProcessType};
-
-let table = MatchTableBuilder::new(1, MatchTableType::Simple { process_type: ProcessType::FanjianDeleteNormalize })
-    .add_words(["example", "test"])
-    .build();
-
-let matcher = MatcherBuilder::new()
-    .add_table(1, table)
-    .build();
-
-let text = "This is an example text.";
-let results = matcher.word_match(text);
-```
 
 ```rust
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
@@ -131,11 +90,12 @@ let text = "你好，世界！";
 let results = matcher.process(text);
 ```
 
-For more detailed usage examples, please refer to the [test.rs](./tests/test.rs) file.
+For more detailed usage examples, please refer to the [test_simple_matcher.rs](./tests/test_simple_matcher.rs) file.
 
 ## Feature Flags
 * `runtime_build`: By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
 * `dfa`: By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
+* `vectorscan`: By enable vectorscan feature, we could use vectorscan to perform simple matching.
 
 Default feature is `dfa`.
 

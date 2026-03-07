@@ -9,16 +9,6 @@ interface MatcherJava extends Library {
             "matcher_c",
             MatcherJava.class);
 
-    Pointer init_matcher(byte[] match_table_map_bytes);
-
-    boolean matcher_is_match(Pointer matcher, byte[] text_bytes);
-
-    Pointer matcher_process_as_string(Pointer matcher, byte[] text_bytes);
-
-    Pointer matcher_word_match_as_string(Pointer matcher, byte[] text_bytes);
-
-    void drop_matcher(Pointer matcher);
-
     Pointer init_simple_matcher(byte[] simple_table_bytes);
 
     boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);

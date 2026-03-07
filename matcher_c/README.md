@@ -14,7 +14,7 @@ This package provides C FFI (Foreign Function Interface) bindings for the Matche
 Key features exposed:
 - High-performance text matching with logical operators (`&`, `~`).
 - Support for various text normalization processes (Fanjian, Delete, Normalize, PinYin).
-- Multiple matching types: Simple, Regex, Similarity, Acrostic.
+- Multiple matching types: Simple Word Match.
 
 ## Installation
 
@@ -48,23 +48,23 @@ You can use the `matcher_c.h` header and the compiled library in your C projects
 int main() {
     // Configuration in JSON format
     // ProcessType: MatchNone = 1
-    char* config = "{\"1\":[{\"table_id\":1,\"match_table_type\":{\"simple\":{\"process_type\":1}},\"word_list\":[\"hello\",\"world\"],\"exemption_process_type\":1,\"exemption_word_list\":[]}]}";
+    char* config = "{\"1\":{\"1\":\"hello&world\"}}";
 
-    // Initialize matcher
-    void* matcher = init_matcher(config);
+    // Initialize simple matcher
+    void* simple_matcher = init_simple_matcher(config);
 
     // Check if a text matches
-    if (matcher_is_match(matcher, "hello world")) {
+    if (simple_matcher_is_match(simple_matcher, "hello world")) {
         printf("Matches!\n");
     }
 
     // Process and get result as JSON string
-    char* result = matcher_process_as_string(matcher, "hello");
+    char* result = simple_matcher_process_as_string(simple_matcher, "hello world");
     printf("Result: %s\n", result);
 
     // Clean up
     drop_string(result);
-    drop_matcher(matcher);
+    drop_simple_matcher(simple_matcher);
 
     return 0;
 }
@@ -77,7 +77,7 @@ Using the C FFI bindings via Python's `cffi` library and the provided `extension
 ```python
 import json
 from cffi import FFI
-from extension_types import MatchTable, MatchTableType, ProcessType
+from extension_types import ProcessType
 
 # Initialize FFI and load library
 ffi = FFI()
@@ -85,33 +85,28 @@ with open("./matcher_c.h", "r", encoding="utf-8") as f:
     ffi.cdef(f.read())
 lib = ffi.dlopen("./libmatcher_c.so") # Adjust extension for your OS
 
-# Define configuration using extension types
+# Define configuration using simple dict
 config = {
-    1: [
-        MatchTable(
-            table_id=1,
-            match_table_type=MatchTableType.Simple(process_type=ProcessType.MatchNone),
-            word_list=["hello", "world"],
-            exemption_process_type=ProcessType.MatchNone,
-            exemption_word_list=[],
-        )
-    ]
+    ProcessType.MatchNone: {
+        1: "hello&world",
+        2: "test"
+    }
 }
 
-# Init matcher
-matcher = lib.init_matcher(json.dumps(config).encode())
+# Init simple matcher
+matcher = lib.init_simple_matcher(json.dumps(config).encode())
 
 # Check match
-is_match = lib.matcher_is_match(matcher, "hello".encode("utf-8"))
+is_match = lib.simple_matcher_is_match(matcher, "hello world".encode("utf-8"))
 print(f"Is match: {is_match}")
 
 # Match and get string result
-res = lib.matcher_process_as_string(matcher, "hello,world".encode("utf-8"))
+res = lib.simple_matcher_process_as_string(matcher, "hello world, test".encode("utf-8"))
 print(ffi.string(res).decode("utf-8"))
 lib.drop_string(res)
 
 # Clean up
-lib.drop_matcher(matcher)
+lib.drop_simple_matcher(matcher)
 ```
 
 ## Important Notes

@@ -9,153 +9,13 @@
 * `PINYIN` and `PINYIN-CHAR`: build from [Unihan_Readings.txt](./data/str_conv/Unihan_Readings.txt).
 * `NORM`: build from [NormalizationTest.txt](./data/str_conv/NormalizationTest.txt).
 
-## Matcher
-
-### Overview
-
-The `Matcher` is a powerful and complex system designed to identify sentence matches using multiple methods. Despite its complexity, it offers significant flexibility and power when used correctly. The main components of the `Matcher` are `MatchID` and `TableID`.
-
-### Key Concepts
-
-1. **MatchID**: Represents a unique identifier for a match.
-2. **TableID**: Represents a unique identifier for a table within a match.
-
-### Structure
-
-The `Matcher` utilizes a JSON structure to define matches and tables. Below is an example of its configuration:
-
-```json
-{
-    "777": [
-        {
-            "table_id": 45,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["hello", "world"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-        // other tables
-    ]
-    // other matches
-}
-```
-
-```mermaid
-flowchart LR
-    Match{"MatchID (777)"} -->|OR| Table1["TableID (45)"]
-    Match -->|OR| Table2["TableID (46)"]
-
-    subgraph Table Logic
-    Table1 -->|AND NOT| Except["exemption_word_list"]
-    Table1 -->|AND| Words["word_list"]
-    end
-
-    Words -->|OR| W1["hello"]
-    Words -->|OR| W2["world"]
-```
-
-- `777`: This is the `MatchID`.
-- `45`: This is the `TableID`.
-
-#### Table
-
-Each `Table` represents a collection of words related to a specific topic (e.g., political, music, math). The table also includes a list of exemption words to exclude certain sentences. The logical operations within a table are as follows:
-
-- **OR Logic (within `word_list`)**: The table matches if any word in the `word_list` is matched.
-- **NOT Logic (between `word_list` and `exemption_word_list`)**: If any word in the `exemption_word_list` is matched, the table will not be considered as matched.
-
-#### Match
-
-A `Match` consists of multiple tables. Each match can specify a list of tables to perform the matching. This allows users to experiment with different combinations of tables to find the best configuration for their use case. The logical operation between matches is:
-
-- **OR Logic (between matches)**: The result will report all the matches if any table inside the match is matched.
-
-### Usage Cases
-
-#### Table1 AND Table2 match
-```json
-Input:
-{
-    "1": [
-        {
-            "table_id": 1,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["hello", "world"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-    ],
-    "2": [
-        {
-            "table_id": 2,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["你", "好"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-    ],
-}
-
-Output: Check if `match_id` 1 and 2 are both matched.
-```
-
-#### Table1 OR Table2 match
-```json
-Input:
-{
-    "1": [
-        {
-            "table_id": 1,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["hello", "world"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        },
-        {
-            "table_id": 2,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["你", "好"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-    ]
-}
-
-Output: Check if `match_id` 1 or 2 is matched.
-```
-
-#### Table1 NOT Table2 match
-```json
-Input:
-{
-    "1": [
-        {
-            "table_id": 1,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["hello", "world"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-    ],
-    "2": [
-        {
-            "table_id": 2,
-            "match_table_type": {"process_type": "MatchNone"},
-            "word_list": ["你", "好"],
-            "exemption_process_type": "MatchNone",
-            "exemption_word_list": []
-        }
-    ],
-}
-
-Output: Check if `match_id` 1 is matched and 2 is not matched.
-```
-
 ## SimpleMatcher
 
 ### Overview
 
-The `SimpleMatcher` is the core component, designed to be fast, efficient, and easy to use. It handles large amounts of data and identifies words based on predefined types.
+The `SimpleMatcher` is the core component, designed to be fast, efficient, and easy to use. It handles large amounts of data and identifies words based on predefined types. It supports complex logical operations within a single pattern entry:
+- **AND (`&`)**: All sub-patterns separated by `&` must match for the rule to trigger.
+- **NOT (`~`)**: If any sub-pattern preceded by `~` matches, the rule is disqualified.
 
 ### Key Concepts
 
@@ -227,18 +87,12 @@ Input:
 Output: Check if `word_id` 1 is matched.
 ```
 
-## Summary
-
-The `Matcher` and `SimpleMatcher` systems are designed to provide a robust and flexible solution for word matching tasks. By understanding the logical operations and structures of `MatchID`, `TableID`, and `WordID`, users can effectively leverage these tools for complex matching requirements.
-
 ## Architecture & Optimization
 
 To achieve extremely high throughput and robust latency across thousands of simultaneous matching rules, `matcher_rs` incorporates several advanced architectural optimizations beneath its logical API.
 
 ### `ProcessType` Tree Optimization
 Words and sentences in the real world involve complex combinations of variations, such as Simplified vs. Traditional Chinese (`Fanjian`), symbol obfuscation (`Delete`), and casing (`Normalize`). These variations are handled by flags called `ProcessType`s.
-
-A user's `Matcher` configuration may specify multiple variants of matching required at once, represented as bitflags. For example, one internal `MatchTable` might require `Delete | PinYin`, while another requires just `Delete`.
 
 To prevent redundant processing of the same string, `matcher_rs` constructs a graph (the `ProcessType` tree) via `build_process_type_tree`.
 
@@ -268,12 +122,11 @@ flowchart TD
    The internal string transformation rules (like mapping Traditional to Simplified characters, or parsing `PinYin` readings from Unicode variants) are known at library compile-time. `matcher_rs` statically compiles these patterns into optimized byte-layouts via `CharwiseDoubleArrayAhoCorasick` and exports them directly into the compiled binary as `&[u8]` arrays. At runtime, fetching a configuration via `get_process_matcher` involves a `deserialize_unchecked` cast, requiring exactly **zero memory allocation and zero initialization time**.
 
 2. **Dynamically Constructed User Automata:**
-   The `SimpleMatcher` receives an arbitrary pool of search terms at runtime. It dynamically constructs a `CharwiseDoubleArrayAhoCorasick` automaton. This automaton maps input substrings directly to internal `word_id` mappings, ensuring that searching a text for 10 words or 10,000 words operates with roughly `O(N)` bounds over the length of the string, uncoupled from the size of the search dictionary.
+   The `SimpleMatcher` receives an arbitrary pool of search terms at runtime. It dynamically constructs a `CharwiseDoubleArrayAhoCorasick` or `AhoCorasick` (or `Vectorscan` if enabled) automaton. This automaton maps input substrings directly to internal `word_id` mappings, ensuring that searching a text for 10 words or 10,000 words operates with roughly `O(N)` bounds over the length of the string, uncoupled from the size of the search dictionary.
 
 ### Memory Layout and Performance Limitations
-The Matcher orchestrator ensures `O(1)` constant-time dispatch and scaling by using minimal-overhead mappings.
 
 * **Zero-Copy Parsers (`Cow<'a, str>`):**
   String transformations (`Delete`, `Normalize`) operate lazily. If a string undergoes a `Normalize` transformation but the string contains no combinable characters or varied casings, the system returns a `Cow::Borrowed` pointer to the original memory address, omitting the internal allocation of a `String` entirely.
 * **Global Memory Allocators (FFI Boundaries):**
-  The highly-concurrent matching algorithms require a robust multithreaded allocator capable of preventing memory fragmentation. The `matcher_rs` Rust library itself leaves the allocator up to the consumer, but the Foreign Function Interface (FFI) bindings for Python and C (`matcher_py`, `matcher_c`) automatically overwrite the system allocator with `tikv-jemallocator` (on Linux ARM64) and `mimalloc` (on all others) to guarantee max throughput in multi-threaded runtime environments without hijacking downstream Rust targets.
+  The highly-concurrent matching algorithms require a robust multithreaded allocator capable of preventing memory fragmentation. `matcher_rs` uses `mimalloc` to guarantee max throughput in multi-threaded runtime environments.
