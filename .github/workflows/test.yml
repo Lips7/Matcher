@@ -109,6 +109,7 @@ jobs:
         shell: bash
         run: |
           cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/matcher_c.so
+          mkdir -p ./matcher_java/src/main/resources
           cp ./target/${{ matrix.platform.target }}/release/*matcher_java.${{ matrix.platform.suffix }} matcher_java/src/main/resources/matcher_java.${{ matrix.platform.suffix }}
 
       - name: Install Python

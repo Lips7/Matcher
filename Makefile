@@ -5,6 +5,7 @@ build:
 	cargo update
 	cargo build --release
 	cp ./target/release/libmatcher_c.$(EXT) ./matcher_c/libmatcher_c.$(EXT)
+	mkdir -p ./matcher_java/src/main/resources
 	cp ./target/release/libmatcher_java.$(EXT) ./matcher_java/src/main/resources/libmatcher_java.$(EXT)
 
 update:

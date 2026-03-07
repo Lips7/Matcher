@@ -1,11 +1,14 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring};
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable, reduce_text_process as reduce_text_process_rs, text_process as text_process_rs};
+use matcher_rs::{
+    ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
+    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
+};
 use std::panic::{self, AssertUnwindSafe};
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_textProcess<'local>(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
     env: JNIEnv<'local>,
     _class: JClass,
     process_type: jint,
@@ -33,7 +36,7 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_textProcess<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_reduceTextProcess<'local>(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local>(
     env: JNIEnv<'local>,
     _class: JClass,
     process_type: jint,
@@ -59,7 +62,7 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_reduceTextProcess<'loc
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_initSimpleMatcher(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher(
     env: JNIEnv,
     _class: JClass,
     simple_table_bytes: JByteArray,
@@ -80,7 +83,7 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_initSimpleMatcher(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_simpleMatcherIsMatch(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch(
     env: JNIEnv,
     _class: JClass,
     matcher_ptr: jlong,
@@ -96,7 +99,13 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_simpleMatcherIsMatch(
         matcher.is_match(text_str)
     }));
     match result {
-        Ok(res) => if res { 1 } else { 0 },
+        Ok(res) => {
+            if res {
+                1
+            } else {
+                0
+            }
+        }
         Err(_) => {
             eprintln!("simpleMatcherIsMatch failed");
             0
@@ -105,7 +114,7 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_simpleMatcherIsMatch(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_simpleMatcherProcessAsString<'local>(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsString<'local>(
     env: JNIEnv<'local>,
     _class: JClass,
     matcher_ptr: jlong,
@@ -133,7 +142,7 @@ pub extern "system" fn Java_com_matcher_1java_MatcherJava_simpleMatcherProcessAs
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcher_1java_MatcherJava_dropSimpleMatcher(
+pub extern "system" fn Java_com_matcherjava_MatcherJava_dropSimpleMatcher(
     _env: JNIEnv,
     _class: JClass,
     matcher_ptr: jlong,
