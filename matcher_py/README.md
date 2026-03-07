@@ -10,8 +10,6 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
 
 ## Features
 
-- **Multiple Matching Methods**:
-  - Simple Word Matching
 - **Text Normalization**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
@@ -28,7 +26,6 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
   - Example: `hello&world` matches `hello world` and `world,hello`
   - Example: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
   - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
-- **Customizable Exemption Lists**: Exclude specific words from matching.
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
 ## Installation
@@ -77,8 +74,6 @@ print(reduce_text_process(ProcessType.MatchDeleteNormalize, "hello, world!"))
 print(text_process(ProcessType.MatchDelete, "hello, world!"))
 ```
 
-
-
 ### Simple Matcher Basic Usage
 
 Here’s an example of how to use the `SimpleMatcher`:
@@ -86,17 +81,16 @@ Here’s an example of how to use the `SimpleMatcher`:
 ```python
 import json
 
-from matcher_py import SimpleMatcher
-from matcher_py.extension_types import ProcessType
+from matcher_py import SimpleMatcher, ProcessType
 
 simple_matcher = SimpleMatcher(
     json.dumps(
         {
-            ProcessType.MatchNone: {
+            ProcessType.NONE: {
                 1: "hello&world",
                 2: "word&word~hello"
             },
-            ProcessType.MatchDelete: {
+            ProcessType.DELETE: {
                 3: "hallo"
             }
         }
@@ -113,30 +107,28 @@ print(result)
 
 * `SimpleMatcher`'s configuration is defined by the `SimpleTable = Dict[ProcessType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.
 
-
-
 ### ProcessType
 
-* `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/process_map/FANJIAN.txt).
+* `NONE`: No transformation.
+* `FANJIAN`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/process_map/FANJIAN.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `Delete`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](../matcher_rs/process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
+* `DELETE`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](../matcher_rs/process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [NORM](../matcher_rs//process_map/NORM.txt) and [NUM_NORM](../matcher_rs//process_map/NUM-NORM.txt).
+* `NORMALIZE`: Normalize all English character variations and number variations to basic characters. Based on [NORM](../matcher_rs//process_map/NORM.txt) and [NUM_NORM](../matcher_rs//process_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
+* `PINYIN`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
   * `你好` -> ` ni  hao `
   * `西安` -> ` xi  an `
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
+* `PINYIN_CHAR`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
-You can combine these transformations as needed. Pre-defined combinations like `DeleteNormalize` and `FanjianDeleteNormalize` are provided for convenience.
+You can combine these transformations as needed. Pre-defined combinations like `DELETE_NORMALIZE` and `FANJIAN_DELETE_NORMALIZE` are provided for convenience.
 
-Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
+Avoid combining `PINYIN` and `PINYIN_CHAR` due to that `PINYIN` is a more limited version of `PINYIN_CHAR`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
 ## Contributing
 

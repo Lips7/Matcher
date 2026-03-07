@@ -38,7 +38,5 @@ build-backend = "maturin"
 dev = ["pytest", "pip"]
 
 [tool.maturin]
-python-source = "python"
 bindings = "pyo3"
-module-name = "matcher_py"
 rustc-args = ["-C", "target-cpu=native"]

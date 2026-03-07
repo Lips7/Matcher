@@ -10,7 +10,7 @@ use matcher_rs::{
     ProcessType, SimpleMatcher, SimpleResult, SimpleTableSerde, reduce_text_process, text_process,
 };
 
-#[pyclass(name = "ProcessType", module = "matcher_py", eq, from_py_object)]
+#[pyclass(name = "ProcessType", eq, from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
 pub struct PyProcessType(ProcessType);
 
@@ -70,7 +70,7 @@ impl PyProcessType {
     }
 }
 
-#[pyclass(name = "SimpleResult", module = "matcher_py")]
+#[pyclass(name = "SimpleResult")]
 pub struct PySimpleResult {
     #[pyo3(get)]
     pub word_id: u32,
@@ -104,7 +104,7 @@ fn py_reduce_text_process<'a>(process_type: &PyProcessType, text: &'a str) -> Ve
         .collect()
 }
 
-#[pyclass(name = "SimpleMatcher", module = "matcher_py")]
+#[pyclass(name = "SimpleMatcher")]
 pub struct PySimpleMatcher {
     simple_matcher: SimpleMatcher,
     simple_table_bytes: Vec<u8>,

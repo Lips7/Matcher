@@ -22,10 +22,6 @@
 
 详细实现请参考 [设计文档](./DESIGN.md)。
 
-- **多种匹配方法**：
-  - 简单词匹配 (Simple Word Matching)
-  - 正则表达式匹配 (Regex-Based Matching)
-  - 相似度匹配 (Similarity-Based Matching)
 - **文本转换 (Text Transformation)**：
   - **繁简转换 (Fanjian)**：将繁体中文转换为简体。
     示例：`蟲艸` -> `虫草`
@@ -42,14 +38,11 @@
   - 示例：`hello&world` 匹配 `hello world` 和 `world,hello`
   - 示例：`无&法&无&天` 匹配 `无无法天`（因为 `无` 重复了两次），但不匹配 `无法天`
   - 示例：`hello~helloo~hhello` 匹配 `hello`，但不匹配 `helloo` 和 `hhello`
-- **可定制的豁免列表**：排除特定的匹配词。
 - **高效处理大规模词表**：针对高性能运行进行了端到端优化。
 
 ### Rust 用户
 
 请参阅 [Rust README](./matcher_rs/README.md)。
-
-
 
 ### Python 用户
 

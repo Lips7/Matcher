@@ -54,8 +54,6 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 // matcher.close() is called automatically here
 ```
 
-
-
 ## Low-Level API
 
 If you need direct access to the native pointers or specialized functions, you can still use `MatcherJava.INSTANCE`. However, you **must** manually free resources using `drop_simple_matcher` or `drop_string` to avoid memory leaks.
