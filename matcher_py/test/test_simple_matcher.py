@@ -1,16 +1,16 @@
 import json
-import pytest
 
-from matcher_py.matcher_py import SimpleMatcher
+import pytest
 from matcher_py.extension_types import ProcessType
+from matcher_py.matcher_py import SimpleMatcher
 
 
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
-        SimpleMatcher(1)
-        SimpleMatcher("")
-        SimpleMatcher([])
-        SimpleMatcher({})
+        SimpleMatcher(1)  # ty: ignore[invalid-argument-type]
+        SimpleMatcher("")  # ty: ignore[invalid-argument-type]
+        SimpleMatcher([])  # ty: ignore[invalid-argument-type]
+        SimpleMatcher({})  # ty: ignore[invalid-argument-type]
 
 
 def test_init_with_invalid_bytes():
@@ -68,13 +68,11 @@ def test_delete():
 
 def test_normalize():
     simple_matcher = SimpleMatcher(
-        json.dumps(
-            {
-                ProcessType.MatchNormalize: {
-                    1: "he11o",
-                }
+        json.dumps({
+            ProcessType.MatchNormalize: {
+                1: "he11o",
             }
-        ).encode()
+        }).encode()
     )
     assert simple_matcher.is_match("ℋЀ⒈㈠Õ")
     assert simple_matcher.process("ℋЀ⒈㈠Õ")[0]["word_id"] == 1
@@ -83,13 +81,11 @@ def test_normalize():
 
 def test_pinyin():
     simple_matcher = SimpleMatcher(
-        json.dumps(
-            {
-                ProcessType.MatchPinYin: {
-                    1: "西安",
-                }
+        json.dumps({
+            ProcessType.MatchPinYin: {
+                1: "西安",
             }
-        ).encode()
+        }).encode()
     )
     assert simple_matcher.is_match("洗按")
     assert not simple_matcher.is_match("现")
@@ -97,13 +93,11 @@ def test_pinyin():
 
 def test_pinyinchar():
     simple_matcher = SimpleMatcher(
-        json.dumps(
-            {
-                ProcessType.MatchPinYinChar: {
-                    1: "西安",
-                }
+        json.dumps({
+            ProcessType.MatchPinYinChar: {
+                1: "西安",
             }
-        ).encode()
+        }).encode()
     )
     assert simple_matcher.is_match("洗按")
     assert simple_matcher.is_match("现")
