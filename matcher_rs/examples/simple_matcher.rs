@@ -2,8 +2,8 @@ use matcher_rs::{ProcessType, SimpleMatcher, TextMatcherTrait};
 use std::collections::HashMap;
 use std::hint::black_box;
 
-const CN_WORD_LIST_100000: &str = include_str!("../../data/word_list/cn/cn_words_100000.txt");
-const CN_HAYSTACK: &str = include_str!("../../data/text/cn/西游记.txt");
+const CN_WORD_LIST_100000: &str = include_str!("../../data/word/cn/jieba.txt");
+const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
 
 fn build_deterministic_map(
     simple_word_map_size: usize,
@@ -39,7 +39,7 @@ fn main() {
     simple_table.insert(ProcessType::None, simple_word_map);
     let simple_matcher = SimpleMatcher::new(&simple_table);
 
-    eprintln!("Running profiling workload (200 iterations over 西游记)...");
+    eprintln!("Running profiling workload (200 iterations over 三体)...");
     for _ in 0..200 {
         for line in CN_HAYSTACK.lines() {
             black_box(simple_matcher.process(line));

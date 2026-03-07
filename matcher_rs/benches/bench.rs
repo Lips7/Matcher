@@ -24,10 +24,10 @@ const DEFAULT_PROCESS_TYPE: ProcessType = ProcessType::None;
 const DEFAULT_SIMPLE_WORD_MAP_SIZE: usize = 10000;
 const DEFAULT_COMBINED_TIMES: usize = 3;
 
-const CN_WORD_LIST_100000: &str = include_str!("../../data/word_list/cn/cn_words_100000.txt");
-const CN_HAYSTACK: &str = include_str!("../../data/text/cn/西游记.txt");
+const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
+const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
 
-const EN_WORD_LIST_100000: &str = include_str!("../../data/word_list/en/en_words_100000.txt");
+const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
 const EN_HAYSTACK: &str = include_str!("../../data/text/en/sherlock.txt");
 
 /// Builds a simple word map deterministically.
@@ -43,9 +43,9 @@ fn build_deterministic_map(
     match_scenario: bool,
 ) -> HashMap<u32, String> {
     let mut patterns: Vec<&str> = if en_or_cn == "cn" {
-        CN_WORD_LIST_100000.lines().collect()
+        CN_WORD_LIST.lines().collect()
     } else {
-        EN_WORD_LIST_100000.lines().collect()
+        EN_WORD_LIST.lines().collect()
     };
     patterns.sort_unstable();
 
