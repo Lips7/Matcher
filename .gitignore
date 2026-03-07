@@ -153,6 +153,7 @@ Cargo.lock
 test.py
 test.ipynb
 profile.json
+uv.lock
 
 # Build Outputs
 **/target/

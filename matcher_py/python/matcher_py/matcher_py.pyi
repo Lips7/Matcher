@@ -1,23 +1,22 @@
-from enum import IntFlag
-from typing import TypeAlias, TypedDict
+from typing import TypeAlias
 
-class ProcessType(IntFlag):
+class ProcessType:
     """
     An enumeration representing various types of text processing operations.
     """
 
-    MatchNone = 0b00000001
-    MatchFanjian = 0b00000010
-    MatchDelete = 0b00000100
-    MatchNormalize = 0b00001000
-    MatchDeleteNormalize = 0b00001100
-    MatchFanjianDeleteNormalize = 0b00001110
-    MatchPinYin = 0b00010000
-    MatchPinYinChar = 0b00100000
+    NONE: int
+    FANJIAN: int
+    DELETE: int
+    NORMALIZE: int
+    DELETE_NORMALIZE: int
+    FANJIAN_DELETE_NORMALIZE: int
+    PINYIN: int
+    PINYIN_CHAR: int
 
-class SimpleResult(TypedDict):
+class SimpleResult:
     """
-    A TypedDict representing a simplified result of a text processing operation.
+    A class representing a simplified result of a text processing operation.
 
     Attributes:
         word_id (int): The identifier of the word within the word list.
