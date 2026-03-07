@@ -1,6 +1,8 @@
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::{PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction};
-use pyo3::types::PyModuleMethods;
+use pyo3::prelude::{
+    Py, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
+};
+use pyo3::types::{PyModuleMethods, PyString};
 use pyo3::{Bound, pyfunction};
 use std::borrow::Cow;
 
@@ -68,20 +70,19 @@ impl PyProcessType {
     }
 }
 
-#[pyclass(name = "SimpleResult", module = "matcher_py", from_py_object)]
-#[derive(Clone)]
+#[pyclass(name = "SimpleResult", module = "matcher_py")]
 pub struct PySimpleResult {
     #[pyo3(get)]
     pub word_id: u32,
     #[pyo3(get)]
-    pub word: String,
+    pub word: Py<PyString>,
 }
 
-impl From<SimpleResult<'_>> for PySimpleResult {
-    fn from(res: SimpleResult<'_>) -> Self {
+impl PySimpleResult {
+    fn new(py: Python<'_>, res: SimpleResult<'_>) -> Self {
         PySimpleResult {
             word_id: res.word_id,
-            word: res.word.into_owned(),
+            word: PyString::new(py, &res.word).into(),
         }
     }
 }
@@ -152,11 +153,11 @@ impl PySimpleMatcher {
     }
 
     #[pyo3(signature=(text))]
-    fn process(&self, text: &str) -> Vec<PySimpleResult> {
+    fn process(&self, py: Python<'_>, text: &str) -> Vec<PySimpleResult> {
         self.simple_matcher
             .process(text)
             .into_iter()
-            .map(PySimpleResult::from)
+            .map(|res| PySimpleResult::new(py, res))
             .collect()
     }
 }
