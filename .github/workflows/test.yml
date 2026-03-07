@@ -129,9 +129,9 @@ jobs:
       - name: Python Test
         shell: bash
         run: |
-          pip install -U pytest typing_extensions
+          pip install pytest
           pip install ./target/wheels/*.whl
-          pytest matcher_py/test
+          pytest matcher_py/tests
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
