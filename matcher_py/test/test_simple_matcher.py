@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from matcher_py import ProcessType, SimpleMatcher
 
 
