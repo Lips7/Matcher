@@ -158,3 +158,7 @@ uv.lock
 # Build Outputs
 **/target/
 **/dist/
+
+# C tests
+matcher_c/tests/test_bin
+matcher_c/tests/test_bin.dSYM/

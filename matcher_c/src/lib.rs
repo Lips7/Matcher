@@ -4,7 +4,7 @@ use std::{
     ptr, str,
 };
 
-use matcher_rs::{SimpleMatcher, SimpleTableSerde as SimpleTable};
+use matcher_rs::{SimpleMatcher, SimpleTableSerde as SimpleTable, ProcessType, text_process as text_process_rs, reduce_text_process as reduce_text_process_rs};
 
 /// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
 ///
@@ -173,6 +173,107 @@ pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !ptr.is_null() {
             drop(CString::from_raw(ptr))
+        }
+    }));
+}
+
+#[repr(C)]
+pub struct CStringArray {
+    pub strings: *mut *mut c_char,
+    pub len: usize,
+}
+
+/// Processes text using the specified ProcessType bit.
+///
+/// # Safety
+/// The caller must ensure `text` points to a valid null-terminated C string.
+/// Returns a null pointer if an error occurs.
+/// The caller must free the returned pointer using `drop_string`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn text_process(
+    process_type: u8,
+    text: *const c_char,
+) -> *mut c_char {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if text.is_null() {
+            return ptr::null_mut();
+        }
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        };
+        let process_type_bit = match ProcessType::from_bits(process_type) {
+            Some(pt) => pt,
+            None => return ptr::null_mut(),
+        };
+        match text_process_rs(process_type_bit, text_str) {
+            Ok(res) => {
+                let res_cstring = CString::new(res.as_ref()).unwrap();
+                res_cstring.into_raw()
+            }
+            Err(_) => ptr::null_mut(),
+        }
+    }));
+    result.unwrap_or(ptr::null_mut())
+}
+
+/// Applies a sequence of rules to text, returning all intermediate variants.
+///
+/// # Safety
+/// The caller must ensure `text` points to a valid null-terminated C string.
+/// The caller must free the returned struct using `drop_string_array`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn reduce_text_process(
+    process_type: u8,
+    text: *const c_char,
+) -> CStringArray {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if text.is_null() {
+            return CStringArray { strings: ptr::null_mut(), len: 0 };
+        }
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
+            Err(_) => return CStringArray { strings: ptr::null_mut(), len: 0 },
+        };
+        let process_type_bits = match ProcessType::from_bits(process_type) {
+            Some(pt) => pt,
+            None => return CStringArray { strings: ptr::null_mut(), len: 0 },
+        };
+        
+        let processed_texts = reduce_text_process_rs(process_type_bits, text_str);
+        
+        let mut c_strings: Vec<*mut c_char> = processed_texts.into_iter().map(|cow| {
+            CString::new(cow.as_ref()).unwrap().into_raw()
+        }).collect();
+        
+        c_strings.shrink_to_fit();
+        let len = c_strings.len();
+        let strings = c_strings.as_mut_ptr();
+        std::mem::forget(c_strings);
+        
+        CStringArray { strings, len }
+    }));
+    
+    result.unwrap_or(CStringArray { strings: ptr::null_mut(), len: 0 })
+}
+
+/// Deallocates a `CStringArray` that was returned by `reduce_text_process`.
+///
+/// # Safety
+/// This function is unsafe because it relies on raw pointers and FFI. 
+/// The caller must pass a valid `CStringArray` returned by `reduce_text_process`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_string_array(array: CStringArray) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if !array.strings.is_null() {
+            let vec = Vec::from_raw_parts(array.strings, array.len, array.len);
+            for s in vec {
+                if !s.is_null() {
+                    drop(CString::from_raw(s));
+                }
+            }
         }
     }));
 }

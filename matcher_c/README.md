@@ -113,5 +113,4 @@ lib.drop_simple_matcher(matcher)
 
 1. **Header File**: The `matcher_c.h` defines the exported functions.
 2. **Memory Management**: Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` for any pointer returned by the library to avoid memory leaks.
-3. **Extension Types**: The [extension_types.py](./extension_types.py) helper provides `TypedDict` and utility classes to ensure your configuration JSON structure is correct.
-4. **Rust Toolchain**: Building from source requires the Rust **nightly** toolchain.
+3. **Rust Toolchain**: Building from source requires the Rust **nightly** toolchain.

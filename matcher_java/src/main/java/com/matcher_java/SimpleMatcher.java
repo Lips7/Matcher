@@ -2,8 +2,8 @@ package com.matcher_java;
 
 import com.alibaba.fastjson.JSON;
 import com.matcher_java.extension_types.SimpleResult;
-import com.sun.jna.Pointer;
 import java.lang.ref.Cleaner;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -14,54 +14,47 @@ public class SimpleMatcher implements AutoCloseable {
 
     private static final Cleaner cleaner = Cleaner.create();
 
-    private Pointer matcherPtr;
+    private long matcherPtr;
     private boolean closed = false;
     private final Cleaner.Cleanable cleanable;
 
     public SimpleMatcher(byte[] simpleTableBytes) {
-        this.matcherPtr = MatcherJava.INSTANCE.init_simple_matcher(
-            simpleTableBytes
-        );
-        if (this.matcherPtr == null) {
+        this.matcherPtr = MatcherJava.initSimpleMatcher(simpleTableBytes);
+        if (this.matcherPtr == 0) {
             throw new RuntimeException("Failed to initialize SimpleMatcher");
         }
 
-        Pointer ptr = this.matcherPtr;
+        long ptr = this.matcherPtr;
         this.cleanable = cleaner.register(this, () -> {
-            MatcherJava.INSTANCE.drop_simple_matcher(ptr);
+            MatcherJava.dropSimpleMatcher(ptr);
         });
     }
 
     public boolean isMatch(String text) {
         checkClosed();
-        return MatcherJava.INSTANCE.simple_matcher_is_match(
+        return MatcherJava.simpleMatcherIsMatch(
             matcherPtr,
-            text.getBytes()
+            text.getBytes(StandardCharsets.UTF_8)
         );
     }
 
     public List<SimpleResult> process(String text) {
         checkClosed();
-        Pointer resultPtr =
-            MatcherJava.INSTANCE.simple_matcher_process_as_string(
+        String json = MatcherJava.simpleMatcherProcessAsString(
                 matcherPtr,
-                text.getBytes()
-            );
-        if (resultPtr == null) return null;
+                text.getBytes(StandardCharsets.UTF_8)
+        );
+        
+        if (json == null) return null;
 
-        try {
-            String json = resultPtr.getString(0);
-            return JSON.parseArray(json, SimpleResult.class);
-        } finally {
-            MatcherJava.INSTANCE.drop_string(resultPtr);
-        }
+        return JSON.parseArray(json, SimpleResult.class);
     }
 
     @Override
     public void close() {
         if (!closed) {
             cleanable.clean();
-            matcherPtr = null;
+            matcherPtr = 0;
             closed = true;
         }
     }

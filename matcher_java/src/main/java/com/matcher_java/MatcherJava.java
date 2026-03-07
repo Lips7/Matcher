@@ -1,21 +1,22 @@
 package com.matcher_java;
 
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
+public class MatcherJava {
 
-interface MatcherJava extends Library {
-    MatcherJava INSTANCE = (MatcherJava) Native.load(
-            "matcher_c",
-            MatcherJava.class);
+    static {
+        try {
+            // First try loading from java.library.path
+            System.loadLibrary("matcher_java");
+        } catch (UnsatisfiedLinkError e) {
+            System.err.println("Could not load matcher_java library. Ensure it's in java.library.path.");
+            throw e;
+        }
+    }
 
-    Pointer init_simple_matcher(byte[] simple_table_bytes);
+    public static native String textProcess(int processType, byte[] textBytes);
+    public static native String reduceTextProcess(int processType, byte[] textBytes);
 
-    boolean simple_matcher_is_match(Pointer simple_matcher, byte[] text_bytes);
-
-    Pointer simple_matcher_process_as_string(Pointer simple_matcher, byte[] text_bytes);
-
-    void drop_simple_matcher(Pointer simple_matcher);
-
-    void drop_string(Pointer ptr);
+    public static native long initSimpleMatcher(byte[] simpleTableBytes);
+    public static native boolean simpleMatcherIsMatch(long matcherPtr, byte[] textBytes);
+    public static native String simpleMatcherProcessAsString(long matcherPtr, byte[] textBytes);
+    public static native void dropSimpleMatcher(long matcherPtr);
 }
