@@ -7,11 +7,13 @@ build:
 	cp ./target/release/libmatcher_c.$(EXT) ./matcher_c/matcher_c.$(EXT)
 	cp ./target/release/libmatcher_c.$(EXT) ./matcher_java/src/main/resources/libmatcher_c.$(EXT)
 
-test:
+lint:
 	cargo fmt --all
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo doc
 
+	cd matcher_py && uv run ruff check --fix && uv run ty check
+test:
 	cd matcher_rs && cargo all-features test
 	cd matcher_java && mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.matcher_java.MatcherJavaExample"
 

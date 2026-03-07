@@ -1,4 +1,33 @@
-from .extension_types import SimpleResult
+from enum import IntFlag
+from typing import TypeAlias, TypedDict
+
+class ProcessType(IntFlag):
+    """
+    An enumeration representing various types of text processing operations.
+    """
+
+    MatchNone = 0b00000001
+    MatchFanjian = 0b00000010
+    MatchDelete = 0b00000100
+    MatchNormalize = 0b00001000
+    MatchDeleteNormalize = 0b00001100
+    MatchFanjianDeleteNormalize = 0b00001110
+    MatchPinYin = 0b00010000
+    MatchPinYinChar = 0b00100000
+
+class SimpleResult(TypedDict):
+    """
+    A TypedDict representing a simplified result of a text processing operation.
+
+    Attributes:
+        word_id (int): The identifier of the word within the word list.
+        word (str): The word corresponding to the word_id.
+    """
+
+    word_id: int
+    word: str
+
+SimpleTable: TypeAlias = dict[ProcessType, dict[int, str]]
 
 def text_process(process_type: int, text: str) -> str:
     """
@@ -39,7 +68,7 @@ class SimpleMatcher:
         Sets the state of the SimpleMatcher from the provided simple table bytes, typically used for unpickling.
     - is_match(self, text: str) -> bool:
         Checks whether the given text matches any patterns in the simple table.
-    - process(self, text: str) -> List[SimpleResult]:
+    - process(self, text: str) -> list[SimpleResult]:
         Processes the given text and returns a list of SimpleResult objects corresponding to the matches found.
     """
     def __init__(self, simple_table_bytes: bytes) -> None: ...

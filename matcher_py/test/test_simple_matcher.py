@@ -1,8 +1,7 @@
 import json
 
 import pytest
-from matcher_py.extension_types import ProcessType
-from matcher_py.matcher_py import SimpleMatcher
+from matcher_py import ProcessType, SimpleMatcher
 
 
 def test_init_with_non_bytes():

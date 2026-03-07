@@ -1,9 +1,15 @@
-from .extension_types import ProcessType
-from .matcher_py import SimpleMatcher, reduce_text_process, text_process
+from .matcher_py import (
+    ProcessType,
+    SimpleMatcher,
+    SimpleResult,
+    reduce_text_process,
+    text_process,
+)
 
 __all__ = [
     "ProcessType",
     "SimpleMatcher",
+    "SimpleResult",
     "reduce_text_process",
     "text_process",
 ]
