@@ -27,14 +27,9 @@ typedef uint8_t ProcessType;
 #define PROCESS_TYPE_PINYIN 16
 #define PROCESS_TYPE_PINYIN_CHAR 32
 
-typedef struct {
-    char** strings;
-    size_t len;
-} CStringArray;
-
 char* text_process(ProcessType process_type, const char* text);
-CStringArray reduce_text_process(ProcessType process_type, const char* text);
-void drop_string_array(CStringArray array);
+char** reduce_text_process(ProcessType process_type, const char* text);
+void drop_string_array(char** array);
 
 #ifdef __cplusplus
 }

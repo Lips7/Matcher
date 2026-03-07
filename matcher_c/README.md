@@ -32,10 +32,6 @@ After building, you will find the dynamic library in the `target/release` direct
 - macOS: `libmatcher_c.dylib`
 - Windows: `matcher_c.dll`
 
-### Install pre-built binary
-
-Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
 ## C Usage Example
 
 You can use the `matcher_c.h` header and the compiled library in your C projects.

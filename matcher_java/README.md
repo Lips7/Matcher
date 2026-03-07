@@ -16,10 +16,6 @@ cargo build --release
 
 Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
 
-### Install pre-built binary
-
-Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
 ## Java Usage
 
 We recommend using the high-level `SimpleMatcher` class, which provides a safe, idiomatic API and handles native memory management via `AutoCloseable`.

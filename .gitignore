@@ -6,6 +6,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.dylib
 
 # Distribution / packaging
 .Python
@@ -145,20 +146,6 @@ cython_debug/
 .vscode
 *.zip
 
-# Added by cargo
-/target
-Cargo.lock
-
-.ruff_cache
-test.py
-test.ipynb
-profile.json
-uv.lock
-
 # Build Outputs
 **/target/
 **/dist/
-
-# C tests
-matcher_c/tests/test_bin
-matcher_c/tests/test_bin.dSYM/

@@ -4,7 +4,10 @@ use std::{
     ptr, str,
 };
 
-use matcher_rs::{SimpleMatcher, SimpleTableSerde as SimpleTable, ProcessType, text_process as text_process_rs, reduce_text_process as reduce_text_process_rs};
+use matcher_rs::{
+    ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
+    reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
+};
 
 /// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
 ///
@@ -177,12 +180,6 @@ pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     }));
 }
 
-#[repr(C)]
-pub struct CStringArray {
-    pub strings: *mut *mut c_char,
-    pub len: usize,
-}
-
 /// Processes text using the specified ProcessType bit.
 ///
 /// # Safety
@@ -190,10 +187,7 @@ pub struct CStringArray {
 /// Returns a null pointer if an error occurs.
 /// The caller must free the returned pointer using `drop_string`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn text_process(
-    process_type: u8,
-    text: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> *mut c_char {
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if text.is_null() {
             return ptr::null_mut();
@@ -227,48 +221,57 @@ pub unsafe extern "C" fn text_process(
 pub unsafe extern "C" fn reduce_text_process(
     process_type: u8,
     text: *const c_char,
-) -> CStringArray {
+) -> *mut *mut c_char {
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if text.is_null() {
-            return CStringArray { strings: ptr::null_mut(), len: 0 };
+            return ptr::null_mut();
         }
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
-            Err(_) => return CStringArray { strings: ptr::null_mut(), len: 0 },
+            Err(_) => return ptr::null_mut(),
         };
         let process_type_bits = match ProcessType::from_bits(process_type) {
             Some(pt) => pt,
-            None => return CStringArray { strings: ptr::null_mut(), len: 0 },
+            None => return ptr::null_mut(),
         };
-        
+
         let processed_texts = reduce_text_process_rs(process_type_bits, text_str);
-        
-        let mut c_strings: Vec<*mut c_char> = processed_texts.into_iter().map(|cow| {
-            CString::new(cow.as_ref()).unwrap().into_raw()
-        }).collect();
-        
+
+        let mut c_strings: Vec<*mut c_char> = processed_texts
+            .into_iter()
+            .map(|cow| CString::new(cow.as_ref()).unwrap().into_raw())
+            .collect();
+
+        // Add a NULL terminator to the end of the array
+        c_strings.push(ptr::null_mut());
+
         c_strings.shrink_to_fit();
-        let len = c_strings.len();
         let strings = c_strings.as_mut_ptr();
         std::mem::forget(c_strings);
-        
-        CStringArray { strings, len }
+
+        strings
     }));
-    
-    result.unwrap_or(CStringArray { strings: ptr::null_mut(), len: 0 })
+
+    result.unwrap_or(ptr::null_mut())
 }
 
-/// Deallocates a `CStringArray` that was returned by `reduce_text_process`.
+/// Deallocates a `char**` array that was returned by `reduce_text_process`.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. 
-/// The caller must pass a valid `CStringArray` returned by `reduce_text_process`.
+/// This function is unsafe because it relies on raw pointers and FFI.
+/// The caller must pass a valid null-terminated array returned by `reduce_text_process`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn drop_string_array(array: CStringArray) {
+pub unsafe extern "C" fn drop_string_array(array: *mut *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if !array.strings.is_null() {
-            let vec = Vec::from_raw_parts(array.strings, array.len, array.len);
+        if !array.is_null() {
+            // Reconstruct the vector by finding the null terminator
+            let mut len = 0;
+            while !(*array.add(len)).is_null() {
+                len += 1;
+            }
+            // Include the null terminator in the length for deallocation
+            let vec = Vec::from_raw_parts(array, len + 1, len + 1);
             for s in vec {
                 if !s.is_null() {
                     drop(CString::from_raw(s));

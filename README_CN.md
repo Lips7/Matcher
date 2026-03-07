@@ -62,10 +62,6 @@ cargo build --release
 
 编译完成后，你可以在 `target/release` 目录下找到 `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll`。
 
-#### 预编译二进制文件
-
-访问 [Release 页面](https://github.com/Lips7/Matcher/releases) 下载预编译好的二进制文件。
-
 ## 基准测试 (Benchmarks)
 
 详情请参考 [基准测试](./matcher_rs/README.md#benchmarks)。

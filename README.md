@@ -62,10 +62,6 @@ cargo build --release
 
 Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
 
-#### Pre-built binary
-
-Visit the [release page](https://github.com/Lips7/Matcher/releases) to download the pre-built binary.
-
 ## Benchmarks
 
 Please refer to [benchmarks](./matcher_rs/README.md#benchmarks) for details.
