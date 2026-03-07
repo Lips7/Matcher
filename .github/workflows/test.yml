@@ -57,18 +57,23 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: so
+            prefix: lib
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             suffix: so
+            prefix: lib
           - runner: macos-latest
             target: aarch64-apple-darwin
             suffix: dylib
+            prefix: lib
           - runner: windows-latest
             target: x86_64-pc-windows-gnu
             suffix: dll
+            prefix: ""
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             suffix: dll
+            prefix: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -108,9 +113,9 @@ jobs:
       - name: Rename & move
         shell: bash
         run: |
-          cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/matcher_c.so
-          mkdir -p ./matcher_java/src/main/resources
-          cp ./target/${{ matrix.platform.target }}/release/*matcher_java.${{ matrix.platform.suffix }} matcher_java/src/main/resources/matcher_java.${{ matrix.platform.suffix }}
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_c.${{ matrix.platform.suffix }} matcher_c/${{ matrix.platform.prefix }}matcher_c.${{ matrix.platform.suffix }}
+          mkdir -p matcher_java/src/main/resources
+          cp ./target/${{ matrix.platform.target }}/release/*matcher_java.${{ matrix.platform.suffix }} matcher_java/src/main/resources/${{ matrix.platform.prefix }}matcher_java.${{ matrix.platform.suffix }}
 
       - name: Install Python
         uses: actions/setup-python@v5
