@@ -18,7 +18,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
         let bytes = env.convert_byte_array(text_bytes).ok()?;
         let text_str = std::str::from_utf8(&bytes).ok()?;
 
-        let p_type = ProcessType::from_bits(process_type as u8).unwrap_or(ProcessType::None);
+        let p_type = ProcessType::from_bits_retain(process_type as u8);
 
         let res = text_process_rs(p_type, text_str);
         let j_string: JString = env.new_string(res.as_ref()).ok()?;
@@ -44,7 +44,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local
         let bytes = env.convert_byte_array(text_bytes).ok()?;
         let text_str = std::str::from_utf8(&bytes).ok()?;
 
-        let p_type = ProcessType::from_bits(process_type as u8).unwrap_or(ProcessType::None);
+        let p_type = ProcessType::from_bits_retain(process_type as u8);
 
         let variants = reduce_text_process_rs(p_type, text_str);
 

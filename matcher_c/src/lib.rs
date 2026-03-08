@@ -204,10 +204,7 @@ pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> 
             Ok(s) => s,
             Err(_) => return ptr::null_mut(),
         };
-        let process_type_bit = match ProcessType::from_bits(process_type) {
-            Some(pt) => pt,
-            None => return ptr::null_mut(),
-        };
+        let process_type_bit = ProcessType::from_bits_retain(process_type);
         let res = text_process_rs(process_type_bit, text_str);
         match CString::new(res.as_ref()) {
             Ok(cs) => cs.into_raw(),
@@ -236,10 +233,7 @@ pub unsafe extern "C" fn reduce_text_process(
             Ok(s) => s,
             Err(_) => return ptr::null_mut(),
         };
-        let process_type_bits = match ProcessType::from_bits(process_type) {
-            Some(pt) => pt,
-            None => return ptr::null_mut(),
-        };
+        let process_type_bits = ProcessType::from_bits_retain(process_type);
 
         let processed_texts = reduce_text_process_rs(process_type_bits, text_str);
 

@@ -38,7 +38,7 @@ build-backend = "maturin"
 dev = ["pytest", "pip"]
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { dir = "src" },  { file = "matcher_py.pyi"}]
+reinstall-package = ["matcher_py"]
 
 [tool.maturin]
 bindings = "pyo3"
