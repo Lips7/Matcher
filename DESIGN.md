@@ -91,6 +91,13 @@ Output: Check if `word_id` 1 is matched.
 
 To achieve extremely high throughput and robust latency across thousands of simultaneous matching rules, `matcher_rs` incorporates several advanced architectural optimizations beneath its logical API.
 
+### Minimum Word Set Optimization
+The `SimpleMatcher` employs a "Minimum Word Set" strategy during construction to minimize the size and memory footprint of the underlying Aho-Corasick automaton:
+
+1.  **Canonical Pattern Emitting**: When building the matcher, `reduce_text_process_emit` transforms user patterns into their canonical forms for a given `ProcessType`. For N-to-1 transformations like `Fanjian` (Simplified Chinese), only the final simplified form is emitted. This is sufficient because the input text pipeline also simplifies the text, ensuring a match against a single optimized entry in the automaton.
+2.  **Delete-Subtractive Matching**: The `Delete` transformation is explicitly subtracted from pattern processing. This keeps patterns "clean" (no internal noise or whitespace). Since the input pipeline removes noise characters from target text, a single clean pattern in the AC matcher can match an infinite variety of "noisy" inputs.
+3.  **Automaton Minimization**: By avoiding storage of redundant intermediate or noisy pattern variants, the Aho-Corasick automaton remains as small as possible, improving cache locality and matching throughput.
+
 ### `ProcessType` Tree Optimization
 Words and sentences in the real world involve complex combinations of variations, such as Simplified vs. Traditional Chinese (`Fanjian`), symbol obfuscation (`Delete`), and casing (`Normalize`). These variations are handled by flags called `ProcessType`s.
 

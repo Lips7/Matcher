@@ -46,7 +46,7 @@ fn test_reduce_text_process_with_tree() {
         ProcessType::Normalize.bits(),
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
-    let text = "test爽-︻";
+    let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
     let processed_text_process_type_masks = reduce_text_process_with_tree(&process_type_tree, text);
     println!("{processed_text_process_type_masks:?}");
@@ -61,7 +61,7 @@ fn test_reduce_text_process_with_set() {
         ProcessType::Delete.bits(),
         ProcessType::Normalize.bits(),
     ]);
-    let text = "test爽-︻";
+    let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
     let processed_text_process_type_masks = reduce_text_process_with_set(&process_type_set, text);
     println!("{processed_text_process_type_masks:?}");

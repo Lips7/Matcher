@@ -607,14 +607,11 @@ pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a,
     let mut result = Cow::Borrowed(text);
 
     for bit in process_type_bit.iter() {
-        if bit == ProcessType::None {
-            continue;
-        }
-
         let cached_result = get_process_matcher(bit);
         let (process_replace_list, process_matcher) = cached_result.as_ref();
 
         match (bit, process_matcher) {
+            (ProcessType::None, _) => continue,
             (ProcessType::Delete, pm) => {
                 if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref()) {
                     result = Cow::Owned(pt);
