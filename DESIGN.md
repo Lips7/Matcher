@@ -91,49 +91,82 @@ Output: Check if `word_id` 1 is matched.
 
 To achieve extremely high throughput and robust latency across thousands of simultaneous matching rules, `matcher_rs` incorporates several advanced architectural optimizations beneath its logical API.
 
-### Minimum Word Set Optimization
-The `SimpleMatcher` employs a "Minimum Word Set" strategy during construction to minimize the size and memory footprint of the underlying Aho-Corasick automaton:
+### 1. Text Transformation Pipeline (DAG-based Reduction)
 
-1.  **Canonical Pattern Emitting**: When building the matcher, `reduce_text_process_emit` transforms user patterns into their canonical forms for a given `ProcessType`. For N-to-1 transformations like `Fanjian` (Simplified Chinese), only the final simplified form is emitted. This is sufficient because the input text pipeline also simplifies the text, ensuring a match against a single optimized entry in the automaton.
-2.  **Delete-Subtractive Matching**: The `Delete` transformation is explicitly subtracted from pattern processing. This keeps patterns "clean" (no internal noise or whitespace). Since the input pipeline removes noise characters from target text, a single clean pattern in the AC matcher can match an infinite variety of "noisy" inputs.
-3.  **Automaton Minimization**: By avoiding storage of redundant intermediate or noisy pattern variants, the Aho-Corasick automaton remains as small as possible, improving cache locality and matching throughput.
+Real-world text matching often requires matching across multiple variations (Traditional/Simplified Chinese, symbol removal, Pinyin, etc.). Naively applying these transformations sequentially would lead to exponential work and redundant string allocations.
 
-### `ProcessType` Tree Optimization
-Words and sentences in the real world involve complex combinations of variations, such as Simplified vs. Traditional Chinese (`Fanjian`), symbol obfuscation (`Delete`), and casing (`Normalize`). These variations are handled by flags called `ProcessType`s.
-
-To prevent redundant processing of the same string, `matcher_rs` constructs a graph (the `ProcessType` tree) via `build_process_type_tree`.
+#### `ProcessType` Tree Optimization
+`matcher_rs` constructs a Directed Acyclic Graph (DAG) of transformations via `build_process_type_tree`. This tree represents all unique paths of processing required by the user's rule set.
 
 ```mermaid
-flowchart TD
-    Raw["Raw Input String"] --> None["NONE (No Op)"]
-    Raw --> Fanjian["Fanjian (Trad -> Simp)"]
-
-    Fanjian --> F_Delete["Delete (Symbol Obfuscation)"]
-    None --> N_Delete["Delete (Symbol Obfuscation)"]
-
-    F_Delete --> F_D_Norm["Normalize (Case / Symbols)"]
-    N_Delete --> N_Norm["Normalize (Case / Symbols)"]
-
-    F_Delete -.-> |Cache hit fed to| F_D_Pinyin["PinYin"]
+graph TD
+    Raw["Raw Input String"] --> None["None (Sentinel)"]
+    None --> Fanjian["Fanjian (Trad -> Simp)"]
+    None --> Delete["Delete (Symbol Removal)"]
+    None --> Normalize["Normalize (Width/Case)"]
+    
+    Fanjian --> F_Delete["Delete"]
+    Delete --> D_Normalize["Normalize"]
+    F_Delete --> F_D_Normalize["Normalize"]
+    
+    style Raw fill:#f9f,stroke:#333,stroke-width:4px
 ```
 
-1. When a string enters the system, it explores nodes sequentially.
-2. The tree ensures the `Delete` transformation is performed exactly once.
-3. The cached output of the `Delete` branch is then fed directly as the starting state into the `PinYin` branch.
-4. Intermediate states are collected in `ProcessedTextMasks` avoiding overlapping operations.
+*   **Breadth-First Traversal**: The transformation pipeline traverses this DAG level-by-level.
+*   **Shared Prefixes**: If two rules require `Fanjian | Delete` and `Fanjian | Normalize`, the `Fanjian` step is performed only once, and its output is shared.
+*   **Thread-Local State**: Traversal uses a `REDUCE_STATE` thread-local buffer to track node indices, eliminating heap allocations for traversal metadata.
+*   **Bitmask Aggregation**: As variants are generated, they are tagged with a `u64` bitmask representing all `ProcessType` combinations that lead to that specific string variant.
 
-### Aho-Corasick Automata Construction
-`matcher_rs` utilizes two fundamentally different compilation strategies for Aho-Corasick automata to maximize performance based on the lifetime of the data.
+### 2. High-Performance Matching Engine
 
-1. **Static Pre-compiled Automata (Zero-Cost Construction):**
-   The internal string transformation rules (like mapping Traditional to Simplified characters, or parsing `PinYin` readings from Unicode variants) are known at library compile-time. `matcher_rs` statically compiles these patterns into optimized byte-layouts via `CharwiseDoubleArrayAhoCorasick` and exports them directly into the compiled binary as `&[u8]` arrays. At runtime, fetching a configuration via `get_process_matcher` involves a `deserialize_unchecked` cast, requiring exactly **zero memory allocation and zero initialization time**.
+The matching process is divided into two distinct phases to decouple substring search from complex logical evaluation.
 
-2. **Dynamically Constructed User Automata:**
-   The `SimpleMatcher` receives an arbitrary pool of search terms at runtime. It dynamically constructs a `CharwiseDoubleArrayAhoCorasick` or `AhoCorasick` (or `Vectorscan` if enabled) automaton. This automaton maps input substrings directly to internal `word_id` mappings, ensuring that searching a text for 10 words or 10,000 words operates with roughly `O(N)` bounds over the length of the string, uncoupled from the size of the search dictionary.
+#### Pass 1: Pattern Scanning
+All unique sub-patterns (segments separated by `&` or `~`) are deduplicated and compiled into a single high-performance automaton:
+*   **Aho-Corasick**: Uses `ContiguousNFA` or `DFA` depending on feature flags for $O(N)$ scanning.
+*   **Vectorscan (Hyperscan)**: Optional SIMD-accelerated engine for ultra-fast literal matching on supported architectures.
 
-### Memory Layout and Performance Limitations
+For every hit, the engine updates a thread-local `SimpleMatchState` identifying which logical segments of which rules were satisfied in which text variant.
 
-* **Zero-Copy Parsers (`Cow<'a, str>`):**
-  String transformations (`Delete`, `Normalize`) operate lazily. If a string undergoes a `Normalize` transformation but the string contains no combinable characters or varied casings, the system returns a `Cow::Borrowed` pointer to the original memory address, omitting the internal allocation of a `String` entirely.
-* **Global Memory Allocators (FFI Boundaries):**
-  The highly-concurrent matching algorithms require a robust multithreaded allocator capable of preventing memory fragmentation. `matcher_rs` uses `mimalloc` to guarantee max throughput in multi-threaded runtime environments.
+#### Pass 2: Logical Evaluation
+The system evaluates the accumulated state to determine if any rules are fully satisfied.
+
+```mermaid
+sequenceDiagram
+    participant T as Text Variant
+    participant E as Matching Engine (AC/VS)
+    participant S as State Matrix / Mask
+    participant R as Results
+    
+    T->>E: Scan Variant
+    E->>S: Record Hit (Segment + Variant Index)
+    S->>S: Update satisfied_mask (Fast Path)
+    S->>S: Update State Matrix (Fallback)
+    S-->>R: Check Satisfiability
+```
+
+### 3. Logical Evaluation Optimizations
+
+#### Bitmask Fast-Path
+Most matching rules consist of simple AND/NOT conditions where each part only needs to appear once. `matcher_rs` optimizes these via bitmasks:
+*   **`satisfied_mask`**: A `u64` where each bit represents a satisfied logical segment.
+*   **`expected_mask`**: A pre-calculated mask of required bits.
+*   **$O(1)$ Evaluation**: Verification becomes a simple integer comparison (`mask == expected`).
+
+#### Matrix Skip (`use_matrix`)
+For rules that don't require count-based logic (e.g., "match 'a' at least twice") or have fewer than 64 splits, the engine sets a `use_matrix: false` flag. This bypasses the initialization and maintenance of the `i32` state matrix, significantly reducing memory bandwidth and CPU cycles.
+
+#### Fallback Engine
+For complex requirements (e.g., more than 64 logical segments or count-based AND logic like `a&a&b`), the system transparently falls back to a robust `i32` matrix-based counter system.
+
+### 4. Memory & State Management
+
+*   **Generation-based State Re-use**: `SimpleMatchState` uses a "generation ID" system. Instead of clearing large vectors between calls, it increments a counter. Entries are only re-initialized if their generation ID is stale, effectively providing a zero-cost "clear" operation.
+*   **String Pooling**: A thread-local `STRING_POOL` caches and reuses `String` allocations produced during transformations, mitigating pressure on the global allocator.
+*   **Zero-Copy Logic (`Cow<'a, str>`)**: Transformations are lazy. If no changes are needed (e.g., `Delete` on a string with no symbols), the system returns a borrowed reference, avoiding all copying.
+*   **Multithreaded Safety**: All mutable state is stored in `thread_local!` buffers, ensuring that `SimpleMatcher` is `Send + Sync` and can be safely shared via `Arc` across high-concurrency environments without lock contention.
+
+### 5. Static vs. Dynamic Automata
+
+*   **Zero-Cost Construction (Static)**: Core transformation rules (Fanjian, Pinyin) are pre-compiled into optimized byte-layouts at library compile-time. At runtime, these are "loaded" via `unsafe` zero-copy pointer casts, resulting in **instant startup**.
+*   **Efficient Construction (Dynamic)**: User-provided rules are compiled into optimized Aho-Corasick or Vectorscan structures. The builder employs a "Minimum Word Set" strategy, emitting only canonical forms to keep the final automaton as compact as possible.
