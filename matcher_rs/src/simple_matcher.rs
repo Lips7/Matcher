@@ -276,7 +276,8 @@ impl SimpleMatcher {
         let mut process_type_set = HashSet::with_capacity(process_type_word_map.len());
         let mut ac_dedup_word_conf_list = Vec::with_capacity(word_size);
         let mut word_conf_list: Vec<WordConf> = Vec::with_capacity(word_size);
-        let mut word_id_to_idx: HashMap<u32, usize> = HashMap::with_capacity(word_size);
+        let mut word_id_to_idx: HashMap<(ProcessType, u32), usize> =
+            HashMap::with_capacity(word_size);
 
         let mut ac_dedup_word_id = 0;
         let mut ac_dedup_word_list = Vec::with_capacity(word_size);
@@ -338,7 +339,8 @@ impl SimpleMatcher {
                     || split_bit[..not_offset].iter().any(|&v| v != 1)
                     || split_bit[not_offset..].iter().any(|&v| v != 0);
 
-                let word_conf_idx = if let Some(&existing_idx) = word_id_to_idx.get(&simple_word_id)
+                let word_conf_idx = if let Some(&existing_idx) =
+                    word_id_to_idx.get(&(process_type, simple_word_id))
                 {
                     word_conf_list[existing_idx] = WordConf {
                         word_id: simple_word_id,
@@ -351,7 +353,7 @@ impl SimpleMatcher {
                     existing_idx
                 } else {
                     let idx = word_conf_list.len();
-                    word_id_to_idx.insert(simple_word_id, idx);
+                    word_id_to_idx.insert((process_type, simple_word_id), idx);
                     word_conf_list.push(WordConf {
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
@@ -555,14 +557,16 @@ impl SimpleMatcher {
                 *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                 if offset < word_conf.not_offset {
-                    if *bit <= 0 {
+                    if *bit <= 0 && offset < 64 {
                         state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
                     }
                 } else if *bit > 0 {
                     state.not_flags_generation[word_conf_idx] = generation;
                 }
             } else if offset < word_conf.not_offset {
-                state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+                if offset < 64 {
+                    state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+                }
             } else {
                 state.not_flags_generation[word_conf_idx] = generation;
             }
