@@ -95,78 +95,101 @@ To achieve extremely high throughput and robust latency across thousands of simu
 
 Real-world text matching often requires matching across multiple variations (Traditional/Simplified Chinese, symbol removal, Pinyin, etc.). Naively applying these transformations sequentially would lead to exponential work and redundant string allocations.
 
-#### `ProcessType` Tree Optimization
-`matcher_rs` constructs a Directed Acyclic Graph (DAG) of transformations via `build_process_type_tree`. This tree represents all unique paths of processing required by the user's rule set.
+#### `ProcessType` Bitmask & Trie Optimization
+`matcher_rs` uses an 8-bit `ProcessType` bitmask to represent combinations of transformations. At initialization, it constructs a Directed Acyclic Graph (DAG) in the form of a Trie via `build_process_type_tree`. Each node in this tree represents a unique transformation step (`Fanjian`, `Delete`, `Normalize`, `Pinyin`).
 
 ```mermaid
 graph TD
-    Raw["Raw Input String"] --> None["None (Sentinel)"]
-    None --> Fanjian["Fanjian (Trad -> Simp)"]
-    None --> Delete["Delete (Symbol Removal)"]
-    None --> Normalize["Normalize (Width/Case)"]
+    Raw["Raw Input String"] --> Root["Root (None)"]
+    Root -- "Fanjian" --> F["Fanjian"]
+    Root -- "Delete" --> D["Delete"]
+    Root -- "Normalize" --> N["Normalize"]
     
-    Fanjian --> F_Delete["Delete"]
-    Delete --> D_Normalize["Normalize"]
-    F_Delete --> F_D_Normalize["Normalize"]
+    F -- "Delete" --> FD["Fanjian | Delete"]
+    D -- "Normalize" --> DN["Delete | Normalize"]
+    FD -- "Normalize" --> FDN["Fanjian | Delete | Normalize"]
     
+    subgraph "Processing Logic"
+    Root
+    F
+    D
+    N
+    FD
+    DN
+    FDN
+    end
+
     style Raw fill:#f9f,stroke:#333,stroke-width:4px
+    style Root fill:#fff,stroke:#333,stroke-dasharray: 5 5
 ```
 
-*   **Breadth-First Traversal**: The transformation pipeline traverses this DAG level-by-level.
-*   **Shared Prefixes**: If two rules require `Fanjian | Delete` and `Fanjian | Normalize`, the `Fanjian` step is performed only once, and its output is shared.
-*   **Thread-Local State**: Traversal uses a `REDUCE_STATE` thread-local buffer to track node indices, eliminating heap allocations for traversal metadata.
-*   **Bitmask Aggregation**: As variants are generated, they are tagged with a `u64` bitmask representing all `ProcessType` combinations that lead to that specific string variant.
+*   **Breadth-First Traversal**: The pipeline (`reduce_text_process_with_tree`) traverses this DAG. For each node, it applies its specific transformation to the output of its parent.
+*   **Shared Prefixes**: If multiple rules require different transformation chains that share a prefix (e.g., `Fanjian | Delete` and `Fanjian | Normalize`), the `Fanjian` step is performed only once.
+*   **Lazy Transformations (`Cow<'a, str>`)**: Transformations are lazy. If a step (like `Delete`) finds no characters to modify, it returns a borrowed `Cow::Borrowed`, avoiding new string allocations.
+*   **Bitmask Aggregation**: Each generated text variant is tagged with a `u64` bitmask representing all `ProcessType` combinations that lead to that specific string variant. This allows a single scan of a variant to satisfy multiple rule configurations.
 
-### 2. High-Performance Matching Engine
+### 2. High-Performance Matching Engine (Two-Pass)
 
 The matching process is divided into two distinct phases to decouple substring search from complex logical evaluation.
 
-#### Pass 1: Pattern Scanning
-All unique sub-patterns (segments separated by `&` or `~`) are deduplicated and compiled into a single high-performance automaton:
-*   **Aho-Corasick**: Uses `ContiguousNFA` or `DFA` depending on feature flags for $O(N)$ scanning.
-*   **Vectorscan (Hyperscan)**: Optional SIMD-accelerated engine for ultra-fast literal matching on supported architectures.
-
-For every hit, the engine updates a thread-local `SimpleMatchState` identifying which logical segments of which rules were satisfied in which text variant.
+#### Pass 1: Pattern Scanning (Deduplicated)
+All unique sub-patterns (segments separated by `&` or `~`) from all rules and all `ProcessType` variants are deduplicated and compiled into a single automaton:
+*   **Aho-Corasick**: Uses `ContiguousNFA` or `DFA` for $O(N)$ scanning.
+*   **Vectorscan (Hyperscan)**: Optional SIMD-accelerated engine for ultra-fast matching on supported architectures.
+*   **Pattern Mapping**: The engine maintains `ac_dedup_entries` and `ac_dedup_ranges` to map a single hit in the automaton back to all affected rule segments and their respective `ProcessType` requirements.
 
 #### Pass 2: Logical Evaluation
-The system evaluates the accumulated state to determine if any rules are fully satisfied.
+The system evaluates the hits to determine if any rules are fully satisfied.
 
 ```mermaid
 sequenceDiagram
-    participant T as Text Variant
-    participant E as Matching Engine (AC/VS)
-    participant S as State Matrix / Mask
+    participant P as Pipeline
+    participant E as Scan Engine (AC/VS)
+    participant S as SimpleMatchState
     participant R as Results
     
-    T->>E: Scan Variant
-    E->>S: Record Hit (Segment + Variant Index)
-    S->>S: Update satisfied_mask (Fast Path)
-    S->>S: Update State Matrix (Fallback)
-    S-->>R: Check Satisfiability
+    P->>S: prepare(size)
+    loop For each Text Variant
+        P->>E: Scan(Variant, Mask)
+        E->>S: process_match(pattern_id, variant_id, mask)
+        Note over S: Update bitmask or matrix
+        S-->>R: (Optional) Early Exit
+    end
+    S->>R: Final Evaluation (Pass 2)
 ```
 
-### 3. Logical Evaluation Optimizations
+### 3. State Management & Evaluation Optimizations
+
+#### Generation-based State Re-use
+`SimpleMatchState` avoids the $O(N)$ cost of clearing state between calls by using a **Generation ID**.
+*   Each `WordState` tracks its own `matrix_generation` and `not_generation`.
+*   Instead of zeroing vectors, the system increments a global `generation` counter. 
+*   An entry is considered "empty" if its generation ID doesn't match the current one, providing a $O(1)$ "clear" operation.
+
+#### Sparse-Set Optimization (`touched_indices`)
+To avoid scanning thousands of rules in Pass 2, the engine maintains a `touched_indices` vector. Only rules that had at least one sub-pattern hit in Pass 1 are added to this list. Pass 2 then only evaluates these "touched" rules.
 
 #### Bitmask Fast-Path
-Most matching rules consist of simple AND/NOT conditions where each part only needs to appear once. `matcher_rs` optimizes these via bitmasks:
-*   **`satisfied_mask`**: A `u64` where each bit represents a satisfied logical segment.
-*   **`expected_mask`**: A pre-calculated mask of required bits.
-*   **$O(1)$ Evaluation**: Verification becomes a simple integer comparison (`mask == expected`).
+Rules with simple AND/NOT logic (where each part only needs to match once) are optimized via bitmasks:
+*   **`expected_mask`**: A pre-calculated `u64` where each bit represents a required AND segment.
+*   **`satisfied_mask`**: A `u64` updated during Pass 1.
+*   **$O(1)$ Verification**: `satisfied_mask == expected_mask`.
+*   **NOT Short-circuit**: If a NOT segment (`~`) is matched, `not_generation` is set to the current generation, immediately disqualifying the rule for the rest of the query.
 
-#### Matrix Skip (`use_matrix`)
-For rules that don't require count-based logic (e.g., "match 'a' at least twice") or have fewer than 64 splits, the engine sets a `use_matrix: false` flag. This bypasses the initialization and maintenance of the `i32` state matrix, significantly reducing memory bandwidth and CPU cycles.
+#### Matrix-based Fallback
+For complex requirements (e.g., > 64 logical segments or count-based AND logic like `a&a&b`), the system falls back to a flat `i32` matrix:
+*   Rows represent logical segments, columns represent text variants.
+*   State is tracked as `(count - matches)`. A segment is satisfied when its value $\le 0$ in any variant column.
 
-#### Fallback Engine
-For complex requirements (e.g., more than 64 logical segments or count-based AND logic like `a&a&b`), the system transparently falls back to a robust `i32` matrix-based counter system.
+### 4. Memory & Resource Efficiency
 
-### 4. Memory & State Management
+*   **String Pooling**: A thread-local `STRING_POOL` caches and reuses `String` allocations produced during transformations, mitigating pressure on the global allocator (`mimalloc`).
+*   **Zero-Copy Logic**: Heavy use of `Cow<'a, str>` and zero-copy deserialization for static transformation rules ensures minimal memory overhead.
+*   **Static Automata**: Core transformation rules (Fanjian, Pinyin) are pre-compiled into optimized byte-layouts at library compile-time using `daachorse` (Double-Array Aho-Corasick). At runtime, these are "loaded" via zero-copy pointer casts for **instant startup**.
+*   **Thread-Local Storage (TLS)**: All mutable matching state is stored in `thread_local!` buffers. This makes the `SimpleMatcher` itself `Send + Sync`, allowing it to be shared across threads (e.g., via `Arc`) without any lock contention.
 
-*   **Generation-based State Re-use**: `SimpleMatchState` uses a "generation ID" system. Instead of clearing large vectors between calls, it increments a counter. Entries are only re-initialized if their generation ID is stale, effectively providing a zero-cost "clear" operation.
-*   **String Pooling**: A thread-local `STRING_POOL` caches and reuses `String` allocations produced during transformations, mitigating pressure on the global allocator.
-*   **Zero-Copy Logic (`Cow<'a, str>`)**: Transformations are lazy. If no changes are needed (e.g., `Delete` on a string with no symbols), the system returns a borrowed reference, avoiding all copying.
-*   **Multithreaded Safety**: All mutable state is stored in `thread_local!` buffers, ensuring that `SimpleMatcher` is `Send + Sync` and can be safely shared via `Arc` across high-concurrency environments without lock contention.
+### 5. Compiled vs. Runtime Matchers
 
-### 5. Static vs. Dynamic Automata
-
-*   **Zero-Cost Construction (Static)**: Core transformation rules (Fanjian, Pinyin) are pre-compiled into optimized byte-layouts at library compile-time. At runtime, these are "loaded" via `unsafe` zero-copy pointer casts, resulting in **instant startup**.
-*   **Efficient Construction (Dynamic)**: User-provided rules are compiled into optimized Aho-Corasick or Vectorscan structures. The builder employs a "Minimum Word Set" strategy, emitting only canonical forms to keep the final automaton as compact as possible.
+The library supports two modes for its transformation matchers:
+1.  **Static (Default)**: Dictionaries are pre-compiled into the binary. Fast startup, fixed rules.
+2.  **Runtime (`runtime_build` feature)**: Dictionaries are built at runtime. Allows for dynamic rule updates but has a higher startup cost.
