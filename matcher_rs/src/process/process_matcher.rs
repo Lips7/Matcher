@@ -179,22 +179,6 @@ type ProcessMatcherCache = RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, P
 pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
     LazyLock::new(|| RwLock::new(HashMap::with_capacity_and_hasher(8, Default::default())));
 
-/// Error type returned by [`text_process`] when more than one bit is set in the
-/// `process_type` argument.
-///
-/// This type implements [`std::fmt::Display`] and [`std::error::Error`], making it
-/// compatible with the standard error ecosystem (`Box<dyn Error>`, `anyhow`, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProcessTypeError;
-
-impl Display for ProcessTypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("text_process only accepts a single process_type bit")
-    }
-}
-
-impl std::error::Error for ProcessTypeError {}
-
 /// A fixed-capacity array of `(processed_text, u64)` pairs produced by
 /// the `reduce_text_process_*` family of functions.
 ///
@@ -604,52 +588,49 @@ pub fn get_process_matcher(
     }
 }
 
-/// Process text based on a single [`ProcessType`] bit.
+/// Process text based on a [`ProcessType`] bitmask.
 ///
 /// # Detailed Explanation / Algorithm
-/// This function is the low-level entry point for a single transformation step. It:
-/// 1. Fetches the appropriate `ProcessMatcher` (Aho-Corasick or DoubleArray) from the global cache.
-/// 2. Applies the transformation (replace or delete) to the input string.
+/// This function iteratively applies transformations for each bit set in the
+/// composite `process_type_bit`.
+/// 1. Fetches the appropriate `ProcessMatcher` from the global cache for each bit.
+/// 2. Applies the transformation (replace or delete) sequentially to the input string.
 ///
 /// # Arguments
-/// * `process_type_bit` - The single bit representing the transformation to apply.
+/// * `process_type_bit` - The rules (single or composite) representing the transformations to apply.
 /// * `text` - The input string.
 ///
 /// # Returns
-/// A `Result` containing the processed text (as a [`Cow`]).
-///
-/// # Errors
-/// Returns [`ProcessTypeError`] if more than one bit is set in `process_type_bit`.
+/// The processed text (as a [`Cow`]).
 #[inline(always)]
-pub fn text_process(
-    process_type_bit: ProcessType,
-    text: &str,
-) -> Result<Cow<'_, str>, ProcessTypeError> {
-    if process_type_bit.iter().count() > 1 {
-        return Err(ProcessTypeError);
+pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a, str> {
+    let mut result = Cow::Borrowed(text);
+
+    for bit in process_type_bit.iter() {
+        if bit == ProcessType::None {
+            continue;
+        }
+
+        let cached_result = get_process_matcher(bit);
+        let (process_replace_list, process_matcher) = cached_result.as_ref();
+
+        match (bit, process_matcher) {
+            (ProcessType::Delete, pm) => match pm.delete_all(result.as_ref()) {
+                (true, Cow::Owned(pt)) => {
+                    result = Cow::Owned(pt);
+                }
+                _ => {}
+            },
+            (_, pm) => match pm.replace_all(result.as_ref(), process_replace_list) {
+                (true, Cow::Owned(pt)) => {
+                    result = Cow::Owned(pt);
+                }
+                _ => {}
+            },
+        }
     }
 
-    let cached_result = get_process_matcher(process_type_bit);
-    let (process_replace_list, process_matcher) = cached_result.as_ref();
-    let mut result = Cow::Borrowed(text);
-    match (process_type_bit, process_matcher) {
-        (ProcessType::None, _) => {}
-        (ProcessType::Delete, pm) => match pm.delete_all(text) {
-            (true, Cow::Owned(pt)) => {
-                result = Cow::Owned(pt);
-            }
-            (false, _) => {}
-            (_, _) => unreachable!(),
-        },
-        (_, pm) => match pm.replace_all(text, process_replace_list) {
-            (true, Cow::Owned(pt)) => {
-                result = Cow::Owned(pt);
-            }
-            (false, _) => {}
-            (_, _) => unreachable!(),
-        },
-    };
-    Ok(result)
+    result
 }
 
 /// Applies a sequence of rules to text, returning all intermediate variants.

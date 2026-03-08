@@ -20,13 +20,9 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
 
         let p_type = ProcessType::from_bits(process_type as u8).unwrap_or(ProcessType::None);
 
-        match text_process_rs(p_type, text_str) {
-            Ok(res) => {
-                let j_string: JString = env.new_string(res.as_ref()).ok()?;
-                Some(j_string.into_raw())
-            }
-            Err(_) => None,
-        }
+        let res = text_process_rs(p_type, text_str);
+        let j_string: JString = env.new_string(res.as_ref()).ok()?;
+        Some(j_string.into_raw())
     }));
 
     result

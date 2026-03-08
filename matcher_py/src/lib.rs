@@ -89,10 +89,7 @@ fn py_text_process<'a>(process_type: Bound<'_, PyAny>, text: &'a str) -> PyResul
         ));
     };
 
-    match text_process(p_type, text) {
-        Ok(result) => Ok(result),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    Ok(text_process(p_type, text))
 }
 
 #[pyfunction(name = "reduce_text_process")]

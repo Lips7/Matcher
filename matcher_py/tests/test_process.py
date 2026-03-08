@@ -8,10 +8,10 @@ def test_text_process():
     res_int = text_process(ProcessType.DELETE, "hello word")
     assert isinstance(res_int, str)
 
-    # Test with combined process types (should fail since text_process only accepts a single bit)
+    # Test with combined process types (should succeed since text_process now natively supports composite bits)
     combined = ProcessType.DELETE | ProcessType.NORMALIZE
-    with pytest.raises(ValueError):
-        text_process(combined, "hello word")
+    res_combined = text_process(combined, "hello word")
+    assert isinstance(res_combined, str)
 
 
 def test_reduce_text_process():

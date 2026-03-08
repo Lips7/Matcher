@@ -208,11 +208,9 @@ pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> 
             Some(pt) => pt,
             None => return ptr::null_mut(),
         };
-        match text_process_rs(process_type_bit, text_str) {
-            Ok(res) => match CString::new(res.as_ref()) {
-                Ok(cs) => cs.into_raw(),
-                Err(_) => ptr::null_mut(),
-            },
+        let res = text_process_rs(process_type_bit, text_str);
+        match CString::new(res.as_ref()) {
+            Ok(cs) => cs.into_raw(),
             Err(_) => ptr::null_mut(),
         }
     }));
