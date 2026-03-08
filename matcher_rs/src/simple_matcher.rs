@@ -184,9 +184,9 @@ pub struct SimpleResult<'a> {
 /// * `offset` - The position within the `split_bit` vector of the [`WordConf`].
 #[derive(Debug, Clone)]
 struct WordConfEntry {
-    process_type: ProcessType,
-    word_conf_idx: usize,
-    offset: usize,
+    process_type_mask: u64,
+    word_conf_idx: u32,
+    offset: u16,
 }
 
 /// Wrapper for the underlying string matching engine.
@@ -222,7 +222,8 @@ enum AcMatcher {
 /// # Fields
 /// * `process_type_tree` - Workflow tree for efficient text transforms.
 /// * `ac_matcher` - Compiled Aho-Corasick or Vectorscan automaton.
-/// * `ac_dedup_word_conf_list` - References from automaton hits back to original rules.
+/// * `ac_dedup_entries` - Flattened references from automaton hits back to original rules.
+/// * `ac_dedup_ranges` - Start and length mapping into `ac_dedup_entries` for each pattern index.
 /// * `word_conf_list` - Unified metadata for each parsed split pattern block.
 ///
 /// # Examples
@@ -241,7 +242,8 @@ enum AcMatcher {
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AcMatcher,
-    ac_dedup_word_conf_list: Vec<Vec<WordConfEntry>>,
+    ac_dedup_entries: Vec<WordConfEntry>,
+    ac_dedup_ranges: Vec<(usize, usize)>,
     word_conf_list: Vec<WordConf>,
 }
 
@@ -375,18 +377,18 @@ impl SimpleMatcher {
                         else {
                             ac_dedup_word_id_map.insert(ac_word.clone(), ac_dedup_word_id);
                             ac_dedup_word_conf_list.push(vec![WordConfEntry {
-                                process_type,
-                                word_conf_idx,
-                                offset,
+                                process_type_mask: 1u64 << process_type.bits(),
+                                word_conf_idx: word_conf_idx as u32,
+                                offset: offset as u16,
                             }]);
                             ac_dedup_word_list.push(ac_word);
                             ac_dedup_word_id += 1;
                             continue;
                         };
                         ac_dedup_word_conf_list[ac_dedup_word_id as usize].push(WordConfEntry {
-                            process_type,
-                            word_conf_idx,
-                            offset,
+                            process_type_mask: 1u64 << process_type.bits(),
+                            word_conf_idx: word_conf_idx as u32,
+                            offset: offset as u16,
                         });
                     }
                 }
@@ -426,10 +428,21 @@ impl SimpleMatcher {
             )
         };
 
+        let mut ac_dedup_entries =
+            Vec::with_capacity(ac_dedup_word_conf_list.iter().map(|v| v.len()).sum());
+        let mut ac_dedup_ranges = Vec::with_capacity(ac_dedup_word_conf_list.len());
+        for entries in ac_dedup_word_conf_list {
+            let start = ac_dedup_entries.len();
+            let len = entries.len();
+            ac_dedup_entries.extend(entries);
+            ac_dedup_ranges.push((start, len));
+        }
+
         SimpleMatcher {
             process_type_tree,
             ac_matcher,
-            ac_dedup_word_conf_list,
+            ac_dedup_entries,
+            ac_dedup_ranges,
             word_conf_list,
         }
     }
@@ -453,7 +466,7 @@ impl SimpleMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         state: &mut SimpleMatchState,
     ) {
-        if self.ac_dedup_word_conf_list.is_empty() {
+        if self.ac_dedup_ranges.is_empty() {
             return;
         }
 
@@ -520,13 +533,18 @@ impl SimpleMatcher {
         state: &mut SimpleMatchState,
     ) {
         let generation = state.generation;
-        for &WordConfEntry {
-            process_type: match_process_type,
-            word_conf_idx,
-            offset,
-        } in &self.ac_dedup_word_conf_list[pattern_idx]
-        {
-            if process_type_mask & (1u64 << match_process_type.bits()) == 0
+        let (start, len) = self.ac_dedup_ranges[pattern_idx];
+        for entry in &self.ac_dedup_entries[start..start + len] {
+            let &WordConfEntry {
+                process_type_mask: match_process_type_mask,
+                word_conf_idx,
+                offset,
+            } = entry;
+
+            let word_conf_idx = word_conf_idx as usize;
+            let offset = offset as usize;
+
+            if process_type_mask & match_process_type_mask == 0
                 || state.not_flags_generation[word_conf_idx] == generation
             {
                 continue;
