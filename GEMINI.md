@@ -5,11 +5,11 @@
 
 The project consists of a core Rust library (`matcher_rs`) with bindings for:
 - **Python** (`matcher_py`): Using PyO3 and Maturin.
-- **Java** (`matcher_java`): Using JNA to interface with the C library.
+- **Java** (`matcher_java`): Using JNI to interface with the Rust library.
 - **C** (`matcher_c`): Providing an FFI layer for C/C++ and other languages.
 
 ### Key Features
-- **Matching Engines**: 
+- **Matching Engines**:
   - `SimpleMatcher`: Ultra-fast Aho-Corasick based matcher with logical AND/NOT support.
 - **Text Transformation Pipeline**: Normalizes input text before matching (Fanjian, Pinyin, White-space removal, etc.).
 - **Logical Operators**: Supports `&` (AND) and `~` (NOT) within patterns, and implicit OR logic within word lists.
@@ -67,7 +67,7 @@ The project consists of a core Rust library (`matcher_rs`) with bindings for:
 - **Edition**: Rust 2024.
 - **Performance First**: Favor zero-copy operations (`Cow<'a, str>`) and efficient allocators (`mimalloc`).
 - **Safety**: While optimized, the codebase follows standard Rust safety practices unless `unsafe` is strictly necessary for performance (e.g., in Aho-Corasick).
-- **Logical Syntax**: 
+- **Logical Syntax**:
   - `word1&word2`: Both must match.
   - `word1~word2`: `word1` must match, but `word2` must NOT match.
 

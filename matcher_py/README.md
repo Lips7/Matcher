@@ -54,7 +54,7 @@ maturin develop --release
 
 ## Usage
 
-All relevant types are defined in [extension_types.py](./python/matcher_py/extension_types.py).
+All relevant types are defined in [matcher_py.pyi](./matcher_py.pyi).
 
 ### Text Process Usage
 
@@ -65,9 +65,9 @@ from matcher_py import reduce_text_process, text_process
 from matcher_py.extension_types import ProcessType
 
 # Combine and reduce multiple transformations
-print(reduce_text_process(ProcessType.MatchDeleteNormalize, "hello, world!"))
+print(reduce_text_process(ProcessType.DELETE_NORMALIZE, "hello, world!"))
 # Perform a single transformation
-print(text_process(ProcessType.MatchDelete, "hello, world!"))
+print(text_process(ProcessType.DELETE, "hello, world!"))
 ```
 
 ### Simple Matcher Basic Usage

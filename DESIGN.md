@@ -27,7 +27,7 @@ The `SimpleMatcher` uses a mapping structure to define words and their IDs based
 
 ```json
 {
-    "ProcessType.None": {
+    "ProcessType.NONE": {
         "1": "hello&world",
         "2": "你好"
         // other words
@@ -113,7 +113,7 @@ flowchart TD
 1. When a string enters the system, it explores nodes sequentially.
 2. The tree ensures the `Delete` transformation is performed exactly once.
 3. The cached output of the `Delete` branch is then fed directly as the starting state into the `PinYin` branch.
-4. Intermediate states are collected in a `processed_text_list` avoiding overlapping operations.
+4. Intermediate states are collected in `ProcessedTextMasks` avoiding overlapping operations.
 
 ### Aho-Corasick Automata Construction
 `matcher_rs` utilizes two fundamentally different compilation strategies for Aho-Corasick automata to maximize performance based on the lifetime of the data.

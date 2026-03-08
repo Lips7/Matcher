@@ -39,7 +39,9 @@
 - Configure `rustflags` to use 8 compilation threads.
 - Streamline CI Rust testing by adopting `cargo-all-features` and enabling `RUST_BACKTRACE`.
 - Expand and update CI workflows (upgrade action runners to `ubuntu-24.04-arm` and `macos-latest`, add Boost installation, adjust vectorscan feature testing based on platform compatibility).
-- Remove `AGENTS.md` and legacy tracker files.## 0.8.1 - 2026-03-01
+- Remove `AGENTS.md` and legacy tracker files.
+
+## 0.8.1 - 2026-03-01
 
 ### Refactor & Performance
 - Replace `nohash-hasher`, `id-set`, `FxHashMap` (`rustc-hash`), and `micromap` with std collections (`HashMap`/`HashSet`), removing these external dependencies.

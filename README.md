@@ -24,7 +24,7 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
 
 - **Text Transformation**:
   - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫草`
+    Example: `蟲艸` -> `虫艹`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.

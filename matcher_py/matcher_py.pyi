@@ -1,5 +1,3 @@
-from typing import TypeAlias
-
 class ProcessType:
     """
     An enumeration representing various types of text processing operations.
@@ -25,8 +23,6 @@ class SimpleResult:
 
     word_id: int
     word: str
-
-SimpleTable: TypeAlias = dict[ProcessType, dict[int, str]]
 
 def text_process(process_type: int, text: str) -> str:
     """

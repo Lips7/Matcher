@@ -23,21 +23,21 @@ lint-java:
 	cd matcher_java && mvn checkstyle:check
 
 lint:
-	lint-rs
-	lint-py
-	lint-java
+	$(MAKE) lint-rs
+	$(MAKE) lint-py
+	$(MAKE) lint-java
 
 test-rs:
-	lint-rs
+	$(MAKE) lint-rs
 	cargo doc
 	cd matcher_rs && cargo all-features test
 
 test-py:
-	lint-py
+	$(MAKE) lint-py
 	cd matcher_py && unset CONDA_PREFIX && uv run maturin develop && uv run pytest
 
 test-java:
-	lint-java
+	$(MAKE) lint-java
 	cd matcher_java && mvn test
 
 test-c:
@@ -45,6 +45,6 @@ test-c:
 	./matcher_c/tests/test_matcher
 
 test:
-	test-rs
-	test-py
-	test-java
+	$(MAKE) test-rs
+	$(MAKE) test-py
+	$(MAKE) test-java
