@@ -28,11 +28,16 @@ use crate::vectorscan::VectorscanScanner;
 /// * `not_flags_generation` - Stores the generation ID indicating if a word is blocked by a "NOT" (`~`) pattern.
 /// * `touched_indices` - A list of indices in `word_conf_list` that were modified during the current search.
 /// * `generation` - The current search's unique generation ID.
+#[derive(Default, Clone, Copy)]
+struct WordState {
+    matrix_generation: u32,
+    not_generation: u32,
+    satisfied_mask: u64,
+}
+
 struct SimpleMatchState {
+    word_states: Vec<WordState>,
     matrix: Vec<TinyVec<[i32; 16]>>,
-    satisfied_mask: Vec<u64>,
-    matrix_generation: Vec<u32>,
-    not_flags_generation: Vec<u32>,
     touched_indices: Vec<usize>,
     generation: u32,
 }
@@ -44,10 +49,8 @@ impl SimpleMatchState {
     /// A new instance of `SimpleMatchState` with default values.
     fn new() -> Self {
         Self {
+            word_states: Vec::new(),
             matrix: Vec::new(),
-            satisfied_mask: Vec::new(),
-            matrix_generation: Vec::new(),
-            not_flags_generation: Vec::new(),
             touched_indices: Vec::new(),
             generation: 0,
         }
@@ -67,18 +70,18 @@ impl SimpleMatchState {
     /// * `size` - The number of word configurations to accommodate.
     fn prepare(&mut self, size: usize) {
         if self.generation == u32::MAX {
-            self.matrix_generation.fill(0);
-            self.not_flags_generation.fill(0);
+            for state in self.word_states.iter_mut() {
+                state.matrix_generation = 0;
+                state.not_generation = 0;
+            }
             self.generation = 1;
         } else {
             self.generation += 1;
         }
 
-        if self.matrix.len() < size {
+        if self.word_states.len() < size {
+            self.word_states.resize(size, WordState::default());
             self.matrix.resize(size, TinyVec::new());
-            self.satisfied_mask.resize(size, 0);
-            self.matrix_generation.resize(size, 0);
-            self.not_flags_generation.resize(size, 0);
         }
 
         self.touched_indices.clear();
@@ -465,9 +468,10 @@ impl SimpleMatcher {
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         state: &mut SimpleMatchState,
-    ) {
+        exit_early: bool,
+    ) -> bool {
         if self.ac_dedup_ranges.is_empty() {
-            return;
+            return false;
         }
 
         let processed_times = processed_text_process_type_masks.len();
@@ -480,29 +484,42 @@ impl SimpleMatcher {
                     for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text.as_ref())
                     {
                         let pattern_idx = ac_dedup_result.pattern().as_usize();
-                        self.process_match(
+                        if self.process_match(
                             pattern_idx,
                             index,
                             *process_type_mask,
                             processed_times,
                             state,
-                        );
+                            exit_early,
+                        ) {
+                            return true;
+                        }
                     }
                 }
                 #[cfg(feature = "vectorscan")]
                 AcMatcher::Vectorscan(scanner) => {
+                    let mut found = false;
                     let _ = scanner.scan(processed_text.as_ref().as_bytes(), |pattern_idx| {
-                        self.process_match(
-                            pattern_idx,
-                            index,
-                            *process_type_mask,
-                            processed_times,
-                            state,
-                        );
+                        if !found
+                            && self.process_match(
+                                pattern_idx,
+                                index,
+                                *process_type_mask,
+                                processed_times,
+                                state,
+                                exit_early,
+                            )
+                        {
+                            found = true;
+                        }
                     });
+                    if found {
+                        return true;
+                    }
                 }
             }
         }
+        false
     }
 
     /// Records a sub-pattern match and updates the logical state of affected rules.
@@ -523,6 +540,7 @@ impl SimpleMatcher {
     /// * `process_type_mask` - Bitmask of active process types for the current variant.
     /// * `processed_times` - Total number of text variants in the search.
     /// * `state` - The internal `SimpleMatchState` to update.
+    /// * `exit_early` - If true, returns true if a permanently satisfied rule is found.
     #[inline]
     fn process_match(
         &self,
@@ -531,7 +549,8 @@ impl SimpleMatcher {
         process_type_mask: u64,
         processed_times: usize,
         state: &mut SimpleMatchState,
-    ) {
+        exit_early: bool,
+    ) -> bool {
         let generation = state.generation;
         let (start, len) = self.ac_dedup_ranges[pattern_idx];
         for entry in &self.ac_dedup_entries[start..start + len] {
@@ -545,17 +564,17 @@ impl SimpleMatcher {
             let offset = offset as usize;
 
             if process_type_mask & match_process_type_mask == 0
-                || state.not_flags_generation[word_conf_idx] == generation
+                || state.word_states[word_conf_idx].not_generation == generation
             {
                 continue;
             }
 
             let word_conf = &self.word_conf_list[word_conf_idx];
 
-            if state.matrix_generation[word_conf_idx] != generation {
-                state.matrix_generation[word_conf_idx] = generation;
+            if state.word_states[word_conf_idx].matrix_generation != generation {
+                state.word_states[word_conf_idx].matrix_generation = generation;
                 state.touched_indices.push(word_conf_idx);
-                state.satisfied_mask[word_conf_idx] = 0;
+                state.word_states[word_conf_idx].satisfied_mask = 0;
 
                 if word_conf.use_matrix {
                     let num_splits = word_conf.split_bit.len();
@@ -569,26 +588,50 @@ impl SimpleMatcher {
                 }
             }
 
-            if word_conf.use_matrix {
+            let is_satisfied = if word_conf.use_matrix {
                 let flat_matrix = &mut state.matrix[word_conf_idx];
                 let bit = &mut flat_matrix[offset * processed_times + text_index];
                 *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                 if offset < word_conf.not_offset {
                     if *bit <= 0 && offset < 64 {
-                        state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+                        state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                     }
                 } else if *bit > 0 {
-                    state.not_flags_generation[word_conf_idx] = generation;
+                    state.word_states[word_conf_idx].not_generation = generation;
+                }
+
+                let expected_mask = word_conf.expected_mask;
+                if expected_mask > 0 {
+                    state.word_states[word_conf_idx].satisfied_mask == expected_mask
+                } else {
+                    let num_splits = word_conf.split_bit.len();
+                    (0..num_splits).all(|s| {
+                        flat_matrix[s * processed_times..(s + 1) * processed_times]
+                            .iter()
+                            .any(|&bit| bit <= 0)
+                    })
                 }
             } else if offset < word_conf.not_offset {
                 if offset < 64 {
-                    state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+                    state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                 }
+                let expected_mask = word_conf.expected_mask;
+                state.word_states[word_conf_idx].satisfied_mask == expected_mask
             } else {
-                state.not_flags_generation[word_conf_idx] = generation;
+                state.word_states[word_conf_idx].not_generation = generation;
+                false
+            };
+
+            if exit_early
+                && is_satisfied
+                && word_conf.not_offset == word_conf.split_bit.len()
+                && state.word_states[word_conf_idx].not_generation != generation
+            {
+                return true;
             }
         }
+        false
     }
 
     /// Determines if the given text matches any pattern.
@@ -695,22 +738,25 @@ impl SimpleMatcher {
             let mut state = state.borrow_mut();
             state.prepare(self.word_conf_list.len());
 
-            self._word_match_with_processed_text_process_type_masks(
+            if self._word_match_with_processed_text_process_type_masks(
                 processed_text_process_type_masks,
                 &mut state,
-            );
+                true,
+            ) {
+                return true;
+            }
 
             let generation = state.generation;
             let processed_times = processed_text_process_type_masks.len();
 
             state.touched_indices.iter().any(|&word_conf_idx| {
-                if state.not_flags_generation[word_conf_idx] == generation {
+                if state.word_states[word_conf_idx].not_generation == generation {
                     return false;
                 }
                 let word_conf = &self.word_conf_list[word_conf_idx];
                 let expected_mask = word_conf.expected_mask;
                 if expected_mask > 0 {
-                    return state.satisfied_mask[word_conf_idx] == expected_mask;
+                    return state.word_states[word_conf_idx].satisfied_mask == expected_mask;
                 }
 
                 let num_splits = word_conf.split_bit.len();
@@ -747,6 +793,7 @@ impl SimpleMatcher {
             self._word_match_with_processed_text_process_type_masks(
                 processed_text_process_type_masks,
                 &mut state,
+                false,
             );
 
             let generation = state.generation;
@@ -756,13 +803,13 @@ impl SimpleMatcher {
                 .touched_indices
                 .iter()
                 .filter_map(|&word_conf_idx| {
-                    if state.not_flags_generation[word_conf_idx] == generation {
+                    if state.word_states[word_conf_idx].not_generation == generation {
                         return None;
                     }
                     let word_conf = &self.word_conf_list[word_conf_idx];
                     let expected_mask = word_conf.expected_mask;
                     let is_satisfied = if expected_mask > 0 {
-                        state.satisfied_mask[word_conf_idx] == expected_mask
+                        state.word_states[word_conf_idx].satisfied_mask == expected_mask
                     } else {
                         let num_splits = word_conf.split_bit.len();
                         let flat_matrix = &state.matrix[word_conf_idx];
