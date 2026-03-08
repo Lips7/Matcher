@@ -37,7 +37,7 @@ struct WordState {
 
 struct SimpleMatchState {
     word_states: Vec<WordState>,
-    matrix: Vec<TinyVec<[i32; 16]>>,
+    matrix: Vec<TinyVec<[i8; 64]>>,
     touched_indices: Vec<usize>,
     generation: u32,
 }
@@ -137,7 +137,7 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 struct WordConf {
     word_id: u32,
     word: String,
-    split_bit: Vec<i32>,
+    split_bit: Vec<i16>,
     not_offset: usize,
     expected_mask: u64,
     use_matrix: bool,
@@ -330,8 +330,14 @@ impl SimpleMatcher {
                 let split_bit = ac_split_word_and_counter
                     .values()
                     .copied()
-                    .chain(ac_split_word_not_counter.values().copied())
-                    .collect::<Vec<i32>>();
+                    .map(|v| v as i16)
+                    .chain(
+                        ac_split_word_not_counter
+                            .values()
+                            .copied()
+                            .map(|v| v as i16),
+                    )
+                    .collect::<Vec<i16>>();
 
                 let expected_mask = if not_offset > 0 && not_offset <= 64 {
                     u64::MAX >> (64 - not_offset)
@@ -580,10 +586,10 @@ impl SimpleMatcher {
                     let num_splits = word_conf.split_bit.len();
                     let flat_matrix = &mut state.matrix[word_conf_idx];
                     flat_matrix.clear();
-                    flat_matrix.resize(num_splits * processed_times, 0i32);
+                    flat_matrix.resize(num_splits * processed_times, 0i8);
                     for (s, &bit) in word_conf.split_bit.iter().enumerate() {
                         let row_start = s * processed_times;
-                        flat_matrix[row_start..row_start + processed_times].fill(bit);
+                        flat_matrix[row_start..row_start + processed_times].fill(bit as i8);
                     }
                 }
             }
@@ -591,14 +597,17 @@ impl SimpleMatcher {
             let is_satisfied = if word_conf.use_matrix {
                 let flat_matrix = &mut state.matrix[word_conf_idx];
                 let bit = &mut flat_matrix[offset * processed_times + text_index];
-                *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                 if offset < word_conf.not_offset {
+                    *bit = bit.saturating_sub(1);
                     if *bit <= 0 && offset < 64 {
                         state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                     }
-                } else if *bit > 0 {
-                    state.word_states[word_conf_idx].not_generation = generation;
+                } else {
+                    *bit = bit.saturating_add(1);
+                    if *bit > 0 {
+                        state.word_states[word_conf_idx].not_generation = generation;
+                    }
                 }
 
                 let expected_mask = word_conf.expected_mask;
@@ -607,9 +616,7 @@ impl SimpleMatcher {
                 } else {
                     let num_splits = word_conf.split_bit.len();
                     (0..num_splits).all(|s| {
-                        flat_matrix[s * processed_times..(s + 1) * processed_times]
-                            .iter()
-                            .any(|&bit| bit <= 0)
+                        any_le_zero(&flat_matrix[s * processed_times..(s + 1) * processed_times])
                     })
                 }
             } else if offset < word_conf.not_offset {
@@ -762,9 +769,7 @@ impl SimpleMatcher {
                 let num_splits = word_conf.split_bit.len();
                 let flat_matrix = &state.matrix[word_conf_idx];
                 (0..num_splits).all(|s| {
-                    flat_matrix[s * processed_times..(s + 1) * processed_times]
-                        .iter()
-                        .any(|&bit| bit <= 0)
+                    any_le_zero(&flat_matrix[s * processed_times..(s + 1) * processed_times])
                 })
             })
         })
@@ -814,9 +819,9 @@ impl SimpleMatcher {
                         let num_splits = word_conf.split_bit.len();
                         let flat_matrix = &state.matrix[word_conf_idx];
                         (0..num_splits).all(|s| {
-                            flat_matrix[s * processed_times..(s + 1) * processed_times]
-                                .iter()
-                                .any(|&bit| bit <= 0)
+                            any_le_zero(
+                                &flat_matrix[s * processed_times..(s + 1) * processed_times],
+                            )
                         })
                     };
 
@@ -828,4 +833,38 @@ impl SimpleMatcher {
                 .collect()
         })
     }
+}
+
+/// Checks if any byte in the slice is less than or equal to zero.
+///
+/// This function uses bitwise tricks to process multiple bytes at once if the slice
+/// is large enough, falling back to a simple iterator otherwise.
+#[inline(always)]
+fn any_le_zero(slice: &[i8]) -> bool {
+    let len = slice.len();
+    if len == 0 {
+        return false;
+    }
+    if len == 1 {
+        return slice[0] <= 0;
+    }
+    if len <= 8 {
+        let mut v = 0u64;
+        unsafe {
+            std::ptr::copy_nonoverlapping(slice.as_ptr(), &mut v as *mut u64 as *mut i8, len);
+        }
+        // Pad with positive values (1) for bytes beyond len
+        if len < 8 {
+            let shift = len * 8;
+            let mask = (u64::MAX >> shift) << shift;
+            v |= mask & 0x0101010101010101;
+        }
+        // Check negative (high bit set)
+        if (v & 0x8080808080808080) != 0 {
+            return true;
+        }
+        // Check zero: (v - 1) & ~v & 0x80
+        return (v.wrapping_sub(0x0101010101010101) & !v & 0x8080808080808080) != 0;
+    }
+    slice.iter().any(|&b| b <= 0)
 }
