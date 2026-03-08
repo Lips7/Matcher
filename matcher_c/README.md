@@ -66,45 +66,6 @@ int main() {
 }
 ```
 
-## Python Usage Example
-
-Using the C FFI bindings via Python's `cffi` library and the provided `extension_types.py`:
-
-```python
-import json
-from cffi import FFI
-from extension_types import ProcessType
-
-# Initialize FFI and load library
-ffi = FFI()
-with open("./matcher_c.h", "r", encoding="utf-8") as f:
-    ffi.cdef(f.read())
-lib = ffi.dlopen("./libmatcher_c.so") # Adjust extension for your OS
-
-# Define configuration using simple dict
-config = {
-    ProcessType.MatchNone: {
-        1: "hello&world",
-        2: "test"
-    }
-}
-
-# Init simple matcher
-matcher = lib.init_simple_matcher(json.dumps(config).encode())
-
-# Check match
-is_match = lib.simple_matcher_is_match(matcher, "hello world".encode("utf-8"))
-print(f"Is match: {is_match}")
-
-# Match and get string result
-res = lib.simple_matcher_process_as_string(matcher, "hello world, test".encode("utf-8"))
-print(ffi.string(res).decode("utf-8"))
-lib.drop_string(res)
-
-# Clean up
-lib.drop_simple_matcher(matcher)
-```
-
 ## Important Notes
 
 1. **Header File**: The `matcher_c.h` defines the exported functions.
