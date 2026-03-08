@@ -615,18 +615,18 @@ pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a,
         let (process_replace_list, process_matcher) = cached_result.as_ref();
 
         match (bit, process_matcher) {
-            (ProcessType::Delete, pm) => match pm.delete_all(result.as_ref()) {
-                (true, Cow::Owned(pt)) => {
+            (ProcessType::Delete, pm) => {
+                if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref()) {
                     result = Cow::Owned(pt);
                 }
-                _ => {}
-            },
-            (_, pm) => match pm.replace_all(result.as_ref(), process_replace_list) {
-                (true, Cow::Owned(pt)) => {
+            }
+            (_, pm) => {
+                if let (true, Cow::Owned(pt)) =
+                    pm.replace_all(result.as_ref(), process_replace_list)
+                {
                     result = Cow::Owned(pt);
                 }
-                _ => {}
-            },
+            }
         }
     }
 
