@@ -44,11 +44,11 @@ int main() {
 
     // 3. Test simple_matcher
     const char* simple_table_json = "{\"1\": {\"1\": \"測試\"}, \"2\": {\"2\": \"你好\"}}";
-    void* matcher = init_simple_matcher((char*)simple_table_json);
+    void* matcher = init_simple_matcher(simple_table_json);
     if (matcher) {
         printf("simple_matcher initialized successfully.\n");
         // Test match
-        bool is_match = simple_matcher_is_match(matcher, (char*)"這是一個測試句子");
+        bool is_match = simple_matcher_is_match(matcher, "這是一個測試句子");
         printf("simple_matcher is_match (測試): %s\n", is_match ? "true" : "false");
         if (!is_match) {
             fprintf(stderr, "Error: expected simple_matcher to match '測試'.\n");
@@ -56,7 +56,7 @@ int main() {
         }
 
         // Test process as string
-        char* process_result = simple_matcher_process_as_string(matcher, (char*)"妳好，這是一個測試句子");
+        char* process_result = simple_matcher_process_as_string(matcher, "妳好，這是一個測試句子");
         if (process_result) {
             printf("simple_matcher_process_as_string result: %s\n", process_result);
             drop_string(process_result);

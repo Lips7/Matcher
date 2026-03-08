@@ -60,7 +60,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-t
 cargo build --release
 ```
 
-编译完成后，你可以在 `target/release` 目录下找到 `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll`。
+编译完成后，你可以在 `target/release` 目录下找到 `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll` 以及 `libmatcher_java.so` / `libmatcher_java.dylib` / `matcher_java.dll`。
 
 ## 基准测试 (Benchmarks)
 

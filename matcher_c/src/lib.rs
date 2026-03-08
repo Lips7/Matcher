@@ -132,7 +132,14 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
             None => return ptr::null_mut(),
         };
         let res = m.process(text_str);
-        let res_cstring = CString::new(sonic_rs::to_vec(&res).unwrap_unchecked()).unwrap();
+        let res_json = match sonic_rs::to_vec(&res) {
+            Ok(json) => json,
+            Err(_) => return ptr::null_mut(),
+        };
+        let res_cstring = match CString::new(res_json) {
+            Ok(cs) => cs,
+            Err(_) => return ptr::null_mut(),
+        };
         res_cstring.into_raw()
     }));
 
@@ -202,10 +209,10 @@ pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> 
             None => return ptr::null_mut(),
         };
         match text_process_rs(process_type_bit, text_str) {
-            Ok(res) => {
-                let res_cstring = CString::new(res.as_ref()).unwrap();
-                res_cstring.into_raw()
-            }
+            Ok(res) => match CString::new(res.as_ref()) {
+                Ok(cs) => cs.into_raw(),
+                Err(_) => ptr::null_mut(),
+            },
             Err(_) => ptr::null_mut(),
         }
     }));
@@ -238,10 +245,12 @@ pub unsafe extern "C" fn reduce_text_process(
 
         let processed_texts = reduce_text_process_rs(process_type_bits, text_str);
 
-        let mut c_strings: Vec<*mut c_char> = processed_texts
-            .into_iter()
-            .map(|cow| CString::new(cow.as_ref()).unwrap().into_raw())
-            .collect();
+        let mut c_strings: Vec<*mut c_char> = Vec::with_capacity(processed_texts.len() + 1);
+        for cow in processed_texts {
+            if let Ok(cs) = CString::new(cow.as_ref()) {
+                c_strings.push(cs.into_raw());
+            }
+        }
 
         // Add a NULL terminator to the end of the array
         c_strings.push(ptr::null_mut());

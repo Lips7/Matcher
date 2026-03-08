@@ -1,14 +1,12 @@
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::{
-    Py, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
+    Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
 };
-use pyo3::types::{PyModuleMethods, PyString};
+use pyo3::types::{PyAnyMethods, PyModuleMethods, PyString};
 use pyo3::{Bound, pyfunction};
 use std::borrow::Cow;
 
-use matcher_rs::{
-    ProcessType, SimpleMatcher, SimpleResult, SimpleTableSerde, reduce_text_process, text_process,
-};
+use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde, reduce_text_process, text_process};
 
 #[pyclass(name = "ProcessType", eq, from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
@@ -78,19 +76,20 @@ pub struct PySimpleResult {
     pub word: Py<PyString>,
 }
 
-impl PySimpleResult {
-    fn new(py: Python<'_>, res: SimpleResult<'_>) -> Self {
-        PySimpleResult {
-            word_id: res.word_id,
-            word: PyString::new(py, &res.word).into(),
-        }
-    }
-}
-
 #[pyfunction(name = "text_process")]
 #[pyo3(signature=(process_type, text))]
-fn py_text_process<'a>(process_type: &PyProcessType, text: &'a str) -> PyResult<Cow<'a, str>> {
-    match text_process(process_type.0, text) {
+fn py_text_process<'a>(process_type: Bound<'_, PyAny>, text: &'a str) -> PyResult<Cow<'a, str>> {
+    let p_type = if let Ok(bits) = process_type.extract::<u8>() {
+        ProcessType::from_bits_retain(bits)
+    } else if let Ok(pt) = process_type.extract::<PyProcessType>() {
+        pt.0
+    } else {
+        return Err(PyTypeError::new_err(
+            "process_type must be ProcessType or int",
+        ));
+    };
+
+    match text_process(p_type, text) {
         Ok(result) => Ok(result),
         Err(e) => Err(PyValueError::new_err(e.to_string())),
     }
@@ -98,10 +97,21 @@ fn py_text_process<'a>(process_type: &PyProcessType, text: &'a str) -> PyResult<
 
 #[pyfunction(name = "reduce_text_process")]
 #[pyo3(signature=(process_type, text))]
-fn py_reduce_text_process<'a>(process_type: &PyProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
-    reduce_text_process(process_type.0, text)
-        .into_iter()
-        .collect()
+fn py_reduce_text_process<'a>(
+    process_type: Bound<'_, PyAny>,
+    text: &'a str,
+) -> PyResult<Vec<Cow<'a, str>>> {
+    let p_type = if let Ok(bits) = process_type.extract::<u8>() {
+        ProcessType::from_bits_retain(bits)
+    } else if let Ok(pt) = process_type.extract::<PyProcessType>() {
+        pt.0
+    } else {
+        return Err(PyTypeError::new_err(
+            "process_type must be ProcessType or int",
+        ));
+    };
+
+    Ok(reduce_text_process(p_type, text).into_iter().collect())
 }
 
 #[pyclass(name = "SimpleMatcher")]
@@ -140,11 +150,19 @@ impl PySimpleMatcher {
     }
 
     #[pyo3(signature=(simple_table_bytes))]
-    fn __setstate__(&mut self, simple_table_bytes: &[u8]) {
-        self.simple_matcher = SimpleMatcher::new(
-            &sonic_rs::from_slice::<SimpleTableSerde>(simple_table_bytes).unwrap(),
-        );
+    fn __setstate__(&mut self, simple_table_bytes: &[u8]) -> PyResult<()> {
+        let simple_table: SimpleTableSerde = match sonic_rs::from_slice(simple_table_bytes) {
+            Ok(simple_table) => simple_table,
+            Err(e) => {
+                return Err(PyValueError::new_err(format!(
+                    "Deserialize simple_table_bytes failed: {}",
+                    e
+                )));
+            }
+        };
+        self.simple_matcher = SimpleMatcher::new(&simple_table);
         self.simple_table_bytes = simple_table_bytes.to_vec();
+        Ok(())
     }
 
     #[pyo3(signature=(text))]
@@ -157,7 +175,10 @@ impl PySimpleMatcher {
         self.simple_matcher
             .process(text)
             .into_iter()
-            .map(|res| PySimpleResult::new(py, res))
+            .map(|res| PySimpleResult {
+                word_id: res.word_id,
+                word: PyString::new(py, &res.word).into(),
+            })
             .collect()
     }
 }

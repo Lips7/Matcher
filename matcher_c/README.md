@@ -43,7 +43,7 @@ You can use the `matcher_c.h` header and the compiled library in your C projects
 
 int main() {
     // Configuration in JSON format
-    // ProcessType: MatchNone = 1
+    // PROCESS_TYPE_NONE = 1
     char* config = "{\"1\":{\"1\":\"hello&world\"}}";
 
     // Initialize simple matcher

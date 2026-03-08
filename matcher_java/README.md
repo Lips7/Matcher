@@ -14,7 +14,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-t
 cargo build --release
 ```
 
-Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+Then you should find the `libmatcher_java.so`/`libmatcher_java.dylib`/`matcher_java.dll` in the `target/release` directory.
 
 ## Java Usage
 

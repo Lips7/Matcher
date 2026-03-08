@@ -15,24 +15,26 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
     text_bytes: JByteArray,
 ) -> jstring {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(text_bytes).unwrap();
-        let text_str = std::str::from_utf8(&bytes).unwrap();
+        let bytes = env.convert_byte_array(text_bytes).ok()?;
+        let text_str = std::str::from_utf8(&bytes).ok()?;
 
         let p_type = ProcessType::from_bits(process_type as u8).unwrap_or(ProcessType::None);
 
         match text_process_rs(p_type, text_str) {
             Ok(res) => {
-                let j_string: JString = env.new_string(res.as_ref()).unwrap();
-                j_string.into_raw()
+                let j_string: JString = env.new_string(res.as_ref()).ok()?;
+                Some(j_string.into_raw())
             }
-            Err(_) => std::ptr::null_mut(),
+            Err(_) => None,
         }
     }));
 
-    result.unwrap_or_else(|_| {
-        eprintln!("textProcess failed");
-        std::ptr::null_mut()
-    })
+    result
+        .unwrap_or_else(|_| {
+            eprintln!("textProcess panicked");
+            None
+        })
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -43,32 +45,34 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local
     text_bytes: JByteArray,
 ) -> jobjectArray {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(text_bytes).unwrap();
-        let text_str = std::str::from_utf8(&bytes).unwrap();
+        let bytes = env.convert_byte_array(text_bytes).ok()?;
+        let text_str = std::str::from_utf8(&bytes).ok()?;
 
         let p_type = ProcessType::from_bits(process_type as u8).unwrap_or(ProcessType::None);
 
         let variants = reduce_text_process_rs(p_type, text_str);
 
-        let string_class = env.find_class("java/lang/String").unwrap();
-        let initial_string = env.new_string("").unwrap();
+        let string_class = env.find_class("java/lang/String").ok()?;
+        let initial_string = env.new_string("").ok()?;
         let obj_array = env
             .new_object_array(variants.len() as jsize, &string_class, initial_string)
-            .unwrap();
+            .ok()?;
 
         for (i, variant) in variants.iter().enumerate() {
-            let j_str = env.new_string(variant.as_ref()).unwrap();
+            let j_str = env.new_string(variant.as_ref()).ok()?;
             env.set_object_array_element(&obj_array, i as jsize, j_str)
-                .unwrap();
+                .ok()?;
         }
 
-        obj_array.into_raw()
+        Some(obj_array.into_raw())
     }));
 
-    result.unwrap_or_else(|_| {
-        eprintln!("reduceTextProcess failed");
-        std::ptr::null_mut()
-    })
+    result
+        .unwrap_or_else(|_| {
+            eprintln!("reduceTextProcess panicked");
+            None
+        })
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -78,15 +82,15 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher(
     simple_table_bytes: JByteArray,
 ) -> jlong {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(simple_table_bytes).unwrap();
-        let simple_table: SimpleTable = sonic_rs::from_slice(&bytes).unwrap();
+        let bytes = env.convert_byte_array(simple_table_bytes).ok()?;
+        let simple_table: SimpleTable = sonic_rs::from_slice(&bytes).ok()?;
         let matcher = Box::new(SimpleMatcher::new(&simple_table));
-        Box::into_raw(matcher) as jlong
+        Some(Box::into_raw(matcher) as jlong)
     }));
     match result {
-        Ok(ptr) => ptr,
+        Ok(ptr) => ptr.unwrap_or(0),
         Err(_) => {
-            eprintln!("initSimpleMatcher failed");
+            eprintln!("initSimpleMatcher panicked");
             0
         }
     }
@@ -101,23 +105,23 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch(
 ) -> jboolean {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         if matcher_ptr == 0 {
-            return false;
+            return Some(false);
         }
         let matcher = unsafe { &*(matcher_ptr as *mut SimpleMatcher) };
-        let bytes = env.convert_byte_array(text_bytes).unwrap();
-        let text_str = std::str::from_utf8(&bytes).unwrap();
-        matcher.is_match(text_str)
+        let bytes = env.convert_byte_array(text_bytes).ok()?;
+        let text_str = std::str::from_utf8(&bytes).ok()?;
+        Some(matcher.is_match(text_str))
     }));
     match result {
         Ok(res) => {
-            if res {
+            if res.unwrap_or(false) {
                 1
             } else {
                 0
             }
         }
         Err(_) => {
-            eprintln!("simpleMatcherIsMatch failed");
+            eprintln!("simpleMatcherIsMatch panicked");
             0
         }
     }
@@ -132,20 +136,20 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsSt
 ) -> jstring {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         if matcher_ptr == 0 {
-            return std::ptr::null_mut();
+            return None;
         }
         let matcher = unsafe { &*(matcher_ptr as *mut SimpleMatcher) };
-        let bytes = env.convert_byte_array(text_bytes).unwrap();
-        let text_str = std::str::from_utf8(&bytes).unwrap();
+        let bytes = env.convert_byte_array(text_bytes).ok()?;
+        let text_str = std::str::from_utf8(&bytes).ok()?;
         let res = matcher.process(text_str);
-        let res_json = sonic_rs::to_string(&res).unwrap();
-        let j_string: JString = env.new_string(res_json).unwrap();
-        j_string.into_raw()
+        let res_json = sonic_rs::to_string(&res).ok()?;
+        let j_string: JString = env.new_string(res_json).ok()?;
+        Some(j_string.into_raw())
     }));
     match result {
-        Ok(ptr) => ptr,
+        Ok(ptr) => ptr.unwrap_or(std::ptr::null_mut()),
         Err(_) => {
-            eprintln!("simpleMatcherProcessAsString failed");
+            eprintln!("simpleMatcherProcessAsString panicked");
             std::ptr::null_mut()
         }
     }
