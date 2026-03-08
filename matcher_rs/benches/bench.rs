@@ -17,12 +17,12 @@ const EN_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::DeleteNormalize,
 ];
 
-const SIMPLE_WORD_MAP_SIZE_LIST: &[usize] = &[1000, 10000, 50000];
-const COMBINED_TIMES_LIST: &[usize] = &[1, 3, 5];
+const SIMPLE_WORD_MAP_SIZE_LIST: &[usize] = &[1000, 10000, 50000, 100000];
+const COMBINED_TIMES_LIST: &[usize] = &[1, 2, 3, 4];
 
 const DEFAULT_PROCESS_TYPE: ProcessType = ProcessType::None;
 const DEFAULT_SIMPLE_WORD_MAP_SIZE: usize = 10000;
-const DEFAULT_COMBINED_TIMES: usize = 3;
+const DEFAULT_COMBINED_TIMES: usize = 1;
 
 const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
 const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
