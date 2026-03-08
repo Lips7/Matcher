@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, OnceLock};
 
 use aho_corasick::AhoCorasick;
 #[cfg(any(feature = "runtime_build", feature = "dfa"))]
@@ -15,7 +15,6 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::process::constants::*;
@@ -167,18 +166,24 @@ impl Display for ProcessType {
     }
 }
 
-type ProcessMatcherCache = RwLock<HashMap<ProcessType, Arc<(Vec<&'static str>, ProcessMatcher)>>>;
+type ProcessMatcherResult = Arc<(Vec<&'static str>, ProcessMatcher)>;
 
-/// A global, lazily-initialized cache for storing process matchers.
+/// A lock-free, lazily-initialized array mapping bit positions to process matchers.
 ///
-/// Maps [`ProcessType`] keys to [`Arc`] instances holding tuples of a replacement-string
-/// list and a `ProcessMatcher`. Protected by a [`parking_lot::RwLock`] for efficient
-/// concurrent read access.
+/// Maps the bit position of a single-bit [`ProcessType`] to an [`Arc`] instance holding
+/// a tuple of a replacement-string list and a `ProcessMatcher`.
 ///
-/// The cache is capped at 8 entries, matching the number of distinct single-bit
-/// [`ProcessType`] variants that can be passed to [`get_process_matcher`].
-pub static PROCESS_MATCHER_CACHE: LazyLock<ProcessMatcherCache> =
-    LazyLock::new(|| RwLock::new(HashMap::with_capacity_and_hasher(8, Default::default())));
+/// The array has a capacity of 8, covering all possible bits in the 8-bit [`ProcessType`].
+pub static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcherResult>; 8] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
 
 /// A fixed-capacity array of `(processed_text, u64)` pairs produced by
 /// the `reduce_text_process_*` family of functions.
@@ -321,14 +326,14 @@ impl ProcessMatcher {
 /// Retrieves or constructs a `ProcessMatcher` for a given single-bit [`ProcessType`].
 ///
 /// # Algorithm
-/// 1. Checks `PROCESS_MATCHER_CACHE` (`RwLock`). If exists, returns cloned `Arc`.
+/// 1. Checks `PROCESS_MATCHER_CACHE`. If exists, returns cloned `Arc`.
 /// 2. If missing, dynamically configures the appropriate matching automaton:
 ///    - Transforms predefined dictionaries (`Fanjian`, `Delete`, `Normalize`, etc.) into lookup `HashMaps` or vector token lists.
 ///    - Depending on the `ProcessType` and compilation feature flags, instantiates:
 ///      * `CharwiseDoubleArrayAhoCorasick`: A highly-optimized state machine specifically for Chinese/CJK (handles UTF-8 char bounds compactly). Used for `Fanjian`, `PinYin`, etc.
 ///      * `AhoCorasick`: The standard string matcher optimal for general bytes (used for `Normalize`, `Delete`, etc.).
 ///    - If statically compiled (`not(feature = "runtime_build")`), loads serialized `daachorse` binaries (e.g. `FANJIAN_PROCESS_MATCHER_BYTES`) using `unsafe` zero-copy deserialization for instant startup.
-/// 3. Safely inserts into the `RwLock` cache and returns.
+/// 3. Safely initializes the cache entry if missing and returns.
 ///
 /// # Arguments
 /// * `process_type_bit` - The text processing rules to be applied, represented by the `ProcessType` bitflags enum. (Only a single bit is supported here).
@@ -350,36 +355,18 @@ impl ProcessMatcher {
 pub fn get_process_matcher(
     process_type_bit: ProcessType,
 ) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
-    {
-        let process_matcher_cache = PROCESS_MATCHER_CACHE.read();
+    let index = process_type_bit.bits().trailing_zeros() as usize;
+    debug_assert!(index < 8, "ProcessType bit index out of bounds");
 
-        if let Some(cached_result) = process_matcher_cache.get(&process_type_bit) {
-            return Arc::clone(cached_result);
-        }
-    }
+    Arc::clone(PROCESS_MATCHER_CACHE[index].get_or_init(|| {
+        #[cfg(feature = "runtime_build")]
+        {
+            let mut process_dict = HashMap::new();
 
-    #[cfg(feature = "runtime_build")]
-    {
-        let mut process_dict = HashMap::new();
-
-        match process_type_bit {
-            ProcessType::None => {}
-            ProcessType::Fanjian => {
-                process_dict.extend(FANJIAN.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
-                    )
-                }));
-            }
-            ProcessType::Delete => {
-                process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
-                process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-            }
-            ProcessType::Normalize => {
-                for process_map in [NORM, NUM_NORM] {
-                    process_dict.extend(process_map.trim().lines().map(|pair_str| {
+            match process_type_bit {
+                ProcessType::None => {}
+                ProcessType::Fanjian => {
+                    process_dict.extend(FANJIAN.trim().lines().map(|pair_str| {
                         let mut pair_str_split = pair_str.split('\t');
                         (
                             pair_str_split.next().unwrap(),
@@ -387,206 +374,205 @@ pub fn get_process_matcher(
                         )
                     }));
                 }
-            }
-            ProcessType::PinYin => {
-                process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
-                    )
-                }));
-            }
-            ProcessType::PinYinChar => {
-                process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap().trim_matches(' '),
-                    )
-                }));
-            }
-            _ => {}
-        }
-
-        process_dict.retain(|&key, &mut value| key != value);
-
-        let (process_replace_list, process_matcher) = match process_type_bit {
-            ProcessType::Fanjian | ProcessType::PinYin | ProcessType::PinYinChar => (
-                process_dict.iter().map(|(_, &val)| val).collect(),
-                ProcessMatcher::Chinese(
-                    CharwiseDoubleArrayAhoCorasickBuilder::new()
-                        .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                        .build(
-                            process_dict
-                                .iter()
-                                .map(|(&key, _)| key)
-                                .collect::<Vec<&str>>(),
-                        )
-                        .unwrap(),
-                ),
-            ),
-            #[cfg(not(feature = "dfa"))]
-            ProcessType::Delete | ProcessType::Normalize => (
-                process_dict.iter().map(|(_, &val)| val).collect(),
-                ProcessMatcher::LeftMost(
-                    CharwiseDoubleArrayAhoCorasickBuilder::new()
-                        .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
-                        .build(
-                            process_dict
-                                .iter()
-                                .map(|(&key, _)| key)
-                                .collect::<Vec<&str>>(),
-                        )
-                        .unwrap(),
-                ),
-            ),
-            _ => (
-                process_dict.iter().map(|(_, &val)| val).collect(),
-                ProcessMatcher::Others(
-                    AhoCorasickBuilder::new()
-                        .kind(Some(AhoCorasickKind::DFA))
-                        .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                        .build(
-                            process_dict
-                                .iter()
-                                .map(|(&key, _)| key)
-                                .collect::<Vec<&str>>(),
-                        )
-                        .unwrap(),
-                ),
-            ),
-        };
-        let uncached_result = Arc::new((process_replace_list, process_matcher));
-        let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
-        // Re-check after acquiring the write lock: another thread may have inserted
-        // the same key between our read-miss and this write acquisition.
-        if let Some(cached_result) = process_matcher_cache.get(&process_type_bit) {
-            return Arc::clone(cached_result);
-        }
-        process_matcher_cache.insert(process_type_bit, Arc::clone(&uncached_result));
-        uncached_result
-    }
-
-    #[cfg(not(feature = "runtime_build"))]
-    {
-        let (process_replace_list, process_matcher) = match process_type_bit {
-            ProcessType::None => {
-                let empty_patterns: Vec<&str> = Vec::new();
-                (
-                    Vec::new(),
-                    ProcessMatcher::Others(AhoCorasick::new(&empty_patterns).unwrap()),
-                )
-            }
-            ProcessType::Fanjian => (
-                FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: [`FANJIAN_PROCESS_MATCHER_BYTES`] matches the identical version and byte layout
-                // exported manually using [`CharwiseDoubleArrayAhoCorasick`] build constraints during static compilation.
-                ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                        FANJIAN_PROCESS_MATCHER_BYTES,
-                    )
-                    .0
-                }),
-            ),
-            ProcessType::Delete => {
-                #[cfg(feature = "dfa")]
-                {
-                    let mut process_dict = HashMap::new();
+                ProcessType::Delete => {
                     process_dict.extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
                     process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
-                    process_dict.retain(|&key, &mut value| key != value);
-                    let process_list = process_dict
-                        .iter()
-                        .map(|(&key, _)| key)
-                        .collect::<Vec<&str>>();
-
-                    (
-                        Vec::new(),
-                        ProcessMatcher::Others(
-                            AhoCorasickBuilder::new()
-                                .kind(Some(AhoCorasickKind::DFA))
-                                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                                .build(&process_list)
-                                .unwrap(),
-                        ),
-                    )
                 }
-                #[cfg(not(feature = "dfa"))]
-                {
-                    (
-                        Vec::new(),
-                        // SAFETY: [`TEXT_DELETE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
-                        ProcessMatcher::LeftMost(unsafe {
-                            CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                                TEXT_DELETE_PROCESS_MATCHER_BYTES,
+                ProcessType::Normalize => {
+                    for process_map in [NORM, NUM_NORM] {
+                        process_dict.extend(process_map.trim().lines().map(|pair_str| {
+                            let mut pair_str_split = pair_str.split('\t');
+                            (
+                                pair_str_split.next().unwrap(),
+                                pair_str_split.next().unwrap(),
                             )
-                            .0
-                        }),
-                    )
+                        }));
+                    }
                 }
+                ProcessType::PinYin => {
+                    process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
+                        let mut pair_str_split = pair_str.split('\t');
+                        (
+                            pair_str_split.next().unwrap(),
+                            pair_str_split.next().unwrap(),
+                        )
+                    }));
+                }
+                ProcessType::PinYinChar => {
+                    process_dict.extend(PINYIN.trim().lines().map(|pair_str| {
+                        let mut pair_str_split = pair_str.split('\t');
+                        (
+                            pair_str_split.next().unwrap(),
+                            pair_str_split.next().unwrap().trim_matches(' '),
+                        )
+                    }));
+                }
+                _ => {}
             }
-            ProcessType::Normalize => {
-                #[cfg(feature = "dfa")]
-                {
-                    (
-                        NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                        ProcessMatcher::Others(
-                            AhoCorasickBuilder::new()
-                                .kind(Some(AhoCorasickKind::DFA))
-                                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                                .build(NORMALIZE_PROCESS_LIST_STR.lines())
-                                .unwrap(),
-                        ),
-                    )
-                }
-                #[cfg(not(feature = "dfa"))]
-                {
-                    (
-                        NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                        // SAFETY: [`NORMALIZE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
-                        ProcessMatcher::LeftMost(unsafe {
-                            CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                                NORMALIZE_PROCESS_MATCHER_BYTES,
-                            )
-                            .0
-                        }),
-                    )
-                }
-            }
-            ProcessType::PinYin => (
-                PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
-                ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                        PINYIN_PROCESS_MATCHER_BYTES,
-                    )
-                    .0
-                }),
-            ),
-            ProcessType::PinYinChar => (
-                PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
-                // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
-                ProcessMatcher::Chinese(unsafe {
-                    CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
-                        PINYIN_PROCESS_MATCHER_BYTES,
-                    )
-                    .0
-                }),
-            ),
-            _ => unreachable!(),
-        };
 
-        let uncached_result = Arc::new((process_replace_list, process_matcher));
-        let mut process_matcher_cache = PROCESS_MATCHER_CACHE.write();
-        // Re-check after acquiring the write lock: another thread may have inserted
-        // the same key between our read-miss and this write acquisition.
-        if let Some(cached_result) = process_matcher_cache.get(&process_type_bit) {
-            return Arc::clone(cached_result);
+            process_dict.retain(|&key, &mut value| key != value);
+
+            let (process_replace_list, process_matcher) = match process_type_bit {
+                ProcessType::Fanjian | ProcessType::PinYin | ProcessType::PinYinChar => (
+                    process_dict.iter().map(|(_, &val)| val).collect(),
+                    ProcessMatcher::Chinese(
+                        CharwiseDoubleArrayAhoCorasickBuilder::new()
+                            .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                            .build(
+                                process_dict
+                                    .iter()
+                                    .map(|(&key, _)| key)
+                                    .collect::<Vec<&str>>(),
+                            )
+                            .unwrap(),
+                    ),
+                ),
+                #[cfg(not(feature = "dfa"))]
+                ProcessType::Delete | ProcessType::Normalize => (
+                    process_dict.iter().map(|(_, &val)| val).collect(),
+                    ProcessMatcher::LeftMost(
+                        CharwiseDoubleArrayAhoCorasickBuilder::new()
+                            .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
+                            .build(
+                                process_dict
+                                    .iter()
+                                    .map(|(&key, _)| key)
+                                    .collect::<Vec<&str>>(),
+                            )
+                            .unwrap(),
+                    ),
+                ),
+                _ => (
+                    process_dict.iter().map(|(_, &val)| val).collect(),
+                    ProcessMatcher::Others(
+                        AhoCorasickBuilder::new()
+                            .kind(Some(AhoCorasickKind::DFA))
+                            .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                            .build(
+                                process_dict
+                                    .iter()
+                                    .map(|(&key, _)| key)
+                                    .collect::<Vec<&str>>(),
+                            )
+                            .unwrap(),
+                    ),
+                ),
+            };
+            Arc::new((process_replace_list, process_matcher))
         }
-        process_matcher_cache.insert(process_type_bit, Arc::clone(&uncached_result));
-        uncached_result
-    }
+
+        #[cfg(not(feature = "runtime_build"))]
+        {
+            let (process_replace_list, process_matcher) = match process_type_bit {
+                ProcessType::None => {
+                    let empty_patterns: Vec<&str> = Vec::new();
+                    (
+                        Vec::new(),
+                        ProcessMatcher::Others(AhoCorasick::new(&empty_patterns).unwrap()),
+                    )
+                }
+                ProcessType::Fanjian => (
+                    FANJIAN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                    // SAFETY: [`FANJIAN_PROCESS_MATCHER_BYTES`] matches the identical version and byte layout
+                    // exported manually using [`CharwiseDoubleArrayAhoCorasick`] build constraints during static compilation.
+                    ProcessMatcher::Chinese(unsafe {
+                        CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                            FANJIAN_PROCESS_MATCHER_BYTES,
+                        )
+                        .0
+                    }),
+                ),
+                ProcessType::Delete => {
+                    #[cfg(feature = "dfa")]
+                    {
+                        let mut process_dict = HashMap::new();
+                        process_dict
+                            .extend(TEXT_DELETE.trim().lines().map(|pair_str| (pair_str, "")));
+                        process_dict.extend(WHITE_SPACE.iter().map(|&c| (c, "")));
+                        process_dict.retain(|&key, &mut value| key != value);
+                        let process_list = process_dict
+                            .iter()
+                            .map(|(&key, _)| key)
+                            .collect::<Vec<&str>>();
+
+                        (
+                            Vec::new(),
+                            ProcessMatcher::Others(
+                                AhoCorasickBuilder::new()
+                                    .kind(Some(AhoCorasickKind::DFA))
+                                    .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                                    .build(&process_list)
+                                    .unwrap(),
+                            ),
+                        )
+                    }
+                    #[cfg(not(feature = "dfa"))]
+                    {
+                        (
+                            Vec::new(),
+                            // SAFETY: [`TEXT_DELETE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
+                            ProcessMatcher::LeftMost(unsafe {
+                                CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                                    TEXT_DELETE_PROCESS_MATCHER_BYTES,
+                                )
+                                .0
+                            }),
+                        )
+                    }
+                }
+                ProcessType::Normalize => {
+                    #[cfg(feature = "dfa")]
+                    {
+                        (
+                            NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                            ProcessMatcher::Others(
+                                AhoCorasickBuilder::new()
+                                    .kind(Some(AhoCorasickKind::DFA))
+                                    .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                                    .build(NORMALIZE_PROCESS_LIST_STR.lines())
+                                    .unwrap(),
+                            ),
+                        )
+                    }
+                    #[cfg(not(feature = "dfa"))]
+                    {
+                        (
+                            NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                            // SAFETY: [`NORMALIZE_PROCESS_MATCHER_BYTES`] matches the identical byte layout compiled.
+                            ProcessMatcher::LeftMost(unsafe {
+                                CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                                    NORMALIZE_PROCESS_MATCHER_BYTES,
+                                )
+                                .0
+                            }),
+                        )
+                    }
+                }
+                ProcessType::PinYin => (
+                    PINYIN_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                    // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                    ProcessMatcher::Chinese(unsafe {
+                        CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                            PINYIN_PROCESS_MATCHER_BYTES,
+                        )
+                        .0
+                    }),
+                ),
+                ProcessType::PinYinChar => (
+                    PINYINCHAR_PROCESS_REPLACE_LIST_STR.lines().collect(),
+                    // SAFETY: [`PINYIN_PROCESS_MATCHER_BYTES` matches the identical byte layout compiled.
+                    ProcessMatcher::Chinese(unsafe {
+                        CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(
+                            PINYIN_PROCESS_MATCHER_BYTES,
+                        )
+                        .0
+                    }),
+                ),
+                _ => unreachable!(),
+            };
+            Arc::new((process_replace_list, process_matcher))
+        }
+    }))
 }
 
 /// Process text based on a [`ProcessType`] bitmask.
