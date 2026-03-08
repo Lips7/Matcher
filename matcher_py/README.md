@@ -61,8 +61,7 @@ All relevant types are defined in [matcher_py.pyi](./matcher_py.pyi).
 Here’s an example of how to use the `reduce_text_process` and `text_process` functions:
 
 ```python
-from matcher_py import reduce_text_process, text_process
-from matcher_py.extension_types import ProcessType
+from matcher_py import ProcessType, reduce_text_process, text_process
 
 # Combine and reduce multiple transformations
 print(reduce_text_process(ProcessType.DELETE_NORMALIZE, "hello, world!"))
@@ -77,7 +76,7 @@ Here’s an example of how to use the `SimpleMatcher`:
 ```python
 import json
 
-from matcher_py import SimpleMatcher, ProcessType
+from matcher_py import ProcessType, SimpleMatcher
 
 simple_matcher = SimpleMatcher(
     json.dumps(

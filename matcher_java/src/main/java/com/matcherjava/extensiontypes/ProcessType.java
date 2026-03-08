@@ -5,14 +5,14 @@ package com.matcherjava.extensiontypes;
  * applied during matching.
  */
 public enum ProcessType {
-  MatchNone(0b00000001),
-  MatchFanjian(0b00000010),
-  MatchDelete(0b00000100),
-  MatchNormalize(0b00001000),
-  MatchDeleteNormalize(0b00001100),
-  MatchFanjianDeleteNormalize(0b00001110),
-  MatchPinYin(0b00010000),
-  MatchPinYinChar(0b00100000);
+  NONE(0b00000001),
+  FANJIAN(0b00000010),
+  DELETE(0b00000100),
+  NORMALIZE(0b00001000),
+  DELETE_NORMALIZE(0b00001100),
+  FANJIAN_DELETE_NORMALIZE(0b00001110),
+  PINYIN(0b00010000),
+  PINYIN_CHAR(0b00100000);
 
   private final int value;
 

@@ -24,7 +24,7 @@ public class TestSimpleMatcher {
     Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
     Map<String, String> wordMap = new HashMap<>();
     wordMap.put("1", "hello&world");
-    simpleTable.put(ProcessType.MatchNone, wordMap);
+    simpleTable.put(ProcessType.NONE, wordMap);
 
     byte[] configBytes = JSON.toJSONBytes(simpleTable, config);
 

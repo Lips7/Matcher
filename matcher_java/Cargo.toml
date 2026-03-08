@@ -13,7 +13,7 @@ version.workspace = true
 [lib]
 name = "matcher_java"
 crate-type = ["cdylib"]
-path = "rust_src/lib.rs"
+path = "src/main/rust/lib.rs"
 
 [dependencies]
 matcher_rs = { path = "../matcher_rs", version = "0.10.0" }

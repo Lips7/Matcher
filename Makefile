@@ -8,6 +8,9 @@ build:
 	mkdir -p ./matcher_java/src/main/resources
 	cp ./target/release/libmatcher_java.$(EXT) ./matcher_java/src/main/resources/libmatcher_java.$(EXT)
 
+	rm -rf ./target/wheels
+	cd matcher_py && unset CONDA_PREFIX && uv run maturin build --release && uv run pip3 install ../target/wheels/*.whl
+
 update:
 	cargo update --verbose --recursive --breaking -Z unstable-options
 	cargo upgrade --verbose --recursive
@@ -48,3 +51,4 @@ test:
 	$(MAKE) test-rs
 	$(MAKE) test-py
 	$(MAKE) test-java
+	$(MAKE) test-c
