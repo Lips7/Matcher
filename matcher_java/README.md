@@ -23,19 +23,24 @@ We recommend using the high-level `SimpleMatcher` class, which provides a safe, 
 ### SimpleMatcher Example
 
 ```java
-import com.matcher_java.SimpleMatcher;
-import com.matcher_java.extension_types.ProcessType;
-import com.matcher_java.extension_types.SimpleResult;
+import com.matcherjava.SimpleMatcher;
+import com.matcherjava.extensiontypes.ProcessType;
+import com.matcherjava.extensiontypes.ProcessTypeSerializer;
+import com.matcherjava.extensiontypes.SimpleResult;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.serializer.SerializeConfig;
 import java.util.*;
 
 // Prepare your configuration
+SerializeConfig config = new SerializeConfig();
+config.put(ProcessType.class, new ProcessTypeSerializer());
+
 Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
 Map<String, String> wordMap = new HashMap<>();
 wordMap.put("1", "hello&world");
-simpleTable.put(ProcessType.MatchNone, wordMap);
+simpleTable.put(ProcessType.NONE, wordMap);
 
-byte[] configBytes = JSON.toJSONBytes(simpleTable);
+byte[] configBytes = JSON.toJSONBytes(simpleTable, config);
 
 // Use try-with-resources for automatic cleanup
 try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {

@@ -45,7 +45,7 @@ def reduce_text_process(process_type: int, text: str) -> list[str]:
     - text (str): The text string that is to be reduced.
 
     Returns:
-    - List[str]: A list of strings after the reduction process.
+    - list[str]: A list of strings after the reduction process.
     """
 
 class SimpleMatcher:

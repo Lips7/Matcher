@@ -27,7 +27,7 @@ The `SimpleMatcher` uses a mapping structure to define words and their IDs based
 
 ```json
 {
-    "ProcessType.NONE": {
+    "1": {
         "1": "hello&world",
         "2": "你好"
         // other words
@@ -54,7 +54,7 @@ In real-world scenarios, `word_id` is used to uniquely identify a word in the da
 ```json
 Input:
 {
-    "ProcessType.None": {
+    "1": {
         "1": "word1&word2"
     }
 }
@@ -66,7 +66,7 @@ Output: Check if `word_id` 1 is matched.
 ```json
 Input:
 {
-    "ProcessType.None": {
+    "1": {
         "1": "word1",
         "2": "word2"
     }
@@ -79,8 +79,8 @@ Output: Check if `word_id` 1 or 2 is matched.
 ```json
 Input:
 {
-    "ProcessType.None": {
-        "1": "word1~word2",
+    "1": {
+        "1": "word1~word2"
     }
 }
 
@@ -98,7 +98,7 @@ To prevent redundant processing of the same string, `matcher_rs` constructs a gr
 
 ```mermaid
 flowchart TD
-    Raw["Raw Input String"] --> None["MatchNone (No Op)"]
+    Raw["Raw Input String"] --> None["NONE (No Op)"]
     Raw --> Fanjian["Fanjian (Trad -> Simp)"]
 
     Fanjian --> F_Delete["Delete (Symbol Obfuscation)"]
