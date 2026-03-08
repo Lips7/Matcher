@@ -150,3 +150,4 @@ cython_debug/
 .vscode
 *.zip
 matcher_c/tests/test_matcher
+tasks/
