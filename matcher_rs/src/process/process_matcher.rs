@@ -22,6 +22,7 @@ use crate::process::constants::*;
 
 thread_local! {
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(16));
+    static REDUCE_STATE: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(16));
 }
 
 pub fn get_string_from_pool(capacity: usize) -> String {
@@ -745,28 +746,21 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 ///
 /// This struct is used in the context of applying a series of text processing rules. Each node
 /// holds a specific processing rule (represented by `process_type_bit`), a list of associated
-/// process types (`process_type_list`), a flag indicating whether the node has been processed
-/// (`is_processed`), the index of the processed text (`processed_text_index`), and its child nodes
-/// (`children`).
+/// process types (`process_type_list`), and its child nodes (`children`).
 ///
 /// # Algorithm
 /// 1. Nodes represent isolated mutation states during text reductions.
 /// 2. As bits from a composite `ProcessType` are evaluated sequentially, they form directional edges to child nodes.
-/// 3. `processed_text_index` ensures multiple variants sharing the exact same sequence reuse the mutated string payload instead of duplicating work.
 ///
 /// # Fields
 ///
 /// * `process_type_list` - An [`Vec`] containing the list of processing types associated with this node.
 /// * `process_type_bit` - A [`ProcessType`] representing the specific processing rule for this node.
-/// * `is_processed` - A [`bool`] flag indicating whether the node has been processed.
-/// * `processed_text_index` - An [`usize`] indicating the index of the processed text.
 /// * `children` - An [`Vec`] containing the indices of child nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
     process_type_bit: ProcessType,
-    is_processed: bool,
-    processed_text_index: usize,
     children: Vec<usize>,
 }
 
@@ -795,8 +789,6 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
     let root = ProcessTypeBitNode {
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
-        is_processed: true,
-        processed_text_index: 0,
         children: Vec::new(),
     };
     process_type_tree.push(root);
@@ -822,8 +814,6 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
                 let mut child = ProcessTypeBitNode {
                     process_type_list: Vec::new(),
                     process_type_bit,
-                    is_processed: false,
-                    processed_text_index: 0,
                     children: Vec::new(),
                 };
                 child.process_type_list.push(process_type);
@@ -865,22 +855,22 @@ pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
 ) -> ProcessedTextMasks<'a> {
-    let mut process_type_tree_copied: Vec<ProcessTypeBitNode> = process_type_tree.to_vec();
+    REDUCE_STATE.with(|state| {
+        let mut node_processed_indices = state.borrow_mut();
+        node_processed_indices.clear();
+        node_processed_indices.resize(process_type_tree.len(), 0);
 
-    let mut processed_text_process_type_masks: ProcessedTextMasks<'a> = Vec::new();
-    processed_text_process_type_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
+        let mut processed_text_process_type_masks: ProcessedTextMasks<'a> = Vec::new();
+        processed_text_process_type_masks
+            .push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
 
-    for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-        let (left_tree, right_tree) = process_type_tree_copied.split_at_mut(current_node_index + 1);
-        let current_copied_node = left_tree.get(current_node_index).expect("`current_node_index` will never exceed the iterator bounds of `left_tree` created above.");
-        let mut current_index = current_copied_node.processed_text_index;
+        for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
+            let current_index = node_processed_indices[current_node_index];
 
-        for child_node_index in &current_node.children {
-            let child_node = right_tree.get_mut(*child_node_index - current_node_index - 1).expect("`child_node_index` is sourced securely from the internally generated structural graph bounds. It is validated against `current_node_index` math ensuring safe projection over `right_tree`.");
+            for &child_node_index in &current_node.children {
+                let child_node = &process_type_tree[child_node_index];
+                let mut child_index = current_index;
 
-            if child_node.is_processed {
-                current_index = current_copied_node.processed_text_index;
-            } else {
                 let cached_result = get_process_matcher(child_node.process_type_bit);
                 let (process_replace_list, process_matcher) = cached_result.as_ref();
 
@@ -891,17 +881,11 @@ pub fn reduce_text_process_with_tree<'a>(
                             processed_text_process_type_masks[current_index].0.as_ref();
                         match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_process_type_masks.push((
-                                    Cow::Owned(pt),
-                                    child_node
-                                        .process_type_list
-                                        .iter()
-                                        .fold(0u64, |mask, smt| mask | (1u64 << smt.bits())),
-                                ));
-                                current_index = processed_text_process_type_masks.len() - 1;
+                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                child_index = processed_text_process_type_masks.len() - 1;
                             }
                             (false, _) => {
-                                current_index = current_copied_node.processed_text_index;
+                                child_index = current_index;
                             }
                             (_, _) => unreachable!(),
                         }
@@ -912,29 +896,28 @@ pub fn reduce_text_process_with_tree<'a>(
                         match process_matcher.replace_all(current_text, process_replace_list) {
                             (true, Cow::Owned(pt)) => {
                                 processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                                current_index = processed_text_process_type_masks.len() - 1;
+                                child_index = processed_text_process_type_masks.len() - 1;
                             }
                             (false, _) => {
-                                current_index = current_copied_node.processed_text_index;
+                                child_index = current_index;
                             }
                             (_, _) => unreachable!(),
                         }
                     }
                 }
-                child_node.is_processed = true;
+
+                node_processed_indices[child_node_index] = child_index;
+                let processed_text_process_type_tuple =
+                    &mut processed_text_process_type_masks[child_index];
+                processed_text_process_type_tuple.1 |= child_node
+                    .process_type_list
+                    .iter()
+                    .fold(0u64, |mask, smt| mask | (1u64 << smt.bits()));
             }
-
-            child_node.processed_text_index = current_index;
-            let processed_text_process_type_tuple =
-                &mut processed_text_process_type_masks[current_index];
-            processed_text_process_type_tuple.1 |= child_node
-                .process_type_list
-                .iter()
-                .fold(0u64, |mask, smt| mask | (1u64 << smt.bits()));
         }
-    }
 
-    processed_text_process_type_masks
+        processed_text_process_type_masks
+    })
 }
 
 /// Reduces text based on a set of rules, building a temporary tree.
@@ -955,23 +938,21 @@ pub fn reduce_text_process_with_set<'a>(
     text: &'a str,
 ) -> ProcessedTextMasks<'a> {
     let mut process_type_tree = Vec::with_capacity(8);
-    let mut root = ProcessTypeBitNode {
+    let root = ProcessTypeBitNode {
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
-        is_processed: true,
-        processed_text_index: 0,
         children: Vec::new(),
     };
-    root.process_type_list.push(ProcessType::None);
     process_type_tree.push(root);
+
+    let mut node_processed_indices = Vec::with_capacity(8);
+    node_processed_indices.push(0);
 
     let mut processed_text_process_type_masks: ProcessedTextMasks<'a> = Vec::new();
     processed_text_process_type_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
 
     for process_type_bits in process_type_set.iter() {
         let process_type = ProcessType::from_bits(*process_type_bits).unwrap();
-        let mut current_text = text;
-        let mut current_index = 0;
         let mut current_node_index = 0;
 
         for process_type_bit in process_type.iter() {
@@ -988,64 +969,70 @@ pub fn reduce_text_process_with_set<'a>(
                     break;
                 }
             }
-            let current_node = &mut process_type_tree[current_node_index];
 
             if !is_found {
+                let current_index = node_processed_indices[current_node_index];
+                let mut child_index = current_index;
+
                 let cached_result = get_process_matcher(process_type_bit);
                 let (process_replace_list, process_matcher) = cached_result.as_ref();
 
                 match process_type_bit {
                     ProcessType::None => {}
-                    ProcessType::Delete => match process_matcher.delete_all(current_text) {
-                        (true, Cow::Owned(pt)) => {
-                            processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                            current_index = processed_text_process_type_masks.len() - 1;
-
-                            let processed_text_process_type_tuple =
-                                &mut processed_text_process_type_masks
-                                    [current_node.processed_text_index];
-                            processed_text_process_type_tuple.1 |= 1u64 << process_type.bits();
+                    ProcessType::Delete => {
+                        let current_text =
+                            processed_text_process_type_masks[current_index].0.as_ref();
+                        match process_matcher.delete_all(current_text) {
+                            (true, Cow::Owned(pt)) => {
+                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                child_index = processed_text_process_type_masks.len() - 1;
+                            }
+                            (false, _) => {
+                                child_index = current_index;
+                            }
+                            (_, _) => unreachable!(),
                         }
-                        (false, _) => {
-                            current_index = current_node.processed_text_index;
+                    }
+                    _ => {
+                        let current_text =
+                            processed_text_process_type_masks[current_index].0.as_ref();
+                        match process_matcher.replace_all(current_text, process_replace_list) {
+                            (true, Cow::Owned(pt)) => {
+                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                child_index = processed_text_process_type_masks.len() - 1;
+                            }
+                            (false, _) => {
+                                child_index = current_index;
+                            }
+                            (_, _) => unreachable!(),
                         }
-                        (_, _) => unreachable!(),
-                    },
-                    _ => match process_matcher.replace_all(current_text, process_replace_list) {
-                        (true, Cow::Owned(pt)) => {
-                            processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                            current_index = processed_text_process_type_masks.len() - 1;
-                        }
-                        (false, _) => {
-                            current_index = current_node.processed_text_index;
-                        }
-                        (_, _) => unreachable!(),
-                    },
+                    }
                 }
 
                 let mut child = ProcessTypeBitNode {
                     process_type_list: Vec::new(),
                     process_type_bit,
-                    is_processed: true,
-                    processed_text_index: current_index,
                     children: Vec::new(),
                 };
                 child.process_type_list.push(process_type);
                 process_type_tree.push(child);
+                node_processed_indices.push(child_index);
 
                 let new_node_index = process_type_tree.len() - 1;
-                let current_node = &mut process_type_tree[current_node_index];
-                current_node.children.push(new_node_index);
+                process_type_tree[current_node_index]
+                    .children
+                    .push(new_node_index);
                 current_node_index = new_node_index;
             } else {
-                current_index = current_node.processed_text_index;
-                current_node.process_type_list.push(process_type);
+                process_type_tree[current_node_index]
+                    .process_type_list
+                    .push(process_type);
             }
 
+            let current_index = node_processed_indices[current_node_index];
             let processed_text_process_type_tuple =
                 &mut processed_text_process_type_masks[current_index];
             processed_text_process_type_tuple.1 |= 1u64 << process_type.bits();
-            current_text = processed_text_process_type_masks[current_index].0.as_ref();
         }
     }
 

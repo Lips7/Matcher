@@ -23,12 +23,14 @@ use crate::vectorscan::VectorscanScanner;
 ///
 /// # Fields
 /// * `matrix` - A flat vector of state matrices for each word configuration. Each entry is indexed by `word_conf_idx`.
+/// * `satisfied_mask` - A vector of bitmasks indicating which splits have been satisfied for each word configuration.
 /// * `matrix_generation` - Stores the generation ID for each entry in `matrix`.
 /// * `not_flags_generation` - Stores the generation ID indicating if a word is blocked by a "NOT" (`~`) pattern.
 /// * `touched_indices` - A list of indices in `word_conf_list` that were modified during the current search.
 /// * `generation` - The current search's unique generation ID.
 struct SimpleMatchState {
     matrix: Vec<TinyVec<[i32; 16]>>,
+    satisfied_mask: Vec<u64>,
     matrix_generation: Vec<u32>,
     not_flags_generation: Vec<u32>,
     touched_indices: Vec<usize>,
@@ -43,6 +45,7 @@ impl SimpleMatchState {
     fn new() -> Self {
         Self {
             matrix: Vec::new(),
+            satisfied_mask: Vec::new(),
             matrix_generation: Vec::new(),
             not_flags_generation: Vec::new(),
             touched_indices: Vec::new(),
@@ -57,7 +60,7 @@ impl SimpleMatchState {
     ///
     /// # Detailed Explanation / Algorithm
     /// 1. Increments `self.generation`. If it overflows `u32::MAX`, resets all generation tracking arrays to 0.
-    /// 2. Resizes `matrix`, `matrix_generation`, and `not_flags_generation` to `size` if they are smaller.
+    /// 2. Resizes `matrix`, `satisfied_mask`, `matrix_generation`, and `not_flags_generation` to `size` if they are smaller.
     /// 3. Clears `touched_indices`.
     ///
     /// # Arguments
@@ -73,6 +76,7 @@ impl SimpleMatchState {
 
         if self.matrix.len() < size {
             self.matrix.resize(size, TinyVec::new());
+            self.satisfied_mask.resize(size, 0);
             self.matrix_generation.resize(size, 0);
             self.not_flags_generation.resize(size, 0);
         }
@@ -124,12 +128,16 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 /// * `word` - The original word as a String.
 /// * `split_bit` - A vector of integers representing the logical splits of the word. Positive integers indicate multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
 /// * `not_offset` - The index in `split_bit` that indicates the start of the 'NOT' split parts.
+/// * `expected_mask` - A bitmask representing the required AND splits that must be satisfied.
+/// * `use_matrix` - A boolean indicating whether the state matrix is required for this word.
 #[derive(Debug, Clone)]
 struct WordConf {
     word_id: u32,
     word: String,
     split_bit: Vec<i32>,
     not_offset: usize,
+    expected_mask: u64,
+    use_matrix: bool,
 }
 
 /// Represents a simple result for matching words in the `SimpleMatcher`.
@@ -319,6 +327,17 @@ impl SimpleMatcher {
                     .chain(ac_split_word_not_counter.values().copied())
                     .collect::<Vec<i32>>();
 
+                let expected_mask = if not_offset > 0 && not_offset <= 64 {
+                    u64::MAX >> (64 - not_offset)
+                } else {
+                    0
+                };
+
+                let use_matrix = not_offset > 64
+                    || split_bit.len() > 64
+                    || split_bit[..not_offset].iter().any(|&v| v != 1)
+                    || split_bit[not_offset..].iter().any(|&v| v != 0);
+
                 let word_conf_idx = if let Some(&existing_idx) = word_id_to_idx.get(&simple_word_id)
                 {
                     word_conf_list[existing_idx] = WordConf {
@@ -326,6 +345,8 @@ impl SimpleMatcher {
                         word: simple_word.as_ref().to_owned(),
                         split_bit,
                         not_offset,
+                        expected_mask,
+                        use_matrix,
                     };
                     existing_idx
                 } else {
@@ -336,6 +357,8 @@ impl SimpleMatcher {
                         word: simple_word.as_ref().to_owned(),
                         split_bit,
                         not_offset,
+                        expected_mask,
+                        use_matrix,
                     });
                     idx
                 };
@@ -512,22 +535,35 @@ impl SimpleMatcher {
             if state.matrix_generation[word_conf_idx] != generation {
                 state.matrix_generation[word_conf_idx] = generation;
                 state.touched_indices.push(word_conf_idx);
+                state.satisfied_mask[word_conf_idx] = 0;
 
-                let num_splits = word_conf.split_bit.len();
-                let flat_matrix = &mut state.matrix[word_conf_idx];
-                flat_matrix.clear();
-                flat_matrix.resize(num_splits * processed_times, 0i32);
-                for (s, &bit) in word_conf.split_bit.iter().enumerate() {
-                    let row_start = s * processed_times;
-                    flat_matrix[row_start..row_start + processed_times].fill(bit);
+                if word_conf.use_matrix {
+                    let num_splits = word_conf.split_bit.len();
+                    let flat_matrix = &mut state.matrix[word_conf_idx];
+                    flat_matrix.clear();
+                    flat_matrix.resize(num_splits * processed_times, 0i32);
+                    for (s, &bit) in word_conf.split_bit.iter().enumerate() {
+                        let row_start = s * processed_times;
+                        flat_matrix[row_start..row_start + processed_times].fill(bit);
+                    }
                 }
             }
 
-            let flat_matrix = &mut state.matrix[word_conf_idx];
-            let bit = &mut flat_matrix[offset * processed_times + text_index];
-            *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
+            if word_conf.use_matrix {
+                let flat_matrix = &mut state.matrix[word_conf_idx];
+                let bit = &mut flat_matrix[offset * processed_times + text_index];
+                *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
-            if offset >= word_conf.not_offset && *bit > 0 {
+                if offset < word_conf.not_offset {
+                    if *bit <= 0 {
+                        state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+                    }
+                } else if *bit > 0 {
+                    state.not_flags_generation[word_conf_idx] = generation;
+                }
+            } else if offset < word_conf.not_offset {
+                state.satisfied_mask[word_conf_idx] |= 1u64 << offset;
+            } else {
                 state.not_flags_generation[word_conf_idx] = generation;
             }
         }
@@ -649,7 +685,13 @@ impl SimpleMatcher {
                 if state.not_flags_generation[word_conf_idx] == generation {
                     return false;
                 }
-                let num_splits = self.word_conf_list[word_conf_idx].split_bit.len();
+                let word_conf = &self.word_conf_list[word_conf_idx];
+                let expected_mask = word_conf.expected_mask;
+                if expected_mask > 0 {
+                    return state.satisfied_mask[word_conf_idx] == expected_mask;
+                }
+
+                let num_splits = word_conf.split_bit.len();
                 let flat_matrix = &state.matrix[word_conf_idx];
                 (0..num_splits).all(|s| {
                     flat_matrix[s * processed_times..(s + 1) * processed_times]
@@ -696,18 +738,23 @@ impl SimpleMatcher {
                         return None;
                     }
                     let word_conf = &self.word_conf_list[word_conf_idx];
-                    let num_splits = word_conf.split_bit.len();
-                    let flat_matrix = &state.matrix[word_conf_idx];
-                    (0..num_splits)
-                        .all(|s| {
+                    let expected_mask = word_conf.expected_mask;
+                    let is_satisfied = if expected_mask > 0 {
+                        state.satisfied_mask[word_conf_idx] == expected_mask
+                    } else {
+                        let num_splits = word_conf.split_bit.len();
+                        let flat_matrix = &state.matrix[word_conf_idx];
+                        (0..num_splits).all(|s| {
                             flat_matrix[s * processed_times..(s + 1) * processed_times]
                                 .iter()
                                 .any(|&bit| bit <= 0)
                         })
-                        .then_some(SimpleResult {
-                            word_id: word_conf.word_id,
-                            word: Cow::Borrowed(&word_conf.word),
-                        })
+                    };
+
+                    is_satisfied.then_some(SimpleResult {
+                        word_id: word_conf.word_id,
+                        word: Cow::Borrowed(&word_conf.word),
+                    })
                 })
                 .collect()
         })
