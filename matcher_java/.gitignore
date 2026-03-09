@@ -1,3 +1,0 @@
-src/main/resources/*
-!src/main/resources/.gitkeep
-*.class
