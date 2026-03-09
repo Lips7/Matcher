@@ -5,58 +5,45 @@ use vectorscan_rs_sys as hs;
 
 use crate::vectorscan::error::{AsResult, Error, extract_compile_error};
 
-/// Trait defining the core interface for any Vectorscan database implementation.
+/// Safe wrapper for a compiled Vectorscan database.
 ///
-/// This trait ensures that any database type can provide a raw pointer to its
-/// underlying Vectorscan database for use in scanning operations.
-pub trait VectorscanDatabase: Send + Sync + std::fmt::Debug {
-    /// Returns the raw pointer to the compiled Vectorscan database.
-    ///
-    /// # Returns
-    /// A raw pointer to the underlying [`hs::hs_database_t`].
-    fn as_ptr(&self) -> *mut hs::hs_database_t;
-}
-
-// ---------------------------------------------------------------------------
-// LiteralDatabase — hs_compile_lit_multi
-// ---------------------------------------------------------------------------
-
-/// A database compiled from multiple literal patterns.
+/// A Vectorscan database is the compiled representation of one or more regular expressions
+/// or literal patterns. It represents the *immutable, thread-safe automaton* needed for matching.
 ///
-/// Uses `hs_compile_lit_multi` which treats every byte literally,
-/// including NUL bytes (lengths are provided explicitly).
+/// **Thread Safety & Lifecycle**:
+/// The database is fully thread-safe and is designed to be shared concurrently across
+/// multiple threads (typically wrapped in an `Arc`). It does not store matching state;
+/// temporary state during a scan is stored in a separate `Scratch` space.
+///
+/// **Memory Management**:
+/// The internal memory is allocated by Vectorscan's compiler and must be explicitly freed
+/// via `hs_free_database`. This struct ensures that the database is safely freed when
+/// it goes out of scope.
 #[derive(Debug)]
-pub struct LiteralDatabase {
+pub struct Database {
     db: *mut hs::hs_database_t,
 }
 
-unsafe impl Send for LiteralDatabase {}
-unsafe impl Sync for LiteralDatabase {}
+// SAFETY: A compiled Vectorscan database is strictly immutable and inherently thread-safe.
+// It can safely be sent across threads or accessed concurrently by multiple threads.
+unsafe impl Send for Database {}
+unsafe impl Sync for Database {}
 
-impl LiteralDatabase {
+impl Database {
     /// Compiles a literal database from the given patterns and per-pattern flags.
     ///
     /// This function takes a slice of literal strings and corresponding flags,
-    /// and compiles them into a Vectorscan database optimized for literal matching.
+    /// and compiles them into a Vectorscan database optimized for literal matching
+    /// (using `hs_compile_lit_multi`).
     ///
     /// # Arguments
-    /// * `patterns` - Literal byte patterns.
-    /// * `flags` - Per-pattern flags (e.g. `HS_FLAG_CASELESS`, `HS_FLAG_SINGLEMATCH`).
-    ///   Must have the same length as `patterns`.
+    /// * `patterns` - Literal byte patterns to compile.
+    /// * `flags` - Per-pattern Hyperscan flags (e.g., `HS_FLAG_CASELESS`, `HS_FLAG_SINGLEMATCH`).
+    ///   Must have the exact same length as `patterns`.
     ///
     /// # Returns
     /// A [`Result<Self, Error>`] containing the compiled literal database.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::vectorscan::database::LiteralDatabase;
-    ///
-    /// let patterns = vec!["apple", "banana"];
-    /// let flags = vec![0, 0]; // No special flags
-    /// let db = LiteralDatabase::new(&patterns, &flags).unwrap();
-    /// ```
-    pub fn new(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
+    pub fn new_literal(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         debug_assert_eq!(patterns.len(), flags.len());
 
         let patterns_ptr: Vec<*const c_char> = patterns
@@ -91,21 +78,20 @@ impl LiteralDatabase {
             }
         }
 
-        Ok(LiteralDatabase { db })
+        Ok(Database { db })
     }
-}
 
-impl VectorscanDatabase for LiteralDatabase {
     /// Returns the raw pointer to the compiled Vectorscan database.
     ///
-    /// # Returns
-    /// A raw pointer to the underlying [`hs::hs_database_t`].
-    fn as_ptr(&self) -> *mut hs::hs_database_t {
+    /// This pointer is required for executing scan operations and for allocating
+    /// or sizing compatible `Scratch` spaces.
+    #[inline(always)]
+    pub fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.db
     }
 }
 
-impl Drop for LiteralDatabase {
+impl Drop for Database {
     fn drop(&mut self) {
         unsafe {
             hs::hs_free_database(self.db);

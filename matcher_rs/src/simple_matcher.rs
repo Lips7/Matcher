@@ -13,7 +13,7 @@ use crate::process::process_matcher::{
     reduce_text_process_emit, reduce_text_process_with_tree, return_processed_string_to_pool,
 };
 #[cfg(feature = "vectorscan")]
-use crate::vectorscan::VectorscanScanner;
+use crate::vectorscan::{Scratch, VectorscanScanner};
 
 /// Internal state used for tracking matches in `SimpleMatcher`.
 ///
@@ -40,6 +40,8 @@ struct SimpleMatchState {
     matrix: Vec<TinyVec<[i32; 16]>>,
     touched_indices: Vec<usize>,
     generation: u32,
+    #[cfg(feature = "vectorscan")]
+    vectorscan_scratch: Option<Scratch>,
 }
 
 impl SimpleMatchState {
@@ -53,6 +55,8 @@ impl SimpleMatchState {
             matrix: Vec::new(),
             touched_indices: Vec::new(),
             generation: 0,
+            #[cfg(feature = "vectorscan")]
+            vectorscan_scratch: None,
         }
     }
 
@@ -499,20 +503,36 @@ impl SimpleMatcher {
                 #[cfg(feature = "vectorscan")]
                 AcMatcher::Vectorscan(scanner) => {
                     let mut found = false;
-                    let _ = scanner.scan(processed_text.as_ref().as_bytes(), |pattern_idx| {
-                        if !found
-                            && self.process_match(
-                                pattern_idx,
-                                index,
-                                *process_type_mask,
-                                processed_times,
-                                state,
-                                exit_early,
-                            )
-                        {
-                            found = true;
-                        }
-                    });
+                    let mut scratch = state
+                        .vectorscan_scratch
+                        .take()
+                        .unwrap_or_else(|| unsafe { Scratch::new(scanner.as_db_ptr()).unwrap() });
+
+                    let _ = unsafe { scratch.update(scanner.as_db_ptr()) };
+
+                    let _ = scanner.scan_with_scratch(
+                        processed_text.as_ref().as_bytes(),
+                        &mut scratch,
+                        |pattern_idx| {
+                            if !found
+                                && self.process_match(
+                                    pattern_idx,
+                                    index,
+                                    *process_type_mask,
+                                    processed_times,
+                                    state,
+                                    exit_early,
+                                )
+                            {
+                                found = true;
+                                false // stop scanning
+                            } else {
+                                !found // continue if not found or not exit_early
+                            }
+                        },
+                    );
+                    state.vectorscan_scratch = Some(scratch);
+
                     if found {
                         return true;
                     }

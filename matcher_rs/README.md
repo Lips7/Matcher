@@ -86,24 +86,26 @@ let results = matcher.process(text);
 For more detailed usage examples, please refer to the [test_simple_matcher.rs](./tests/test_simple_matcher.rs) file.
 
 ## Feature Flags
-* `runtime_build`: By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
-* `dfa`: By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
-* `vectorscan`: By enable vectorscan feature, we could use vectorscan to perform simple matching.
+* `runtime_build`: Enable building the process matcher at runtime (increases build time).
+* `dfa`: Use a Deterministic Finite Automaton (DFA) for matching. Offers better search speed but significantly higher memory consumption.
+* `vectorscan`: Use Intel's Vectorscan (a fork of Hyperscan) for SIMD-accelerated matching. Offers the best performance but requires the Vectorscan library to be installed on the system.
 
-Default feature is `dfa`.
+### Feature Comparison & Recommendation
+
+| Feature | Engine | Search Speed | Memory Usage | External Dependency | Best For |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Default** | Aho-Corasick (NFA) | Good | **Lowest** | None | General purpose, memory-constrained environments. |
+| `dfa` | Aho-Corasick (DFA) | **Fast** | Highest | None | Speed-critical apps where external dependencies are a no-go. |
+| `vectorscan` | Vectorscan (SIMD) | **Fastest** | Moderate | **Required** | High-throughput production systems requiring max performance. |
 
 ## Benchmarks
 
-Bench against pairs ([CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt), [CN_HAYSTACK](../data/text/cn/西游记.txt)) and ([EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt), [EN_HAYSTACK](../data/text/en/sherlock.txt)). Word selection is totally random.
+Benchmarked on **MacBook Air M4 (24GB RAM)**.
+Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
-The `matcher_rs` library includes benchmarks to measure the performance of the matcher. You can find the benchmarks in the [bench.rs](./benches/bench.rs) file. To run the benchmarks, use the following command:
-
-```shell
-cargo bench
-```
+### DFA
 
 ```
-Run on MacBook Air M4 24GB
 Current default simple match type: ProcessType(None)
 Current default simple word map size: 10000
 Current default combined times: 1
@@ -200,6 +202,107 @@ bench                                fastest       │ slowest       │ median 
       ├─ 50000                       462.4 µs      │ 511.4 µs      │ 467.3 µs      │ 471.2 µs      │ 100     │ 100
       ╰─ 100000                      458 µs        │ 535.9 µs      │ 477 µs        │ 479.5 µs      │ 100     │ 100
 ```
+
+### DFA + Vectorscan
+
+```
+Current default simple match type: ProcessType(None)
+Current default simple word map size: 10000
+Current default combined times: 1
+Timer precision: 41 ns
+bench                                fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ build                                           │               │               │               │         │
+│  ├─ cn_by_combinations                           │               │               │               │         │
+│  │  ├─ 1                           52.93 ms      │ 61.62 ms      │ 54.26 ms      │ 54.38 ms      │ 92      │ 92
+│  │  ├─ 2                           115.5 ms      │ 128.8 ms      │ 119 ms        │ 119 ms        │ 43      │ 43
+│  │  ├─ 3                           194.3 ms      │ 214.9 ms      │ 198.6 ms      │ 198.9 ms      │ 26      │ 26
+│  │  ╰─ 4                           280 ms        │ 293 ms        │ 286.1 ms      │ 285.8 ms      │ 18      │ 18
+│  ├─ cn_by_process_type                           │               │               │               │         │
+│  │  ├─ "delete"                    52.83 ms      │ 55.98 ms      │ 53.96 ms      │ 54.03 ms      │ 93      │ 93
+│  │  ├─ "fanjian"                   52.97 ms      │ 63.59 ms      │ 54.07 ms      │ 54.27 ms      │ 93      │ 93
+│  │  ├─ "fanjian_delete_normalize"  53.92 ms      │ 65.74 ms      │ 54.78 ms      │ 54.87 ms      │ 92      │ 92
+│  │  ╰─ "none"                      52.53 ms      │ 54.78 ms      │ 53.54 ms      │ 53.62 ms      │ 94      │ 94
+│  ├─ cn_by_size                                   │               │               │               │         │
+│  │  ├─ 1000                        6.504 ms      │ 7.057 ms      │ 6.695 ms      │ 6.688 ms      │ 100     │ 100
+│  │  ├─ 10000                       52.39 ms      │ 63.5 ms       │ 53.75 ms      │ 53.88 ms      │ 93      │ 93
+│  │  ├─ 50000                       368.7 ms      │ 382.2 ms      │ 376.1 ms      │ 375.7 ms      │ 14      │ 14
+│  │  ╰─ 100000                      797.4 ms      │ 827.8 ms      │ 806.5 ms      │ 807.3 ms      │ 7       │ 7
+│  ├─ en_by_combinations                           │               │               │               │         │
+│  │  ├─ 1                           51.8 ms       │ 71.68 ms      │ 53.09 ms      │ 53.44 ms      │ 94      │ 94
+│  │  ├─ 2                           108.1 ms      │ 118.8 ms      │ 110.6 ms      │ 110.9 ms      │ 46      │ 46
+│  │  ├─ 3                           178.4 ms      │ 187.5 ms      │ 181.5 ms      │ 181.7 ms      │ 28      │ 28
+│  │  ╰─ 4                           250.8 ms      │ 265.7 ms      │ 256.2 ms      │ 255.7 ms      │ 20      │ 20
+│  ├─ en_by_process_type                           │               │               │               │         │
+│  │  ├─ "delete"                    51.93 ms      │ 55.44 ms      │ 53.15 ms      │ 53.15 ms      │ 95      │ 95
+│  │  ├─ "delete_normalize"          53.45 ms      │ 56.32 ms      │ 54.59 ms      │ 54.49 ms      │ 92      │ 92
+│  │  ╰─ "none"                      51.78 ms      │ 62.97 ms      │ 52.89 ms      │ 53.08 ms      │ 95      │ 95
+│  ╰─ en_by_size                                   │               │               │               │         │
+│     ├─ 1000                        6.364 ms      │ 6.958 ms      │ 6.439 ms      │ 6.496 ms      │ 100     │ 100
+│     ├─ 10000                       51.57 ms      │ 54.27 ms      │ 52.75 ms      │ 52.66 ms      │ 95      │ 95
+│     ├─ 50000                       332.3 ms      │ 349.4 ms      │ 338.5 ms      │ 338 ms        │ 15      │ 15
+│     ╰─ 100000                      787.8 ms      │ 818 ms        │ 795 ms        │ 798.1 ms      │ 7       │ 7
+├─ search_match                                    │               │               │               │         │
+│  ├─ cn_by_combinations                           │               │               │               │         │
+│  │  ├─ 1                           839.1 µs      │ 1.728 ms      │ 853.6 µs      │ 865.5 µs      │ 100     │ 100
+│  │  ├─ 2                           800.1 µs      │ 1.8 ms        │ 806.9 µs      │ 818.9 µs      │ 100     │ 100
+│  │  ├─ 3                           610.1 µs      │ 1.903 ms      │ 620.1 µs      │ 634.8 µs      │ 100     │ 100
+│  │  ╰─ 4                           786.4 µs      │ 842.1 µs      │ 795.9 µs      │ 798.3 µs      │ 100     │ 100
+│  ├─ cn_by_process_type                           │               │               │               │         │
+│  │  ├─ "delete"                    16.8 ms       │ 28.34 ms      │ 17.02 ms      │ 17.13 ms      │ 100     │ 100
+│  │  ├─ "fanjian"                   7.427 ms      │ 8.447 ms      │ 7.525 ms      │ 7.551 ms      │ 100     │ 100
+│  │  ├─ "fanjian_delete_normalize"  11.03 ms      │ 11.28 ms      │ 11.09 ms      │ 11.09 ms      │ 100     │ 100
+│  │  ╰─ "none"                      6.13 ms       │ 6.719 ms      │ 6.196 ms      │ 6.238 ms      │ 100     │ 100
+│  ├─ cn_by_size                                   │               │               │               │         │
+│  │  ├─ 1000                        2.163 ms      │ 2.39 ms       │ 2.178 ms      │ 2.188 ms      │ 100     │ 100
+│  │  ├─ 10000                       6.145 ms      │ 7.242 ms      │ 6.277 ms      │ 6.264 ms      │ 100     │ 100
+│  │  ├─ 50000                       14.38 ms      │ 19.03 ms      │ 14.87 ms      │ 14.85 ms      │ 100     │ 100
+│  │  ╰─ 100000                      21.74 ms      │ 32.28 ms      │ 23.04 ms      │ 23.18 ms      │ 100     │ 100
+│  ├─ en_by_combinations                           │               │               │               │         │
+│  │  ├─ 1                           1.125 ms      │ 1.736 ms      │ 1.135 ms      │ 1.149 ms      │ 100     │ 100
+│  │  ├─ 2                           1.566 ms      │ 2.786 ms      │ 1.58 ms       │ 1.598 ms      │ 100     │ 100
+│  │  ├─ 3                           4.541 ms      │ 8.529 ms      │ 4.603 ms      │ 4.738 ms      │ 100     │ 100
+│  │  ╰─ 4                           5.662 ms      │ 6.968 ms      │ 5.859 ms      │ 5.854 ms      │ 100     │ 100
+│  ├─ en_by_process_type                           │               │               │               │         │
+│  │  ├─ "delete"                    4.68 ms       │ 5.313 ms      │ 4.717 ms      │ 4.737 ms      │ 100     │ 100
+│  │  ├─ "delete_normalize"          32.51 ms      │ 33.7 ms       │ 32.93 ms      │ 32.87 ms      │ 100     │ 100
+│  │  ╰─ "none"                      1.123 ms      │ 1.719 ms      │ 1.143 ms      │ 1.154 ms      │ 100     │ 100
+│  ╰─ en_by_size                                   │               │               │               │         │
+│     ├─ 1000                        657.8 µs      │ 770.1 µs      │ 668.1 µs      │ 671.1 µs      │ 100     │ 100
+│     ├─ 10000                       1.111 ms      │ 1.698 ms      │ 1.132 ms      │ 1.146 ms      │ 100     │ 100
+│     ├─ 50000                       8.098 ms      │ 11.49 ms      │ 8.328 ms      │ 8.325 ms      │ 100     │ 100
+│     ╰─ 100000                      21.58 ms      │ 28.81 ms      │ 22.61 ms      │ 22.52 ms      │ 100     │ 100
+╰─ search_no_match                                 │               │               │               │         │
+   ├─ cn_by_combinations                           │               │               │               │         │
+   │  ├─ 1                           597.4 µs      │ 1.242 ms      │ 608.1 µs      │ 618.5 µs      │ 100     │ 100
+   │  ├─ 2                           610 µs        │ 1.465 ms      │ 615.1 µs      │ 624.9 µs      │ 100     │ 100
+   │  ├─ 3                           606 µs        │ 1.673 ms      │ 619.5 µs      │ 632.3 µs      │ 100     │ 100
+   │  ╰─ 4                           619.7 µs      │ 1.941 ms      │ 632.2 µs      │ 645.9 µs      │ 100     │ 100
+   ├─ cn_by_process_type                           │               │               │               │         │
+   │  ├─ "delete"                    6.792 ms      │ 7.58 ms       │ 6.826 ms      │ 6.84 ms       │ 100     │ 100
+   │  ├─ "fanjian"                   2.176 ms      │ 2.853 ms      │ 2.189 ms      │ 2.202 ms      │ 100     │ 100
+   │  ├─ "fanjian_delete_normalize"  12.18 ms      │ 15.28 ms      │ 12.25 ms      │ 12.3 ms       │ 100     │ 100
+   │  ╰─ "none"                      896.9 µs      │ 1.584 ms      │ 902.8 µs      │ 911.6 µs      │ 100     │ 100
+   ├─ cn_by_size                                   │               │               │               │         │
+   │  ├─ 1000                        886.7 µs      │ 1.031 ms      │ 891.4 µs      │ 897.1 µs      │ 100     │ 100
+   │  ├─ 10000                       898.9 µs      │ 1.608 ms      │ 903.4 µs      │ 913.4 µs      │ 100     │ 100
+   │  ├─ 50000                       898.4 µs      │ 3.559 ms      │ 902.8 µs      │ 931.8 µs      │ 100     │ 100
+   │  ╰─ 100000                      904 µs        │ 6.196 ms      │ 909.7 µs      │ 965.4 µs      │ 100     │ 100
+   ├─ en_by_combinations                           │               │               │               │         │
+   │  ├─ 1                           581.4 µs      │ 1.246 ms      │ 585.9 µs      │ 594.8 µs      │ 100     │ 100
+   │  ├─ 2                           582.6 µs      │ 1.454 ms      │ 585.9 µs      │ 595.8 µs      │ 100     │ 100
+   │  ├─ 3                           605.7 µs      │ 1.684 ms      │ 609.7 µs      │ 622.8 µs      │ 100     │ 100
+   │  ╰─ 4                           627.4 µs      │ 1.925 ms      │ 631.8 µs      │ 647.4 µs      │ 100     │ 100
+   ├─ en_by_process_type                           │               │               │               │         │
+   │  ├─ "delete"                    3.46 ms       │ 4.293 ms      │ 3.475 ms      │ 3.49 ms       │ 100     │ 100
+   │  ├─ "delete_normalize"          4.569 ms      │ 4.817 ms      │ 4.623 ms      │ 4.633 ms      │ 100     │ 100
+   │  ╰─ "none"                      596.9 µs      │ 1.262 ms      │ 602.5 µs      │ 612.3 µs      │ 100     │ 100
+   ╰─ en_by_size                                   │               │               │               │         │
+      ├─ 1000                        592.8 µs      │ 700.8 µs      │ 603.6 µs      │ 606.4 µs      │ 100     │ 100
+      ├─ 10000                       601.6 µs      │ 1.264 ms      │ 609.4 µs      │ 616.9 µs      │ 100     │ 100
+      ├─ 50000                       581.4 µs      │ 3.223 ms      │ 594.9 µs      │ 625.2 µs      │ 100     │ 100
+      ╰─ 100000                      596.8 µs      │ 5.792 ms      │ 601.1 µs      │ 655.3 µs      │ 100     │ 100
+```
+
 
 ## Contributing
 

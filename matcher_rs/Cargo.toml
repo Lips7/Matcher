@@ -26,7 +26,6 @@ aho-corasick = "1.1.4"
 bitflags = "2.11.0"
 daachorse = "1.0.0"
 mimalloc = { version = "0.1.48", features = ["v3"] }
-parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = { version = "2.0.18", optional = true}
 tinyvec = { version = "1.10.0", features = ["alloc"] }

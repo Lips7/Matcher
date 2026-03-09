@@ -151,3 +151,4 @@ cython_debug/
 *.zip
 matcher_c/tests/test_matcher
 tasks/
+profile.json.gz

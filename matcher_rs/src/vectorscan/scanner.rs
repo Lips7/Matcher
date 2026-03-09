@@ -3,91 +3,72 @@ use std::sync::Arc;
 
 use vectorscan_rs_sys as hs;
 
-use crate::vectorscan::database::{LiteralDatabase, VectorscanDatabase};
+use crate::vectorscan::database::Database;
 use crate::vectorscan::error::{AsResult, Error};
 #[cfg(target_os = "macos")]
 use crate::vectorscan::init_allocator;
 use crate::vectorscan::scratch::Scratch;
 
-/// High-level Vectorscan scanner.
+/// High-level wrapper for performing scans with Vectorscan.
 ///
-/// This scanner manages a compiled database and the necessary scratch space
-/// for scanning operations. It is designed to be thread-safe by cloning
-/// the scratch space for each individual scan call.
+/// `VectorscanScanner` binds a compiled, thread-safe `Database` (wrapped in an `Arc`)
+/// to scanning logic. It acts as the primary entry point for executing matches against
+/// an input haystack.
 #[derive(Debug, Clone)]
 pub struct VectorscanScanner {
-    db: Arc<dyn VectorscanDatabase>,
-    scratch: Scratch,
+    db: Arc<Database>,
 }
 
 impl VectorscanScanner {
-    /// Creates a new scanner from a pre-built database.
+    /// Creates a new scanner using an existing, pre-built `Database`.
     ///
-    /// This function initializes the memory allocator and prepares the template
-    /// scratch space required for scanning.
-    ///
-    /// # Arguments
-    /// * `db` - An [`Arc`] containing a compiled Vectorscan database.
-    ///
-    /// # Returns
-    /// A [`Result<Self, Error>`] containing the initialized scanner.
-    pub fn new(db: Arc<dyn VectorscanDatabase>) -> Result<Self, Error> {
+    /// The database is expected to be wrapped in an `Arc` to allow cheap cloning
+    /// of the scanner across multiple threads.
+    pub fn new(db: Arc<Database>) -> Result<Self, Error> {
         #[cfg(target_os = "macos")]
         init_allocator();
-        let scratch = unsafe { Scratch::new(db.as_ptr())? };
-        Ok(Self { db, scratch })
+        Ok(Self { db })
     }
 
-    /// Convenience: compiles a literal database and returns a ready scanner.
-    ///
-    /// This function provides a simple way to create a scanner from a list of
-    /// literal patterns without needing to manually build the database first.
-    ///
-    /// # Arguments
-    /// * `patterns` - Literal byte patterns to be matched.
-    /// * `flags` - Per-pattern flags.
-    ///
-    /// # Returns
-    /// A [`Result<Self, Error>`] containing the initialized scanner.
+    /// Convenience method: compiles a new literal `Database` and returns a ready scanner.
     pub fn new_literal(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
-        let db = Arc::new(LiteralDatabase::new(patterns, flags)?);
+        let db = Arc::new(Database::new_literal(patterns, flags)?);
         Self::new(db)
+    }
+
+    /// Returns the raw pointer to the underlying Vectorscan database.
+    #[inline(always)]
+    pub fn as_db_ptr(&self) -> *mut hs::hs_database_t {
+        self.db.as_ptr()
     }
 
     /// Scans the given haystack and invokes the callback for every match.
     ///
-    /// This function clones the internal scratch space and performs a block-mode
-    /// scan of the provided data. For each match found, the `on_match` closure
-    /// is called with the identifier of the matched pattern.
-    ///
-    /// # Arguments
-    /// * `haystack` - A byte slice representing the data to be scanned.
-    /// * `on_match` - A closure that is called for each match, receiving the pattern ID.
-    ///
-    /// # Returns
-    /// A [`Result<(), Error>`] indicating the success or failure of the scan operation.
-    ///
-    /// # Errors
-    /// Returns an error if scratch cloning or the scan itself fails.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::vectorscan::VectorscanScanner;
-    /// use std::sync::Arc;
-    ///
-    /// let scanner = VectorscanScanner::new_literal(&["apple", "banana"], &[0, 0]).unwrap();
-    /// let mut matches = Vec::new();
-    /// scanner.scan(b"I have an apple and a banana", |id| matches.push(id)).unwrap();
-    /// assert_eq!(matches.len(), 2);
-    /// ```
-    pub fn scan<F>(&self, haystack: &[u8], mut on_match: F) -> Result<(), Error>
+    /// **Performance Note**: This convenience method allocates a fresh `Scratch` space
+    /// on every call. For hot-paths (like in `SimpleMatcher`), it is highly recommended
+    /// to manage and reuse `Scratch` spaces externally and call `scan_with_scratch`.
+    pub fn scan<F>(&self, haystack: &[u8], on_match: F) -> Result<(), Error>
     where
-        F: FnMut(usize),
+        F: FnMut(usize) -> bool,
     {
-        let scratch = self.scratch.try_clone()?;
+        let mut scratch = unsafe { Scratch::new(self.db.as_ptr())? };
+        self.scan_with_scratch(haystack, &mut scratch, on_match)
+    }
 
-        // We pass a raw pointer to `on_match` through the FFI context parameter.
+    /// Scans the given haystack using a provided, pre-allocated `Scratch` space.
+    ///
+    /// The `Scratch` space should be properly sized for this scanner's database prior
+    /// to calling this method. It invokes the `on_match` closure for every matching
+    /// pattern found. Returning `true` from the closure will immediately terminate the scan.
+    pub fn scan_with_scratch<F>(
+        &self,
+        haystack: &[u8],
+        scratch: &mut Scratch,
+        mut on_match: F,
+    ) -> Result<(), Error>
+    where
+        F: FnMut(usize) -> bool,
+    {
         let ctx = &mut on_match as *mut F as *mut c_void;
 
         unsafe {
@@ -101,32 +82,22 @@ impl VectorscanScanner {
                 ctx,
             );
 
-            // HS_SCAN_TERMINATED is returned when the callback returns non-zero,
-            // which we never do, so treat it as an error here.
-            status.ok()
+            match status {
+                // HS_SCAN_TERMINATED means our closure returned true (abort early), which is expected.
+                s if s == hs::HS_SUCCESS as i32 || s == hs::HS_SCAN_TERMINATED => Ok(()),
+                _ => status.ok(),
+            }
         }
     }
 }
 
-/// FFI callback invoked by the Vectorscan scan function for each match found.
-///
-/// This callback takes the context pointer, which is expected to be a closure,
-/// and calls it with the pattern identifier.
-///
-/// # Arguments
-/// * `id` - The identifier assigned to the matching pattern at compile time.
-/// * `_from` - The starting position of the match (unused).
-/// * `_to` - The ending position of the match (unused).
-/// * `_flags` - Matching flags (unused).
-/// * `ctx` - A raw pointer to the user-provided closure.
-///
-/// # Returns
-/// Always returns 0 to continue scanning.
+/// FFI callback invoked by Vectorscan's internal scan loop for each match found.
 extern "C" fn match_callback<F>(id: u32, _from: u64, _to: u64, _flags: u32, ctx: *mut c_void) -> i32
 where
-    F: FnMut(usize),
+    F: FnMut(usize) -> bool,
 {
     let on_match = unsafe { &mut *(ctx as *mut F) };
-    on_match(id as usize);
-    0
+    // If closure returns false, it signals to stop the scan early.
+    // We return 1 (non-zero) to terminate the hyperscan loop, and 0 (HS_SUCCESS) to continue.
+    if on_match(id as usize) { 0 } else { 1 }
 }
