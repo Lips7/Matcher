@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use aho_corasick::AhoCorasick;
 #[cfg(feature = "dfa")]
@@ -179,7 +179,7 @@ impl Display for ProcessType {
     }
 }
 
-type ProcessMatcherResult = Arc<(Vec<&'static str>, ProcessMatcher)>;
+type ProcessMatcherResult = (Vec<&'static str>, ProcessMatcher);
 
 /// A lock-free, lazily-initialized array mapping bit positions to process matchers.
 ///
@@ -392,18 +392,18 @@ impl ProcessMatcher {
 /// ```rust
 /// use matcher_rs::{ProcessType, get_process_matcher};
 ///
-/// let arc = get_process_matcher(ProcessType::Fanjian);
-/// let (_, matcher) = arc.as_ref();
+/// let result = get_process_matcher(ProcessType::Fanjian);
+/// let (_, matcher) = result;
 /// let (changed, simplified) = matcher.replace_all("漢字", &[]);
 /// // Traditional '漢' and '字' map to Simplified '汉' and '字'
 /// ```
 pub fn get_process_matcher(
     process_type_bit: ProcessType,
-) -> Arc<(Vec<&'static str>, ProcessMatcher)> {
+) -> &'static (Vec<&'static str>, ProcessMatcher) {
     let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(index < 8, "ProcessType bit index out of bounds");
 
-    Arc::clone(PROCESS_MATCHER_CACHE[index].get_or_init(|| {
+    PROCESS_MATCHER_CACHE[index].get_or_init(|| {
         #[cfg(feature = "runtime_build")]
         {
             fn build_2_stage_table_runtime(map: &HashMap<u32, u32>) -> (Vec<u8>, Vec<u8>) {
@@ -548,7 +548,7 @@ pub fn get_process_matcher(
                 _ => Vec::new(),
             };
 
-            Arc::new((process_replace_list, process_matcher))
+            (process_replace_list, process_matcher)
         }
 
         #[cfg(not(feature = "runtime_build"))]
@@ -621,9 +621,9 @@ pub fn get_process_matcher(
                 ),
                 _ => unreachable!(),
             };
-            Arc::new((process_replace_list, process_matcher))
+            (process_replace_list, process_matcher)
         }
-    }))
+    })
 }
 
 /// Applies a composite [`ProcessType`] pipeline to `text` and returns the final result.
@@ -649,8 +649,7 @@ pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a,
     let mut result = Cow::Borrowed(text);
 
     for bit in process_type_bit.iter() {
-        let cached_result = get_process_matcher(bit);
-        let (process_replace_list, process_matcher) = cached_result.as_ref();
+        let (process_replace_list, process_matcher) = get_process_matcher(bit);
 
         match (bit, process_matcher) {
             (ProcessType::None, _) => continue,
@@ -698,8 +697,7 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
     processed_text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
-        let cached_result = get_process_matcher(process_type_bit);
-        let (process_replace_list, process_matcher) = cached_result.as_ref();
+        let (process_replace_list, process_matcher) = get_process_matcher(process_type_bit);
         let tmp_processed_text = processed_text_list
             .last_mut()
             .expect("It should always have at least one element");
@@ -751,8 +749,7 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
     processed_text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
-        let cached_result = get_process_matcher(process_type_bit);
-        let (process_replace_list, process_matcher) = cached_result.as_ref();
+        let (process_replace_list, process_matcher) = get_process_matcher(process_type_bit);
         let tmp_processed_text = processed_text_list
             .last_mut()
             .expect("It should always have at least one element");
@@ -901,8 +898,8 @@ pub fn reduce_text_process_with_tree<'a>(
                 let child_node = &process_type_tree[child_node_index];
                 let mut child_index = current_index;
 
-                let cached_result = get_process_matcher(child_node.process_type_bit);
-                let (process_replace_list, process_matcher) = cached_result.as_ref();
+                let (process_replace_list, process_matcher) =
+                    get_process_matcher(child_node.process_type_bit);
 
                 match child_node.process_type_bit {
                     ProcessType::None => {}
@@ -1006,8 +1003,7 @@ pub fn reduce_text_process_with_set<'a>(
                 let current_index = node_processed_indices[current_node_index];
                 let mut child_index = current_index;
 
-                let cached_result = get_process_matcher(process_type_bit);
-                let (process_replace_list, process_matcher) = cached_result.as_ref();
+                let (process_replace_list, process_matcher) = get_process_matcher(process_type_bit);
 
                 match process_type_bit {
                     ProcessType::None => {}
