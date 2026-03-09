@@ -45,6 +45,13 @@ pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
     "/normalize_process_replace_list.bin"
 ));
 
+/// Optimized binary lookup structures for character transformations.
+///
+/// These constants are included during static compilation (`not(feature = "runtime_build")`).
+///
+/// - **Fanjian**: 2-Stage Page Tables for $O(1)$ Traditional-to-Simplified Chinese conversion.
+/// - **Pinyin**: 2-Stage Page Tables and a packed string buffer for $O(1)$ Pinyin conversion.
+/// - **Delete**: A 139KB BitSet for $O(1)$ character deletion (entire Unicode spectrum).
 #[cfg(not(feature = "runtime_build"))]
 pub const FANJIAN_L1_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l1.bin"));
 #[cfg(not(feature = "runtime_build"))]

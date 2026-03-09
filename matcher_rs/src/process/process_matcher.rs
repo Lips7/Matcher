@@ -199,13 +199,14 @@ pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64)>;
 /// Represents different types of process matchers used for text processing.
 ///
 /// This enum contains variants for different kinds of matchers that can operate on text to find and
-/// replace or delete specific patterns. Each variant is designed to handle specific use cases
-/// effectively. The enum is clonable, allowing for easy duplication when necessary.
+/// replace or delete specific patterns.
 ///
 /// # Variants
-/// * `DAAC` - Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher to find the leftmost non-overlapping matches.
-/// * `AC` - Uses a standard [`AhoCorasick`] matcher for general-purpose text processing.
-/// * `Fanjian` -
+/// * `DAAC` - Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher for complex, overlapping transformations (e.g., Normalize).
+/// * `AC` - Uses a standard [`AhoCorasick`] matcher for general-purpose string matching.
+/// * `Fanjian` - Uses a **2-Stage Page Table** for ultra-fast, $O(1)$ Traditional-to-Simplified Chinese conversion.
+/// * `Pinyin` - Uses a **2-Stage Page Table** and packed buffer for $O(1)$ character-to-pinyin conversion.
+/// * `Delete` - Uses a **Flat BitSet** for extremely fast character deletion across the full Unicode range.
 #[derive(Clone)]
 pub enum ProcessMatcher {
     #[cfg(not(feature = "dfa"))]
@@ -438,15 +439,19 @@ impl ProcessMatcher {
 
 /// Retrieves or constructs a `ProcessMatcher` for a given single-bit [`ProcessType`].
 ///
-/// # Algorithm
+/// ### Transformation Strategy:
+/// 1. **Normalize**: Uses `daachorse` (Double-Array Aho-Corasick) or a standard Aho-Corasick DFA
+///    to handle overlapping multi-character patterns (like Unicode combining marks).
+/// 2. **Fanjian, Pinyin, PinyinChar**: Uses a **2-Stage Page Table** system for $O(1)$ lookups.
+///    This eliminates the state-machine overhead for 1-to-1 or 1-to-N character mappings.
+/// 3. **Delete**: Uses a **Global BitSet** covering all Unicode planes for branchless $O(1)$ filtering.
+///
+/// ### Algorithm
 /// 1. Checks `PROCESS_MATCHER_CACHE`. If exists, returns cloned `Arc`.
-/// 2. If missing, dynamically configures the appropriate matching automaton:
-///    - Transforms predefined dictionaries (`Fanjian`, `Delete`, `Normalize`, etc.) into lookup `HashMaps` or vector token lists.
-///    - Depending on the `ProcessType` and compilation feature flags, instantiates:
-///      * `CharwiseDoubleArrayAhoCorasick`: A highly-optimized state machine specifically for Chinese/CJK (handles UTF-8 char bounds compactly). Used for `Fanjian`, `PinYin`, etc.
-///      * `AhoCorasick`: The standard string matcher optimal for general bytes (used for `Normalize`, `Delete`, etc.).
-///    - If statically compiled (`not(feature = "runtime_build")`), loads serialized `daachorse` binaries (e.g. `FANJIAN_PROCESS_MATCHER_BYTES`) using `unsafe` zero-copy deserialization for instant startup.
-/// 3. Safely initializes the cache entry if missing and returns.
+/// 2. If missing, configures the appropriate optimized structure based on `ProcessType`.
+///    - If `runtime_build` is enabled, structures are built dynamically from text files.
+///    - Otherwise, static pre-compiled binary structures are loaded via zero-copy includes.
+/// 3. Safely initializes the cache entry and returns.
 ///
 /// # Arguments
 /// * `process_type_bit` - The text processing rules to be applied, represented by the `ProcessType` bitflags enum. (Only a single bit is supported here).
@@ -953,7 +958,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
 ///    that node hasn't been computed yet.
 /// 3. It tracks results in a `ProcessedTextMasks` array.
 /// 4. By sharing common prefixes in the transformation tree, it avoids redundant string allocations
-///    and Aho-Corasick passes.
+///    and transformation passes.
 ///
 /// # Arguments
 /// * `process_type_tree` - Pre-compiled transformation DAG.

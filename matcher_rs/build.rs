@@ -1,9 +1,31 @@
 use std::io::Result;
 
-/// The `main` function serves as the build script for a Rust project, responsible for
-/// generating binary data files used in text conversion and matching tasks.
-/// Depending on the features enabled, it reads specific conversion mappings from
-/// text files, processes them, and writes them to binary files.
+/// The `main` function serves as the build script for the `matcher_rs` project.
+/// Its primary responsibility is to transform raw text transformation rules (from the `process_map` directory)
+/// into highly optimized, high-performance binary structures for text processing.
+///
+/// ### Binary Generation Strategy:
+/// 1. **Normalize (Complex Rules)**:
+///    Rules in `NORM.txt` and `NUM-NORM.txt` contain multi-character sequences and overlapping patterns
+///    (e.g., Unicode combining marks). These are compiled into a `daachorse` Double-Array Aho-Corasick
+///    state machine, which supports aggressive leftmost-longest matching.
+///
+/// 2. **Fanjian (Traditional to Simplified Chinese)**:
+///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
+///    - `L1`: A page directory mapping character blocks to `L2` indices.
+///    - `L2`: A data array containing the target character code points.
+///      This allows $O(1)$ character conversion via direct memory indexing.
+///
+/// 3. **Pinyin & PinyinChar**:
+///    Character-to-string mappings are stored using a hybrid structure:
+///    - A **Concatenated String Buffer**: Stores all Pinyin strings as a single UTF-8 block.
+///    - A **2-Stage Page Table**: Maps character code points to a packed `u32` containing
+///      both the `offset` into the string buffer and the `length` of the Pinyin string.
+///
+/// 4. **Text Delete (BitSet)**:
+///    Deletion rules and whitespace are compiled into a **Global BitSet** (139KB) covering the
+///    entire Unicode spectrum (`0` to `U+10FFFF`). Each bit represents whether a character
+///    should be discarded during processing, enabling extremely fast, branchless filtering.
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");
@@ -136,6 +158,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Generates a compact, 2-stage flat-array structure for character-based lookups.
+///
+/// This function constructs a page-based directory system for sparse Unicode mappings:
+/// - **L1 Page Table**: 4352 elements (`0x10FFFF >> 8`) mapping character blocks to L2 segments.
+/// - **L2 Data Table**: Dense arrays containing the actual mapping data (e.g., replacement code points).
+///
+/// This structure provides $O(1)$ lookup performance with a very small memory footprint,
+/// making it ideal for large-scale character transformations like Pinyin or Fanjian.
 #[cfg(not(feature = "runtime_build"))]
 fn build_2_stage_table(map: &std::collections::HashMap<u32, u32>, prefix: &str) {
     use std::fs::File;
