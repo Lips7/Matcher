@@ -152,3 +152,4 @@ cython_debug/
 matcher_c/tests/test_matcher
 tasks/
 profile.json.gz
+Cargo.lock
