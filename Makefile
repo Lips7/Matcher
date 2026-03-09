@@ -16,7 +16,7 @@ update:
 
 lint-rs:
 	cargo fmt --all
-	cargo clippy --workspace --all-targets --all-features -- -D warnings
+	cargo all-features clippy --workspace --all-targets -- -D warnings
 
 lint-py:
 	cd matcher_py && uv run ruff check --fix && uv run ty check

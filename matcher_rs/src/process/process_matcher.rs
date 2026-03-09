@@ -7,7 +7,7 @@ use std::fmt::Display;
 use std::sync::{Arc, OnceLock};
 
 use aho_corasick::AhoCorasick;
-#[cfg(any(feature = "runtime_build", feature = "dfa"))]
+#[cfg(feature = "dfa")]
 use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
 use bitflags::bitflags;
 #[cfg(not(feature = "dfa"))]
@@ -202,7 +202,7 @@ pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64)>;
 /// replace or delete specific patterns.
 ///
 /// # Variants
-/// * `DAAC` - Uses a [`CharwiseDoubleArrayAhoCorasick<u32>`] matcher for complex, overlapping transformations (e.g., Normalize).
+/// * `DAAC` - Uses a [`daachorse::CharwiseDoubleArrayAhoCorasick<u32>`] matcher for complex, overlapping transformations (e.g., Normalize).
 /// * `AC` - Uses a standard [`AhoCorasick`] matcher for general-purpose string matching.
 /// * `Fanjian` - Uses a **2-Stage Page Table** for ultra-fast, $O(1)$ Traditional-to-Simplified Chinese conversion.
 /// * `Pinyin` - Uses a **2-Stage Page Table** and packed buffer for $O(1)$ character-to-pinyin conversion.
@@ -576,17 +576,14 @@ pub fn get_process_matcher(
                         }));
                     }
                     process_dict.retain(|&key, &mut value| key != value);
+                    let mut keys: Vec<&str> = process_dict.keys().copied().collect();
+                    keys.sort_unstable();
                     #[cfg(not(feature = "dfa"))]
                     {
                         ProcessMatcher::DAAC(
                             CharwiseDoubleArrayAhoCorasickBuilder::new()
                                 .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
-                                .build(
-                                    process_dict
-                                        .iter()
-                                        .map(|(&key, _)| key)
-                                        .collect::<Vec<&str>>(),
-                                )
+                                .build(&keys)
                                 .unwrap(),
                         )
                     }
@@ -596,12 +593,7 @@ pub fn get_process_matcher(
                             AhoCorasickBuilder::new()
                                 .kind(Some(AhoCorasickKind::DFA))
                                 .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                                .build(
-                                    process_dict
-                                        .iter()
-                                        .map(|(&key, _)| key)
-                                        .collect::<Vec<&str>>(),
-                                )
+                                .build(&keys)
                                 .unwrap(),
                         )
                     }
@@ -622,7 +614,9 @@ pub fn get_process_matcher(
                         }));
                     }
                     process_dict.retain(|&key, &mut value| key != value);
-                    process_dict.iter().map(|(_, &val)| val).collect()
+                    let mut pairs: Vec<(&str, &str)> = process_dict.into_iter().collect();
+                    pairs.sort_unstable_by_key(|&(k, _)| k);
+                    pairs.into_iter().map(|(_, v)| v).collect()
                 }
                 _ => Vec::new(),
             };
