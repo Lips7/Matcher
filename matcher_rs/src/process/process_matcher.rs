@@ -24,6 +24,8 @@ use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 thread_local! {
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(16));
     static REDUCE_STATE: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(16));
+    static MASKS_POOL: RefCell<Vec<ProcessedTextMasks<'static>>> =
+        RefCell::new(Vec::with_capacity(4));
 }
 
 /// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
@@ -82,6 +84,17 @@ pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: Pr
             return_string_to_pool(s);
         }
     }
+    // Safety: drain() has removed all elements, so no Cow<'_, str> borrows remain.
+    // Transmuting the empty Vec's element lifetime to 'static is sound because an empty
+    // Vec holds no values and the memory layout of Cow<'_, str> is lifetime-independent.
+    let empty: ProcessedTextMasks<'static> =
+        unsafe { std::mem::transmute(processed_text_process_type_masks) };
+    MASKS_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < 16 {
+            pool.push(empty);
+        }
+    });
 }
 
 bitflags! {
@@ -887,7 +900,15 @@ pub fn reduce_text_process_with_tree<'a>(
         node_processed_indices.clear();
         node_processed_indices.resize(process_type_tree.len(), 0);
 
-        let mut processed_text_process_type_masks: ProcessedTextMasks<'a> = Vec::new();
+        // Reuse a Vec allocation from the pool if available; avoids one heap allocation
+        // per call in steady state. Safety: pool holds empty Vecs with no live borrows;
+        // transmuting from 'static to 'a is safe since 'static: 'a (covariant).
+        let pooled: Option<ProcessedTextMasks<'static>> = MASKS_POOL.with(|p| p.borrow_mut().pop());
+        let mut processed_text_process_type_masks: ProcessedTextMasks<'a> =
+            // Safety: pool holds empty Vecs with no live borrows; transmuting from
+            // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
+            unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
+        processed_text_process_type_masks.clear();
         processed_text_process_type_masks
             .push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
 
