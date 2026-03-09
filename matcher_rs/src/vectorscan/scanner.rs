@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use vectorscan_rs_sys as hs;
 
+#[cfg(target_os = "macos")]
+use crate::vectorscan::allocator;
 use crate::vectorscan::database::Database;
 use crate::vectorscan::error::{AsResult, Error};
-#[cfg(target_os = "macos")]
-use crate::vectorscan::init_allocator;
 use crate::vectorscan::scratch::Scratch;
 
 /// High-level wrapper for performing scans with Vectorscan.
@@ -26,7 +26,7 @@ impl VectorscanScanner {
     /// of the scanner across multiple threads.
     pub fn new(db: Arc<Database>) -> Result<Self, Error> {
         #[cfg(target_os = "macos")]
-        init_allocator();
+        allocator::init_allocator();
         Ok(Self { db })
     }
 
