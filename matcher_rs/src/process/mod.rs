@@ -1,9 +1,10 @@
-/// Text processing pipelines and constants.
-///
-/// This module provides the [`process_matcher::ProcessType`] bitflags and the functions designed to
-/// standardize text before it is matched using `matcher_rs` matchers. Processing
-/// rules such as lowercasing, spacing removal, traditional-to-simplified Chinese
-/// conversion, or pinyin translation are defined here.
+//! Text normalization pipeline for standardizing input before pattern matching.
+//!
+//! Provides the [`ProcessType`](process_matcher::ProcessType) bitflags that describe
+//! which transformation steps to apply to a text, together with the functions that
+//! execute those steps. Available transformations include noise-character deletion,
+//! Unicode normalization, Traditional→Simplified Chinese conversion (`Fanjian`),
+//! and Pinyin transliteration.
 mod constants;
 pub mod process_matcher;
 pub mod single_char_matcher;

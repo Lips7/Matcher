@@ -45,7 +45,7 @@ impl Scratch {
         })
     }
 
-    /// Returns the raw scratch pointer for FFI calls.
+    /// Returns the raw scratch pointer required by Vectorscan FFI calls such as `hs_scan`.
     #[inline(always)]
     pub fn as_ptr(&self) -> *mut hs::hs_scratch_t {
         self.scratch
@@ -74,7 +74,13 @@ impl Scratch {
         Ok(())
     }
 
-    /// Creates an independent copy of this scratch space.
+    /// Creates an independent copy of this scratch space via `hs_clone_scratch`.
+    ///
+    /// Useful when a `Scratch` must be used on multiple threads concurrently: clone it
+    /// once per thread rather than sharing a single instance.
+    ///
+    /// # Errors
+    /// Returns [`Error::Vectorscan`] if `hs_clone_scratch` fails (e.g. `HS_NOMEM`).
     pub fn try_clone(&self) -> Result<Self, Error> {
         let mut scratch: *mut hs::hs_scratch_t = ptr::null_mut();
         unsafe {

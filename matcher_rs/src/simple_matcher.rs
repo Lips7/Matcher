@@ -15,19 +15,17 @@ use crate::process::process_matcher::{
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::{Scratch, VectorscanScanner};
 
-/// Internal state used for tracking matches in `SimpleMatcher`.
+/// Per-rule match state for a single search, keyed by generation ID.
 ///
-/// This structure implements a sparse-set like optimization to avoid full clearing
-/// of state between matching calls. It uses generation IDs to determine if an
-/// entry is valid for the current query.
+/// Stored in a flat `Vec` inside [`SimpleMatchState`], one entry per rule (`WordConf`).
+/// Generation IDs implement a sparse-set pattern: comparing a field against the current
+/// `SimpleMatchState::generation` determines whether the field was written during this
+/// search without requiring a full zero-fill between calls.
 ///
-/// # Fields
-/// * `matrix` - A flat vector of state matrices for each word configuration. Each entry is indexed by `word_conf_idx`.
-/// * `satisfied_mask` - A vector of bitmasks indicating which splits have been satisfied for each word configuration.
-/// * `matrix_generation` - Stores the generation ID for each entry in `matrix`.
-/// * `not_flags_generation` - Stores the generation ID indicating if a word is blocked by a "NOT" (`~`) pattern.
-/// * `touched_indices` - A list of indices in `word_conf_list` that were modified during the current search.
-/// * `generation` - The current search's unique generation ID.
+/// * `matrix_generation` — set to the current generation when this rule is first touched.
+/// * `not_generation` — set to the current generation when a NOT sub-pattern fires,
+///   permanently disqualifying this rule for the remainder of the search.
+/// * `satisfied_mask` — bitmask of AND sub-patterns (up to 64) satisfied so far.
 #[derive(Default, Clone, Copy)]
 struct WordState {
     matrix_generation: u32,
@@ -35,6 +33,18 @@ struct WordState {
     satisfied_mask: u64,
 }
 
+/// Reusable per-thread scratch space for a single [`SimpleMatcher`] scan.
+///
+/// Allocated once and stored in a `thread_local!`; reused across calls via the generation
+/// trick in [`WordState`] to avoid clearing the full state between searches.
+///
+/// * `word_states` — flat array indexed by `word_conf_idx`; one [`WordState`] per rule.
+/// * `matrix` — fallback storage for rules with >64 AND-splits or repeated sub-patterns;
+///   a flattened `(num_splits × num_text_variants)` counter matrix per rule.
+/// * `touched_indices` — indices of rules written during the current generation; iterated
+///   in Pass 2 to avoid scanning the entire `word_states` array.
+/// * `generation` — monotonically incrementing ID; wrapping to `u32::MAX` triggers a
+///   full reset of all generation fields.
 struct SimpleMatchState {
     word_states: Vec<WordState>,
     matrix: Vec<TinyVec<[i32; 16]>>,
@@ -45,10 +55,7 @@ struct SimpleMatchState {
 }
 
 impl SimpleMatchState {
-    /// Creates a new, empty `SimpleMatchState`.
-    ///
-    /// # Returns
-    /// A new instance of `SimpleMatchState` with default values.
+    /// Creates an empty `SimpleMatchState` ready for its first search.
     fn new() -> Self {
         Self {
             word_states: Vec::new(),
@@ -60,18 +67,10 @@ impl SimpleMatchState {
         }
     }
 
-    /// Prepares the state for a new search operation.
+    /// Advances the generation counter and grows buffers to hold `size` rules.
     ///
-    /// This increments the generation ID and ensures the internal buffers are
-    /// large enough for the given number of word configurations.
-    ///
-    /// # Detailed Explanation / Algorithm
-    /// 1. Increments `self.generation`. If it overflows `u32::MAX`, resets all generation tracking arrays to 0.
-    /// 2. Resizes `matrix`, `satisfied_mask`, `matrix_generation`, and `not_flags_generation` to `size` if they are smaller.
-    /// 3. Clears `touched_indices`.
-    ///
-    /// # Arguments
-    /// * `size` - The number of word configurations to accommodate.
+    /// Must be called at the start of every search. Overflow of the `u32` counter
+    /// triggers a full reset of all generation fields before incrementing to `1`.
     fn prepare(&mut self, size: usize) {
         if self.generation == u32::MAX {
             for state in self.word_states.iter_mut() {
@@ -97,13 +96,10 @@ thread_local! {
     static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> = RefCell::new(SimpleMatchState::new());
 }
 
-/// A type alias for a nested integer map structure used for mapping process types to words.
+/// Mapping from [`ProcessType`] to a `{word_id → pattern}` dictionary.
 ///
-/// [`SimpleTable`] is a nested map where the outer map uses [`ProcessType`] as keys,
-/// and the values are inner maps that map [`u32`] keys to string slices.
-///
-/// # Type Parameters
-/// * `'a` - The lifetime of the string slices.
+/// The primary input to [`SimpleMatcher::new`]. Each outer key selects the
+/// normalization pipeline applied before the patterns in the inner map are matched.
 ///
 /// # Examples
 ///
@@ -112,31 +108,34 @@ thread_local! {
 /// use matcher_rs::{SimpleTable, ProcessType};
 ///
 /// let mut table: SimpleTable = HashMap::new();
-/// table.insert(ProcessType::None, HashMap::new());
+/// table.entry(ProcessType::None).or_default().insert(1, "hello");
+/// table.entry(ProcessType::Fanjian).or_default().insert(2, "漢字");
 /// ```
 pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 
-/// A type alias for a nested map structure used for serialization and deserialization.
+/// Owned/borrowed variant of [`SimpleTable`] suitable for serialization.
 ///
-/// This serves exactly the same role as [`SimpleTable`] but internally owns its
-/// text references using a copy-on-write `Cow<'a, str>` string format.
-///
-/// # Type Parameters
-/// * `'a` - The lifetime of the string slices.
+/// Identical in structure to [`SimpleTable`], but uses `Cow<'a, str>` instead of
+/// `&'a str` so that both owned and borrowed patterns can be stored. Useful when
+/// loading rules from a deserialized source (e.g. JSON) where the strings are
+/// owned `String` values.
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
-/// Represents the configuration for a word within the SimpleMatcher.
+/// Compiled configuration for a single pattern rule, derived from parsing `&`/`~` operators.
 ///
-/// [`WordConf`] contains the word as a string, the split bits indicating logical operators ('&' for AND, '~' for NOT),
-/// and the index separating the 'NOT' part from the rest in the split bits vector.
+/// Produced once during [`SimpleMatcher::new`] and stored in `word_conf_list`.
 ///
-/// # Fields
-/// * `word_id` - A unique identifier for the word within the table.
-/// * `word` - The original word as a String.
-/// * `split_bit` - A vector of integers representing the logical splits of the word. Positive integers indicate multiple occurrences of sub-strings tied to '&' operators, while negative integers correspond to '~' operators.
-/// * `not_offset` - The index in `split_bit` that indicates the start of the 'NOT' split parts.
-/// * `expected_mask` - A bitmask representing the required AND splits that must be satisfied.
-/// * `use_matrix` - A boolean indicating whether the state matrix is required for this word.
+/// * `word_id` — caller-assigned identifier returned in [`SimpleResult`].
+/// * `word` — the original pattern string (stored for inclusion in results).
+/// * `split_bit` — per-sub-pattern counters. Indices `0..not_offset` are AND segments
+///   (initial value +1, decremented toward ≤0 to signal satisfaction); indices
+///   `not_offset..` are NOT segments (initial value 0, incremented toward >0 to signal
+///   disqualification).
+/// * `not_offset` — boundary in `split_bit` separating AND from NOT segments.
+/// * `expected_mask` — bitmask of AND segments that must all reach ≤0. Non-zero only
+///   when `not_offset ≤ 64` and all AND segments appear exactly once (the common, fast case).
+/// * `use_matrix` — `true` when the rule requires the full counter matrix (>64 segments,
+///   repeated sub-patterns across `&`-splits, or a non-trivial NOT pattern).
 #[derive(Debug, Clone)]
 struct WordConf {
     word_id: u32,
@@ -147,32 +146,24 @@ struct WordConf {
     use_matrix: bool,
 }
 
-/// Represents a simple result for matching words in the `SimpleMatcher`.
-///
-/// [`SimpleResult`] holds the matched word and its identifier, allowing for results to be easily accessed and utilized
-/// within the matching process. The main purpose of this structure is to provide a concise and clear representation
-/// of word matching outcomes.
-///
-/// # Type Parameters
-/// * `'a` - The lifetime of the matched word. This allows [`SimpleResult`] to hold either owned `String`s or references
-///   to existing `str` data, depending on the context.
+/// A single match returned by [`SimpleMatcher::process`].
 ///
 /// # Fields
-/// * `word_id` - A unique identifier for the word within the table.
-/// * `word` - The matched word itself, wrapped in a [`Cow`] (Clone-On-Write).
+/// * `word_id` — the caller-assigned identifier from the input [`SimpleTable`].
+/// * `word` — the original pattern string, borrowed from the compiled `WordConf`.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use std::borrow::Cow;
-/// use matcher_rs::SimpleResult;
+/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
 ///
-/// let result = SimpleResult {
-///     word_id: 1,
-///     word: Cow::Borrowed("example"),
-/// };
-/// assert_eq!(result.word_id, 1);
-/// assert_eq!(result.word, "example");
+/// let matcher = SimpleMatcherBuilder::new()
+///     .add_word(ProcessType::None, 42, "hello")
+///     .build();
+///
+/// let results = matcher.process("say hello");
+/// assert_eq!(results[0].word_id, 42);
+/// assert_eq!(results[0].word, "hello");
 /// ```
 #[derive(Serialize, Debug)]
 pub struct SimpleResult<'a> {
@@ -180,15 +171,16 @@ pub struct SimpleResult<'a> {
     pub word: Cow<'a, str>,
 }
 
-/// Represents a single entry in the deduplicated word configuration list.
+/// Links a deduplicated automaton pattern back to the rule and sub-pattern it belongs to.
 ///
-/// [`WordConfEntry`] provides a mapping between a matched pattern and its original
-/// word configuration, specifying the process type and the specific sub-pattern offset.
+/// Stored in the flat `ac_dedup_entries` array; a `(start, len)` range in
+/// `ac_dedup_ranges` maps each automaton pattern index to its slice of entries.
 ///
-/// # Fields
-/// * `process_type` - The [`ProcessType`] associated with this word configuration.
-/// * `word_conf_idx` - The index of the [`WordConf`] within the `word_conf_list`.
-/// * `offset` - The position within the `split_bit` vector of the [`WordConf`].
+/// * `process_type_mask` — bitmask of [`ProcessType`] bits that produced this pattern;
+///   used to discard hits from text variants that don't match the rule's pipeline.
+/// * `word_conf_idx` — index into `word_conf_list` identifying the owning rule.
+/// * `offset` — index into `split_bit` of the owning [`WordConf`]; identifies which
+///   AND or NOT sub-pattern was matched.
 #[derive(Debug, Clone)]
 struct WordConfEntry {
     process_type_mask: u64,
@@ -196,44 +188,60 @@ struct WordConfEntry {
     offset: u16,
 }
 
-/// Wrapper for the underlying string matching engine.
+/// The underlying scan engine used by [`SimpleMatcher`].
+///
+/// Selects between standard Aho-Corasick and Vectorscan at runtime based on feature flags
+/// and whether any patterns were registered. The standard Aho-Corasick variant is used when
+/// the `vectorscan` feature is disabled or when the pattern list is empty.
 #[derive(Debug, Clone)]
 enum AcMatcher {
-    /// Standard Aho-Corasick implementation.
+    /// Standard Aho-Corasick (DFA or ContiguousNFA depending on the `dfa` feature flag).
     #[cfg_attr(feature = "vectorscan", allow(dead_code))]
     AhoCorasick(AhoCorasick),
-    /// Intel Vectorscan (Hyperscan) implementation for SIMD-accelerated matching.
+    /// Intel Vectorscan (Hyperscan): SIMD-accelerated literal matching.
+    /// Only available with the `vectorscan` feature; not supported on Windows or ARM64.
     #[cfg(feature = "vectorscan")]
     Vectorscan(VectorscanScanner),
 }
 
-/// Represents a simple matcher for processing words using Aho-Corasick or Vectorscan.
+/// Multi-pattern matcher with logical operators and text normalization.
 ///
-/// The [`SimpleMatcher`] is optimized for exact matching of multiple patterns simultaneously.
-/// It supports complex logical operators within a single pattern entry:
-/// - **AND (`&`)**: All sub-patterns separated by `&` must match for the rule to trigger.
-/// - **NOT (`~`)**: If any sub-pattern preceded by `~` matches, the rule is disqualified.
+/// Prefer constructing via [`crate::SimpleMatcherBuilder`] rather than calling [`new`](Self::new) directly.
 ///
-/// # Detailed Explanation / Algorithm
-/// 1. **Initialization**:
-///    - Parses logical operators in each pattern, splitting them into AND and NOT sub-patterns.
-///    - Assigns a `split_bit` vector tracking the state of each logical segment.
-///    - Deduplicates all unique sub-patterns across all `ProcessType` variants.
-///    - Compiles an optimized Aho-Corasick automaton (DFA or NFA) or Vectorscan database from the unique sub-patterns.
-/// 2. **Matching (Two-Pass Logic)**:
-///    - **Pass 1**: Scans the text using the AC/Vectorscan automaton. For each hit, it updates a state matrix
-///      representing which logical segments for which rules have been satisfied in which text variant.
-///    - **Pass 2**: Evaluates the state matrix. A rule matches if all its AND segments were satisfied
-///      in at least one text variant AND none of its NOT segments were found.
+/// ## Pattern Syntax
 ///
-/// # Fields
-/// * `process_type_tree` - Workflow tree for efficient text transforms.
-/// * `ac_matcher` - Compiled Aho-Corasick or Vectorscan automaton.
-/// * `ac_dedup_entries` - Flattened references from automaton hits back to original rules.
-/// * `ac_dedup_ranges` - Start and length mapping into `ac_dedup_entries` for each pattern index.
-/// * `word_conf_list` - Unified metadata for each parsed split pattern block.
+/// Each pattern string may contain two special operators:
 ///
-/// # Examples
+/// | Operator | Meaning |
+/// |----------|---------|
+/// | `&` | All adjacent sub-patterns must appear (order-independent AND) |
+/// | `~` | The following sub-pattern must be **absent** (NOT) |
+///
+/// ```text
+/// "apple&pie"      -- fires only when both "apple" and "pie" appear
+/// "banana~peel"    -- fires when "banana" appears but "peel" does not
+/// "a&b~c"          -- fires when both "a" and "b" appear and "c" does not
+/// ```
+///
+/// ## Two-Pass Matching
+///
+/// **Pass 1 — Scan**: The input text is first transformed through the configured
+/// [`ProcessType`] pipelines (producing up to 16 variants). All variants are scanned
+/// simultaneously with a single Aho-Corasick or Vectorscan pass. Each hit updates a
+/// generation-stamped state matrix for the affected rule.
+///
+/// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND
+/// sub-pattern was satisfied in at least one text variant and no NOT sub-pattern was
+/// triggered in any variant.
+///
+/// ## Thread Safety
+///
+/// `SimpleMatcher` is `Send + Sync`. All mutable scan state is stored in thread-local
+/// `SimpleMatchState` instances, so concurrent calls from different threads are
+/// independent with no contention.
+///
+/// ## Examples
+///
 /// ```rust
 /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
 ///
@@ -244,6 +252,10 @@ enum AcMatcher {
 ///
 /// assert!(matcher.is_match("I like apple and pie"));
 /// assert!(!matcher.is_match("I like banana peel"));
+///
+/// let results = matcher.process("apple and pie");
+/// assert_eq!(results.len(), 1);
+/// assert_eq!(results[0].word_id, 1);
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
@@ -255,25 +267,24 @@ pub struct SimpleMatcher {
 }
 
 impl SimpleMatcher {
-    /// Creates a new [`SimpleMatcher`] from a mapping of process types to words.
+    /// Compiles a new [`SimpleMatcher`] from a `{ProcessType → {word_id → pattern}}` map.
     ///
-    /// It is recommended to use [`crate::SimpleMatcherBuilder`] instead.
+    /// Prefer [`SimpleMatcherBuilder`](crate::SimpleMatcherBuilder) for a more ergonomic API.
     ///
-    /// # Detailed Explanation / Algorithm
-    /// This method is computationally intensive. It iterates through all patterns,
-    /// performs manual parsing of `&` and `~` (ignoring escaped versions if implemented),
-    /// generates all required normalized variants for each sub-pattern, and finally
-    /// builds the Aho-Corasick automaton.
-    ///
-    /// # Type Parameters
-    /// * `I` - Iterator yielding string slices.
-    /// * `S1`, `S2` - Hashers for the input maps.
+    /// Construction is O(patterns × normalized_variants) and should happen once at startup.
+    /// The steps are:
+    /// 1. Parse `&`/`~` operators in each pattern into AND and NOT sub-patterns.
+    /// 2. For each sub-pattern, generate all normalized text variants via
+    ///    [`reduce_text_process_emit`].
+    /// 3. Deduplicate all variants across all rules and process types into a single
+    ///    pattern set.
+    /// 4. Compile the pattern set into an Aho-Corasick (or Vectorscan) automaton.
+    /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
+    ///    pre-processing at match time.
     ///
     /// # Arguments
-    /// * `process_type_word_map` - Maps [`ProcessType`] to identifiers and their patterns.
-    ///
-    /// # Returns
-    /// An initialized and compiled [`SimpleMatcher`].
+    /// * `process_type_word_map` — input rule table; the value type `I` must implement
+    ///   `AsRef<str>` so both `&str` and `Cow<str>` are accepted.
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -454,20 +465,14 @@ impl SimpleMatcher {
         }
     }
 
-    /// Pass 1: Scans text variants and records sub-pattern hits in a state matrix.
+    /// Pass 1: scans all text variants with the automaton, updating [`SimpleMatchState`].
     ///
-    /// # Detailed Explanation / Algorithm
-    /// 1. Iterates over each text variant and its bitmask.
-    /// 2. Performs overlapping search using Aho-Corasick or Vectorscan.
-    /// 3. For each hit:
-    ///    - Checks if the hit's `ProcessType` is allowed for the current variant.
-    ///    - Increments or decrements the state in a `flat_matrix` (`split_bit_store`).
-    ///    - **NOT Check**: If a `~` sub-pattern is hit, the rule is immediately disqualified
-    ///      (`not_word_id_set`).
+    /// For each text variant in `processed_text_process_type_masks` the automaton finds
+    /// all overlapping sub-pattern hits. Each hit is dispatched to [`Self::process_match`],
+    /// which updates the affected rule's counters. If `exit_early` is `true`, scanning
+    /// halts as soon as a rule becomes fully satisfied (used by `is_match_preprocessed`).
     ///
-    /// # Arguments
-    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
-    /// * `state` - The internal `SimpleMatchState` used to track hits and disqualifications.
+    /// Returns `true` only when `exit_early` is `true` and at least one rule fired early.
     fn _word_match_with_processed_text_process_type_masks<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -542,25 +547,16 @@ impl SimpleMatcher {
         false
     }
 
-    /// Records a sub-pattern match and updates the logical state of affected rules.
+    /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
-    /// # Detailed Explanation / Algorithm
-    /// 1. Retrieves all rules (`WordConfEntry`) associated with the matched `pattern_idx`.
-    /// 2. Skips rules that don't match the current `process_type_mask` or are already disqualified.
-    /// 3. If a rule is touched for the first time in this search (checked via `matrix_generation`):
-    ///    - Marks it as touched and adds it to `touched_indices`.
-    ///    - Initializes its row in the state matrix with the default `split_bit` values.
-    /// 4. Updates the specific bit in the rule's state matrix corresponding to the `text_index`.
-    /// 5. If the match belongs to a "NOT" (`~`) logical segment and the bit becomes satisfied (`> 0`),
-    ///    the rule is marked as disqualified in `not_flags_generation`.
+    /// Looks up all [`WordConfEntry`] records for `pattern_idx`, skipping any rule whose
+    /// process-type bitmask doesn't overlap with the current text variant's `process_type_mask`
+    /// or that has already been disqualified this generation.
     ///
-    /// # Arguments
-    /// * `pattern_idx` - The index of the matched sub-pattern in `ac_dedup_word_conf_list`.
-    /// * `text_index` - The index of the current text variant being scanned.
-    /// * `process_type_mask` - Bitmask of active process types for the current variant.
-    /// * `processed_times` - Total number of text variants in the search.
-    /// * `state` - The internal `SimpleMatchState` to update.
-    /// * `exit_early` - If true, returns true if a permanently satisfied rule is found.
+    /// For an AND sub-pattern hit: decrements the counter and sets the bit in `satisfied_mask`
+    /// when the counter reaches ≤0. For a NOT sub-pattern hit: sets `not_generation` to
+    /// permanently disqualify the rule. Returns `true` if `exit_early` and a rule just became
+    /// fully satisfied.
     #[inline]
     fn process_match(
         &self,
@@ -665,18 +661,11 @@ impl SimpleMatcher {
         false
     }
 
-    /// Determines if the given text matches any pattern.
+    /// Returns `true` if `text` satisfies at least one registered pattern.
     ///
-    /// This function first checks if the provided text is empty. If it is, the function
-    /// immediately returns `false`. Otherwise, it processes the text using a process type
-    /// tree to reduce the text, then checks for matches with the processed text and
-    /// associated process types.
-    ///
-    /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
-    ///
-    /// # Returns
-    /// `true` if the text matches any pattern, otherwise `false`.
+    /// Equivalent to `!self.process(text).is_empty()` but short-circuits as soon as the
+    /// first matching rule is found, making it significantly faster when a match is expected.
+    /// Returns `false` immediately for empty input.
     ///
     /// # Examples
     ///
@@ -707,16 +696,10 @@ impl SimpleMatcher {
         result
     }
 
-    /// Processes the given text and returns a vector of matching results.
+    /// Returns all patterns that match `text`.
     ///
-    /// This function applies the process type tree to the text and passes the processed text
-    /// to the matching implementation.
-    ///
-    /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
-    ///
-    /// # Returns
-    /// A [`Vec<SimpleResult>`] containing the matching results.
+    /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
+    /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
     ///
     /// # Examples
     ///
@@ -746,21 +729,12 @@ impl SimpleMatcher {
         result
     }
 
-    /// Pass 2: Evaluates the state matrix to determine if any rule is fully satisfied.
+    /// Pass 2 (boolean): runs Pass 1 then checks touched rules for any full match.
     ///
-    /// # Detailed Explanation / Algorithm
-    /// 1. Executes Pass 1 to populate `SimpleMatchState` with candidate matrix states.
-    /// 2. Iterates over `touched_indices` in the state.
-    /// 3. Skips rules that were disqualified by "NOT" patterns.
-    /// 4. For each rule candidate, checks if every logical segment (row in the matrix)
-    ///    has been satisfied (`bit <= 0`) in at least one text variant (column in the matrix).
-    /// 5. Returns `true` on the first rule that meets these criteria.
-    ///
-    /// # Arguments
-    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
-    ///
-    /// # Returns
-    /// `true` if any rule matches.
+    /// Iterates only over `touched_indices` (rules that had at least one sub-pattern hit).
+    /// Skips any rule whose `not_generation` equals the current generation (NOT fired).
+    /// For rules with `expected_mask`, uses a fast bitmask comparison; otherwise falls back
+    /// to scanning the flat counter matrix.
     fn is_match_preprocessed<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -801,18 +775,10 @@ impl SimpleMatcher {
         })
     }
 
-    /// Pass 2: Evaluates the state matrix and returns all satisfied rules.
+    /// Pass 2 (collect): runs Pass 1 then returns all satisfied rules as [`SimpleResult`]s.
     ///
-    /// # Detailed Explanation / Algorithm
-    /// 1. Executes Pass 1 to populate `SimpleMatchState` with candidate matrix states.
-    /// 2. Filters rules where all logical segments were satisfied and no "NOT" segments were triggered.
-    /// 3. Projects satisfied rules into [`SimpleResult`] objects.
-    ///
-    /// # Arguments
-    /// * `processed_text_process_type_masks` - Pre-processed text variants and bitmasks.
-    ///
-    /// # Returns
-    /// A vector of [`SimpleResult`] matches.
+    /// Same evaluation logic as `is_match_preprocessed` but collects all matches
+    /// instead of short-circuiting on the first.
     fn process_preprocessed<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,

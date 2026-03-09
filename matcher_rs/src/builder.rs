@@ -2,26 +2,14 @@ use std::collections::HashMap;
 
 use crate::{ProcessType, SimpleMatcher};
 
-/// A builder for constructing a [`SimpleMatcher`].
+/// Builder for constructing a [`SimpleMatcher`].
 ///
-/// This builder provides a convenient and ergonomic API for constructing a [`SimpleMatcher`]
-/// without needing to manually build and nest HashMaps. It allows adding words incrementally,
-/// grouped by their intended text processing pipeline.
-///
-/// # Detailed Explanation / Algorithm
-/// The builder collects word patterns into a nested map structure: `HashMap<ProcessType, HashMap<word_id, word_pattern>>`.
-/// When `build()` is called, this structure is passed to `SimpleMatcher::new`, which then:
-/// 1. Parses logical operators (`&`, `~`) in each pattern.
-/// 2. Deduplicates sub-patterns across different process types.
-/// 3. Compiles an optimized Aho-Corasick automaton for efficient matching.
-///
-/// # Type Parameters
-/// * `'a` - The lifetime of the word patterns and strings.
-///
-/// # Fields
-/// * `word_map` - A nested hash map storing words grouped by their [`ProcessType`] and uniquely identified by a `word_id`.
+/// Accumulates word patterns grouped by their [`ProcessType`] processing pipeline,
+/// then compiles everything into an optimized automaton in a single shot via [`build`](Self::build).
+/// Prefer this over calling [`SimpleMatcher::new`] directly.
 ///
 /// # Examples
+///
 /// ```rust
 /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
 ///
@@ -30,6 +18,8 @@ use crate::{ProcessType, SimpleMatcher};
 ///     .add_word(ProcessType::None, 2, "world")
 ///     .add_word(ProcessType::Fanjian, 3, "你好")
 ///     .build();
+///
+/// assert!(matcher.is_match("hello world"));
 /// ```
 #[derive(Default)]
 pub struct SimpleMatcherBuilder<'a> {
@@ -37,45 +27,33 @@ pub struct SimpleMatcherBuilder<'a> {
 }
 
 impl<'a> SimpleMatcherBuilder<'a> {
-    /// Creates a new, empty [`SimpleMatcherBuilder`].
-    ///
-    /// # Returns
-    /// An empty [`SimpleMatcherBuilder`] with a default `word_map`.
+    /// Creates an empty [`SimpleMatcherBuilder`].
     pub fn new() -> Self {
         Self {
             word_map: HashMap::new(),
         }
     }
 
-    /// Adds a word to the builder for a specific [`ProcessType`].
+    /// Registers a word pattern under the given [`ProcessType`] and ID.
     ///
-    /// # Detailed Explanation / Algorithm
-    /// This method inserts or updates a word in the internal `word_map`. It ensures that each
-    /// word is associated with a specific `ProcessType`, allowing the matcher to apply the correct
-    /// transformations (like Traditional to Simplified Chinese) before attempting a match.
+    /// `process_type` controls which normalization steps are applied to the input
+    /// text before this pattern is evaluated. `word_id` is the identifier returned
+    /// in [`SimpleResult`](crate::SimpleResult) when the pattern matches. `word`
+    /// supports logical operators: `&` (both sub-patterns must appear) and `~`
+    /// (the rule fires only when the following sub-pattern is absent).
     ///
-    /// # Arguments
-    /// * `process_type` - The text processing pipeline to apply before matching this word.
-    /// * `word_id` - The unique identifier for this word, used to identify it in match results.
-    /// * `word` - The actual word or pattern (supporting `&` and `~`) to match.
-    ///
-    /// # Returns
-    /// The modified [`SimpleMatcherBuilder`] (fluent interface).
+    /// Returns `self` for chaining.
     pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();
         bucket.insert(word_id, word);
         self
     }
 
-    /// Consumes the builder and constructs the [`SimpleMatcher`].
+    /// Consumes the builder and compiles the [`SimpleMatcher`].
     ///
-    /// # Detailed Explanation / Algorithm
-    /// This method transfers the accumulated word patterns to the `SimpleMatcher::new` constructor.
-    /// The initialization of `SimpleMatcher` is computationally expensive as it involves parsing,
-    /// deduplication, and DFA compilation.
-    ///
-    /// # Returns
-    /// The fully initialized and compiled [`SimpleMatcher`].
+    /// Parsing logical operators, deduplicating sub-patterns, and building the
+    /// automaton all happen here. This call is relatively expensive; do it once
+    /// and reuse the resulting matcher.
     pub fn build(self) -> SimpleMatcher {
         SimpleMatcher::new(&self.word_map)
     }

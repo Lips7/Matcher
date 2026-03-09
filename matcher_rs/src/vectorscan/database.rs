@@ -5,20 +5,23 @@ use vectorscan_rs_sys as hs;
 
 use crate::vectorscan::error::{AsResult, Error, extract_compile_error};
 
-/// Safe wrapper for a compiled Vectorscan database.
+/// Safe wrapper for a compiled Vectorscan pattern database.
 ///
-/// A Vectorscan database is the compiled representation of one or more regular expressions
-/// or literal patterns. It represents the *immutable, thread-safe automaton* needed for matching.
+/// A `Database` holds the immutable automaton produced by one of Vectorscan's compiler
+/// functions. It carries no per-scan state; all temporary state lives in a [`Scratch`]
+/// space allocated separately for each thread.
 ///
-/// **Thread Safety & Lifecycle**:
-/// The database is fully thread-safe and is designed to be shared concurrently across
-/// multiple threads (typically wrapped in an `Arc`). It does not store matching state;
-/// temporary state during a scan is stored in a separate `Scratch` space.
+/// # Thread Safety
 ///
-/// **Memory Management**:
-/// The internal memory is allocated by Vectorscan's compiler and must be explicitly freed
-/// via `hs_free_database`. This struct ensures that the database is safely freed when
-/// it goes out of scope.
+/// `Send + Sync`: the compiled automaton is strictly read-only and can be shared across
+/// threads without synchronization (typically via `Arc<Database>`).
+///
+/// # Memory Management
+///
+/// The internal buffer is allocated by Vectorscan's compiler and freed via
+/// `hs_free_database` when this struct is dropped.
+///
+/// [`Scratch`]: crate::vectorscan::scratch::Scratch
 #[derive(Debug)]
 pub struct Database {
     db: *mut hs::hs_database_t,
@@ -30,19 +33,21 @@ unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
 impl Database {
-    /// Compiles a literal database from the given patterns and per-pattern flags.
+    /// Compiles a literal pattern database via `hs_compile_lit_multi`.
     ///
-    /// This function takes a slice of literal strings and corresponding flags,
-    /// and compiles them into a Vectorscan database optimized for literal matching
-    /// (using `hs_compile_lit_multi`).
+    /// Patterns are treated as exact byte literals — no regex syntax. Each pattern is
+    /// compiled in `HS_MODE_BLOCK` (stateless, non-streaming) and assigned a zero-based
+    /// integer ID equal to its index in `patterns`.
     ///
     /// # Arguments
-    /// * `patterns` - Literal byte patterns to compile.
-    /// * `flags` - Per-pattern Hyperscan flags (e.g., `HS_FLAG_CASELESS`, `HS_FLAG_SINGLEMATCH`).
-    ///   Must have the exact same length as `patterns`.
+    /// * `patterns` — literal byte strings to compile.
+    /// * `flags` — per-pattern Hyperscan flags (e.g. `HS_FLAG_CASELESS`). Must be the
+    ///   same length as `patterns`.
     ///
-    /// # Returns
-    /// A [`Result<Self, Error>`] containing the compiled literal database.
+    /// # Errors
+    /// Returns [`Error::VectorscanCompile`] if any pattern fails to compile (includes the
+    /// diagnostic message and the zero-based pattern index). Returns [`Error::Vectorscan`]
+    /// on unexpected API failures.
     pub fn new_literal(patterns: &[&str], flags: &[u32]) -> Result<Self, Error> {
         debug_assert_eq!(patterns.len(), flags.len());
 
@@ -83,8 +88,8 @@ impl Database {
 
     /// Returns the raw pointer to the compiled Vectorscan database.
     ///
-    /// This pointer is required for executing scan operations and for allocating
-    /// or sizing compatible `Scratch` spaces.
+    /// Required when calling Vectorscan FFI functions directly (e.g. `hs_scan`,
+    /// `hs_alloc_scratch`). The pointer is valid for the lifetime of this `Database`.
     #[inline(always)]
     pub fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.db

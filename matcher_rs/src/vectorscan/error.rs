@@ -12,14 +12,7 @@ use vectorscan_rs_sys as hs;
 
 /// Unified error type for all Vectorscan operations.
 ///
-/// This enum covers both runtime errors returned by the Vectorscan API and
-/// compile-time errors returned when building databases.
-///
-/// # Variants
-/// * `Vectorscan` - A runtime error from the Vectorscan API, carrying a typed
-///   [`VectorscanErrorCode`] and the raw integer code.
-/// * `VectorscanCompile` - A pattern compilation error, carrying the
-///   diagnostic message and the zero-based index of the pattern that failed.
+/// Covers both runtime scan/API errors and pattern compilation failures.
 #[derive(Debug, Error)]
 pub enum Error {
     /// A runtime error originating from a Vectorscan API call.
@@ -42,7 +35,12 @@ pub enum VectorscanErrorCode {
     Invalid,
     /// A memory allocation failed.
     Nomem,
-    /// The scan was terminated by a match callback returning non-zero.
+    /// The scan was aborted early because the match callback returned non-zero.
+    ///
+    /// This is **not** an error in normal usage — [`VectorscanScanner::scan_with_scratch`]
+    /// treats `HS_SCAN_TERMINATED` as a successful early-exit signal and returns `Ok(())`.
+    ///
+    /// [`VectorscanScanner::scan_with_scratch`]: crate::vectorscan::scanner::VectorscanScanner::scan_with_scratch
     ScanTerminated,
     /// The pattern compiler failed.
     CompileError,
@@ -114,7 +112,6 @@ impl From<hs::hs_error_t> for VectorscanErrorCode {
     }
 }
 
-/// Converts a raw `hs_error_t` integer into an [`Error::Vectorscan`].
 impl From<hs::hs_error_t> for Error {
     fn from(value: hs::hs_error_t) -> Self {
         Self::Vectorscan(value.into(), value)
@@ -135,11 +132,6 @@ pub trait AsResult: Sized {
 }
 
 impl AsResult for hs::hs_error_t {
-    /// Converts this value into a `Result`.
-    ///
-    /// # Returns
-    /// * `Ok(())` - If the value represents `HS_SUCCESS`.
-    /// * `Err(Error)` - For any non-success error code.
     fn ok(self) -> Result<(), Error> {
         if self == hs::HS_SUCCESS as hs::hs_error_t {
             Ok(())

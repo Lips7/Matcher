@@ -26,6 +26,17 @@ thread_local! {
     static REDUCE_STATE: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(16));
 }
 
+/// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
+///
+/// If the pool is non-empty, the returned string is cleared and its capacity
+/// is grown to at least `capacity` bytes. When finished, callers should
+/// return the string via [`return_string_to_pool`] to avoid repeated allocations.
+///
+/// # Arguments
+/// * `capacity` - Minimum byte capacity the returned string must satisfy.
+///
+/// # Returns
+/// An empty [`String`] with at least `capacity` bytes of allocated space.
 pub fn get_string_from_pool(capacity: usize) -> String {
     STRING_POOL.with(|pool| {
         if let Some(mut s) = pool.borrow_mut().pop() {
@@ -40,6 +51,14 @@ pub fn get_string_from_pool(capacity: usize) -> String {
     })
 }
 
+/// Returns a [`String`] to the thread-local pool for future reuse.
+///
+/// If the pool already holds 128 strings the value is dropped instead,
+/// preventing unbounded memory growth on long-lived threads.
+///
+/// # Arguments
+/// * `s` - The string to recycle. Its contents are irrelevant; it will be
+///   cleared the next time it is checked out via [`get_string_from_pool`].
 pub fn return_string_to_pool(s: String) {
     STRING_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
@@ -49,6 +68,14 @@ pub fn return_string_to_pool(s: String) {
     });
 }
 
+/// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
+///
+/// Borrowed variants (`Cow::Borrowed`) are simply dropped. This should be called
+/// after a [`reduce_text_process_with_tree`] / [`reduce_text_process_with_set`] pipeline
+/// is finished to reclaim temporary string allocations.
+///
+/// # Arguments
+/// * `processed_text_process_type_masks` - The collection to drain; consumed by this call.
 pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: ProcessedTextMasks) {
     for (cow, _) in processed_text_process_type_masks.drain(..) {
         if let Cow::Owned(s) = cow {
@@ -58,74 +85,67 @@ pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: Pr
 }
 
 bitflags! {
-    /// Represents different types of text processing operations.
+    /// Bitflags controlling which text normalization steps to apply before matching.
     ///
-    /// This structure uses bitflags to allow combining multiple processing steps
-    /// (e.g., converting to Simplified Chinese AND deleting noise characters).
+    /// Flags can be combined freely. The matcher builds an internal transformation DAG
+    /// from the active flag set and reuses shared intermediate results (e.g., a
+    /// `Fanjian | Delete` rule and a `Fanjian | Normalize` rule share the Fanjian output).
     ///
-    /// # Detailed Explanation / Algorithm
-    /// The bitflags are used to build a `ProcessTypeBitNode` tree. When text is processed,
-    /// the engine traverses this tree, applying the transformation for each set bit.
-    /// This allows the system to generate all required variants of a text (e.g., Pinyin,
-    /// Simplified Chinese) efficiently by sharing common intermediate steps.
-    ///
-    /// # Fields
-    /// * `None` - No processing (sentinel value 0x01).
-    /// * `Fanjian` - Traditional to Simplified Chinese conversion.
-    /// * `Delete` - Noise character removal (punctuation, whitespace).
-    /// * `Normalize` - Character normalization (full-width to half-width, etc.).
-    /// * `PinYin` - Conversion to Pinyin with spaces.
-    /// * `PinYinChar` - Conversion to Pinyin without spaces.
+    /// | Flag | Transformation |
+    /// |------|----------------|
+    /// | `None` | No transformation; match the raw input. |
+    /// | `Fanjian` | Traditional Chinese → Simplified Chinese (O(1) page-table lookup). |
+    /// | `Delete` | Remove noise characters and whitespace (flat BitSet, O(1) per codepoint). |
+    /// | `Normalize` | Full-width → half-width, digit normalization, etc. (leftmost-longest AC). |
+    /// | `DeleteNormalize` | Shorthand for `Delete \| Normalize`. |
+    /// | `FanjianDeleteNormalize` | Shorthand for `Fanjian \| Delete \| Normalize`. |
+    /// | `PinYin` | Convert Chinese characters to space-separated Pinyin syllables. |
+    /// | `PinYinChar` | Convert Chinese characters to Pinyin with leading characters only (no spaces). |
     ///
     /// # Examples
+    ///
     /// ```rust
     /// use matcher_rs::ProcessType;
     ///
-    /// let process = ProcessType::Fanjian | ProcessType::Delete;
-    /// assert!(process.contains(ProcessType::Fanjian));
+    /// // Compose flags with | just like standard bitflags.
+    /// let combined = ProcessType::Fanjian | ProcessType::Delete;
+    /// assert!(combined.contains(ProcessType::Fanjian));
+    /// assert!(combined.contains(ProcessType::Delete));
+    ///
+    /// // Serialize/deserialize as a raw u8.
+    /// let bits = combined.bits();
+    /// assert_eq!(ProcessType::from_bits_retain(bits), combined);
     /// ```
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, Default)]
     pub struct ProcessType: u8 {
-        /// No processing action.
+        /// No transformation; match the raw input.
         const None = 0b00000001;
 
-        /// Traditional Chinese to Simplified Chinese.
+        /// Traditional Chinese → Simplified Chinese conversion.
         const Fanjian = 0b00000010;
 
-        /// Deleting noise characters and whitespace.
+        /// Remove noise characters and whitespace.
         const Delete = 0b00000100;
 
-        /// General normalization (case folding, width normalization).
+        /// Unicode normalization (full-width→half-width, digit normalization, etc.).
         const Normalize = 0b00001000;
 
-        /// Combined: Delete + Normalize.
+        /// Shorthand for `Delete | Normalize`.
         const DeleteNormalize = 0b00001100;
 
-        /// Combined: Fanjian + Delete + Normalize.
+        /// Shorthand for `Fanjian | Delete | Normalize`.
         const FanjianDeleteNormalize = 0b00001110;
 
-        /// Pinyin conversion (with boundaries).
+        /// Convert Chinese characters to space-separated Pinyin syllables.
         const PinYin = 0b00010000;
 
-        /// Pinyin conversion (character level).
+        /// Convert Chinese characters to Pinyin, stripping inter-syllable spaces.
         const PinYinChar = 0b00100000;
     }
 }
 
 impl Serialize for ProcessType {
-    /// Serializes a [`ProcessType`] instance into its bit representation using the provided serializer.
-    ///
-    /// This implementation leverages the [`Serialize`] trait from Serde to convert the [`ProcessType`]
-    /// bitflag into a serializable form. The [`ProcessType::bits`] method extracts the raw bit value of the
-    /// [`ProcessType`], which is then passed to the serializer.
-    ///
-    /// # Arguments
-    ///
-    /// * [`Serializer`] - An instance of the [`Serializer`] trait that will handle the actual serialization.
-    ///
-    /// # Returns
-    ///
-    /// This method returns a result containing either the serialized value ([`Serializer::Ok`]) or an error ([`Serializer::Error`]).
+    /// Serializes as the raw `u8` bit representation.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -135,20 +155,8 @@ impl Serialize for ProcessType {
 }
 
 impl<'de> Deserialize<'de> for ProcessType {
-    /// Deserializes a [`ProcessType`] instance from its bit representation using the provided deserializer.
-    ///
-    /// This implementation leverages the [`Deserialize`] trait from Serde to convert a bitflag
-    /// representation back into a [`ProcessType`] instance. The [`ProcessType::from_bits_retain`] method is used
-    /// to reconstruct the [`ProcessType`] from the deserialized bit value.
-    ///
-    /// # Arguments
-    ///
-    /// * [`Deserializer`] - An instance of the [`Deserializer`] trait that will handle the actual deserialization.
-    ///
-    /// # Returns
-    ///
-    /// This method returns a [`Result`] containing either the deserialized [`ProcessType`] instance
-    /// (Ok([`ProcessType`])) or an error ([`Deserializer::Error`]).
+    /// Deserializes from a raw `u8` bit representation, preserving unknown bits via
+    /// [`from_bits_retain`](ProcessType::from_bits_retain).
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -159,6 +167,9 @@ impl<'de> Deserialize<'de> for ProcessType {
 }
 
 impl Display for ProcessType {
+    /// Formats the [`ProcessType`] as a `"_"`-joined list of lowercase flag names.
+    ///
+    /// For example, `ProcessType::Fanjian | ProcessType::Delete` renders as `"fanjian_delete"`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display_str_list = self
             .iter_names()
@@ -197,17 +208,20 @@ pub static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcherResult>; 8] = [
 /// * `'a` - The lifetime of the underlying string slice.
 pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64)>;
 
-/// Represents different types of process matchers used for text processing.
+/// Underlying engine used by a single-step text transformation.
 ///
-/// This enum contains variants for different kinds of matchers that can operate on text to find and
-/// replace or delete specific patterns.
+/// Consumers should not construct this directly; use [`get_process_matcher`] to
+/// obtain a cached instance for a given [`ProcessType`] bit.
 ///
 /// # Variants
-/// * `DAAC` - Uses a [`daachorse::CharwiseDoubleArrayAhoCorasick<u32>`] matcher for complex, overlapping transformations (e.g., Normalize).
-/// * `AC` - Uses a standard [`AhoCorasick`] matcher for general-purpose string matching.
-/// * `Fanjian` - Uses a **2-Stage Page Table** for ultra-fast, $O(1)$ Traditional-to-Simplified Chinese conversion.
-/// * `Pinyin` - Uses a **2-Stage Page Table** and packed buffer for $O(1)$ character-to-pinyin conversion.
-/// * `Delete` - Uses a **Flat BitSet** for extremely fast character deletion across the full Unicode range.
+///
+/// * `DAAC` *(non-`dfa` builds)* — [`daachorse`] double-array Aho-Corasick; used for
+///   leftmost-longest multi-character substitutions (Normalize).
+/// * `AC` — Standard [`aho_corasick::AhoCorasick`]; used for Normalize when the `dfa`
+///   feature is enabled, and as an empty no-op for `ProcessType::None`.
+/// * `SingleChar` — O(1) per-codepoint dispatch via a [`SingleCharMatcher`]; used for
+///   Fanjian (2-stage page table), Pinyin (2-stage page table + string buffer), and
+///   Delete (flat BitSet covering all Unicode planes).
 #[derive(Clone)]
 pub enum ProcessMatcher {
     #[cfg(not(feature = "dfa"))]
@@ -217,23 +231,11 @@ pub enum ProcessMatcher {
 }
 
 impl ProcessMatcher {
-    /// Replaces all matched patterns in the provided text with the corresponding replacement strings
-    /// from the `process_replace_list`.
+    /// Replaces all matched patterns in `text` with the corresponding entries from
+    /// `process_replace_list`.
     ///
-    /// This method iterates through the text using the `ProcessMatcher` variant to find all matches,
-    /// and replaces the occurrences with the respective strings from the `process_replace_list`.
-    ///
-    /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
-    /// * `process_replace_list` - A slice of string slices containing the replacement strings. Each match
-    ///   found in the text will be replaced by the respective string from this list.
-    ///
-    /// # Returns
-    /// This method returns a tuple:
-    /// * `bool` - A boolean indicating whether any replacements were made (`true` if replacements were made, `false` otherwise).
-    /// * [`Cow<'a, str>`] - A copy-on-write string containing the processed text. If no replacements were made,
-    ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
-    ///   the replacements is returned.
+    /// Returns `(true, Cow::Owned(result))` when at least one replacement was made, or
+    /// `(false, Cow::Borrowed(text))` when the text is unchanged, avoiding any allocation.
     #[inline(always)]
     pub fn replace_all<'a>(
         &self,
@@ -305,20 +307,10 @@ impl ProcessMatcher {
         (false, Cow::Borrowed(text))
     }
 
-    /// Deletes all matched patterns in the provided text.
+    /// Removes all matched patterns from `text`.
     ///
-    /// This function iterates over the text and uses the appropriate `ProcessMatcher` variant to locate all matches.
-    /// It then deletes the occurrences of these patterns, holding the remaining text fragments together.
-    ///
-    /// # Arguments
-    /// * `text` - A string slice representing the input text to be processed and matched.
-    ///
-    /// # Returns
-    /// This function returns a tuple:
-    /// * `bool` - A boolean indicating whether any deletions were made (`true` if deletions were made, `false` otherwise).
-    /// * [`Cow<'a, str>`] - A copy-on-write string containing the processed text. If no deletions were made,
-    ///   a borrowed version of the original text is returned. Otherwise, an owned version of the text with
-    ///   the deletions is returned.
+    /// Returns `(true, Cow::Owned(result))` when at least one character or span was removed, or
+    /// `(false, Cow::Borrowed(text))` when nothing matched, avoiding any allocation.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         /// Shared iteration logic for delete: given a mutable iterator of matches,
@@ -367,38 +359,43 @@ impl ProcessMatcher {
     }
 }
 
-/// Retrieves or constructs a `ProcessMatcher` for a given single-bit [`ProcessType`].
+/// Returns a lazily-initialized `ProcessMatcher` for a **single-bit** [`ProcessType`].
 ///
-/// ### Transformation Strategy:
-/// 1. **Normalize**: Uses `daachorse` (Double-Array Aho-Corasick) or a standard Aho-Corasick DFA
-///    to handle overlapping multi-character patterns (like Unicode combining marks).
-/// 2. **Fanjian, Pinyin, PinyinChar**: Uses a **2-Stage Page Table** system for $O(1)$ lookups.
-///    This eliminates the state-machine overhead for 1-to-1 or 1-to-N character mappings.
-/// 3. **Delete**: Uses a **Global BitSet** covering all Unicode planes for branchless $O(1)$ filtering.
+/// The result is cached in `PROCESS_MATCHER_CACHE` keyed by the bit index, so subsequent
+/// calls for the same type are O(1) `Arc::clone` operations without any lock contention
+/// (uses [`std::sync::OnceLock`]).
 ///
-/// ### Algorithm
-/// 1. Checks `PROCESS_MATCHER_CACHE`. If exists, returns cloned `Arc`.
-/// 2. If missing, configures the appropriate optimized structure based on `ProcessType`.
-///    - If `runtime_build` is enabled, structures are built dynamically from text files.
-///    - Otherwise, static pre-compiled binary structures are loaded via zero-copy includes.
-/// 3. Safely initializes the cache entry and returns.
+/// The construction strategy depends on the type:
+/// - **Normalize** — builds a leftmost-longest Aho-Corasick automaton (`daachorse` by default,
+///   DFA variant under the `dfa` feature). With `runtime_build` the normalization table is
+///   read from `process_map/` text files; otherwise a pre-compiled binary is embedded at
+///   build time.
+/// - **Fanjian / PinYin / PinYinChar** — zero-copy 2-stage page tables loaded from binary
+///   data embedded at build time (or built dynamically under `runtime_build`).
+/// - **Delete** — a 139 KB flat BitSet embedded at build time (or built dynamically).
+/// - **None** — an empty Aho-Corasick automaton (no-op).
 ///
 /// # Arguments
-/// * `process_type_bit` - The text processing rules to be applied, represented by the `ProcessType` bitflags enum. (Only a single bit is supported here).
+/// * `process_type_bit` — A single-bit [`ProcessType`]. Passing a composite (multi-bit) value
+///   is not supported and will panic in the non-`runtime_build` path (`unreachable!()`).
 ///
 /// # Returns
-/// - An [`Arc`] containing a tuple of a vector of replacement strings and a `ProcessMatcher`.
+/// An [`Arc`] holding `(replacement_list, matcher)`. The replacement list is only
+/// populated for `Normalize`; it is empty for all other types.
 ///
 /// # Panics
-/// - The function will panic if the `process_type_bit` is any variant not explicitly handled in the routing layer.
+/// Panics (via `unreachable!()`) if `process_type_bit` is a composite or unrecognized value
+/// when the `runtime_build` feature is disabled.
 ///
 /// # Examples
-/// ```
+///
+/// ```rust
 /// use matcher_rs::{ProcessType, get_process_matcher};
 ///
-/// let process_type = ProcessType::Fanjian;
-/// let process_matcher = get_process_matcher(process_type);
-/// // Use `process_matcher` for text processing
+/// let arc = get_process_matcher(ProcessType::Fanjian);
+/// let (_, matcher) = arc.as_ref();
+/// let (changed, simplified) = matcher.replace_all("漢字", &[]);
+/// // Traditional '漢' and '字' map to Simplified '汉' and '字'
 /// ```
 pub fn get_process_matcher(
     process_type_bit: ProcessType,
@@ -629,20 +626,24 @@ pub fn get_process_matcher(
     }))
 }
 
-/// Process text based on a [`ProcessType`] bitmask.
+/// Applies a composite [`ProcessType`] pipeline to `text` and returns the final result.
 ///
-/// # Detailed Explanation / Algorithm
-/// This function iteratively applies transformations for each bit set in the
-/// composite `process_type_bit`.
-/// 1. Fetches the appropriate `ProcessMatcher` from the global cache for each bit.
-/// 2. Applies the transformation (replace or delete) sequentially to the input string.
+/// Transformations are applied left-to-right in bit order. Each step fetches a cached
+/// matcher from `PROCESS_MATCHER_CACHE` and either replaces or deletes matching spans.
+/// `Cow::Borrowed` is returned when no step modifies the text.
 ///
-/// # Arguments
-/// * `process_type_bit` - The rules (single or composite) representing the transformations to apply.
-/// * `text` - The input string.
+/// For use cases where multiple composite types share common prefixes, prefer
+/// [`reduce_text_process_with_tree`] which avoids redundant intermediate computations.
 ///
-/// # Returns
-/// The processed text (as a [`Cow`]).
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{text_process, ProcessType};
+///
+/// // Full-width digit '２' (U+FF12) normalizes to ASCII '2'.
+/// let result = text_process(ProcessType::Normalize, "２");
+/// assert_eq!(result.as_ref(), "2");
+/// ```
 #[inline(always)]
 pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a, str> {
     let mut result = Cow::Borrowed(text);
@@ -671,18 +672,26 @@ pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a,
     result
 }
 
-/// Applies a sequence of rules to text, returning all intermediate variants.
+/// Applies a composite [`ProcessType`] pipeline to `text`, recording every intermediate
+/// variant that diverges from its predecessor.
 ///
-/// # Detailed Explanation / Algorithm
-/// Iteratively applies transformations for each bit set in the composite `process_type`.
-/// It maintains a list of all mutated states, chaining the output of one step into the next.
+/// Unlike [`text_process`], which returns only the final result, this function pushes a
+/// new entry into the output vector whenever a step actually changes the text. The first
+/// entry is always `Cow::Borrowed(text)` (the original input). Steps that leave the text
+/// unchanged add no entry.
+///
+/// Primarily useful when you need access to each pipeline stage independently (e.g.
+/// scoring). For the common case of generating all variants needed for matching, prefer
+/// [`reduce_text_process_with_tree`] which shares intermediate results across multiple
+/// `ProcessType` combinations.
 ///
 /// # Arguments
-/// * `process_type` - Composite rules to apply.
+/// * `process_type` - Composite transformation flags to apply.
 /// * `text` - The input string.
 ///
 /// # Returns
-/// A vector of all text variants generated during the process.
+/// A `Vec` whose first element is the original text and whose subsequent elements are the
+/// outputs of each step that produced a new string.
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -717,37 +726,25 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
     processed_text_list
 }
 
-/// Applies a sequence of processing rules to the input `text` and emits the processed text at each step.
+/// Like [`reduce_text_process`], but composing replace-type steps in-place.
 ///
-/// This function iteratively applies multiple processing rules specified by `process_type` to the
-/// input `text`. It maintains a list of `processed_text_list` where each entry represents the text
-/// at a particular stage of processing.
+/// The key difference from [`reduce_text_process`]: when a *replace*-type step
+/// (`Fanjian`, `Normalize`, `PinYin`, `PinYinChar`) changes the text, the result
+/// overwrites the last entry in the output vector rather than appending a new one.
+/// Only `Delete` steps append a new entry, because deletion creates an independent
+/// branch (the pre-deletion text may also be needed for matching).
 ///
-/// # Algorithm
-/// Almost identical to `reduce_text_process`, but when executing `replace_all` and observing no matching blocks to alter,
-/// it directly assigns ownership backward (`*tmp_processed_text = Cow::Owned(pt);`) avoiding extending the buffer length redundantly, keeping
-/// the returned stage variations tightly condensed.
+/// This compact representation is used internally by `SimpleMatcher::new` to
+/// register all required automaton patterns for each rule: each entry in the output
+/// is a distinct normalized form that must be indexed.
 ///
 /// # Arguments
-/// * `process_type` - The text processing rules to be applied, represented by the `ProcessType` bitflags enum.
-/// * `text` - A string slice representing the input text to be processed and matched.
+/// * `process_type` - Composite transformation flags to apply.
+/// * `text` - The input string.
 ///
 /// # Returns
-/// A [`Vec`] containing the processed text at each step. The initial text is always included as the first element.
-///
-/// # Examples
-///
-/// ```rust
-/// use matcher_rs::{reduce_text_process_emit, ProcessType};
-///
-/// let process_type = ProcessType::Delete | ProcessType::PinYin;
-/// let text = "Some text to process";
-///
-/// let result = reduce_text_process_emit(process_type, text);
-/// for processed_text in result.iter() {
-///     println!("Processed text: {}", processed_text);
-/// }
-/// ```
+/// A `Vec` whose first entry is the original text. Replace-type steps that modify the
+/// text update the last entry in-place; `Delete` steps append a new entry.
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut processed_text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -782,21 +779,13 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
     processed_text_list
 }
 
-/// A node in the process type tree, representing a processing rule and its children.
+/// A node in the flat-array transformation trie used by [`reduce_text_process_with_tree`].
 ///
-/// This struct is used in the context of applying a series of text processing rules. Each node
-/// holds a specific processing rule (represented by `process_type_bit`), a list of associated
-/// process types (`process_type_list`), and its child nodes (`children`).
-///
-/// # Algorithm
-/// 1. Nodes represent isolated mutation states during text reductions.
-/// 2. As bits from a composite `ProcessType` are evaluated sequentially, they form directional edges to child nodes.
-///
-/// # Fields
-///
-/// * `process_type_list` - An [`Vec`] containing the list of processing types associated with this node.
-/// * `process_type_bit` - A [`ProcessType`] representing the specific processing rule for this node.
-/// * `children` - An [`Vec`] containing the indices of child nodes.
+/// The trie is built once by [`build_process_type_tree`] and stored inside `SimpleMatcher`.
+/// Each node represents a single transformation step (`process_type_bit`) reachable from
+/// its parent. The `process_type_list` records which composite [`ProcessType`] values
+/// "arrive" at this node (i.e. terminate here), so the traversal can tag output text
+/// variants with the correct bitmask. `children` holds flat-array indices of the next steps.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
@@ -804,26 +793,23 @@ pub struct ProcessTypeBitNode {
     children: Vec<usize>,
 }
 
-/// Constructs a processing type tree from a set of composite processing types.
+/// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
 ///
-/// # Algorithm
-/// 1. Initializes the tree with a root `ProcessType::None` node.
-/// 2. Iterates over each provided composite `ProcessType` bitmask from `process_type_set` (e.g. `Fanjian | Delete`).
-/// 3. For each constituent single bit inside the composite type, traverses existing nodes downwards from the root.
-/// 4. If a matching child node exists for that bit transition, navigates to it and appends the source composite `ProcessType` to the node's tracking list.
-/// 5. If missing, spawns a new `ProcessTypeBitNode`, appending it as a child.
+/// The trie encodes every unique prefix path among the given composite types. A root node
+/// with `process_type_bit = ProcessType::None` is always present at index 0. For each
+/// composite type (e.g. `Fanjian | Delete`), the constructor walks its constituent bits in
+/// order, reusing existing child nodes where the path overlaps with previously inserted types
+/// and creating new child nodes when a path diverges.
 ///
-/// The resulting stricture is a Trie/DAG representing distinct permutation chains of text-processing rules.
-/// This guarantees that overlapping intermediate sequences (e.g. `None -> Fanjian -> Delete` vs `None -> Fanjian`)
-/// are evaluated cleanly by a runner, heavily optimizing pattern evaluation against distinct variations.
+/// The resulting flat `Vec<ProcessTypeBitNode>` is passed to
+/// [`reduce_text_process_with_tree`], which performs a single BFS traversal to compute all
+/// needed text variants while sharing common intermediate results.
 ///
 /// # Arguments
-///
-/// * `process_type_set` - A `HashSet` of underlying `u8` composite process types expected by matcher tables.
+/// * `process_type_set` - Raw `u8` bit patterns of all composite `ProcessType`s needed by a matcher.
 ///
 /// # Returns
-///
-/// A flattened [`Vec`] containing `ProcessTypeBitNode`s whose parent-child indices form the processing type tree.
+/// A flat `Vec` of `ProcessTypeBitNode`s whose `children` fields hold indices into the same `Vec`.
 pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
@@ -873,23 +859,27 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
     process_type_tree
 }
 
-/// Reduces text by executing a pre-compiled `ProcessTypeBitNode` DAG.
+/// Generates all text variants required for matching, using a pre-built transformation trie.
 ///
-/// # Detailed Explanation / Algorithm
-/// This is the most efficient way to generate all required text variants.
-/// 1. It performs a breadth-first traversal of the pre-compiled `process_type_tree`.
-/// 2. For each node, it applies a transformation step ONLY IF the sequence leading to
-///    that node hasn't been computed yet.
-/// 3. It tracks results in a `ProcessedTextMasks` array.
-/// 4. By sharing common prefixes in the transformation tree, it avoids redundant string allocations
-///    and transformation passes.
+/// This is the hot-path function called on every [`crate::SimpleMatcher::is_match`] /
+/// [`crate::SimpleMatcher::process`] invocation. It performs a single left-to-right traversal of
+/// `process_type_tree`, applying each transformation step exactly once per unique path. Common
+/// prefixes (e.g. the shared `Fanjian` step for both `Fanjian | Delete` and
+/// `Fanjian | Normalize`) are computed only once and their result indices are reused for child
+/// nodes.
+///
+/// Each entry in the returned [`ProcessedTextMasks`] is a `(text_variant, rule_bitmask)` pair.
+/// The bitmask encodes which composite [`ProcessType`]s produced that variant, so the matcher
+/// can filter automaton hits by the correct pipeline.
 ///
 /// # Arguments
-/// * `process_type_tree` - Pre-compiled transformation DAG.
-/// * `text` - The input string.
+/// * `process_type_tree` - The trie produced by [`build_process_type_tree`], typically stored
+///   inside the `SimpleMatcher`.
+/// * `text` - The raw input string.
 ///
 /// # Returns
-/// A collection of processed variants and their rule bitmasks.
+/// All text variants and their associated [`ProcessType`] bitmasks. The caller must return
+/// owned strings to the pool via `return_processed_string_to_pool` when done.
 #[inline(always)]
 pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
@@ -960,18 +950,20 @@ pub fn reduce_text_process_with_tree<'a>(
     })
 }
 
-/// Reduces text based on a set of rules, building a temporary tree.
+/// Generates all text variants by building the transformation trie on-the-fly.
 ///
-/// # Detailed Explanation / Algorithm
-/// This is similar to `reduce_text_process_with_tree` but it constructs the
-/// transformation tree on-the-fly. It's useful when the set of rules is dynamic.
+/// Semantically identical to [`reduce_text_process_with_tree`], but constructs the trie
+/// from `process_type_set` at call time rather than using a pre-built one. Use this when
+/// the set of required `ProcessType`s is dynamic or not known at construction time.
+/// For static sets, prefer pre-building with [`build_process_type_tree`] and calling
+/// [`reduce_text_process_with_tree`] instead.
 ///
 /// # Arguments
-/// * `process_type_set` - Set of composite `ProcessType`s required.
-/// * `text` - The input string.
+/// * `process_type_set` - Raw `u8` bit patterns of all composite `ProcessType`s to handle.
+/// * `text` - The raw input string.
 ///
 /// # Returns
-/// A collection of processed variants and their rule bitmasks.
+/// All text variants and their associated [`ProcessType`] bitmasks.
 #[inline(always)]
 pub fn reduce_text_process_with_set<'a>(
     process_type_set: &HashSet<u8>,
