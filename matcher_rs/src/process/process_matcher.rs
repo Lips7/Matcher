@@ -929,8 +929,16 @@ pub fn reduce_text_process_with_tree<'a>(
                             processed_text_process_type_masks[current_index].0.as_ref();
                         match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                                child_index = processed_text_process_type_masks.len() - 1;
+                                if let Some(pos) = processed_text_process_type_masks
+                                    .iter()
+                                    .position(|(t, _)| t.as_ref() == pt.as_str())
+                                {
+                                    return_string_to_pool(pt);
+                                    child_index = pos;
+                                } else {
+                                    processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                    child_index = processed_text_process_type_masks.len() - 1;
+                                }
                             }
                             (false, _) => {
                                 child_index = current_index;
@@ -943,8 +951,16 @@ pub fn reduce_text_process_with_tree<'a>(
                             processed_text_process_type_masks[current_index].0.as_ref();
                         match process_matcher.replace_all(current_text, process_replace_list) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                                child_index = processed_text_process_type_masks.len() - 1;
+                                if let Some(pos) = processed_text_process_type_masks
+                                    .iter()
+                                    .position(|(t, _)| t.as_ref() == pt.as_str())
+                                {
+                                    return_string_to_pool(pt);
+                                    child_index = pos;
+                                } else {
+                                    processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                    child_index = processed_text_process_type_masks.len() - 1;
+                                }
                             }
                             (false, _) => {
                                 child_index = current_index;
@@ -1033,8 +1049,16 @@ pub fn reduce_text_process_with_set<'a>(
                             processed_text_process_type_masks[current_index].0.as_ref();
                         match process_matcher.delete_all(current_text) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                                child_index = processed_text_process_type_masks.len() - 1;
+                                if let Some(pos) = processed_text_process_type_masks
+                                    .iter()
+                                    .position(|(t, _)| t.as_ref() == pt.as_str())
+                                {
+                                    return_string_to_pool(pt);
+                                    child_index = pos;
+                                } else {
+                                    processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                    child_index = processed_text_process_type_masks.len() - 1;
+                                }
                             }
                             (false, _) => {
                                 child_index = current_index;
@@ -1047,8 +1071,16 @@ pub fn reduce_text_process_with_set<'a>(
                             processed_text_process_type_masks[current_index].0.as_ref();
                         match process_matcher.replace_all(current_text, process_replace_list) {
                             (true, Cow::Owned(pt)) => {
-                                processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
-                                child_index = processed_text_process_type_masks.len() - 1;
+                                if let Some(pos) = processed_text_process_type_masks
+                                    .iter()
+                                    .position(|(t, _)| t.as_ref() == pt.as_str())
+                                {
+                                    return_string_to_pool(pt);
+                                    child_index = pos;
+                                } else {
+                                    processed_text_process_type_masks.push((Cow::Owned(pt), 0u64));
+                                    child_index = processed_text_process_type_masks.len() - 1;
+                                }
                             }
                             (false, _) => {
                                 child_index = current_index;
