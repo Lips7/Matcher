@@ -6,3 +6,4 @@
 /// conversion, or pinyin translation are defined here.
 mod constants;
 pub mod process_matcher;
+pub mod single_char_matcher;

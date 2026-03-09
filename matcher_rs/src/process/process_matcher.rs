@@ -19,6 +19,7 @@ use daachorse::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::process::constants::*;
+use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 
 thread_local! {
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(16));
@@ -212,19 +213,7 @@ pub enum ProcessMatcher {
     #[cfg(not(feature = "dfa"))]
     DAAC(CharwiseDoubleArrayAhoCorasick<u32>),
     AC(AhoCorasick),
-    Fanjian {
-        l1: Cow<'static, [u8]>,
-        l2: Cow<'static, [u8]>,
-    },
-    Pinyin {
-        l1: Cow<'static, [u8]>,
-        l2: Cow<'static, [u8]>,
-        strings: Cow<'static, str>,
-        trim_space: bool,
-    },
-    Delete {
-        bitset: Cow<'static, [u8]>,
-    },
+    SingleChar(SingleCharMatcher),
 }
 
 impl ProcessMatcher {
@@ -274,133 +263,34 @@ impl ProcessMatcher {
         }
 
         match self {
-            ProcessMatcher::Fanjian { l1, l2 } => {
-                let mut first_change_idx = None;
-                for (i, c) in text.char_indices() {
-                    let cp = c as u32;
-                    let page_idx = (cp >> 8) as usize;
-                    let char_idx = (cp & 0xFF) as usize;
-                    let mut mapped = c;
-                    if page_idx * 2 + 1 < l1.len() {
-                        let page = u16::from_le_bytes(
-                            l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                        ) as usize;
-                        if page != 0 {
-                            let l2_idx = page * 256 + char_idx;
-                            let mapped_cp = u32::from_le_bytes(
-                                l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                            );
-                            if mapped_cp != 0 {
-                                mapped = char::from_u32(mapped_cp).unwrap_or(c);
+            ProcessMatcher::SingleChar(matcher) => match matcher {
+                SingleCharMatcher::Delete { .. } => unreachable!(),
+                _ => {
+                    let mut iter = matcher.find_iter(text);
+                    if let Some((start, end, m)) = iter.next() {
+                        let mut result = get_string_from_pool(text.len());
+                        result.push_str(&text[0..start]);
+                        match m {
+                            SingleCharMatch::Char(c) => result.push(c),
+                            SingleCharMatch::Str(s) => result.push_str(s),
+                            SingleCharMatch::Delete => {}
+                        }
+                        let mut last_end = end;
+                        for (start, end, m) in iter {
+                            result.push_str(&text[last_end..start]);
+                            match m {
+                                SingleCharMatch::Char(c) => result.push(c),
+                                SingleCharMatch::Str(s) => result.push_str(s),
+                                SingleCharMatch::Delete => {}
                             }
+                            last_end = end;
                         }
+                        result.push_str(&text[last_end..]);
+                        return (true, Cow::Owned(result));
                     }
-                    if mapped != c {
-                        first_change_idx = Some(i);
-                        break;
-                    }
+                    return (false, Cow::Borrowed(text));
                 }
-
-                if let Some(idx) = first_change_idx {
-                    let mut result = get_string_from_pool(text.len());
-                    result.push_str(&text[..idx]);
-                    for c in text[idx..].chars() {
-                        let cp = c as u32;
-                        let page_idx = (cp >> 8) as usize;
-                        let char_idx = (cp & 0xFF) as usize;
-                        let mut mapped = c;
-                        if page_idx * 2 + 1 < l1.len() {
-                            let page = u16::from_le_bytes(
-                                l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                            ) as usize;
-                            if page != 0 {
-                                let l2_idx = page * 256 + char_idx;
-                                let mapped_cp = u32::from_le_bytes(
-                                    l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                                );
-                                if mapped_cp != 0 {
-                                    mapped = char::from_u32(mapped_cp).unwrap_or(c);
-                                }
-                            }
-                        }
-                        result.push(mapped);
-                    }
-                    return (true, Cow::Owned(result));
-                }
-                return (false, Cow::Borrowed(text));
-            }
-            ProcessMatcher::Pinyin {
-                l1,
-                l2,
-                strings,
-                trim_space,
-            } => {
-                let mut first_change_idx = None;
-                for (i, c) in text.char_indices() {
-                    let cp = c as u32;
-                    let page_idx = (cp >> 8) as usize;
-                    let char_idx = (cp & 0xFF) as usize;
-                    if page_idx * 2 + 1 < l1.len() {
-                        let page = u16::from_le_bytes(
-                            l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                        ) as usize;
-                        if page != 0 {
-                            let l2_idx = page * 256 + char_idx;
-                            let val = u32::from_le_bytes(
-                                l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                            );
-                            if val != 0 {
-                                let offset = (val >> 8) as usize;
-                                let len = (val & 0xFF) as usize;
-                                if offset + len <= strings.len() {
-                                    first_change_idx = Some(i);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let Some(idx) = first_change_idx {
-                    let mut result = get_string_from_pool(text.len() * 2);
-                    result.push_str(&text[..idx]);
-                    for c in text[idx..].chars() {
-                        let cp = c as u32;
-                        let page_idx = (cp >> 8) as usize;
-                        let char_idx = (cp & 0xFF) as usize;
-                        let mut mapped_str: Option<&str> = None;
-                        if page_idx * 2 + 1 < l1.len() {
-                            let page = u16::from_le_bytes(
-                                l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                            ) as usize;
-                            if page != 0 {
-                                let l2_idx = page * 256 + char_idx;
-                                let val = u32::from_le_bytes(
-                                    l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                                );
-                                if val != 0 {
-                                    let offset = (val >> 8) as usize;
-                                    let len = (val & 0xFF) as usize;
-                                    if offset + len <= strings.len() {
-                                        let mut s = &strings[offset..offset + len];
-                                        if *trim_space {
-                                            s = s.trim();
-                                        }
-                                        mapped_str = Some(s);
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(s) = mapped_str {
-                            result.push_str(s);
-                        } else {
-                            result.push(c);
-                        }
-                    }
-                    return (true, Cow::Owned(result));
-                }
-                return (false, Cow::Borrowed(text));
-            }
+            },
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::DAAC(ac) => do_replace!(
                 ac.leftmost_find_iter(text),
@@ -411,7 +301,6 @@ impl ProcessMatcher {
                     .pattern()
                     .as_usize())
             }
-            ProcessMatcher::Delete { .. } => unreachable!(),
         }
         (false, Cow::Borrowed(text))
     }
@@ -452,43 +341,27 @@ impl ProcessMatcher {
         }
 
         match self {
-            ProcessMatcher::Delete { bitset } => {
-                let mut first_delete_idx = None;
-                for (i, c) in text.char_indices() {
-                    let cp = c as usize;
-                    let is_delete = if cp / 8 < bitset.len() {
-                        (bitset[cp / 8] & (1 << (cp % 8))) != 0
-                    } else {
-                        false
-                    };
-                    if is_delete {
-                        first_delete_idx = Some(i);
-                        break;
-                    }
-                }
-
-                if let Some(idx) = first_delete_idx {
-                    let mut result = get_string_from_pool(text.len());
-                    result.push_str(&text[..idx]);
-                    for c in text[idx..].chars() {
-                        let cp = c as usize;
-                        let is_delete = if cp / 8 < bitset.len() {
-                            (bitset[cp / 8] & (1 << (cp % 8))) != 0
-                        } else {
-                            false
-                        };
-                        if !is_delete {
-                            result.push(c);
+            ProcessMatcher::SingleChar(matcher) => match matcher {
+                SingleCharMatcher::Delete { .. } => {
+                    let mut iter = matcher.find_iter(text);
+                    if let Some((start, end, _)) = iter.next() {
+                        let mut result = get_string_from_pool(text.len());
+                        result.push_str(&text[0..start]);
+                        let mut last_end = end;
+                        for (start, end, _) in iter {
+                            result.push_str(&text[last_end..start]);
+                            last_end = end;
                         }
+                        result.push_str(&text[last_end..]);
+                        return (true, Cow::Owned(result));
                     }
-                    return (true, Cow::Owned(result));
+                    return (false, Cow::Borrowed(text));
                 }
-                return (false, Cow::Borrowed(text));
-            }
+                _ => unreachable!(),
+            },
             #[cfg(not(feature = "dfa"))]
             ProcessMatcher::DAAC(ac) => do_delete!(ac.leftmost_find_iter(text)),
             ProcessMatcher::AC(ac) => do_delete!(ac.find_iter(text)),
-            _ => unreachable!(),
         }
         (false, Cow::Borrowed(text))
     }
@@ -578,10 +451,10 @@ pub fn get_process_matcher(
                         }
                     }
                     let (l1, l2) = build_2_stage_table_runtime(&map);
-                    ProcessMatcher::Fanjian {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Fanjian {
                         l1: Cow::Owned(l1),
                         l2: Cow::Owned(l2),
-                    }
+                    })
                 }
                 ProcessType::PinYin | ProcessType::PinYinChar => {
                     let mut map = HashMap::new();
@@ -596,12 +469,12 @@ pub fn get_process_matcher(
                         map.insert(k, ((offset as u32) << 8) | (length as u32));
                     }
                     let (l1, l2) = build_2_stage_table_runtime(&map);
-                    ProcessMatcher::Pinyin {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Pinyin {
                         l1: Cow::Owned(l1),
                         l2: Cow::Owned(l2),
                         strings: Cow::Owned(strings),
                         trim_space: process_type_bit == ProcessType::PinYinChar,
-                    }
+                    })
                 }
                 ProcessType::Delete => {
                     let mut bitset = vec![0u8; 139264];
@@ -617,9 +490,9 @@ pub fn get_process_matcher(
                             bitset[cp / 8] |= 1 << (cp % 8);
                         }
                     }
-                    ProcessMatcher::Delete {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Delete {
                         bitset: Cow::Owned(bitset),
-                    }
+                    })
                 }
                 ProcessType::Normalize => {
                     let mut process_dict = HashMap::new();
@@ -693,16 +566,16 @@ pub fn get_process_matcher(
                 }
                 ProcessType::Fanjian => (
                     Vec::new(),
-                    ProcessMatcher::Fanjian {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Fanjian {
                         l1: Cow::Borrowed(FANJIAN_L1_BYTES),
                         l2: Cow::Borrowed(FANJIAN_L2_BYTES),
-                    },
+                    }),
                 ),
                 ProcessType::Delete => (
                     Vec::new(),
-                    ProcessMatcher::Delete {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Delete {
                         bitset: Cow::Borrowed(DELETE_BITSET_BYTES),
-                    },
+                    }),
                 ),
                 ProcessType::Normalize => {
                     #[cfg(feature = "dfa")]
@@ -733,21 +606,21 @@ pub fn get_process_matcher(
                 }
                 ProcessType::PinYin => (
                     Vec::new(),
-                    ProcessMatcher::Pinyin {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Pinyin {
                         l1: Cow::Borrowed(PINYIN_L1_BYTES),
                         l2: Cow::Borrowed(PINYIN_L2_BYTES),
                         strings: Cow::Borrowed(PINYIN_STR_BYTES),
                         trim_space: false,
-                    },
+                    }),
                 ),
                 ProcessType::PinYinChar => (
                     Vec::new(),
-                    ProcessMatcher::Pinyin {
+                    ProcessMatcher::SingleChar(SingleCharMatcher::Pinyin {
                         l1: Cow::Borrowed(PINYIN_L1_BYTES),
                         l2: Cow::Borrowed(PINYIN_L2_BYTES),
                         strings: Cow::Borrowed(PINYIN_STR_BYTES),
                         trim_space: true,
-                    },
+                    }),
                 ),
                 _ => unreachable!(),
             };
