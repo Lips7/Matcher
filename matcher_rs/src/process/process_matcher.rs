@@ -275,9 +275,8 @@ impl ProcessMatcher {
 
         match self {
             ProcessMatcher::Fanjian { l1, l2 } => {
-                let mut result = get_string_from_pool(text.len());
-                let mut changed = false;
-                for c in text.chars() {
+                let mut first_change_idx = None;
+                for (i, c) in text.char_indices() {
                     let cp = c as u32;
                     let page_idx = (cp >> 8) as usize;
                     let char_idx = (cp & 0xFF) as usize;
@@ -297,14 +296,37 @@ impl ProcessMatcher {
                         }
                     }
                     if mapped != c {
-                        changed = true;
+                        first_change_idx = Some(i);
+                        break;
                     }
-                    result.push(mapped);
                 }
-                if changed {
+
+                if let Some(idx) = first_change_idx {
+                    let mut result = get_string_from_pool(text.len());
+                    result.push_str(&text[..idx]);
+                    for c in text[idx..].chars() {
+                        let cp = c as u32;
+                        let page_idx = (cp >> 8) as usize;
+                        let char_idx = (cp & 0xFF) as usize;
+                        let mut mapped = c;
+                        if page_idx * 2 + 1 < l1.len() {
+                            let page = u16::from_le_bytes(
+                                l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
+                            ) as usize;
+                            if page != 0 {
+                                let l2_idx = page * 256 + char_idx;
+                                let mapped_cp = u32::from_le_bytes(
+                                    l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
+                                );
+                                if mapped_cp != 0 {
+                                    mapped = char::from_u32(mapped_cp).unwrap_or(c);
+                                }
+                            }
+                        }
+                        result.push(mapped);
+                    }
                     return (true, Cow::Owned(result));
                 }
-                return_string_to_pool(result);
                 return (false, Cow::Borrowed(text));
             }
             ProcessMatcher::Pinyin {
@@ -313,13 +335,11 @@ impl ProcessMatcher {
                 strings,
                 trim_space,
             } => {
-                let mut result = get_string_from_pool(text.len() * 2);
-                let mut changed = false;
-                for c in text.chars() {
+                let mut first_change_idx = None;
+                for (i, c) in text.char_indices() {
                     let cp = c as u32;
                     let page_idx = (cp >> 8) as usize;
                     let char_idx = (cp & 0xFF) as usize;
-                    let mut mapped_str: Option<&str> = None;
                     if page_idx * 2 + 1 < l1.len() {
                         let page = u16::from_le_bytes(
                             l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
@@ -333,26 +353,52 @@ impl ProcessMatcher {
                                 let offset = (val >> 8) as usize;
                                 let len = (val & 0xFF) as usize;
                                 if offset + len <= strings.len() {
-                                    let mut s = &strings[offset..offset + len];
-                                    if *trim_space {
-                                        s = s.trim();
-                                    }
-                                    mapped_str = Some(s);
+                                    first_change_idx = Some(i);
+                                    break;
                                 }
                             }
                         }
                     }
-                    if let Some(s) = mapped_str {
-                        result.push_str(s);
-                        changed = true;
-                    } else {
-                        result.push(c);
-                    }
                 }
-                if changed {
+
+                if let Some(idx) = first_change_idx {
+                    let mut result = get_string_from_pool(text.len() * 2);
+                    result.push_str(&text[..idx]);
+                    for c in text[idx..].chars() {
+                        let cp = c as u32;
+                        let page_idx = (cp >> 8) as usize;
+                        let char_idx = (cp & 0xFF) as usize;
+                        let mut mapped_str: Option<&str> = None;
+                        if page_idx * 2 + 1 < l1.len() {
+                            let page = u16::from_le_bytes(
+                                l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
+                            ) as usize;
+                            if page != 0 {
+                                let l2_idx = page * 256 + char_idx;
+                                let val = u32::from_le_bytes(
+                                    l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
+                                );
+                                if val != 0 {
+                                    let offset = (val >> 8) as usize;
+                                    let len = (val & 0xFF) as usize;
+                                    if offset + len <= strings.len() {
+                                        let mut s = &strings[offset..offset + len];
+                                        if *trim_space {
+                                            s = s.trim();
+                                        }
+                                        mapped_str = Some(s);
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(s) = mapped_str {
+                            result.push_str(s);
+                        } else {
+                            result.push(c);
+                        }
+                    }
                     return (true, Cow::Owned(result));
                 }
-                return_string_to_pool(result);
                 return (false, Cow::Borrowed(text));
             }
             #[cfg(not(feature = "dfa"))]
@@ -407,9 +453,8 @@ impl ProcessMatcher {
 
         match self {
             ProcessMatcher::Delete { bitset } => {
-                let mut result = get_string_from_pool(text.len());
-                let mut changed = false;
-                for c in text.chars() {
+                let mut first_delete_idx = None;
+                for (i, c) in text.char_indices() {
                     let cp = c as usize;
                     let is_delete = if cp / 8 < bitset.len() {
                         (bitset[cp / 8] & (1 << (cp % 8))) != 0
@@ -417,15 +462,27 @@ impl ProcessMatcher {
                         false
                     };
                     if is_delete {
-                        changed = true;
-                    } else {
-                        result.push(c);
+                        first_delete_idx = Some(i);
+                        break;
                     }
                 }
-                if changed {
+
+                if let Some(idx) = first_delete_idx {
+                    let mut result = get_string_from_pool(text.len());
+                    result.push_str(&text[..idx]);
+                    for c in text[idx..].chars() {
+                        let cp = c as usize;
+                        let is_delete = if cp / 8 < bitset.len() {
+                            (bitset[cp / 8] & (1 << (cp % 8))) != 0
+                        } else {
+                            false
+                        };
+                        if !is_delete {
+                            result.push(c);
+                        }
+                    }
                     return (true, Cow::Owned(result));
                 }
-                return_string_to_pool(result);
                 return (false, Cow::Borrowed(text));
             }
             #[cfg(not(feature = "dfa"))]

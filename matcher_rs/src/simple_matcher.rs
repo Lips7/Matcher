@@ -591,6 +591,17 @@ impl SimpleMatcher {
 
             let word_conf = &self.word_conf_list[word_conf_idx];
 
+            if state.word_states[word_conf_idx].matrix_generation == generation
+                && word_conf.expected_mask > 0
+                && word_conf.not_offset == word_conf.split_bit.len()
+                && state.word_states[word_conf_idx].satisfied_mask == word_conf.expected_mask
+            {
+                if exit_early {
+                    return true;
+                }
+                continue;
+            }
+
             if state.word_states[word_conf_idx].matrix_generation != generation {
                 state.word_states[word_conf_idx].matrix_generation = generation;
                 state.touched_indices.push(word_conf_idx);
