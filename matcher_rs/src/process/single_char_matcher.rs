@@ -111,6 +111,10 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
 
             match self.matcher {
                 SingleCharMatcher::Fanjian { l1, l2 } => {
+                    // Fanjian only maps CJK codepoints (U+4E00+); all ASCII is unchanged.
+                    if cp < 0x80 {
+                        continue;
+                    }
                     let page_idx = (cp >> 8) as usize;
                     let char_idx = (cp & 0xFF) as usize;
                     if page_idx * 2 + 1 < l1.len() {
@@ -138,6 +142,10 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                     strings,
                     trim_space,
                 } => {
+                    // Pinyin only maps CJK codepoints (U+4E00+); all ASCII is unchanged.
+                    if cp < 0x80 {
+                        continue;
+                    }
                     let page_idx = (cp >> 8) as usize;
                     let char_idx = (cp & 0xFF) as usize;
                     if page_idx * 2 + 1 < l1.len() {
