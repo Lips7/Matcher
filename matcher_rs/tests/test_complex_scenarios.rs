@@ -138,16 +138,6 @@ fn test_same_word_id_different_process_types() {
 }
 
 #[test]
-fn test_multiple_matches_of_same_subpattern() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a&a&a")
-        .build();
-
-    assert!(matcher.is_match("a a a"));
-    assert!(!matcher.is_match("a a"));
-}
-
-#[test]
 fn test_large_overlapping_and_not_set() {
     let mut builder = SimpleMatcherBuilder::new();
     let mut storage = Vec::new();

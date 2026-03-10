@@ -100,15 +100,14 @@ mod build {
 
                 #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
                 fn [<$lang:lower _by_size>](bencher: Bencher, size: usize) {
+                    let simple_word_map = build_deterministic_map(
+                        stringify!($lang).to_lowercase().as_str(),
+                        size,
+                        DEFAULT_COMBINED_TIMES,
+                        true,
+                    );
+                    let simple_table = HashMap::from([(DEFAULT_PROCESS_TYPE, simple_word_map)]);
                     bencher.bench_local(|| {
-                        let mut simple_table = HashMap::new();
-                        let simple_word_map = build_deterministic_map(
-                            stringify!($lang).to_lowercase().as_str(),
-                            size,
-                            DEFAULT_COMBINED_TIMES,
-                            true,
-                        );
-                        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
                         let _ = black_box(SimpleMatcher::new(&simple_table));
                     });
                 }

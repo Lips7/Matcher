@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
 
 #[test]
-fn simple_match_init() {
+fn test_init() {
     let _ = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "")]),
@@ -15,80 +15,119 @@ fn simple_match_init() {
     // Boundary conditions
     let empty_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
     let empty_matcher = SimpleMatcher::new(&empty_map);
-    assert!(!empty_matcher.is_match("test"));
-    assert!(!empty_matcher.is_match(""));
+    assert!(
+        !empty_matcher.is_match("test"),
+        "empty matcher should never match"
+    );
+    assert!(
+        !empty_matcher.is_match(""),
+        "empty matcher should never match empty string"
+    );
 }
 
 #[test]
-fn simple_match_builder() {
+fn test_builder() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "world")
         .add_word(ProcessType::Delete, 3, "foo")
         .build();
 
-    assert!(matcher.is_match("hello"));
-    assert!(matcher.is_match("world"));
-    assert!(matcher.is_match("f*o*o"));
-    assert!(!matcher.is_match("hallo warld no split match single"));
+    assert!(matcher.is_match("hello"), "should match 'hello'");
+    assert!(matcher.is_match("world"), "should match 'world'");
+    assert!(
+        matcher.is_match("f*o*o"),
+        "Delete should strip noise chars, matching 'foo'"
+    );
+    assert!(
+        !matcher.is_match("hallo warld no split match single"),
+        "should not match unrelated text"
+    );
 }
 
 #[test]
-fn simple_match_fanjian() {
+fn test_fanjian() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
         HashMap::from([(1, "你好")]),
     )]));
-    assert!(simple_matcher.is_match("妳好"));
+    assert!(
+        simple_matcher.is_match("妳好"),
+        "Fanjian should match traditional variant of 你好"
+    );
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
         HashMap::from([(1, "妳好")]),
     )]));
-    assert!(simple_matcher.is_match("你好"));
+    assert!(
+        simple_matcher.is_match("你好"),
+        "Fanjian should match simplified variant of 妳好"
+    );
 }
 
 #[test]
-fn simple_match_delete() {
+fn test_delete() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Delete,
         HashMap::from([(1, "你好")]),
     )]));
-    assert!(simple_matcher.is_match("你！好"));
+    assert!(
+        simple_matcher.is_match("你！好"),
+        "Delete should strip noise char '！'"
+    );
 }
 
 #[test]
-fn simple_match_normalize() {
+fn test_normalize() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Normalize,
         HashMap::from([(1, "he11o")]),
     )]));
-    assert!(simple_matcher.is_match("ℋЀ⒈㈠Õ"));
+    assert!(
+        simple_matcher.is_match("ℋЀ⒈㈠Õ"),
+        "Normalize should map fancy chars to 'he11o'"
+    );
 }
 
 #[test]
-fn simple_match_pinyin() {
+fn test_pinyin() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::PinYin,
         HashMap::from([(1, "西安")]),
     )]));
-    assert!(simple_matcher.is_match("洗按"));
-    assert!(!simple_matcher.is_match("现"));
+    assert!(
+        simple_matcher.is_match("洗按"),
+        "PinYin xi an should match 洗按 (xi an)"
+    );
+    assert!(
+        !simple_matcher.is_match("现"),
+        "PinYin xi an should not match 现 (xian without space)"
+    );
 }
 
 #[test]
-fn simple_match_pinyinchar() {
+fn test_pinyinchar() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::PinYinChar,
         HashMap::from([(1, "西安")]),
     )]));
-    assert!(simple_matcher.is_match("洗按"));
-    assert!(simple_matcher.is_match("现"));
-    assert!(simple_matcher.is_match("xian"));
+    assert!(
+        simple_matcher.is_match("洗按"),
+        "PinYinChar xi an should match 洗按"
+    );
+    assert!(
+        simple_matcher.is_match("现"),
+        "PinYinChar xi an should match 现 (xian without space)"
+    );
+    assert!(
+        simple_matcher.is_match("xian"),
+        "PinYinChar should match literal xian"
+    );
 }
 
 #[test]
-fn simple_match_combination() {
+fn test_combination() {
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([
@@ -100,13 +139,22 @@ fn simple_match_combination() {
             (6, "hello&world~word~word"),
         ]),
     )]));
-    assert!(simple_matcher.is_match("hello world"));
-    assert!(simple_matcher.is_match("hello hello world"));
-    assert!(simple_matcher.is_match("hello word"));
+    assert!(
+        simple_matcher.is_match("hello world"),
+        "hello&world should match when both present"
+    );
+    assert!(
+        simple_matcher.is_match("hello hello world"),
+        "hello&world&hello requires 2 hellos"
+    );
+    assert!(
+        simple_matcher.is_match("hello word"),
+        "hello~world should match when world absent"
+    );
 }
 
 #[test]
-fn simple_matcher_not_logic_ordering() {
+fn test_not_logic_ordering() {
     // Test that NOT logic works even if the NOT token appears BEFORE the positive token.
     let mut builder = SimpleMatcherBuilder::new();
     builder = builder.add_word(ProcessType::None, 1, "hello~world");
@@ -118,7 +166,7 @@ fn simple_matcher_not_logic_ordering() {
 }
 
 #[test]
-fn simple_match_overlapping_words() {
+fn test_overlapping_words() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "hello world")
@@ -134,19 +182,25 @@ fn simple_match_overlapping_words() {
 }
 
 #[test]
-fn simple_match_whitespace_handling() {
+fn test_whitespace_handling() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, " ")
         .add_word(ProcessType::None, 2, "hello ")
         .build();
 
-    assert!(matcher.is_match(" "));
-    assert!(matcher.is_match("hello "));
-    assert!(!matcher.is_match("hello")); // Missing space
+    assert!(matcher.is_match(" "), "single space pattern should match");
+    assert!(
+        matcher.is_match("hello "),
+        "should match 'hello ' with trailing space"
+    );
+    assert!(
+        !matcher.is_match("hello"),
+        "should not match 'hello' without trailing space"
+    );
 }
 
 #[test]
-fn simple_match_very_long_text() {
+fn test_very_long_text() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "needle")
         .build();
