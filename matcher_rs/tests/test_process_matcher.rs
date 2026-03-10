@@ -166,3 +166,119 @@ fn test_reduce_text_process_empty_text() {
     let processed_text = reduce_text_process_with_set(&process_type_set, "");
     assert!(processed_text.iter().all(|(text, _)| text.is_empty()));
 }
+
+const FANJIAN_TEST_DATA: &str = include_str!("../process_map/FANJIAN.txt");
+const DELETE_TEST_DATA: &str = include_str!("../process_map/TEXT-DELETE.txt");
+const NORM_TEST_DATA: &str = include_str!("../process_map/NORM.txt");
+const NUM_NORM_TEST_DATA: &str = include_str!("../process_map/NUM-NORM.txt");
+const PINYIN_TEST_DATA: &str = include_str!("../process_map/PINYIN.txt");
+
+#[test]
+fn test_process_map_fanjian_exhaustive() {
+    for line in FANJIAN_TEST_DATA.trim().lines() {
+        let mut split = line.split('\t');
+        let k = split.next().expect("Missing key in FANJIAN.txt");
+        let v = split.next().expect("Missing value in FANJIAN.txt");
+
+        // Current implementation is 1-to-1 for Fanjian, truncating v to first char
+        let expected_v = v.chars().next().unwrap().to_string();
+        assert_eq!(
+            text_process(ProcessType::Fanjian, k),
+            expected_v,
+            "Fanjian failed for {}",
+            k
+        );
+    }
+}
+
+#[test]
+fn test_process_map_delete_exhaustive() {
+    // Test characters from TEXT-DELETE.txt
+    for line in DELETE_TEST_DATA.trim().lines() {
+        for c in line.chars() {
+            let s = c.to_string();
+            assert_eq!(
+                text_process(ProcessType::Delete, &s),
+                "",
+                "Delete failed for char '{}' (U+{:04X})",
+                c,
+                c as u32
+            );
+        }
+    }
+
+    // Test whitespace from WHITE_SPACE constant
+    let white_spaces = [
+        "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}",
+        "\u{00A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}",
+        "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}",
+        "\u{200F}", "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
+    ];
+    for ws in white_spaces {
+        assert_eq!(
+            text_process(ProcessType::Delete, ws),
+            "",
+            "Delete failed for whitespace U+{:04X}",
+            ws.chars().next().unwrap() as u32
+        );
+    }
+}
+
+#[test]
+fn test_process_map_normalize_exhaustive() {
+    use std::collections::HashMap;
+    let mut merged_map = HashMap::new();
+
+    // Merging logic matches process_matcher.rs: NORM then NUM_NORM overwrites
+    for data in [NORM_TEST_DATA, NUM_NORM_TEST_DATA] {
+        for line in data.trim().lines() {
+            let mut split = line.split('\t');
+            let k = split.next().expect("Missing key");
+            let v = split.next().expect("Missing value");
+            if k != v {
+                merged_map.insert(k, v);
+            }
+        }
+    }
+
+    for (k, v) in merged_map {
+        assert_eq!(
+            text_process(ProcessType::Normalize, k),
+            v,
+            "Normalize failed for {}",
+            k
+        );
+    }
+}
+
+#[test]
+fn test_process_map_pinyin_exhaustive() {
+    for line in PINYIN_TEST_DATA.trim().lines() {
+        let mut split = line.split('\t');
+        let k = split.next().expect("Missing key in PINYIN.txt");
+        let v = split.next().expect("Missing value in PINYIN.txt");
+
+        assert_eq!(
+            text_process(ProcessType::PinYin, k),
+            v,
+            "PinYin failed for {}",
+            k
+        );
+    }
+}
+
+#[test]
+fn test_process_map_pinyin_char_exhaustive() {
+    for line in PINYIN_TEST_DATA.trim().lines() {
+        let mut split = line.split('\t');
+        let k = split.next().expect("Missing key in PINYIN.txt");
+        let v = split.next().expect("Missing value in PINYIN.txt");
+
+        assert_eq!(
+            text_process(ProcessType::PinYinChar, k),
+            v.trim(),
+            "PinYinChar failed for {}",
+            k
+        );
+    }
+}

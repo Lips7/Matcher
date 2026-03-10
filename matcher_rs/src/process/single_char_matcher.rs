@@ -142,8 +142,8 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                     strings,
                     trim_space,
                 } => {
-                    // Pinyin only maps CJK codepoints (U+4E00+); all ASCII is unchanged.
-                    if cp < 0x80 {
+                    // Pinyin maps CJK codepoints and ASCII digits (0-9).
+                    if cp < 0x80 && !c.is_ascii_digit() {
                         continue;
                     }
                     let page_idx = (cp >> 8) as usize;
