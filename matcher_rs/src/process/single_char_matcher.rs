@@ -66,7 +66,7 @@ pub enum SingleCharMatcher {
     },
 }
 
-/// The transformation to apply to a matched codepoint, yielded by [`SingleCharFindIter`].
+/// The transformation to apply to a matched codepoint.
 pub enum SingleCharMatch<'a> {
     Char(char),
     Str(&'a str),
@@ -130,10 +130,10 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
 pub struct FanjianFindIter<'a> {
-    pub l1: &'a [u8],
-    pub l2: &'a [u8],
-    pub text: &'a str,
-    pub byte_offset: usize,
+    pub(crate) l1: &'a [u8],
+    pub(crate) l2: &'a [u8],
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
 }
 
 impl<'a> Iterator for FanjianFindIter<'a> {
@@ -171,11 +171,11 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 
 /// Monomorphized iterator for Delete (bitset-based character removal).
 pub struct DeleteFindIter<'a> {
-    pub bitset: &'a [u8],
+    pub(crate) bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
-    pub ascii_lut: [u8; 16],
-    pub text: &'a str,
-    pub byte_offset: usize,
+    pub(crate) ascii_lut: [u8; 16],
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
 }
 
 impl<'a> Iterator for DeleteFindIter<'a> {
@@ -241,16 +241,16 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 }
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
-pub struct PinyinFindIter<'a> {
-    pub l1: &'a [u8],
-    pub l2: &'a [u8],
-    pub strings: &'a str,
-    pub trim_space: bool,
-    pub text: &'a str,
-    pub byte_offset: usize,
+pub struct PinYinFindIter<'a> {
+    pub(crate) l1: &'a [u8],
+    pub(crate) l2: &'a [u8],
+    pub(crate) strings: &'a str,
+    pub(crate) trim_space: bool,
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
 }
 
-impl<'a> Iterator for PinyinFindIter<'a> {
+impl<'a> Iterator for PinYinFindIter<'a> {
     type Item = (usize, usize, SingleCharMatch<'a>);
 
     #[inline(always)]
@@ -291,100 +291,7 @@ impl<'a> Iterator for PinyinFindIter<'a> {
     }
 }
 
-/// An iterator over single-character matches in a text string.
-///
-/// Scans `text` character-by-character, yielding `(start, end, `[`SingleCharMatch`]`)` tuples
-/// for each codepoint that the underlying [`SingleCharMatcher`] maps to a transformation.
-/// `start` and `end` are byte offsets into the original `text` slice.
-pub struct SingleCharFindIter<'a> {
-    matcher: &'a SingleCharMatcher,
-    text: &'a str,
-    byte_offset: usize,
-}
-
-impl<'a> SingleCharFindIter<'a> {
-    #[inline(always)]
-    pub fn new(matcher: &'a SingleCharMatcher, text: &'a str) -> Self {
-        Self {
-            matcher,
-            text,
-            byte_offset: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for SingleCharFindIter<'a> {
-    type Item = (usize, usize, SingleCharMatch<'a>);
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let text = &self.text[self.byte_offset..];
-        for (i, c) in text.char_indices() {
-            let cp = c as u32;
-            let start = self.byte_offset + i;
-            let end = start + c.len_utf8();
-
-            match self.matcher {
-                SingleCharMatcher::Fanjian { l1, l2 } => {
-                    if cp < 0x80 {
-                        continue;
-                    }
-                    if let Some(mapped_cp) = page_table_lookup(cp, l1, l2) {
-                        let mapped = char::from_u32(mapped_cp).unwrap_or(c);
-                        if mapped != c {
-                            self.byte_offset = end;
-                            return Some((start, end, SingleCharMatch::Char(mapped)));
-                        }
-                    }
-                }
-                SingleCharMatcher::Pinyin {
-                    l1,
-                    l2,
-                    strings,
-                    trim_space,
-                } => {
-                    if cp < 0x80 && !c.is_ascii_digit() {
-                        continue;
-                    }
-                    if let Some(val) = page_table_lookup(cp, l1, l2) {
-                        let offset = (val >> 8) as usize;
-                        let len = (val & 0xFF) as usize;
-                        if offset + len <= strings.len() {
-                            let mut s = &strings[offset..offset + len];
-                            if *trim_space {
-                                s = s.trim();
-                            }
-                            self.byte_offset = end;
-                            return Some((start, end, SingleCharMatch::Str(s)));
-                        }
-                    }
-                }
-                SingleCharMatcher::Delete { bitset, .. } => {
-                    let cp_usize = cp as usize;
-                    if cp_usize / 8 < bitset.len()
-                        && (bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
-                    {
-                        self.byte_offset = end;
-                        return Some((start, end, SingleCharMatch::Delete));
-                    }
-                }
-            }
-        }
-        self.byte_offset = self.text.len();
-        None
-    }
-}
-
 impl SingleCharMatcher {
-    /// Returns an iterator over all codepoints in `text` that this matcher transforms.
-    ///
-    /// Each item is `(start_byte, end_byte, `[`SingleCharMatch`]`)`. Characters with no
-    /// mapping are skipped. The iterator runs in O(n) time over the input length.
-    #[inline(always)]
-    pub fn find_iter<'a>(&'a self, text: &'a str) -> SingleCharFindIter<'a> {
-        SingleCharFindIter::new(self, text)
-    }
-
     #[inline(always)]
     pub fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
         let SingleCharMatcher::Fanjian { l1, l2 } = self else {
@@ -412,7 +319,7 @@ impl SingleCharMatcher {
     }
 
     #[inline(always)]
-    pub fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinyinFindIter<'a> {
+    pub fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
         let SingleCharMatcher::Pinyin {
             l1,
             l2,
@@ -422,7 +329,7 @@ impl SingleCharMatcher {
         else {
             panic!("pinyin_iter called on non-Pinyin matcher");
         };
-        PinyinFindIter {
+        PinYinFindIter {
             l1,
             l2,
             strings,
