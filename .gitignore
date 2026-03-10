@@ -33,6 +33,9 @@ __pycache__/
 # Rust-specific
 Cargo.lock
 
+# Python-specific
+uv.lock
+
 # C-specific
 matcher_c/tests/test_matcher
 
