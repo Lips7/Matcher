@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use matcher_rs::{
     ProcessType, build_process_type_tree, reduce_text_process, reduce_text_process_emit,
-    reduce_text_process_with_set, reduce_text_process_with_tree, text_process,
+    reduce_text_process_with_tree, text_process,
 };
 
 #[test]
@@ -113,9 +113,8 @@ fn test_reduce_text_process_with_set() {
     ]);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
-    let results = reduce_text_process_with_set(&process_type_set, text);
+    let results = reduce_text_process_with_tree(&build_process_type_tree(&process_type_set), text);
 
-    // reduce_text_process_with_set should produce same results as tree (though variant order/masking might differ slightly in implementation details, the set of variants should match)
     assert!(results.iter().any(|(s, _)| s == "a裸b軆c"));
     assert!(results.iter().any(|(s, _)| s == "ᗩ裸𝚩軆Ⲉ"));
 }
@@ -175,7 +174,8 @@ fn test_reduce_text_process_empty_text() {
         ProcessType::Normalize.bits(),
     ]);
 
-    let processed_text = reduce_text_process_with_set(&process_type_set, "");
+    let processed_text =
+        reduce_text_process_with_tree(&build_process_type_tree(&process_type_set), "");
     assert!(processed_text.iter().all(|(text, _)| text.is_empty()));
 }
 

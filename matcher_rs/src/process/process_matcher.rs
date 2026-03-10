@@ -11,9 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::process::constants::*;
 use crate::process::multi_char_matcher::MultiCharMatcher;
-use crate::process::single_char_matcher::{
-    DeleteFindIter, FanjianFindIter, PinyinFindIter, SingleCharMatch, SingleCharMatcher,
-};
+use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 
 const STRING_POOL_INIT_CAP: usize = 16;
 const REDUCE_STATE_INIT_CAP: usize = 16;
@@ -54,8 +52,8 @@ fn return_string_to_pool(s: String) {
 }
 
 /// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
-pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: ProcessedTextMasks) {
-    for (cow, _) in processed_text_process_type_masks.drain(..) {
+pub fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
+    for (cow, _) in text_masks.drain(..) {
         if let Cow::Owned(s) = cow {
             return_string_to_pool(s);
         }
@@ -63,8 +61,7 @@ pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: Pr
     // Safety: drain() has removed all elements, so no Cow<'_, str> borrows remain.
     // Transmuting the empty Vec's element lifetime to 'static is sound because an empty
     // Vec holds no values and the memory layout of Cow<'_, str> is lifetime-independent.
-    let empty: ProcessedTextMasks<'static> =
-        unsafe { std::mem::transmute(processed_text_process_type_masks) };
+    let empty: ProcessedTextMasks<'static> = unsafe { std::mem::transmute(text_masks) };
     MASKS_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
         if pool.len() < MASKS_POOL_MAX {
@@ -228,41 +225,20 @@ impl ProcessMatcher {
     pub fn replace_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         match self {
             ProcessMatcher::SingleChar(matcher) => match matcher {
-                SingleCharMatcher::Fanjian { l1, l2 } => Self::replace_scan(
-                    text,
-                    FanjianFindIter {
-                        l1,
-                        l2,
-                        text,
-                        byte_offset: 0,
-                    },
-                    |result, m| {
+                SingleCharMatcher::Fanjian { .. } => {
+                    Self::replace_scan(text, matcher.fanjian_iter(text), |result, m| {
                         if let SingleCharMatch::Char(c) = m {
                             result.push(c);
                         }
-                    },
-                ),
-                SingleCharMatcher::Pinyin {
-                    l1,
-                    l2,
-                    strings,
-                    trim_space,
-                } => Self::replace_scan(
-                    text,
-                    PinyinFindIter {
-                        l1,
-                        l2,
-                        strings,
-                        trim_space: *trim_space,
-                        text,
-                        byte_offset: 0,
-                    },
-                    |result, m| {
+                    })
+                }
+                SingleCharMatcher::Pinyin { .. } => {
+                    Self::replace_scan(text, matcher.pinyin_iter(text), |result, m| {
                         if let SingleCharMatch::Str(s) = m {
                             result.push_str(s);
                         }
-                    },
-                ),
+                    })
+                }
                 SingleCharMatcher::Delete { .. } => {
                     debug_assert!(false, "replace_all called on Delete matcher");
                     (false, Cow::Borrowed(text))
@@ -283,21 +259,11 @@ impl ProcessMatcher {
     /// `(false, Cow::Borrowed(text))` when nothing matched, avoiding any allocation.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
-        let ProcessMatcher::SingleChar(SingleCharMatcher::Delete { bitset, ascii_lut }) = self
-        else {
+        let ProcessMatcher::SingleChar(matcher) = self else {
             debug_assert!(false, "delete_all called on non-Delete matcher");
             return (false, Cow::Borrowed(text));
         };
-        Self::replace_scan(
-            text,
-            DeleteFindIter {
-                bitset,
-                ascii_lut: *ascii_lut,
-                text,
-                byte_offset: 0,
-            },
-            |_, _| {},
-        )
+        Self::replace_scan(text, matcher.delete_iter(text), |_, _| {})
     }
 }
 
@@ -457,13 +423,17 @@ pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a,
         match bit {
             ProcessType::None => continue,
             ProcessType::Delete => {
-                if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref()) {
-                    result = Cow::Owned(pt);
+                if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(pt))
+                {
+                    return_string_to_pool(old);
                 }
             }
             _ => {
-                if let (true, Cow::Owned(pt)) = pm.replace_all(result.as_ref()) {
-                    result = Cow::Owned(pt);
+                if let (true, Cow::Owned(pt)) = pm.replace_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(pt))
+                {
+                    return_string_to_pool(old);
                 }
             }
         }
@@ -492,20 +462,16 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 
         match process_type_bit {
             ProcessType::None => {}
-            ProcessType::Delete => match pm.delete_all(current_text.as_ref()) {
-                (true, Cow::Owned(pt)) => {
+            ProcessType::Delete => {
+                if let (true, Cow::Owned(pt)) = pm.delete_all(current_text.as_ref()) {
                     text_list.push(Cow::Owned(pt));
                 }
-                (false, _) => {}
-                (_, _) => unreachable!(),
-            },
-            _ => match pm.replace_all(current_text.as_ref()) {
-                (true, Cow::Owned(pt)) => {
+            }
+            _ => {
+                if let (true, Cow::Owned(pt)) = pm.replace_all(current_text.as_ref()) {
                     text_list.push(Cow::Owned(pt));
                 }
-                (false, _) => {}
-                (_, _) => unreachable!(),
-            },
+            }
         }
     }
 
@@ -531,20 +497,16 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 
         match process_type_bit {
             ProcessType::None => {}
-            ProcessType::Delete => match pm.delete_all(current_text.as_ref()) {
-                (true, Cow::Owned(pt)) => {
+            ProcessType::Delete => {
+                if let (true, Cow::Owned(pt)) = pm.delete_all(current_text.as_ref()) {
                     text_list.push(Cow::Owned(pt));
                 }
-                (false, _) => {}
-                (_, _) => unreachable!(),
-            },
-            _ => match pm.replace_all(current_text.as_ref()) {
-                (true, Cow::Owned(pt)) => {
+            }
+            _ => {
+                if let (true, Cow::Owned(pt)) = pm.replace_all(current_text.as_ref()) {
                     *current_text = Cow::Owned(pt);
                 }
-                (false, _) => {}
-                (_, _) => unreachable!(),
-            },
+            }
         }
     }
 
@@ -725,101 +687,4 @@ pub fn reduce_text_process_with_tree<'a>(
 
         text_masks
     })
-}
-
-/// Generates all text variants by building the transformation trie on-the-fly.
-///
-/// Semantically identical to [`reduce_text_process_with_tree`], but constructs the trie
-/// from `process_type_set` at call time rather than using a pre-built one. Use this when
-/// the set of required `ProcessType`s is dynamic or not known at construction time.
-/// For static sets, prefer pre-building with [`build_process_type_tree`] and calling
-/// [`reduce_text_process_with_tree`] instead.
-#[inline(always)]
-pub fn reduce_text_process_with_set<'a>(
-    process_type_set: &HashSet<u8>,
-    text: &'a str,
-) -> ProcessedTextMasks<'a> {
-    let mut process_type_tree = Vec::with_capacity(8);
-    let root = ProcessTypeBitNode {
-        process_type_list: Vec::new(),
-        process_type_bit: ProcessType::None,
-        children: Vec::new(),
-    };
-    process_type_tree.push(root);
-
-    let mut node_indices = Vec::with_capacity(8);
-    node_indices.push(0);
-
-    let mut text_masks: ProcessedTextMasks<'a> = Vec::new();
-    text_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
-
-    for process_type_bits in process_type_set.iter() {
-        let process_type = ProcessType::from_bits(*process_type_bits).unwrap();
-        let mut current_node_index = 0;
-
-        for process_type_bit in process_type.iter() {
-            let current_node = &process_type_tree[current_node_index];
-            if current_node.process_type_bit == process_type_bit {
-                continue;
-            }
-
-            let mut is_found = false;
-            for child_node_index in &current_node.children {
-                if process_type_bit == process_type_tree[*child_node_index].process_type_bit {
-                    current_node_index = *child_node_index;
-                    is_found = true;
-                    break;
-                }
-            }
-
-            if !is_found {
-                let current_index = node_indices[current_node_index];
-                let pm = get_process_matcher(process_type_bit);
-
-                let changed = match process_type_bit {
-                    ProcessType::None => None,
-                    ProcessType::Delete => {
-                        let current_text = text_masks[current_index].0.as_ref();
-                        match pm.delete_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
-                            _ => None,
-                        }
-                    }
-                    _ => {
-                        let current_text = text_masks[current_index].0.as_ref();
-                        match pm.replace_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
-                            _ => None,
-                        }
-                    }
-                };
-                let child_index = dedup_insert(&mut text_masks, current_index, changed);
-
-                let mut child = ProcessTypeBitNode {
-                    process_type_list: Vec::new(),
-                    process_type_bit,
-                    children: Vec::new(),
-                };
-                child.process_type_list.push(process_type);
-                process_type_tree.push(child);
-                node_indices.push(child_index);
-
-                let new_node_index = process_type_tree.len() - 1;
-                process_type_tree[current_node_index]
-                    .children
-                    .push(new_node_index);
-                current_node_index = new_node_index;
-            } else {
-                process_type_tree[current_node_index]
-                    .process_type_list
-                    .push(process_type);
-            }
-
-            let current_index = node_indices[current_node_index];
-            let entry = &mut text_masks[current_index];
-            entry.1 |= 1u64 << process_type.bits();
-        }
-    }
-
-    text_masks
 }

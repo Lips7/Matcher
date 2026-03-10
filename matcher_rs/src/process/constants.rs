@@ -49,7 +49,7 @@ pub const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
 /// Loaded at runtime under `runtime_build` to populate the Delete BitSet alongside
 /// [`TEXT_DELETE`].
 #[cfg(feature = "runtime_build")]
-pub const WHITE_SPACE: &[&str; 27] = &[
+pub const WHITE_SPACE: &[&str] = &[
     "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}", "\u{00A0}",
     "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
     "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}", "\u{200F}", "\u{2028}", "\u{2029}",
