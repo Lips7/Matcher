@@ -7,13 +7,13 @@ from matcher_py import ProcessType, SimpleMatcher
 
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
-        SimpleMatcher(1)  # ty: ignore[invalid-argument-type]
+        SimpleMatcher(1)  # ty: ignore[invalid-argument-type, unused-ignore-comment]
     with pytest.raises(TypeError):
-        SimpleMatcher("")  # ty: ignore[invalid-argument-type]
+        SimpleMatcher("")  # ty: ignore[invalid-argument-type, unused-ignore-comment]
     with pytest.raises(TypeError):
-        SimpleMatcher([])  # ty: ignore[invalid-argument-type]
+        SimpleMatcher([])  # ty: ignore[invalid-argument-type, unused-ignore-comment]
     with pytest.raises(TypeError):
-        SimpleMatcher({})  # ty: ignore[invalid-argument-type]
+        SimpleMatcher({})  # ty: ignore[invalid-argument-type, unused-ignore-comment]
 
 
 def test_init_with_invalid_bytes():

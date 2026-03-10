@@ -26,7 +26,7 @@ def test_reduce_text_process():
 
 def test_invalid_type_raises_typeerror():
     with pytest.raises(TypeError):
-        text_process("invalid_type", "hello word")  # ty: ignore[invalid-argument-type]
+        text_process("invalid_type", "hello word")  # ty: ignore[invalid-argument-type, unused-ignore-comment]
 
     with pytest.raises(TypeError):
-        reduce_text_process([], "测试")  # ty: ignore[invalid-argument-type]
+        reduce_text_process([], "测试")  # ty: ignore[invalid-argument-type, unused-ignore-comment]
