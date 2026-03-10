@@ -11,7 +11,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::process::constants::*;
 use crate::process::multi_char_matcher::MultiCharMatcher;
-use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
+use crate::process::single_char_matcher::{
+    DeleteFindIter, FanjianFindIter, PinyinFindIter, SingleCharMatch, SingleCharMatcher,
+};
 
 const STRING_POOL_INIT_CAP: usize = 16;
 const REDUCE_STATE_INIT_CAP: usize = 16;
@@ -227,14 +229,47 @@ impl ProcessMatcher {
     #[inline(always)]
     pub fn replace_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         match self {
-            ProcessMatcher::SingleChar(matcher) => {
-                debug_assert!(!matches!(matcher, SingleCharMatcher::Delete { .. }));
-                Self::replace_scan(text, matcher.find_iter(text), |result, m| match m {
-                    SingleCharMatch::Char(c) => result.push(c),
-                    SingleCharMatch::Str(s) => result.push_str(s),
-                    SingleCharMatch::Delete => {}
-                })
-            }
+            ProcessMatcher::SingleChar(matcher) => match matcher {
+                SingleCharMatcher::Fanjian { l1, l2 } => Self::replace_scan(
+                    text,
+                    FanjianFindIter {
+                        l1,
+                        l2,
+                        text,
+                        byte_offset: 0,
+                    },
+                    |result, m| {
+                        if let SingleCharMatch::Char(c) = m {
+                            result.push(c);
+                        }
+                    },
+                ),
+                SingleCharMatcher::Pinyin {
+                    l1,
+                    l2,
+                    strings,
+                    trim_space,
+                } => Self::replace_scan(
+                    text,
+                    PinyinFindIter {
+                        l1,
+                        l2,
+                        strings,
+                        trim_space: *trim_space,
+                        text,
+                        byte_offset: 0,
+                    },
+                    |result, m| {
+                        if let SingleCharMatch::Str(s) = m {
+                            result.push_str(s);
+                        }
+                    },
+                ),
+                SingleCharMatcher::Delete { .. } => {
+                    debug_assert!(false, "replace_all called on Delete matcher");
+                    (false, Cow::Borrowed(text))
+                }
+            },
             ProcessMatcher::MultiChar(mc) => {
                 let rl = mc.replace_list();
                 Self::replace_scan(text, mc.find_iter(text), |result, idx| {
@@ -250,11 +285,19 @@ impl ProcessMatcher {
     /// `(false, Cow::Borrowed(text))` when nothing matched, avoiding any allocation.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
-        let ProcessMatcher::SingleChar(matcher @ SingleCharMatcher::Delete { .. }) = self else {
+        let ProcessMatcher::SingleChar(SingleCharMatcher::Delete { bitset }) = self else {
             debug_assert!(false, "delete_all called on non-Delete matcher");
             return (false, Cow::Borrowed(text));
         };
-        Self::replace_scan(text, matcher.find_iter(text), |_, _| {})
+        Self::replace_scan(
+            text,
+            DeleteFindIter {
+                bitset,
+                text,
+                byte_offset: 0,
+            },
+            |_, _| {},
+        )
     }
 }
 

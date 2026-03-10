@@ -1,6 +1,6 @@
 use divan::Bencher;
 use divan::counter::BytesCount;
-use matcher_rs::{ProcessType, SimpleMatcher};
+use matcher_rs::{ProcessType, SimpleMatcher, text_process};
 use std::collections::HashMap;
 use std::hint::black_box;
 
@@ -92,9 +92,8 @@ mod build {
                         DEFAULT_COMBINED_TIMES,
                         true,
                     );
-                    bencher.bench(|| {
-                        let mut simple_table = HashMap::new();
-                        simple_table.insert(process_type, simple_word_map.clone());
+                    let simple_table = HashMap::from([(process_type, simple_word_map)]);
+                    bencher.bench_local(|| {
                         let _ = black_box(SimpleMatcher::new(&simple_table));
                     });
                 }
@@ -122,9 +121,8 @@ mod build {
                         combined_times,
                         true,
                     );
-                    bencher.bench(|| {
-                        let mut simple_table = HashMap::new();
-                        simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map.clone());
+                    let simple_table = HashMap::from([(DEFAULT_PROCESS_TYPE, simple_word_map)]);
+                    bencher.bench_local(|| {
                         let _ = black_box(SimpleMatcher::new(&simple_table));
                     });
                 }
@@ -239,6 +237,40 @@ mod is_match_no_match {
 
     define_search_bench!(CN, false, is_match);
     define_search_bench!(EN, false, is_match);
+}
+
+mod text_process {
+    use super::*;
+
+    const PROCESS_TYPES: &[ProcessType] = &[
+        ProcessType::Fanjian,
+        ProcessType::Delete,
+        ProcessType::Normalize,
+        ProcessType::PinYin,
+        ProcessType::PinYinChar,
+    ];
+
+    #[divan::bench(args = PROCESS_TYPES, max_time = 5)]
+    fn cn(bencher: Bencher, process_type: ProcessType) {
+        let haystack = CN_HAYSTACK;
+        let total_bytes = haystack.len();
+        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(text_process(process_type, line));
+            }
+        });
+    }
+
+    #[divan::bench(args = PROCESS_TYPES, max_time = 5)]
+    fn en(bencher: Bencher, process_type: ProcessType) {
+        let haystack = EN_HAYSTACK;
+        let total_bytes = haystack.len();
+        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(text_process(process_type, line));
+            }
+        });
+    }
 }
 
 fn main() {

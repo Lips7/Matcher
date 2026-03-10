@@ -63,6 +63,155 @@ pub enum SingleCharMatch<'a> {
     Delete,
 }
 
+/// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
+#[inline(always)]
+fn page_table_lookup(cp: u32, l1: &[u8], l2: &[u8]) -> Option<u32> {
+    let page_idx = (cp >> 8) as usize;
+    let char_idx = (cp & 0xFF) as usize;
+    if page_idx * 2 + 1 >= l1.len() {
+        return None;
+    }
+    let page = u16::from_le_bytes(l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap()) as usize;
+    if page == 0 {
+        return None;
+    }
+    let l2_idx = page * 256 + char_idx;
+    let val = u32::from_le_bytes(l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap());
+    if val != 0 { Some(val) } else { None }
+}
+
+/// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
+pub struct FanjianFindIter<'a> {
+    pub(crate) l1: &'a [u8],
+    pub(crate) l2: &'a [u8],
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
+}
+
+impl<'a> Iterator for FanjianFindIter<'a> {
+    type Item = (usize, usize, SingleCharMatch<'a>);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+
+        // Fast-skip: advance past full ASCII chunks (all bytes < 0x80).
+        // [u8]::is_ascii() uses word-at-a-time checks in std.
+        const CHUNK: usize = 64;
+        while self.byte_offset + CHUNK <= bytes.len() {
+            if bytes[self.byte_offset..self.byte_offset + CHUNK].is_ascii() {
+                self.byte_offset += CHUNK;
+            } else {
+                break;
+            }
+        }
+
+        let text = &self.text[self.byte_offset..];
+        for (i, c) in text.char_indices() {
+            let cp = c as u32;
+            let start = self.byte_offset + i;
+            let end = start + c.len_utf8();
+
+            if cp < 0x80 {
+                continue;
+            }
+            if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2) {
+                let mapped = char::from_u32(mapped_cp).unwrap_or(c);
+                if mapped != c {
+                    self.byte_offset = end;
+                    return Some((start, end, SingleCharMatch::Char(mapped)));
+                }
+            }
+        }
+        self.byte_offset = self.text.len();
+        None
+    }
+}
+
+/// Monomorphized iterator for Delete (bitset-based character removal).
+pub struct DeleteFindIter<'a> {
+    pub(crate) bitset: &'a [u8],
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
+}
+
+impl<'a> Iterator for DeleteFindIter<'a> {
+    type Item = (usize, usize, SingleCharMatch<'a>);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let text = &self.text[self.byte_offset..];
+        for (i, c) in text.char_indices() {
+            let cp = c as u32 as usize;
+            let start = self.byte_offset + i;
+            let end = start + c.len_utf8();
+
+            if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+                self.byte_offset = end;
+                return Some((start, end, SingleCharMatch::Delete));
+            }
+        }
+        self.byte_offset = self.text.len();
+        None
+    }
+}
+
+/// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
+pub struct PinyinFindIter<'a> {
+    pub(crate) l1: &'a [u8],
+    pub(crate) l2: &'a [u8],
+    pub(crate) strings: &'a str,
+    pub(crate) trim_space: bool,
+    pub(crate) text: &'a str,
+    pub(crate) byte_offset: usize,
+}
+
+impl<'a> Iterator for PinyinFindIter<'a> {
+    type Item = (usize, usize, SingleCharMatch<'a>);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+
+        // Fast-skip: advance past full ASCII chunks that contain no digits.
+        // Digits (0x30-0x39) may have Pinyin mappings, so we cannot skip them.
+        const CHUNK: usize = 64;
+        while self.byte_offset + CHUNK <= bytes.len() {
+            let chunk = &bytes[self.byte_offset..self.byte_offset + CHUNK];
+            if chunk.is_ascii() && !chunk.iter().any(|&b| b.is_ascii_digit()) {
+                self.byte_offset += CHUNK;
+            } else {
+                break;
+            }
+        }
+
+        let text = &self.text[self.byte_offset..];
+        for (i, c) in text.char_indices() {
+            let cp = c as u32;
+            let start = self.byte_offset + i;
+            let end = start + c.len_utf8();
+
+            if cp < 0x80 && !c.is_ascii_digit() {
+                continue;
+            }
+            if let Some(val) = page_table_lookup(cp, self.l1, self.l2) {
+                let offset = (val >> 8) as usize;
+                let len = (val & 0xFF) as usize;
+                if offset + len <= self.strings.len() {
+                    let mut s = &self.strings[offset..offset + len];
+                    if self.trim_space {
+                        s = s.trim();
+                    }
+                    self.byte_offset = end;
+                    return Some((start, end, SingleCharMatch::Str(s)));
+                }
+            }
+        }
+        self.byte_offset = self.text.len();
+        None
+    }
+}
+
 /// An iterator over single-character matches in a text string.
 ///
 /// Scans `text` character-by-character, yielding `(start, end, `[`SingleCharMatch`]`)` tuples
@@ -85,23 +234,6 @@ impl<'a> SingleCharFindIter<'a> {
     }
 }
 
-/// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
-#[inline(always)]
-fn page_table_lookup(cp: u32, l1: &[u8], l2: &[u8]) -> Option<u32> {
-    let page_idx = (cp >> 8) as usize;
-    let char_idx = (cp & 0xFF) as usize;
-    if page_idx * 2 + 1 >= l1.len() {
-        return None;
-    }
-    let page = u16::from_le_bytes(l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap()) as usize;
-    if page == 0 {
-        return None;
-    }
-    let l2_idx = page * 256 + char_idx;
-    let val = u32::from_le_bytes(l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap());
-    if val != 0 { Some(val) } else { None }
-}
-
 impl<'a> Iterator for SingleCharFindIter<'a> {
     type Item = (usize, usize, SingleCharMatch<'a>);
 
@@ -115,7 +247,6 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
 
             match self.matcher {
                 SingleCharMatcher::Fanjian { l1, l2 } => {
-                    // Fanjian only maps CJK codepoints (U+4E00+); all ASCII is unchanged.
                     if cp < 0x80 {
                         continue;
                     }
@@ -133,7 +264,6 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                     strings,
                     trim_space,
                 } => {
-                    // Pinyin maps CJK codepoints and ASCII digits (0-9).
                     if cp < 0x80 && !c.is_ascii_digit() {
                         continue;
                     }
@@ -174,6 +304,52 @@ impl SingleCharMatcher {
     #[inline(always)]
     pub fn find_iter<'a>(&'a self, text: &'a str) -> SingleCharFindIter<'a> {
         SingleCharFindIter::new(self, text)
+    }
+
+    #[inline(always)]
+    pub fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
+        let SingleCharMatcher::Fanjian { l1, l2 } = self else {
+            panic!("fanjian_iter called on non-Fanjian matcher");
+        };
+        FanjianFindIter {
+            l1,
+            l2,
+            text,
+            byte_offset: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
+        let SingleCharMatcher::Delete { bitset } = self else {
+            panic!("delete_iter called on non-Delete matcher");
+        };
+        DeleteFindIter {
+            bitset,
+            text,
+            byte_offset: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinyinFindIter<'a> {
+        let SingleCharMatcher::Pinyin {
+            l1,
+            l2,
+            strings,
+            trim_space,
+        } = self
+        else {
+            panic!("pinyin_iter called on non-Pinyin matcher");
+        };
+        PinyinFindIter {
+            l1,
+            l2,
+            strings,
+            trim_space: *trim_space,
+            text,
+            byte_offset: 0,
+        }
     }
 
     pub fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
