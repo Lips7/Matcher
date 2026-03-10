@@ -1,4 +1,8 @@
 use std::borrow::Cow;
+#[cfg(feature = "runtime_build")]
+use std::collections::HashMap;
+#[cfg(feature = "runtime_build")]
+use std::collections::HashSet;
 
 /// Single-character lookup engine backed by compact, pre-compiled data structures.
 ///
@@ -53,10 +57,6 @@ pub enum SingleCharMatcher {
 }
 
 /// The transformation to apply to a matched codepoint, yielded by [`SingleCharFindIter`].
-///
-/// * `Char(char)` — replace the source codepoint with a single character (Fanjian).
-/// * `Str(&str)` — replace the source codepoint with a string slice (Pinyin).
-/// * `Delete` — remove the source codepoint entirely (Delete).
 pub enum SingleCharMatch<'a> {
     Char(char),
     Str(&'a str),
@@ -75,11 +75,6 @@ pub struct SingleCharFindIter<'a> {
 }
 
 impl<'a> SingleCharFindIter<'a> {
-    /// Creates a new [`SingleCharFindIter`] anchored at the start of `text`.
-    ///
-    /// # Arguments
-    /// * `matcher` - The [`SingleCharMatcher`] that defines the transformation to apply.
-    /// * `text` - The input string to scan.
     #[inline(always)]
     pub fn new(matcher: &'a SingleCharMatcher, text: &'a str) -> Self {
         Self {
@@ -90,17 +85,26 @@ impl<'a> SingleCharFindIter<'a> {
     }
 }
 
+/// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
+#[inline(always)]
+fn page_table_lookup(cp: u32, l1: &[u8], l2: &[u8]) -> Option<u32> {
+    let page_idx = (cp >> 8) as usize;
+    let char_idx = (cp & 0xFF) as usize;
+    if page_idx * 2 + 1 >= l1.len() {
+        return None;
+    }
+    let page = u16::from_le_bytes(l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap()) as usize;
+    if page == 0 {
+        return None;
+    }
+    let l2_idx = page * 256 + char_idx;
+    let val = u32::from_le_bytes(l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap());
+    if val != 0 { Some(val) } else { None }
+}
+
 impl<'a> Iterator for SingleCharFindIter<'a> {
     type Item = (usize, usize, SingleCharMatch<'a>);
 
-    /// Advances the iterator to the next matching codepoint.
-    ///
-    /// Resumes scanning from where the previous call left off. For each character
-    /// that the underlying [`SingleCharMatcher`] maps to a transformation, the
-    /// iterator yields `(start_byte, end_byte, match)` and suspends; characters
-    /// with no mapping are skipped silently.
-    ///
-    /// Returns [`None`] when the end of the text is reached.
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let text = &self.text[self.byte_offset..];
@@ -115,24 +119,11 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                     if cp < 0x80 {
                         continue;
                     }
-                    let page_idx = (cp >> 8) as usize;
-                    let char_idx = (cp & 0xFF) as usize;
-                    if page_idx * 2 + 1 < l1.len() {
-                        let page = u16::from_le_bytes(
-                            l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                        ) as usize;
-                        if page != 0 {
-                            let l2_idx = page * 256 + char_idx;
-                            let mapped_cp = u32::from_le_bytes(
-                                l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                            );
-                            if mapped_cp != 0 {
-                                let mapped = char::from_u32(mapped_cp).unwrap_or(c);
-                                if mapped != c {
-                                    self.byte_offset = end;
-                                    return Some((start, end, SingleCharMatch::Char(mapped)));
-                                }
-                            }
+                    if let Some(mapped_cp) = page_table_lookup(cp, l1, l2) {
+                        let mapped = char::from_u32(mapped_cp).unwrap_or(c);
+                        if mapped != c {
+                            self.byte_offset = end;
+                            return Some((start, end, SingleCharMatch::Char(mapped)));
                         }
                     }
                 }
@@ -146,29 +137,16 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                     if cp < 0x80 && !c.is_ascii_digit() {
                         continue;
                     }
-                    let page_idx = (cp >> 8) as usize;
-                    let char_idx = (cp & 0xFF) as usize;
-                    if page_idx * 2 + 1 < l1.len() {
-                        let page = u16::from_le_bytes(
-                            l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap(),
-                        ) as usize;
-                        if page != 0 {
-                            let l2_idx = page * 256 + char_idx;
-                            let val = u32::from_le_bytes(
-                                l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap(),
-                            );
-                            if val != 0 {
-                                let offset = (val >> 8) as usize;
-                                let len = (val & 0xFF) as usize;
-                                if offset + len <= strings.len() {
-                                    let mut s = &strings[offset..offset + len];
-                                    if *trim_space {
-                                        s = s.trim();
-                                    }
-                                    self.byte_offset = end;
-                                    return Some((start, end, SingleCharMatch::Str(s)));
-                                }
+                    if let Some(val) = page_table_lookup(cp, l1, l2) {
+                        let offset = (val >> 8) as usize;
+                        let len = (val & 0xFF) as usize;
+                        if offset + len <= strings.len() {
+                            let mut s = &strings[offset..offset + len];
+                            if *trim_space {
+                                s = s.trim();
                             }
+                            self.byte_offset = end;
+                            return Some((start, end, SingleCharMatch::Str(s)));
                         }
                     }
                 }
@@ -196,5 +174,111 @@ impl SingleCharMatcher {
     #[inline(always)]
     pub fn find_iter<'a>(&'a self, text: &'a str) -> SingleCharFindIter<'a> {
         SingleCharFindIter::new(self, text)
+    }
+
+    pub fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
+        SingleCharMatcher::Fanjian { l1, l2 }
+    }
+
+    pub fn delete(bitset: Cow<'static, [u8]>) -> Self {
+        SingleCharMatcher::Delete { bitset }
+    }
+
+    pub fn pinyin(
+        l1: Cow<'static, [u8]>,
+        l2: Cow<'static, [u8]>,
+        strings: Cow<'static, str>,
+        trim_space: bool,
+    ) -> Self {
+        SingleCharMatcher::Pinyin {
+            l1,
+            l2,
+            strings,
+            trim_space,
+        }
+    }
+
+    /// Converts a codepoint→value map into a 2-stage page-table byte representation.
+    ///
+    /// Returns `(l1_bytes, l2_bytes)`. L1 is a `u16[4352]` array (one entry per
+    /// 256-codepoint block); non-zero entries index into L2. L2 stores the `u32`
+    /// values for each mapped codepoint.
+    #[cfg(feature = "runtime_build")]
+    fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u8>, Vec<u8>) {
+        let mut pages: HashSet<u32> = map.keys().map(|&k| k >> 8).collect();
+        let mut page_list: Vec<u32> = pages.drain().collect();
+        page_list.sort_unstable();
+        let mut l1 = vec![0u16; 4352];
+        let mut l2 = vec![0u32; (page_list.len() + 1) * 256];
+        for (i, &page) in page_list.iter().enumerate() {
+            let l2_page_idx = (i + 1) as u16;
+            l1[page as usize] = l2_page_idx;
+            for char_idx in 0..256u32 {
+                let cp = (page << 8) | char_idx;
+                if let Some(&val) = map.get(&cp) {
+                    l2[(l2_page_idx as usize * 256) + char_idx as usize] = val;
+                }
+            }
+        }
+        let mut l1_bytes = Vec::with_capacity(l1.len() * 2);
+        for val in l1 {
+            l1_bytes.extend_from_slice(&val.to_le_bytes());
+        }
+        let mut l2_bytes = Vec::with_capacity(l2.len() * 4);
+        for val in l2 {
+            l2_bytes.extend_from_slice(&val.to_le_bytes());
+        }
+        (l1_bytes, l2_bytes)
+    }
+
+    /// Builds a Fanjian matcher from a codepoint→codepoint map.
+    #[cfg(feature = "runtime_build")]
+    pub fn fanjian_from_map(map: HashMap<u32, u32>) -> Self {
+        let (l1, l2) = Self::build_2_stage_table(&map);
+        Self::fanjian(Cow::Owned(l1), Cow::Owned(l2))
+    }
+
+    /// Builds a Delete matcher from text source and whitespace list.
+    #[cfg(feature = "runtime_build")]
+    pub fn delete_from_sources(text_delete: &str, white_space: &[&str]) -> Self {
+        let mut bitset = vec![0u8; 139264];
+        for line in text_delete.trim().lines() {
+            for c in line.chars() {
+                let cp = c as usize;
+                bitset[cp / 8] |= 1 << (cp % 8);
+            }
+        }
+        for &ws in white_space {
+            for c in ws.chars() {
+                let cp = c as usize;
+                bitset[cp / 8] |= 1 << (cp % 8);
+            }
+        }
+        Self::delete(Cow::Owned(bitset))
+    }
+
+    /// Builds a Pinyin matcher from a codepoint→syllable map.
+    ///
+    /// The constructor packs each syllable into a shared strings buffer and
+    /// records `(offset, length)` as the L2 value.
+    #[cfg(feature = "runtime_build")]
+    pub fn pinyin_from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
+        let mut strings = String::new();
+        let packed: HashMap<u32, u32> = map
+            .into_iter()
+            .map(|(k, v)| {
+                let offset = strings.len() as u32;
+                let length = v.len() as u32;
+                strings.push_str(v);
+                (k, (offset << 8) | length)
+            })
+            .collect();
+        let (l1, l2) = Self::build_2_stage_table(&packed);
+        Self::pinyin(
+            Cow::Owned(l1),
+            Cow::Owned(l2),
+            Cow::Owned(strings),
+            trim_space,
+        )
     }
 }
