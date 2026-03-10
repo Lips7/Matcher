@@ -589,6 +589,31 @@ impl SimpleMatcher {
         }
     }
 
+    /// Returns `true` if all AND sub-patterns of `word_conf` have been satisfied.
+    ///
+    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 unique AND
+    /// sub-patterns); falls back to scanning the flat counter matrix otherwise.
+    #[inline(always)]
+    fn is_rule_satisfied(
+        word_conf: &WordConfHot,
+        word_states: &[WordState],
+        matrix: &[TinyVec<[i32; 16]>],
+        word_conf_idx: usize,
+        processed_times: usize,
+    ) -> bool {
+        let expected_mask = word_conf.expected_mask;
+        if expected_mask > 0 {
+            return word_states[word_conf_idx].satisfied_mask == expected_mask;
+        }
+        let num_splits = word_conf.num_splits as usize;
+        let flat_matrix = &matrix[word_conf_idx];
+        (0..num_splits).all(|s| {
+            flat_matrix[s * processed_times..(s + 1) * processed_times]
+                .iter()
+                .any(|&bit| bit <= 0)
+        })
+    }
+
     /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
     /// Looks up all [`WordConfEntry`] records for `pattern_idx`, skipping any rule whose
@@ -667,7 +692,7 @@ impl SimpleMatcher {
                     state.word_states[word_conf_idx].not_generation = generation;
                 }
 
-                is_rule_satisfied(
+                Self::is_rule_satisfied(
                     word_conf,
                     &state.word_states,
                     &state.matrix,
@@ -785,7 +810,7 @@ impl SimpleMatcher {
                     return false;
                 }
                 let word_conf = &self.word_conf_hot[word_conf_idx];
-                is_rule_satisfied(
+                Self::is_rule_satisfied(
                     word_conf,
                     &state.word_states,
                     &state.matrix,
@@ -846,7 +871,7 @@ impl SimpleMatcher {
                 if state.word_states[word_conf_idx].not_generation == generation {
                     continue;
                 }
-                if is_rule_satisfied(
+                if Self::is_rule_satisfied(
                     &self.word_conf_hot[word_conf_idx],
                     &state.word_states,
                     &state.matrix,
@@ -862,29 +887,4 @@ impl SimpleMatcher {
             }
         });
     }
-}
-
-/// Returns `true` if all AND sub-patterns of `word_conf` have been satisfied.
-///
-/// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 unique AND
-/// sub-patterns); falls back to scanning the flat counter matrix otherwise.
-#[inline(always)]
-fn is_rule_satisfied(
-    word_conf: &WordConfHot,
-    word_states: &[WordState],
-    matrix: &[TinyVec<[i32; 16]>],
-    word_conf_idx: usize,
-    processed_times: usize,
-) -> bool {
-    let expected_mask = word_conf.expected_mask;
-    if expected_mask > 0 {
-        return word_states[word_conf_idx].satisfied_mask == expected_mask;
-    }
-    let num_splits = word_conf.num_splits as usize;
-    let flat_matrix = &matrix[word_conf_idx];
-    (0..num_splits).all(|s| {
-        flat_matrix[s * processed_times..(s + 1) * processed_times]
-            .iter()
-            .any(|&bit| bit <= 0)
-    })
 }
