@@ -14,16 +14,31 @@ use crate::process::multi_char_matcher::MultiCharMatcher;
 use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 
 const STRING_POOL_INIT_CAP: usize = 16;
-const TREE_NODE_INDICES_INIT_CAP: usize = 16;
 const MASKS_POOL_INIT_CAP: usize = 4;
 const STRING_POOL_MAX: usize = 128;
 const MASKS_POOL_MAX: usize = 16;
 
+/// Combined thread-local state for `TREE_NODE_INDICES` and `MASKS_POOL`.
+///
+/// Merging into a single `thread_local!` eliminates one TLS lookup (~5ns) per
+/// `reduce_text_process_with_tree` call.
+struct TransformThreadState {
+    tree_node_indices: Vec<usize>,
+    masks_pool: Vec<ProcessedTextMasks<'static>>,
+}
+
+impl TransformThreadState {
+    fn new() -> Self {
+        Self {
+            tree_node_indices: Vec::with_capacity(16),
+            masks_pool: Vec::with_capacity(MASKS_POOL_INIT_CAP),
+        }
+    }
+}
+
 thread_local! {
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(STRING_POOL_INIT_CAP));
-    static TREE_NODE_INDICES: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(TREE_NODE_INDICES_INIT_CAP));
-    static MASKS_POOL: RefCell<Vec<ProcessedTextMasks<'static>>> =
-        RefCell::new(Vec::with_capacity(MASKS_POOL_INIT_CAP));
+    static TRANSFORM_STATE: RefCell<TransformThreadState> = RefCell::new(TransformThreadState::new());
 }
 
 /// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
@@ -62,10 +77,10 @@ pub fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
     // Transmuting the empty Vec's element lifetime to 'static is sound because an empty
     // Vec holds no values and the memory layout of Cow<'_, str> is lifetime-independent.
     let empty: ProcessedTextMasks<'static> = unsafe { std::mem::transmute(text_masks) };
-    MASKS_POOL.with(|pool| {
-        let mut pool = pool.borrow_mut();
-        if pool.len() < MASKS_POOL_MAX {
-            pool.push(empty);
+    TRANSFORM_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.masks_pool.len() < MASKS_POOL_MAX {
+            state.masks_pool.push(empty);
         }
     });
 }
@@ -520,11 +535,14 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 /// its parent. The `process_type_list` records which composite [`ProcessType`] values
 /// "arrive" at this node (i.e. terminate here), so the traversal can tag output text
 /// variants with the correct bitmask. `children` holds flat-array indices of the next steps.
+/// `folded_mask` is the pre-computed OR of `1u64 << pt.bits()` for all entries in
+/// `process_type_list`, avoiding the per-call fold in the hot traversal loop.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
     process_type_bit: ProcessType,
     children: Vec<usize>,
+    folded_mask: u64,
 }
 
 /// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
@@ -544,6 +562,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         children: Vec::new(),
+        folded_mask: 0,
     };
     process_type_tree.push(root);
     for &process_type in process_type_set.iter() {
@@ -568,8 +587,10 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                     process_type_list: Vec::new(),
                     process_type_bit,
                     children: Vec::new(),
+                    folded_mask: 0,
                 };
                 child.process_type_list.push(process_type);
+                child.folded_mask |= 1u64 << process_type.bits();
                 process_type_tree.push(child);
                 let new_node_index = process_type_tree.len() - 1;
                 process_type_tree[current_node_index]
@@ -580,6 +601,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                 process_type_tree[current_node_index]
                     .process_type_list
                     .push(process_type);
+                process_type_tree[current_node_index].folded_mask |= 1u64 << process_type.bits();
             }
         }
     }
@@ -633,12 +655,13 @@ pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
 ) -> ProcessedTextMasks<'a> {
-    TREE_NODE_INDICES.with(|state| {
-        let mut node_indices = state.borrow_mut();
-        node_indices.clear();
-        node_indices.resize(process_type_tree.len(), 0);
+    TRANSFORM_STATE.with(|state| {
+        let mut ts = state.borrow_mut();
 
-        let pooled: Option<ProcessedTextMasks<'static>> = MASKS_POOL.with(|p| p.borrow_mut().pop());
+        ts.tree_node_indices.clear();
+        ts.tree_node_indices.resize(process_type_tree.len(), 0);
+
+        let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
         // Safety: pool holds empty Vecs with no live borrows; transmuting from
         // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
         let mut text_masks: ProcessedTextMasks<'a> =
@@ -647,7 +670,7 @@ pub fn reduce_text_process_with_tree<'a>(
         text_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
 
         for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-            let current_index = node_indices[current_node_index];
+            let current_index = ts.tree_node_indices[current_node_index];
 
             for &child_node_index in &current_node.children {
                 let child_node = &process_type_tree[child_node_index];
@@ -672,12 +695,8 @@ pub fn reduce_text_process_with_tree<'a>(
                 };
                 let child_index = dedup_insert(&mut text_masks, current_index, changed);
 
-                node_indices[child_node_index] = child_index;
-                let entry = &mut text_masks[child_index];
-                entry.1 |= child_node
-                    .process_type_list
-                    .iter()
-                    .fold(0u64, |mask, pt| mask | (1u64 << pt.bits()));
+                ts.tree_node_indices[child_node_index] = child_index;
+                text_masks[child_index].1 |= child_node.folded_mask;
             }
         }
 

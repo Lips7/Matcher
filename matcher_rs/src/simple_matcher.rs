@@ -28,10 +28,14 @@ const BITMASK_CAPACITY: usize = 64;
 /// * `not_generation` — set to the current generation when a NOT sub-pattern fires,
 ///   permanently disqualifying this rule for the remainder of the search.
 /// * `satisfied_mask` — bitmask of AND sub-patterns (up to 64) satisfied so far.
+/// * `satisfied_generation` — set to the current generation when the rule is fully
+///   satisfied (bitmask fast-path only, rules without NOT segments). Enables a
+///   single-comparison skip in `process_match` instead of a 4-condition check.
 #[derive(Default, Clone, Copy)]
 struct WordState {
     matrix_generation: u32,
     not_generation: u32,
+    satisfied_generation: u32,
     satisfied_mask: u64,
 }
 
@@ -148,12 +152,11 @@ pub struct SimpleResult<'a> {
     pub word: Cow<'a, str>,
 }
 
-/// Compiled configuration for a single pattern rule, derived from parsing `&`/`~` operators.
+/// Hot match-evaluation fields for a single pattern rule, accessed during Pass 1.
 ///
-/// Produced once during [`SimpleMatcher::new`] and stored in `word_conf_list`.
+/// Kept separate from [`WordConfCold`] so that the hot data fits in fewer cache lines
+/// when scanning large rule sets.
 ///
-/// * `word_id` — caller-assigned identifier returned in [`SimpleResult`].
-/// * `word` — the original pattern string (stored for inclusion in results).
 /// * `split_bit` — per-sub-pattern counters. Indices `0..not_offset` are AND segments
 ///   (initial value +1, decremented toward ≤0 to signal satisfaction); indices
 ///   `not_offset..` are NOT segments (initial value 0, incremented toward >0 to signal
@@ -163,14 +166,24 @@ pub struct SimpleResult<'a> {
 ///   when `not_offset ≤ 64` and all AND segments appear exactly once (the common, fast case).
 /// * `use_matrix` — `true` when the rule requires the full counter matrix (>64 segments,
 ///   repeated sub-patterns across `&`-splits, or a non-trivial NOT pattern).
+/// * `num_splits` — `split_bit.len()` cached to avoid pointer chasing.
 #[derive(Debug, Clone)]
-struct WordConf {
-    word_id: u32,
-    word: String,
+struct WordConfHot {
     split_bit: Vec<i32>,
     not_offset: usize,
     expected_mask: u64,
     use_matrix: bool,
+    num_splits: u16,
+}
+
+/// Cold result-construction fields for a single pattern rule, accessed only in Pass 2.
+///
+/// * `word_id` — caller-assigned identifier returned in [`SimpleResult`].
+/// * `word` — the original pattern string (stored for inclusion in results).
+#[derive(Debug, Clone)]
+struct WordConfCold {
+    word_id: u32,
+    word: String,
 }
 
 /// Links a deduplicated automaton pattern back to the rule and sub-pattern it belongs to.
@@ -180,7 +193,7 @@ struct WordConf {
 ///
 /// * `process_type_mask` — bitmask of [`ProcessType`] bits that produced this pattern;
 ///   used to discard hits from text variants that don't match the rule's pipeline.
-/// * `word_conf_idx` — index into `word_conf_list` identifying the owning rule.
+/// * `word_conf_idx` — index into `word_conf_hot`/`word_conf_cold` identifying the owning rule.
 /// * `offset` — index into `split_bit` of the owning [`WordConf`]; identifies which
 ///   AND or NOT sub-pattern was matched.
 #[derive(Debug, Clone)]
@@ -265,7 +278,8 @@ pub struct SimpleMatcher {
     ac_matcher: AcMatcher,
     ac_dedup_entries: Vec<WordConfEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
-    word_conf_list: Vec<WordConf>,
+    word_conf_hot: Vec<WordConfHot>,
+    word_conf_cold: Vec<WordConfCold>,
 }
 
 impl SimpleMatcher {
@@ -298,7 +312,8 @@ impl SimpleMatcher {
         let mut process_type_set: HashSet<ProcessType> =
             HashSet::with_capacity(process_type_word_map.len());
         let mut dedup_entries: Vec<Vec<WordConfEntry>> = Vec::with_capacity(word_size);
-        let mut word_conf_list: Vec<WordConf> = Vec::with_capacity(word_size);
+        let mut word_conf_hot: Vec<WordConfHot> = Vec::with_capacity(word_size);
+        let mut word_conf_cold: Vec<WordConfCold> = Vec::with_capacity(word_size);
         let mut word_id_to_idx: HashMap<(ProcessType, u32), usize> =
             HashMap::with_capacity(word_size);
 
@@ -357,6 +372,7 @@ impl SimpleMatcher {
                     0
                 };
 
+                let num_splits = split_bit.len() as u16;
                 let use_matrix = not_offset > BITMASK_CAPACITY
                     || split_bit.len() > BITMASK_CAPACITY
                     || split_bit[..not_offset].iter().any(|&v| v != 1)
@@ -365,25 +381,31 @@ impl SimpleMatcher {
                 let word_conf_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
                 {
-                    word_conf_list[existing_idx] = WordConf {
-                        word_id: simple_word_id,
-                        word: simple_word.as_ref().to_owned(),
+                    word_conf_hot[existing_idx] = WordConfHot {
                         split_bit,
                         not_offset,
                         expected_mask,
                         use_matrix,
+                        num_splits,
+                    };
+                    word_conf_cold[existing_idx] = WordConfCold {
+                        word_id: simple_word_id,
+                        word: simple_word.as_ref().to_owned(),
                     };
                     existing_idx
                 } else {
-                    let idx = word_conf_list.len();
+                    let idx = word_conf_hot.len();
                     word_id_to_idx.insert((process_type, simple_word_id), idx);
-                    word_conf_list.push(WordConf {
-                        word_id: simple_word_id,
-                        word: simple_word.as_ref().to_owned(),
+                    word_conf_hot.push(WordConfHot {
                         split_bit,
                         not_offset,
                         expected_mask,
                         use_matrix,
+                        num_splits,
+                    });
+                    word_conf_cold.push(WordConfCold {
+                        word_id: simple_word_id,
+                        word: simple_word.as_ref().to_owned(),
                     });
                     idx
                 };
@@ -459,7 +481,8 @@ impl SimpleMatcher {
             ac_matcher,
             ac_dedup_entries,
             ac_dedup_ranges,
-            word_conf_list,
+            word_conf_hot,
+            word_conf_cold,
         }
     }
 
@@ -545,6 +568,27 @@ impl SimpleMatcher {
         false
     }
 
+    /// Initializes the flat counter matrix for a rule on its first touch in a generation.
+    ///
+    /// Marked `#[cold]` because the matrix path is rare (rules with >64 segments or
+    /// repeated sub-patterns). Extracting it helps the compiler optimize the common
+    /// bitmask fast-path layout in `process_match`.
+    #[cold]
+    #[inline(never)]
+    fn init_matrix(
+        flat_matrix: &mut TinyVec<[i32; 16]>,
+        split_bit: &[i32],
+        processed_times: usize,
+    ) {
+        let num_splits = split_bit.len();
+        flat_matrix.clear();
+        flat_matrix.resize(num_splits * processed_times, 0i32);
+        for (s, &bit) in split_bit.iter().enumerate() {
+            let row_start = s * processed_times;
+            flat_matrix[row_start..row_start + processed_times].fill(bit);
+        }
+    }
+
     /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
     /// Looks up all [`WordConfEntry`] records for `pattern_idx`, skipping any rule whose
@@ -583,13 +627,9 @@ impl SimpleMatcher {
                 continue;
             }
 
-            let word_conf = &self.word_conf_list[word_conf_idx];
+            let word_conf = &self.word_conf_hot[word_conf_idx];
 
-            if state.word_states[word_conf_idx].matrix_generation == generation
-                && word_conf.expected_mask > 0
-                && word_conf.not_offset == word_conf.split_bit.len()
-                && state.word_states[word_conf_idx].satisfied_mask == word_conf.expected_mask
-            {
+            if state.word_states[word_conf_idx].satisfied_generation == generation {
                 if exit_early {
                     return true;
                 }
@@ -602,14 +642,11 @@ impl SimpleMatcher {
                 state.word_states[word_conf_idx].satisfied_mask = 0;
 
                 if word_conf.use_matrix {
-                    let num_splits = word_conf.split_bit.len();
-                    let flat_matrix = &mut state.matrix[word_conf_idx];
-                    flat_matrix.clear();
-                    flat_matrix.resize(num_splits * processed_times, 0i32);
-                    for (s, &bit) in word_conf.split_bit.iter().enumerate() {
-                        let row_start = s * processed_times;
-                        flat_matrix[row_start..row_start + processed_times].fill(bit);
-                    }
+                    Self::init_matrix(
+                        &mut state.matrix[word_conf_idx],
+                        &word_conf.split_bit,
+                        processed_times,
+                    );
                 }
             }
 
@@ -642,7 +679,11 @@ impl SimpleMatcher {
                     state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                 }
                 let expected_mask = word_conf.expected_mask;
-                state.word_states[word_conf_idx].satisfied_mask == expected_mask
+                let satisfied = state.word_states[word_conf_idx].satisfied_mask == expected_mask;
+                if satisfied && word_conf.not_offset == word_conf.num_splits as usize {
+                    state.word_states[word_conf_idx].satisfied_generation = generation;
+                }
+                satisfied
             } else {
                 state.word_states[word_conf_idx].not_generation = generation;
                 false
@@ -650,7 +691,7 @@ impl SimpleMatcher {
 
             if exit_early
                 && is_satisfied
-                && word_conf.not_offset == word_conf.split_bit.len()
+                && word_conf.not_offset == word_conf.num_splits as usize
                 && state.word_states[word_conf_idx].not_generation != generation
             {
                 return true;
@@ -713,18 +754,9 @@ impl SimpleMatcher {
     /// assert_eq!(results.len(), 2);
     /// ```
     pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
-        if text.is_empty() {
-            return Vec::new();
-        }
-
-        let processed_text_process_type_masks =
-            reduce_text_process_with_tree(&self.process_type_tree, text);
-
-        let result = self.process_preprocessed(&processed_text_process_type_masks);
-
-        return_processed_string_to_pool(processed_text_process_type_masks);
-
-        result
+        let mut results = Vec::new();
+        self.process_into(text, &mut results);
+        results
     }
 
     /// Pass 2 (boolean): runs Pass 1 then checks touched rules for any full match.
@@ -739,7 +771,7 @@ impl SimpleMatcher {
     ) -> bool {
         SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_list.len());
+            state.prepare(self.word_conf_hot.len());
 
             if self.scan_all_variants(processed_text_process_type_masks, &mut state, true) {
                 return true;
@@ -752,7 +784,7 @@ impl SimpleMatcher {
                 if state.word_states[word_conf_idx].not_generation == generation {
                     return false;
                 }
-                let word_conf = &self.word_conf_list[word_conf_idx];
+                let word_conf = &self.word_conf_hot[word_conf_idx];
                 is_rule_satisfied(
                     word_conf,
                     &state.word_states,
@@ -764,45 +796,71 @@ impl SimpleMatcher {
         })
     }
 
-    /// Pass 2 (collect): runs Pass 1 then returns all satisfied rules as [`SimpleResult`]s.
+    /// Appends all patterns that match `text` to `results`.
     ///
-    /// Same evaluation logic as `is_match_preprocessed` but collects all matches
-    /// instead of short-circuiting on the first.
-    fn process_preprocessed<'a>(
+    /// Like [`process`](Self::process) but reuses a caller-supplied buffer, avoiding a
+    /// `Vec` allocation per call. Useful in high-throughput loops where the caller can
+    /// clear and reuse the same `Vec` across iterations.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, SimpleResult};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "apple")
+    ///     .build();
+    ///
+    /// let mut results: Vec<SimpleResult> = Vec::new();
+    /// matcher.process_into("I have an apple", &mut results);
+    /// assert_eq!(results.len(), 1);
+    /// ```
+    pub fn process_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
+        if text.is_empty() {
+            return;
+        }
+        let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
+        self.process_preprocessed_into(&processed, results);
+        return_processed_string_to_pool(processed);
+    }
+
+    /// Pass 2 (collect into): runs Pass 1 then appends all satisfied rules to `results`.
+    ///
+    /// Same evaluation logic as `is_match_preprocessed` but appends every satisfied rule
+    /// to the caller-supplied buffer instead of allocating a new `Vec`.
+    fn process_preprocessed_into<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-    ) -> Vec<SimpleResult<'a>> {
+        results: &mut Vec<SimpleResult<'a>>,
+    ) {
         SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_list.len());
+            state.prepare(self.word_conf_hot.len());
 
             self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
 
             let generation = state.generation;
             let processed_times = processed_text_process_type_masks.len();
 
-            state
-                .touched_indices
-                .iter()
-                .filter_map(|&word_conf_idx| {
-                    if state.word_states[word_conf_idx].not_generation == generation {
-                        return None;
-                    }
-                    let word_conf = &self.word_conf_list[word_conf_idx];
-                    let is_satisfied = is_rule_satisfied(
-                        word_conf,
-                        &state.word_states,
-                        &state.matrix,
-                        word_conf_idx,
-                        processed_times,
-                    );
-                    is_satisfied.then_some(SimpleResult {
-                        word_id: word_conf.word_id,
-                        word: Cow::Borrowed(&word_conf.word),
-                    })
-                })
-                .collect()
-        })
+            for &word_conf_idx in &state.touched_indices {
+                if state.word_states[word_conf_idx].not_generation == generation {
+                    continue;
+                }
+                if is_rule_satisfied(
+                    &self.word_conf_hot[word_conf_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    word_conf_idx,
+                    processed_times,
+                ) {
+                    let cold = &self.word_conf_cold[word_conf_idx];
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+            }
+        });
     }
 }
 
@@ -812,7 +870,7 @@ impl SimpleMatcher {
 /// sub-patterns); falls back to scanning the flat counter matrix otherwise.
 #[inline(always)]
 fn is_rule_satisfied(
-    word_conf: &WordConf,
+    word_conf: &WordConfHot,
     word_states: &[WordState],
     matrix: &[TinyVec<[i32; 16]>],
     word_conf_idx: usize,
@@ -822,7 +880,7 @@ fn is_rule_satisfied(
     if expected_mask > 0 {
         return word_states[word_conf_idx].satisfied_mask == expected_mask;
     }
-    let num_splits = word_conf.split_bit.len();
+    let num_splits = word_conf.num_splits as usize;
     let flat_matrix = &matrix[word_conf_idx];
     (0..num_splits).all(|s| {
         flat_matrix[s * processed_times..(s + 1) * processed_times]
