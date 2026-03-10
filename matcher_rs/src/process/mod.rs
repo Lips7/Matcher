@@ -8,4 +8,5 @@
 mod constants;
 pub mod multi_char_matcher;
 pub mod process_matcher;
+pub mod simd_utils;
 pub mod single_char_matcher;

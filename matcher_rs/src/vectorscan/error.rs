@@ -159,7 +159,7 @@ impl AsResult for hs::hs_error_t {
 /// * `compile_error` must be a valid, non-null pointer returned by a
 ///   Vectorscan compiler call (`hs_compile_multi`, `hs_compile_lit_multi`, etc.).
 /// * This function frees the compile error; the pointer must not be used afterwards.
-pub(crate) unsafe fn extract_compile_error(compile_error: *mut hs::hs_compile_error_t) -> Error {
+pub unsafe fn extract_compile_error(compile_error: *mut hs::hs_compile_error_t) -> Error {
     unsafe {
         let message = if (*compile_error).message.is_null() {
             "unknown compile error".to_string()

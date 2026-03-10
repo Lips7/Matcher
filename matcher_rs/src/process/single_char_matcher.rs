@@ -3,6 +3,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(feature = "runtime_build")]
 use std::collections::HashSet;
+use std::simd::{Simd, cmp::SimdPartialOrd};
+
+use crate::process::simd_utils::{
+    simd_ascii_delete_mask, skip_ascii_simd, skip_non_digit_ascii_simd,
+};
 
 /// Single-character lookup engine backed by compact, pre-compiled data structures.
 ///
@@ -125,10 +130,10 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
 pub struct FanjianFindIter<'a> {
-    pub(crate) l1: &'a [u8],
-    pub(crate) l2: &'a [u8],
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    pub l1: &'a [u8],
+    pub l2: &'a [u8],
+    pub text: &'a str,
+    pub byte_offset: usize,
 }
 
 impl<'a> Iterator for FanjianFindIter<'a> {
@@ -137,48 +142,40 @@ impl<'a> Iterator for FanjianFindIter<'a> {
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
+        let len = bytes.len();
 
-        // Fast-skip: advance past full ASCII chunks (all bytes < 0x80).
-        // [u8]::is_ascii() uses word-at-a-time checks in std.
-        const CHUNK: usize = 64;
-        while self.byte_offset + CHUNK <= bytes.len() {
-            if bytes[self.byte_offset..self.byte_offset + CHUNK].is_ascii() {
-                self.byte_offset += CHUNK;
-            } else {
-                break;
-            }
-        }
+        loop {
+            // SIMD skip: advance past all ASCII bytes (no Fanjian mapping for ASCII).
+            self.byte_offset = skip_ascii_simd(bytes, self.byte_offset);
 
-        let text = &self.text[self.byte_offset..];
-        for (i, c) in text.char_indices() {
-            let cp = c as u32;
-            let start = self.byte_offset + i;
-            let end = start + c.len_utf8();
-            if cp < 0x80 {
-                continue;
+            if self.byte_offset >= len {
+                return None;
             }
+
+            let start = self.byte_offset;
+            // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.
+            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
+            self.byte_offset += char_len;
+
             if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2)
                 && mapped_cp != cp
             {
                 // SAFETY: build.rs guarantees mapped_cp is a valid Unicode scalar value.
                 debug_assert!(char::from_u32(mapped_cp).is_some());
                 let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
-                self.byte_offset = end;
-                return Some((start, end, SingleCharMatch::Char(mapped)));
+                return Some((start, self.byte_offset, SingleCharMatch::Char(mapped)));
             }
         }
-        self.byte_offset = self.text.len();
-        None
     }
 }
 
 /// Monomorphized iterator for Delete (bitset-based character removal).
 pub struct DeleteFindIter<'a> {
-    pub(crate) bitset: &'a [u8],
+    pub bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
-    pub(crate) ascii_lut: [u8; 16],
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    pub ascii_lut: [u8; 16],
+    pub text: &'a str,
+    pub byte_offset: usize,
 }
 
 impl<'a> Iterator for DeleteFindIter<'a> {
@@ -188,6 +185,7 @@ impl<'a> Iterator for DeleteFindIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
         let len = bytes.len();
+        let ascii_lut_simd = Simd::<u8, 16>::from_array(self.ascii_lut);
 
         loop {
             if self.byte_offset >= len {
@@ -202,7 +200,22 @@ impl<'a> Iterator for DeleteFindIter<'a> {
                 if (self.ascii_lut[cp >> 3] & (1 << (cp & 7))) != 0 {
                     return Some((start, self.byte_offset, SingleCharMatch::Delete));
                 }
-                // Skip non-deletable ASCII bytes in bulk.
+                // SIMD fast-skip: process 16 non-deletable ASCII bytes at a time.
+                while self.byte_offset + 16 <= len {
+                    let chunk = Simd::<u8, 16>::from_slice(&bytes[self.byte_offset..]);
+                    let non_ascii_mask = chunk.simd_ge(Simd::<u8, 16>::splat(0x80u8)).to_bitmask();
+                    if non_ascii_mask != 0 {
+                        self.byte_offset += non_ascii_mask.trailing_zeros() as usize;
+                        break;
+                    }
+                    let del_mask = simd_ascii_delete_mask(chunk, ascii_lut_simd);
+                    if del_mask != 0 {
+                        self.byte_offset += del_mask.trailing_zeros() as usize;
+                        break;
+                    }
+                    self.byte_offset += 16;
+                }
+                // Scalar tail for < 16 remaining bytes.
                 while self.byte_offset < len {
                     let b2 = bytes[self.byte_offset];
                     if b2 >= 0x80 {
@@ -232,12 +245,12 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
 pub struct PinyinFindIter<'a> {
-    pub(crate) l1: &'a [u8],
-    pub(crate) l2: &'a [u8],
-    pub(crate) strings: &'a str,
-    pub(crate) trim_space: bool,
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    pub l1: &'a [u8],
+    pub l2: &'a [u8],
+    pub strings: &'a str,
+    pub trim_space: bool,
+    pub text: &'a str,
+    pub byte_offset: usize,
 }
 
 impl<'a> Iterator for PinyinFindIter<'a> {
@@ -249,14 +262,8 @@ impl<'a> Iterator for PinyinFindIter<'a> {
         let len = bytes.len();
 
         loop {
-            // Skip non-digit ASCII bytes in bulk. Digits (0x30–0x39) may have Pinyin mappings.
-            while self.byte_offset < len {
-                let b = bytes[self.byte_offset];
-                if b >= 0x80 || (0x30..=0x39).contains(&b) {
-                    break;
-                }
-                self.byte_offset += 1;
-            }
+            // SIMD skip: advance past non-digit ASCII bytes. Digits (0x30–0x39) may have Pinyin mappings.
+            self.byte_offset = skip_non_digit_ascii_simd(bytes, self.byte_offset);
             if self.byte_offset >= len {
                 return None;
             }

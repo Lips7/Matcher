@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 //! High-performance multi-pattern text matcher with logical operators and text normalization.
 //!
 //! `matcher_rs` solves precision/recall problems in keyword matching by combining:

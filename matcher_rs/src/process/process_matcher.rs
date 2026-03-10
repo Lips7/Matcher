@@ -54,9 +54,7 @@ fn return_string_to_pool(s: String) {
 }
 
 /// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
-pub(crate) fn return_processed_string_to_pool(
-    mut processed_text_process_type_masks: ProcessedTextMasks,
-) {
+pub fn return_processed_string_to_pool(mut processed_text_process_type_masks: ProcessedTextMasks) {
     for (cow, _) in processed_text_process_type_masks.drain(..) {
         if let Cow::Owned(s) = cow {
             return_string_to_pool(s);
