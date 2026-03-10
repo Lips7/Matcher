@@ -83,13 +83,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher(
         let matcher = Box::new(SimpleMatcher::new(&simple_table));
         Some(Box::into_raw(matcher) as jlong)
     }));
-    match result {
-        Ok(ptr) => ptr.unwrap_or(0),
-        Err(_) => {
+    result
+        .unwrap_or_else(|_| {
             eprintln!("initSimpleMatcher panicked");
-            0
-        }
-    }
+            None
+        })
+        .unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]
@@ -103,24 +102,17 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch(
         if matcher_ptr == 0 {
             return Some(false);
         }
-        let matcher = unsafe { &*(matcher_ptr as *mut SimpleMatcher) };
+        let matcher = unsafe { &*(matcher_ptr as *const SimpleMatcher) };
         let bytes = env.convert_byte_array(text_bytes).ok()?;
         let text_str = std::str::from_utf8(&bytes).ok()?;
         Some(matcher.is_match(text_str))
     }));
-    match result {
-        Ok(res) => {
-            if res.unwrap_or(false) {
-                1
-            } else {
-                0
-            }
-        }
-        Err(_) => {
+    result
+        .unwrap_or_else(|_| {
             eprintln!("simpleMatcherIsMatch panicked");
-            0
-        }
-    }
+            None
+        })
+        .map_or(0, |b| b as jboolean)
 }
 
 #[unsafe(no_mangle)]
@@ -134,7 +126,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsSt
         if matcher_ptr == 0 {
             return None;
         }
-        let matcher = unsafe { &*(matcher_ptr as *mut SimpleMatcher) };
+        let matcher = unsafe { &*(matcher_ptr as *const SimpleMatcher) };
         let bytes = env.convert_byte_array(text_bytes).ok()?;
         let text_str = std::str::from_utf8(&bytes).ok()?;
         let res = matcher.process(text_str);
@@ -142,13 +134,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsSt
         let j_string: JString = env.new_string(res_json).ok()?;
         Some(j_string.into_raw())
     }));
-    match result {
-        Ok(ptr) => ptr.unwrap_or(std::ptr::null_mut()),
-        Err(_) => {
+    result
+        .unwrap_or_else(|_| {
             eprintln!("simpleMatcherProcessAsString panicked");
-            std::ptr::null_mut()
-        }
-    }
+            None
+        })
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]

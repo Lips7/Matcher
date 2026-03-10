@@ -8,18 +8,23 @@ from matcher_py import ProcessType, SimpleMatcher
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
         SimpleMatcher(1)  # ty: ignore[invalid-argument-type]
+    with pytest.raises(TypeError):
         SimpleMatcher("")  # ty: ignore[invalid-argument-type]
+    with pytest.raises(TypeError):
         SimpleMatcher([])  # ty: ignore[invalid-argument-type]
+    with pytest.raises(TypeError):
         SimpleMatcher({})  # ty: ignore[invalid-argument-type]
 
 
 def test_init_with_invalid_bytes():
     with pytest.raises(ValueError):
         SimpleMatcher(b"")
+    with pytest.raises(ValueError):
         SimpleMatcher(b"123")
+    with pytest.raises(ValueError):
         SimpleMatcher(b"invalid")
+    with pytest.raises(ValueError):
         SimpleMatcher(b"[]")
-        SimpleMatcher(b"{}")
 
 
 def test_init_with_empty_map():
@@ -30,7 +35,9 @@ def test_init_with_empty_map():
 def test_init_with_invalid_map():
     with pytest.raises(ValueError):
         SimpleMatcher(json.dumps({"a": 1}).encode())
+    with pytest.raises(ValueError):
         SimpleMatcher(json.dumps({"a": {"b": 1}}).encode())
+    with pytest.raises(ValueError):
         SimpleMatcher(json.dumps({1: []}).encode())
 
 

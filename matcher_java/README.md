@@ -57,11 +57,11 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 
 ## Low-Level API
 
-If you need direct access to the native pointers or specialized functions, you can still use `MatcherJava.INSTANCE`. However, you **must** manually free resources using `drop_simple_matcher` or `drop_string` to avoid memory leaks.
+For direct pointer access, use the static methods on `MatcherJava`. You **must** manually free the matcher via `dropSimpleMatcher` to avoid memory leaks.
 
 ```java
-MatcherJava instance = MatcherJava.INSTANCE;
-Pointer ptr = instance.init_simple_matcher(bytes);
-// ...
-instance.drop_simple_matcher(ptr);
+long ptr = MatcherJava.initSimpleMatcher(bytes);
+boolean matched = MatcherJava.simpleMatcherIsMatch(ptr, text.getBytes(StandardCharsets.UTF_8));
+String json = MatcherJava.simpleMatcherProcessAsString(ptr, text.getBytes(StandardCharsets.UTF_8));
+MatcherJava.dropSimpleMatcher(ptr);
 ```

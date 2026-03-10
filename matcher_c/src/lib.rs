@@ -21,16 +21,17 @@ use matcher_rs::{
 /// - `simple_table_bytes`: A pointer to a C string containing the serialized table bytes.
 ///
 /// # Returns
-/// A pointer to a newly allocated [`SimpleMatcher`] instance. The caller is responsible for managing
-/// the lifetime of this pointer and must eventually call [`drop_simple_matcher`] to free the memory.
-///
-/// # Panics
-/// This function will panic if the deserialization of `simple_table_bytes` fails.
+/// A pointer to a newly allocated [`SimpleMatcher`] instance, or null on error.
+/// The caller is responsible for managing the lifetime of this pointer and must eventually
+/// call [`drop_simple_matcher`] to free the memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if simple_table_bytes.is_null() {
+            return ptr::null_mut();
+        }
         let simple_table: SimpleTable =
             match sonic_rs::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
                 Ok(simple_table) => simple_table,
@@ -43,13 +44,10 @@ pub unsafe extern "C" fn init_simple_matcher(
         Box::into_raw(Box::new(SimpleMatcher::new(&simple_table)))
     }));
 
-    match result {
-        Ok(ptr) => ptr,
-        Err(_) => {
-            eprintln!("init_simple_matcher panicked");
-            ptr::null_mut()
-        }
-    }
+    result.unwrap_or_else(|_| {
+        eprintln!("init_simple_matcher panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Determines if the input text matches using the [`SimpleMatcher`].
@@ -65,16 +63,16 @@ pub unsafe extern "C" fn init_simple_matcher(
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
-/// A boolean indicating whether the text matches based on the [`SimpleMatcher`].
-///
-/// # Panics
-/// This function will panic if the input `text` is not a valid UTF-8 string.
+/// A boolean indicating whether the text matches, or `false` on any error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_is_match(
-    simple_matcher: *mut SimpleMatcher,
+    simple_matcher: *const SimpleMatcher,
     text: *const c_char,
 ) -> bool {
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if text.is_null() {
+            return false;
+        }
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -107,18 +105,17 @@ pub unsafe extern "C" fn simple_matcher_is_match(
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
-/// A pointer to a newly allocated C string containing the processing result. The caller is
-/// responsible for managing the lifetime of this pointer and must eventually call
-/// [`drop_string`] on it to free the memory.
-///
-/// # Panics
-/// This function will panic if the input `text` is not a valid UTF-8 string.
+/// A pointer to a newly allocated C string containing the JSON result, or null on error.
+/// The caller must eventually call [`drop_string`] to free the memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_process_as_string(
-    simple_matcher: *mut SimpleMatcher,
+    simple_matcher: *const SimpleMatcher,
     text: *const c_char,
 ) -> *mut c_char {
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if text.is_null() {
+            return ptr::null_mut();
+        }
         let text_bytes = CStr::from_ptr(text).to_bytes();
         let text_str = match str::from_utf8(text_bytes) {
             Ok(s) => s,
@@ -211,7 +208,10 @@ pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> 
             Err(_) => ptr::null_mut(),
         }
     }));
-    result.unwrap_or(ptr::null_mut())
+    result.unwrap_or_else(|_| {
+        eprintln!("text_process panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Applies a sequence of rules to text, returning all intermediate variants.
@@ -247,14 +247,14 @@ pub unsafe extern "C" fn reduce_text_process(
         // Add a NULL terminator to the end of the array
         c_strings.push(ptr::null_mut());
 
-        c_strings.shrink_to_fit();
-        let strings = c_strings.as_mut_ptr();
-        std::mem::forget(c_strings);
-
-        strings
+        // into_boxed_slice guarantees capacity == len, avoiding UB in drop_string_array
+        Box::into_raw(c_strings.into_boxed_slice()) as *mut *mut c_char
     }));
 
-    result.unwrap_or(ptr::null_mut())
+    result.unwrap_or_else(|_| {
+        eprintln!("reduce_text_process panicked");
+        ptr::null_mut()
+    })
 }
 
 /// Deallocates a `char**` array that was returned by `reduce_text_process`.
@@ -266,18 +266,14 @@ pub unsafe extern "C" fn reduce_text_process(
 pub unsafe extern "C" fn drop_string_array(array: *mut *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !array.is_null() {
-            // Reconstruct the vector by finding the null terminator
+            // Walk to find length (null terminator not included in count), freeing each string
             let mut len = 0;
             while !(*array.add(len)).is_null() {
+                drop(CString::from_raw(*array.add(len)));
                 len += 1;
             }
-            // Include the null terminator in the length for deallocation
-            let vec = Vec::from_raw_parts(array, len + 1, len + 1);
-            for s in vec {
-                if !s.is_null() {
-                    drop(CString::from_raw(s));
-                }
-            }
+            // Reconstruct the boxed slice (len + 1 includes the null terminator) and drop it
+            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(array, len + 1)));
         }
     }));
 }

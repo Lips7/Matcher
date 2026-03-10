@@ -8,6 +8,23 @@ use std::borrow::Cow;
 
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde, reduce_text_process, text_process};
 
+fn extract_process_type(obj: &Bound<'_, PyAny>) -> PyResult<ProcessType> {
+    if let Ok(bits) = obj.extract::<u8>() {
+        Ok(ProcessType::from_bits_retain(bits))
+    } else if let Ok(pt) = obj.extract::<PyProcessType>() {
+        Ok(pt.0)
+    } else {
+        Err(PyTypeError::new_err(
+            "process_type must be ProcessType or int",
+        ))
+    }
+}
+
+fn deserialize_table(bytes: &[u8]) -> PyResult<SimpleTableSerde<'_>> {
+    sonic_rs::from_slice(bytes)
+        .map_err(|e| PyValueError::new_err(format!("Deserialize simple_table_bytes failed: {e}")))
+}
+
 #[pyclass(name = "ProcessType", eq, from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
 pub struct PyProcessType(ProcessType);
@@ -79,17 +96,7 @@ pub struct PySimpleResult {
 #[pyfunction(name = "text_process")]
 #[pyo3(signature=(process_type, text))]
 fn py_text_process<'a>(process_type: Bound<'_, PyAny>, text: &'a str) -> PyResult<Cow<'a, str>> {
-    let p_type = if let Ok(bits) = process_type.extract::<u8>() {
-        ProcessType::from_bits_retain(bits)
-    } else if let Ok(pt) = process_type.extract::<PyProcessType>() {
-        pt.0
-    } else {
-        return Err(PyTypeError::new_err(
-            "process_type must be ProcessType or int",
-        ));
-    };
-
-    Ok(text_process(p_type, text))
+    Ok(text_process(extract_process_type(&process_type)?, text))
 }
 
 #[pyfunction(name = "reduce_text_process")]
@@ -98,17 +105,10 @@ fn py_reduce_text_process<'a>(
     process_type: Bound<'_, PyAny>,
     text: &'a str,
 ) -> PyResult<Vec<Cow<'a, str>>> {
-    let p_type = if let Ok(bits) = process_type.extract::<u8>() {
-        ProcessType::from_bits_retain(bits)
-    } else if let Ok(pt) = process_type.extract::<PyProcessType>() {
-        pt.0
-    } else {
-        return Err(PyTypeError::new_err(
-            "process_type must be ProcessType or int",
-        ));
-    };
-
-    Ok(reduce_text_process(p_type, text).into_iter().collect())
+    Ok(reduce_text_process(
+        extract_process_type(&process_type)?,
+        text,
+    ))
 }
 
 #[pyclass(name = "SimpleMatcher")]
@@ -122,19 +122,10 @@ impl PySimpleMatcher {
     #[new]
     #[pyo3(signature=(simple_table_bytes))]
     fn new(_py: Python, simple_table_bytes: &[u8]) -> PyResult<PySimpleMatcher> {
-        let simple_table: SimpleTableSerde = match sonic_rs::from_slice(simple_table_bytes) {
-            Ok(simple_table) => simple_table,
-            Err(e) => {
-                return Err(PyValueError::new_err(format!(
-                    "Deserialize simple_table_bytes failed, Please check the input data.\n Err: {}",
-                    e
-                )));
-            }
-        };
-
+        let simple_table = deserialize_table(simple_table_bytes)?;
         Ok(PySimpleMatcher {
             simple_matcher: SimpleMatcher::new(&simple_table),
-            simple_table_bytes: Vec::from(simple_table_bytes),
+            simple_table_bytes: simple_table_bytes.to_vec(),
         })
     }
 
@@ -148,15 +139,7 @@ impl PySimpleMatcher {
 
     #[pyo3(signature=(simple_table_bytes))]
     fn __setstate__(&mut self, simple_table_bytes: &[u8]) -> PyResult<()> {
-        let simple_table: SimpleTableSerde = match sonic_rs::from_slice(simple_table_bytes) {
-            Ok(simple_table) => simple_table,
-            Err(e) => {
-                return Err(PyValueError::new_err(format!(
-                    "Deserialize simple_table_bytes failed: {}",
-                    e
-                )));
-            }
-        };
+        let simple_table = deserialize_table(simple_table_bytes)?;
         self.simple_matcher = SimpleMatcher::new(&simple_table);
         self.simple_table_bytes = simple_table_bytes.to_vec();
         Ok(())

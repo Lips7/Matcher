@@ -24,24 +24,24 @@ class SimpleResult:
     word_id: int
     word: str
 
-def text_process(process_type: int, text: str) -> str:
+def text_process(process_type: int | ProcessType, text: str) -> str:
     """
     Processes the given text based on the specified process type.
 
     Parameters:
-    - process_type (int): An integer indicating the type of process to be applied to the text.
+    - process_type (int | ProcessType): The type of process to be applied to the text.
     - text (str): The text string that is to be processed.
 
     Returns:
     - str: The text string after processing.
     """
 
-def reduce_text_process(process_type: int, text: str) -> list[str]:
+def reduce_text_process(process_type: int | ProcessType, text: str) -> list[str]:
     """
     Reduces the given text based on the specified process type and returns a list of strings.
 
     Parameters:
-    - process_type (int): An integer indicating the type of process to be applied to the text.
+    - process_type (int | ProcessType): The type of process to be applied to the text.
     - text (str): The text string that is to be reduced.
 
     Returns:
@@ -67,7 +67,7 @@ class SimpleMatcher:
         Processes the given text and returns a list of SimpleResult objects corresponding to the matches found.
     """
     def __init__(self, simple_table_bytes: bytes) -> None: ...
-    def __getnewargs__(self) -> bytes: ...
+    def __getnewargs__(self) -> tuple[bytes]: ...
     def __getstate__(self) -> bytes: ...
     def __setstate__(self, simple_table_bytes: bytes): ...
     def is_match(self, text: str) -> bool: ...

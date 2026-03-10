@@ -69,5 +69,5 @@ int main() {
 ## Important Notes
 
 1. **Header File**: The `matcher_c.h` defines the exported functions.
-2. **Memory Management**: Always call `drop_matcher`, `drop_simple_matcher`, and `drop_string` for any pointer returned by the library to avoid memory leaks.
+2. **Memory Management**: Always call `drop_simple_matcher` on matchers, `drop_string` on strings, and `drop_string_array` on arrays returned by the library to avoid memory leaks.
 3. **Rust Toolchain**: Building from source requires the Rust **nightly** toolchain.
