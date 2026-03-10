@@ -55,7 +55,7 @@ impl Database {
             .iter()
             .map(|s| s.as_ptr() as *const c_char)
             .collect();
-        let patterns_len: Vec<usize> = patterns.iter().map(|s| s.len()).collect();
+        let pattern_lengths: Vec<usize> = patterns.iter().map(|s| s.len()).collect();
         let ids: Vec<u32> = (0..patterns.len() as u32).collect();
 
         let mut db: *mut hs::hs_database_t = ptr::null_mut();
@@ -66,7 +66,7 @@ impl Database {
                 patterns_ptr.as_ptr(),
                 flags.as_ptr(),
                 ids.as_ptr(),
-                patterns_len.as_ptr(),
+                pattern_lengths.as_ptr(),
                 patterns.len() as u32,
                 hs::HS_MODE_BLOCK,
                 ptr::null_mut(),

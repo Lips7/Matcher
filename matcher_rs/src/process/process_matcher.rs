@@ -14,14 +14,14 @@ use crate::process::multi_char_matcher::MultiCharMatcher;
 use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 
 const STRING_POOL_INIT_CAP: usize = 16;
-const REDUCE_STATE_INIT_CAP: usize = 16;
+const TREE_NODE_INDICES_INIT_CAP: usize = 16;
 const MASKS_POOL_INIT_CAP: usize = 4;
 const STRING_POOL_MAX: usize = 128;
 const MASKS_POOL_MAX: usize = 16;
 
 thread_local! {
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(STRING_POOL_INIT_CAP));
-    static REDUCE_STATE: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(REDUCE_STATE_INIT_CAP));
+    static TREE_NODE_INDICES: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(TREE_NODE_INDICES_INIT_CAP));
     static MASKS_POOL: RefCell<Vec<ProcessedTextMasks<'static>>> =
         RefCell::new(Vec::with_capacity(MASKS_POOL_INIT_CAP));
 }
@@ -414,13 +414,13 @@ pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMat
 /// assert_eq!(result.as_ref(), "2");
 /// ```
 #[inline(always)]
-pub fn text_process<'a>(process_type_bit: ProcessType, text: &'a str) -> Cow<'a, str> {
+pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str> {
     let mut result = Cow::Borrowed(text);
 
-    for bit in process_type_bit.iter() {
-        let pm = get_process_matcher(bit);
+    for process_type_bit in process_type.iter() {
+        let pm = get_process_matcher(process_type_bit);
 
-        match bit {
+        match process_type_bit {
             ProcessType::None => continue,
             ProcessType::Delete => {
                 if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref())
@@ -538,7 +538,7 @@ pub struct ProcessTypeBitNode {
 /// The resulting flat `Vec<ProcessTypeBitNode>` is passed to
 /// [`reduce_text_process_with_tree`], which performs a single BFS traversal to compute all
 /// needed text variants while sharing common intermediate results.
-pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTypeBitNode> {
+pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let root = ProcessTypeBitNode {
         process_type_list: Vec::new(),
@@ -546,10 +546,9 @@ pub fn build_process_type_tree(process_type_set: &HashSet<u8>) -> Vec<ProcessTyp
         children: Vec::new(),
     };
     process_type_tree.push(root);
-    for process_type_bits in process_type_set.iter() {
-        let process_type = ProcessType::from_bits(*process_type_bits).unwrap();
+    for &process_type in process_type_set.iter() {
         let mut current_node_index = 0;
-        for process_type_bit in process_type.into_iter() {
+        for process_type_bit in process_type.iter() {
             let current_node = &process_type_tree[current_node_index];
             if current_node.process_type_bit == process_type_bit {
                 continue;
@@ -634,7 +633,7 @@ pub fn reduce_text_process_with_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
 ) -> ProcessedTextMasks<'a> {
-    REDUCE_STATE.with(|state| {
+    TREE_NODE_INDICES.with(|state| {
         let mut node_indices = state.borrow_mut();
         node_indices.clear();
         node_indices.resize(process_type_tree.len(), 0);

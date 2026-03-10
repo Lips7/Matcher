@@ -15,6 +15,8 @@ use crate::process::process_matcher::{
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::{Scratch, VectorscanScanner};
 
+const BITMASK_CAPACITY: usize = 64;
+
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
 /// Stored in a flat `Vec` inside [`SimpleMatchState`], one entry per rule (`WordConf`).
@@ -293,7 +295,8 @@ impl SimpleMatcher {
     {
         let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
-        let mut process_type_set = HashSet::with_capacity(process_type_word_map.len());
+        let mut process_type_set: HashSet<ProcessType> =
+            HashSet::with_capacity(process_type_word_map.len());
         let mut dedup_entries: Vec<Vec<WordConfEntry>> = Vec::with_capacity(word_size);
         let mut word_conf_list: Vec<WordConf> = Vec::with_capacity(word_size);
         let mut word_id_to_idx: HashMap<(ProcessType, u32), usize> =
@@ -305,7 +308,7 @@ impl SimpleMatcher {
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
-            process_type_set.insert(process_type.bits());
+            process_type_set.insert(process_type);
 
             for (&simple_word_id, simple_word) in simple_word_map {
                 if simple_word.as_ref().is_empty() {
@@ -348,14 +351,14 @@ impl SimpleMatcher {
                     .chain(not_splits.values().copied())
                     .collect::<Vec<i32>>();
 
-                let expected_mask = if not_offset > 0 && not_offset <= 64 {
-                    u64::MAX >> (64 - not_offset)
+                let expected_mask = if not_offset > 0 && not_offset <= BITMASK_CAPACITY {
+                    u64::MAX >> (BITMASK_CAPACITY - not_offset)
                 } else {
                     0
                 };
 
-                let use_matrix = not_offset > 64
-                    || split_bit.len() > 64
+                let use_matrix = not_offset > BITMASK_CAPACITY
+                    || split_bit.len() > BITMASK_CAPACITY
                     || split_bit[..not_offset].iter().any(|&v| v != 1)
                     || split_bit[not_offset..].iter().any(|&v| v != 0);
 
@@ -616,7 +619,7 @@ impl SimpleMatcher {
                 *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
 
                 if offset < word_conf.not_offset {
-                    if *bit <= 0 && offset < 64 {
+                    if *bit <= 0 && offset < BITMASK_CAPACITY {
                         state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                     }
                 } else if *bit > 0 {
@@ -631,7 +634,7 @@ impl SimpleMatcher {
                     processed_times,
                 )
             } else if offset < word_conf.not_offset {
-                if offset < 64 {
+                if offset < BITMASK_CAPACITY {
                     state.word_states[word_conf_idx].satisfied_mask |= 1u64 << offset;
                 }
                 let expected_mask = word_conf.expected_mask;

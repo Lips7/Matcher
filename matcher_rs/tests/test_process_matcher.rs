@@ -63,11 +63,11 @@ fn test_reduce_text_process_emit() {
 #[test]
 fn test_build_process_type_tree() {
     let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian.bits(),
-        ProcessType::DeleteNormalize.bits(),
-        ProcessType::FanjianDeleteNormalize.bits(),
-        ProcessType::Delete.bits(),
-        ProcessType::Normalize.bits(),
+        ProcessType::Fanjian,
+        ProcessType::DeleteNormalize,
+        ProcessType::FanjianDeleteNormalize,
+        ProcessType::Delete,
+        ProcessType::Normalize,
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
 
@@ -78,11 +78,11 @@ fn test_build_process_type_tree() {
 #[test]
 fn test_reduce_text_process_with_tree() {
     let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian.bits(),
-        ProcessType::DeleteNormalize.bits(),
-        ProcessType::FanjianDeleteNormalize.bits(),
-        ProcessType::Delete.bits(),
-        ProcessType::Normalize.bits(),
+        ProcessType::Fanjian,
+        ProcessType::DeleteNormalize,
+        ProcessType::FanjianDeleteNormalize,
+        ProcessType::Delete,
+        ProcessType::Normalize,
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
@@ -105,11 +105,11 @@ fn test_reduce_text_process_with_tree() {
 #[test]
 fn test_reduce_text_process_with_set() {
     let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian.bits(),
-        ProcessType::DeleteNormalize.bits(),
-        ProcessType::FanjianDeleteNormalize.bits(),
-        ProcessType::Delete.bits(),
-        ProcessType::Normalize.bits(),
+        ProcessType::Fanjian,
+        ProcessType::DeleteNormalize,
+        ProcessType::FanjianDeleteNormalize,
+        ProcessType::Delete,
+        ProcessType::Normalize,
     ]);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
@@ -147,10 +147,10 @@ fn test_dag_specific_outputs() {
 #[test]
 fn test_reduce_text_process_with_tree_correctness() {
     let process_type_set = HashSet::from_iter([
-        ProcessType::None.bits(),
-        ProcessType::Fanjian.bits(),
-        ProcessType::Delete.bits(),
-        (ProcessType::Fanjian | ProcessType::Delete).bits(),
+        ProcessType::None,
+        ProcessType::Fanjian,
+        ProcessType::Delete,
+        ProcessType::Fanjian | ProcessType::Delete,
     ]);
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "妳！好";
@@ -169,9 +169,9 @@ fn test_reduce_text_process_with_tree_correctness() {
 #[test]
 fn test_reduce_text_process_empty_text() {
     let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian.bits(),
-        ProcessType::Delete.bits(),
-        ProcessType::Normalize.bits(),
+        ProcessType::Fanjian,
+        ProcessType::Delete,
+        ProcessType::Normalize,
     ]);
 
     let processed_text =

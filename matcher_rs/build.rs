@@ -54,69 +54,70 @@ fn main() -> Result<()> {
             "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}",
             "\u{200F}", "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
         ];
+        const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
         let out_dir = env::var("OUT_DIR").unwrap();
 
         // 1. Build Normalize (uses Daachorse due to multi-char overlaps)
-        let process_str_map = HashMap::from([("normalize", vec![NORM, NUM_NORM])]);
+        let mut normalize_map = HashMap::new();
+        for process_map in [NORM, NUM_NORM] {
+            normalize_map.extend(process_map.trim().lines().map(|pair_str| {
+                let mut split = pair_str.split('\t');
+                (
+                    split.next().expect("missing key in normalization source"),
+                    split.next().expect("missing value in normalization source"),
+                )
+            }));
+        }
+        normalize_map.retain(|&key, &mut value| key != value);
 
-        for process_type_bit_str in ["normalize"] {
-            let mut process_dict = HashMap::new();
-            for process_map in process_str_map.get(process_type_bit_str).unwrap() {
-                process_dict.extend(process_map.trim().lines().map(|pair_str| {
-                    let mut pair_str_split = pair_str.split('\t');
-                    (
-                        pair_str_split.next().unwrap(),
-                        pair_str_split.next().unwrap(),
-                    )
-                }))
-            }
+        let mut normalize_pairs: Vec<(&str, &str)> = normalize_map.into_iter().collect();
+        normalize_pairs.sort_unstable_by_key(|&(k, _)| k);
+        let normalize_patterns: Vec<&str> = normalize_pairs.iter().map(|&(k, _)| k).collect();
+        let normalize_replacements: Vec<&str> = normalize_pairs.iter().map(|&(_, v)| v).collect();
 
-            process_dict.retain(|&key, &mut value| key != value);
-            let process_list = process_dict
-                .iter()
-                .map(|(&key, _)| key)
-                .collect::<Vec<&str>>();
+        let mut pattern_file = File::create(format!("{out_dir}/normalize_process_list.bin"))?;
+        pattern_file.write_all(normalize_patterns.join("\n").as_bytes())?;
 
-            let mut process_list_bin =
-                File::create(format!("{out_dir}/{process_type_bit_str}_process_list.bin"))?;
-            process_list_bin.write_all(process_list.join("\n").as_bytes())?;
+        let mut replacement_file =
+            File::create(format!("{out_dir}/normalize_process_replace_list.bin"))?;
+        replacement_file.write_all(normalize_replacements.join("\n").as_bytes())?;
 
-            let process_replace_list = process_dict
-                .iter()
-                .map(|(_, &val)| val)
-                .collect::<Vec<&str>>();
-            let mut process_replace_list_bin = File::create(format!(
-                "{out_dir}/{process_type_bit_str}_process_replace_list.bin"
+        #[cfg(not(feature = "dfa"))]
+        {
+            let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
+                CharwiseDoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
+                    .build(&normalize_patterns)
+                    .unwrap();
+            let matcher_bytes = matcher.serialize();
+            let mut matcher_bin = File::create(format!(
+                "{out_dir}/normalize_daachorse_charwise_u32_matcher.bin"
             ))?;
-            process_replace_list_bin.write_all(process_replace_list.join("\n").as_bytes())?;
-
-            #[cfg(not(feature = "dfa"))]
-            if process_type_bit_str == "normalize" {
-                let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
-                    CharwiseDoubleArrayAhoCorasickBuilder::new()
-                        .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
-                        .build(&process_list)
-                        .unwrap();
-                let matcher_bytes = matcher.serialize();
-                let mut matcher_bin = File::create(format!(
-                    "{out_dir}/{process_type_bit_str}_daachorse_charwise_u32_matcher.bin"
-                ))?;
-                matcher_bin.write_all(&matcher_bytes)?;
-            }
+            matcher_bin.write_all(&matcher_bytes)?;
         }
 
         // 2. Build Fanjian 2-stage flat array
         let mut fanjian_map = HashMap::new();
         for line in FANJIAN.trim().lines() {
             let mut split = line.split('\t');
-            let k = split.next().unwrap().chars().next().unwrap() as u32;
-            let v = split.next().unwrap().chars().next().unwrap() as u32;
+            let k = split
+                .next()
+                .expect("missing key in FANJIAN.txt")
+                .chars()
+                .next()
+                .unwrap() as u32;
+            let v = split
+                .next()
+                .expect("missing value in FANJIAN.txt")
+                .chars()
+                .next()
+                .unwrap() as u32;
             if k != v {
                 fanjian_map.insert(k, v);
             }
         }
-        build_2_stage_table(&fanjian_map, &format!("{out_dir}/fanjian"));
+        build_2_stage_table(&fanjian_map, &format!("{out_dir}/fanjian"))?;
 
         // 3. Build Pinyin 2-stage flat array & string buffer
         let mut pinyin_map = HashMap::new();
@@ -124,12 +125,21 @@ fn main() -> Result<()> {
 
         for line in PINYIN.trim().lines() {
             let mut split = line.split('\t');
-            let k = split.next().unwrap().chars().next().unwrap() as u32;
-            let v = split.next().unwrap();
+            let k = split
+                .next()
+                .expect("missing key in PINYIN.txt")
+                .chars()
+                .next()
+                .unwrap() as u32;
+            let v = split.next().expect("missing value in PINYIN.txt");
 
             let offset = pinyin_str_buffer.len();
             pinyin_str_buffer.push_str(v);
             let length = v.len();
+            assert!(
+                length < 256,
+                "pinyin string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
+            );
 
             // store offset << 8 | length
             let packed = ((offset as u32) << 8) | (length as u32);
@@ -138,10 +148,10 @@ fn main() -> Result<()> {
 
         File::create(format!("{out_dir}/pinyin_str.bin"))?
             .write_all(pinyin_str_buffer.as_bytes())?;
-        build_2_stage_table(&pinyin_map, &format!("{out_dir}/pinyin"));
+        build_2_stage_table(&pinyin_map, &format!("{out_dir}/pinyin"))?;
 
         // 4. Build Text Delete BitSet
-        let mut delete_bitset = vec![0u8; 139264]; // 0x10FFFF / 8 + 1
+        let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
         let mut process_set = HashSet::new();
         process_set.extend(TEXT_DELETE.trim().lines());
         process_set.extend(WHITE_SPACE);
@@ -167,7 +177,10 @@ fn main() -> Result<()> {
 /// This structure provides $O(1)$ lookup performance with a very small memory footprint,
 /// making it ideal for large-scale character transformations like Pinyin or Fanjian.
 #[cfg(not(feature = "runtime_build"))]
-fn build_2_stage_table(map: &std::collections::HashMap<u32, u32>, prefix: &str) {
+fn build_2_stage_table(
+    map: &std::collections::HashMap<u32, u32>,
+    prefix: &str,
+) -> std::io::Result<()> {
     use std::fs::File;
     use std::io::Write;
 
@@ -198,17 +211,13 @@ fn build_2_stage_table(map: &std::collections::HashMap<u32, u32>, prefix: &str) 
     for val in l1 {
         l1_bytes.extend_from_slice(&val.to_le_bytes());
     }
-    File::create(format!("{}_l1.bin", prefix))
-        .unwrap()
-        .write_all(&l1_bytes)
-        .unwrap();
+    File::create(format!("{}_l1.bin", prefix))?.write_all(&l1_bytes)?;
 
     let mut l2_bytes = Vec::with_capacity(l2.len() * 4);
     for val in l2 {
         l2_bytes.extend_from_slice(&val.to_le_bytes());
     }
-    File::create(format!("{}_l2.bin", prefix))
-        .unwrap()
-        .write_all(&l2_bytes)
-        .unwrap();
+    File::create(format!("{}_l2.bin", prefix))?.write_all(&l2_bytes)?;
+
+    Ok(())
 }

@@ -9,6 +9,9 @@ use crate::process::simd_utils::{
     simd_ascii_delete_mask, skip_ascii_simd, skip_non_digit_ascii_simd,
 };
 
+#[cfg(feature = "runtime_build")]
+const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
+
 /// Single-character lookup engine backed by compact, pre-compiled data structures.
 ///
 /// Each variant provides O(1) per-codepoint dispatch with no state-machine overhead.
@@ -407,7 +410,7 @@ impl SingleCharMatcher {
     /// Builds a Delete matcher from text source and whitespace list.
     #[cfg(feature = "runtime_build")]
     pub fn delete_from_sources(text_delete: &str, white_space: &[&str]) -> Self {
-        let mut bitset = vec![0u8; 139264];
+        let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
         for line in text_delete.trim().lines() {
             for c in line.chars() {
                 let cp = c as usize;
