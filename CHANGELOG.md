@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.2 - 2026-03-10
+
+### Bug Fixes
+- Fix `DeleteFindIter` SIMD fast-skip incorrectly advancing past deletable ASCII bytes (e.g. spaces) that appear before a non-ASCII character in the same 16-byte chunk. The `non_ascii_mask` was checked before `del_mask`, causing the skip to jump to the first non-ASCII byte and silently drop intervening deletable characters. Fixed by ORing both masks and stopping at the first set bit in either.
+
 ## 0.10.1 - 2026-03-10
 
 ### Performance
