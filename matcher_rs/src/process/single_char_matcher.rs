@@ -298,7 +298,7 @@ impl SingleCharMatcher {
     #[inline(always)]
     pub fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
         let SingleCharMatcher::Fanjian { l1, l2 } = self else {
-            panic!("fanjian_iter called on non-Fanjian matcher");
+            unreachable!("fanjian_iter called on non-Fanjian matcher");
         };
         FanjianFindIter {
             l1,
@@ -311,7 +311,7 @@ impl SingleCharMatcher {
     #[inline(always)]
     pub fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
         let SingleCharMatcher::Delete { bitset, ascii_lut } = self else {
-            panic!("delete_iter called on non-Delete matcher");
+            unreachable!("delete_iter called on non-Delete matcher");
         };
         DeleteFindIter {
             bitset,
@@ -330,7 +330,7 @@ impl SingleCharMatcher {
             trim_space,
         } = self
         else {
-            panic!("pinyin_iter called on non-Pinyin matcher");
+            unreachable!("pinyin_iter called on non-Pinyin matcher");
         };
         PinYinFindIter {
             l1,

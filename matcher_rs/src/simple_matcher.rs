@@ -505,7 +505,7 @@ impl SimpleMatcher {
                 }
                 #[cfg(feature = "vectorscan")]
                 AcMatcher::Vectorscan(scanner) => {
-                    let mut found = false;
+                    let mut early_match_found = false;
                     let mut scratch = state
                         .vectorscan_scratch
                         .take()
@@ -517,26 +517,26 @@ impl SimpleMatcher {
                         processed_text.as_ref().as_bytes(),
                         &mut scratch,
                         |pattern_idx| {
-                            if !found
-                                && self.process_match(
-                                    pattern_idx,
-                                    index,
-                                    *process_type_mask,
-                                    processed_times,
-                                    state,
-                                    exit_early,
-                                )
-                            {
-                                found = true;
-                                false // stop scanning
-                            } else {
-                                !found // continue if not found or not exit_early
+                            if early_match_found {
+                                return false; // stop scanning
                             }
+                            if self.process_match(
+                                pattern_idx,
+                                index,
+                                *process_type_mask,
+                                processed_times,
+                                state,
+                                exit_early,
+                            ) {
+                                early_match_found = true;
+                                return false; // stop scanning
+                            }
+                            true // continue scanning
                         },
                     );
                     state.vectorscan_scratch = Some(scratch);
 
-                    if found {
+                    if early_match_found {
                         return true;
                     }
                 }
@@ -616,7 +616,11 @@ impl SimpleMatcher {
             let is_satisfied = if word_conf.use_matrix {
                 let flat_matrix = &mut state.matrix[word_conf_idx];
                 let bit = &mut flat_matrix[offset * processed_times + text_index];
-                *bit += (offset < word_conf.not_offset) as i32 * -2 + 1;
+                if offset < word_conf.not_offset {
+                    *bit -= 1; // AND segment: counts down toward satisfaction (≤0 = satisfied)
+                } else {
+                    *bit += 1; // NOT segment: counts up toward disqualification (>0 = fired)
+                }
 
                 if offset < word_conf.not_offset {
                     if *bit <= 0 && offset < BITMASK_CAPACITY {
