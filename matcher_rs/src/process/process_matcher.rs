@@ -196,7 +196,7 @@ type ProcessMatcherResult = (Vec<&'static str>, ProcessMatcher);
 
 /// A lock-free, lazily-initialized array mapping bit positions to process matchers.
 ///
-/// Maps the bit position of a single-bit [`ProcessType`] to an [`Arc`] instance holding
+/// Maps the bit position of a single-bit [`ProcessType`] instance holding
 /// a tuple of a replacement-string list and a `ProcessMatcher`.
 ///
 /// The array has a capacity of 8, covering all possible bits in the 8-bit [`ProcessType`].
@@ -393,7 +393,7 @@ impl ProcessMatcher {
 ///   is not supported and will panic in the non-`runtime_build` path (`unreachable!()`).
 ///
 /// # Returns
-/// An [`Arc`] holding `(replacement_list, matcher)`. The replacement list is only
+/// A tuple `(replacement_list, matcher)`. The replacement list is only
 /// populated for `Normalize`; it is empty for all other types.
 ///
 /// # Panics
