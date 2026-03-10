@@ -6,7 +6,7 @@
 //! Unicode normalization, Traditional→Simplified Chinese conversion (`Fanjian`),
 //! and Pinyin transliteration.
 mod constants;
-pub mod multi_char_matcher;
-pub mod process_matcher;
-pub mod simd_utils;
-pub mod single_char_matcher;
+pub(crate) mod multi_char_matcher;
+pub(crate) mod process_matcher;
+pub(crate) mod simd_utils;
+pub(crate) mod single_char_matcher;

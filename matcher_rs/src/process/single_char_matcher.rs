@@ -133,10 +133,10 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
 pub struct FanjianFindIter<'a> {
-    pub(crate) l1: &'a [u8],
-    pub(crate) l2: &'a [u8],
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    l1: &'a [u8],
+    l2: &'a [u8],
+    text: &'a str,
+    byte_offset: usize,
 }
 
 impl<'a> Iterator for FanjianFindIter<'a> {
@@ -174,11 +174,11 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 
 /// Monomorphized iterator for Delete (bitset-based character removal).
 pub struct DeleteFindIter<'a> {
-    pub(crate) bitset: &'a [u8],
+    bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
-    pub(crate) ascii_lut: [u8; 16],
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    ascii_lut: [u8; 16],
+    text: &'a str,
+    byte_offset: usize,
 }
 
 impl<'a> Iterator for DeleteFindIter<'a> {
@@ -245,12 +245,12 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
 pub struct PinYinFindIter<'a> {
-    pub(crate) l1: &'a [u8],
-    pub(crate) l2: &'a [u8],
-    pub(crate) strings: &'a str,
-    pub(crate) trim_space: bool,
-    pub(crate) text: &'a str,
-    pub(crate) byte_offset: usize,
+    l1: &'a [u8],
+    l2: &'a [u8],
+    strings: &'a str,
+    trim_space: bool,
+    text: &'a str,
+    byte_offset: usize,
 }
 
 impl<'a> Iterator for PinYinFindIter<'a> {

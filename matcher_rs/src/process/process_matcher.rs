@@ -144,7 +144,7 @@ impl Display for ProcessType {
             .iter_names()
             .map(|(name, _)| name.to_lowercase())
             .collect::<Vec<_>>();
-        write!(f, "{:?}", display_str_list.join("_"))
+        write!(f, "{}", display_str_list.join("_"))
     }
 }
 
@@ -638,13 +638,10 @@ pub fn reduce_text_process_with_tree<'a>(
         node_indices.clear();
         node_indices.resize(process_type_tree.len(), 0);
 
-        // Reuse a Vec allocation from the pool if available; avoids one heap allocation
-        // per call in steady state. Safety: pool holds empty Vecs with no live borrows;
-        // transmuting from 'static to 'a is safe since 'static: 'a (covariant).
         let pooled: Option<ProcessedTextMasks<'static>> = MASKS_POOL.with(|p| p.borrow_mut().pop());
+        // Safety: pool holds empty Vecs with no live borrows; transmuting from
+        // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
         let mut text_masks: ProcessedTextMasks<'a> =
-            // Safety: pool holds empty Vecs with no live borrows; transmuting from
-            // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
             unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
         text_masks.clear();
         text_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
