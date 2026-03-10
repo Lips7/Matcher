@@ -204,13 +204,10 @@ impl<'a> Iterator for DeleteFindIter<'a> {
                 while self.byte_offset + 16 <= len {
                     let chunk = Simd::<u8, 16>::from_slice(&bytes[self.byte_offset..]);
                     let non_ascii_mask = chunk.simd_ge(Simd::<u8, 16>::splat(0x80u8)).to_bitmask();
-                    if non_ascii_mask != 0 {
-                        self.byte_offset += non_ascii_mask.trailing_zeros() as usize;
-                        break;
-                    }
                     let del_mask = simd_ascii_delete_mask(chunk, ascii_lut_simd);
-                    if del_mask != 0 {
-                        self.byte_offset += del_mask.trailing_zeros() as usize;
+                    let stop_mask = non_ascii_mask | del_mask;
+                    if stop_mask != 0 {
+                        self.byte_offset += stop_mask.trailing_zeros() as usize;
                         break;
                     }
                     self.byte_offset += 16;

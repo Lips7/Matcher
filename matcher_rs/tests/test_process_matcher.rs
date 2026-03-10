@@ -13,6 +13,18 @@ fn test_text_process() {
 }
 
 #[test]
+fn test_delete_simd_skip_ascii_before_non_ascii() {
+    // Regression: SIMD fast-skip in DeleteFindIter incorrectly advanced to the first
+    // non-ASCII byte without checking for deletable ASCII bytes before it. Spaces
+    // between non-deletable ASCII letters and Chinese characters were not deleted.
+    let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "A B 測試 Ａ １");
+    assert_eq!(variants[0], "A B 測試 Ａ １");
+    assert_eq!(variants[1], "A B 测试 Ａ １");
+    assert_eq!(variants[2], "AB测试Ａ１");
+    assert_eq!(variants[3], "ab测试a1");
+}
+
+#[test]
 fn test_reduce_text_process() {
     let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
 
