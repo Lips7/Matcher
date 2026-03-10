@@ -53,7 +53,12 @@ pub enum SingleCharMatcher {
     ///
     /// * `bitset` — `u8[139264]`; bit `cp % 8` of byte `cp / 8` is set if codepoint
     ///   `cp` should be removed. Covers codepoints 0x0 – 0x10FFFF.
-    Delete { bitset: Cow<'static, [u8]> },
+    /// * `ascii_lut` — cache-hot copy of the first 16 bytes of `bitset` (codepoints 0–127),
+    ///   kept alongside the struct fields to avoid touching the 139 KB bitset for ASCII input.
+    Delete {
+        bitset: Cow<'static, [u8]>,
+        ascii_lut: [u8; 16],
+    },
 }
 
 /// The transformation to apply to a matched codepoint, yielded by [`SingleCharFindIter`].
@@ -78,6 +83,44 @@ fn page_table_lookup(cp: u32, l1: &[u8], l2: &[u8]) -> Option<u32> {
     let l2_idx = page * 256 + char_idx;
     let val = u32::from_le_bytes(l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap());
     if val != 0 { Some(val) } else { None }
+}
+
+/// Decodes one UTF-8 character from `bytes` starting at `offset`.
+///
+/// Returns `(codepoint, byte_length)`. Only handles non-ASCII leading bytes (>= 0x80).
+///
+/// # Safety
+/// `bytes` must be valid UTF-8, `offset < bytes.len()`, and `bytes[offset] >= 0x80`.
+/// All three hold when `bytes` is `str::as_bytes()` and `offset` is at a char boundary.
+#[inline(always)]
+unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
+    // SAFETY: caller guarantees offset < bytes.len() and bytes is valid UTF-8 at offset.
+    let b0 = unsafe { *bytes.get_unchecked(offset) };
+    if b0 < 0xE0 {
+        // 2-byte: 110xxxxx 10xxxxxx
+        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        (((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2)
+    } else if b0 < 0xF0 {
+        // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
+        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
+        (
+            ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F),
+            3,
+        )
+    } else {
+        // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
+        let b3 = unsafe { *bytes.get_unchecked(offset + 3) };
+        (
+            ((b0 as u32 & 0x07) << 18)
+                | ((b1 as u32 & 0x3F) << 12)
+                | ((b2 as u32 & 0x3F) << 6)
+                | (b3 as u32 & 0x3F),
+            4,
+        )
+    }
 }
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
@@ -111,16 +154,17 @@ impl<'a> Iterator for FanjianFindIter<'a> {
             let cp = c as u32;
             let start = self.byte_offset + i;
             let end = start + c.len_utf8();
-
             if cp < 0x80 {
                 continue;
             }
-            if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2) {
-                let mapped = char::from_u32(mapped_cp).unwrap_or(c);
-                if mapped != c {
-                    self.byte_offset = end;
-                    return Some((start, end, SingleCharMatch::Char(mapped)));
-                }
+            if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2)
+                && mapped_cp != cp
+            {
+                // SAFETY: build.rs guarantees mapped_cp is a valid Unicode scalar value.
+                debug_assert!(char::from_u32(mapped_cp).is_some());
+                let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
+                self.byte_offset = end;
+                return Some((start, end, SingleCharMatch::Char(mapped)));
             }
         }
         self.byte_offset = self.text.len();
@@ -131,6 +175,8 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 /// Monomorphized iterator for Delete (bitset-based character removal).
 pub struct DeleteFindIter<'a> {
     pub(crate) bitset: &'a [u8],
+    /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
+    pub(crate) ascii_lut: [u8; 16],
     pub(crate) text: &'a str,
     pub(crate) byte_offset: usize,
 }
@@ -140,19 +186,47 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let text = &self.text[self.byte_offset..];
-        for (i, c) in text.char_indices() {
-            let cp = c as u32 as usize;
-            let start = self.byte_offset + i;
-            let end = start + c.len_utf8();
+        let bytes = self.text.as_bytes();
+        let len = bytes.len();
 
-            if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
-                self.byte_offset = end;
-                return Some((start, end, SingleCharMatch::Delete));
+        loop {
+            if self.byte_offset >= len {
+                return None;
+            }
+            let b = bytes[self.byte_offset];
+            let start = self.byte_offset;
+            if b < 0x80 {
+                // ASCII: check ascii_lut (16 bytes, cache-hot) without touching 139 KB bitset.
+                let cp = b as usize;
+                self.byte_offset += 1;
+                if (self.ascii_lut[cp >> 3] & (1 << (cp & 7))) != 0 {
+                    return Some((start, self.byte_offset, SingleCharMatch::Delete));
+                }
+                // Skip non-deletable ASCII bytes in bulk.
+                while self.byte_offset < len {
+                    let b2 = bytes[self.byte_offset];
+                    if b2 >= 0x80 {
+                        break;
+                    }
+                    let cp2 = b2 as usize;
+                    if (self.ascii_lut[cp2 >> 3] & (1 << (cp2 & 7))) != 0 {
+                        break;
+                    }
+                    self.byte_offset += 1;
+                }
+            } else {
+                // Non-ASCII: decode and check the full 139 KB bitset.
+                // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
+                self.byte_offset += char_len;
+                let cp_usize = cp as usize;
+                if cp_usize / 8 < self.bitset.len()
+                    && (self.bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
+                {
+                    return Some((start, self.byte_offset, SingleCharMatch::Delete));
+                }
             }
         }
-        self.byte_offset = self.text.len();
-        None
     }
 }
 
@@ -172,43 +246,44 @@ impl<'a> Iterator for PinyinFindIter<'a> {
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
+        let len = bytes.len();
 
-        // Fast-skip: advance past full ASCII chunks that contain no digits.
-        // Digits (0x30-0x39) may have Pinyin mappings, so we cannot skip them.
-        const CHUNK: usize = 64;
-        while self.byte_offset + CHUNK <= bytes.len() {
-            let chunk = &bytes[self.byte_offset..self.byte_offset + CHUNK];
-            if chunk.is_ascii() && !chunk.iter().any(|&b| b.is_ascii_digit()) {
-                self.byte_offset += CHUNK;
+        loop {
+            // Skip non-digit ASCII bytes in bulk. Digits (0x30–0x39) may have Pinyin mappings.
+            while self.byte_offset < len {
+                let b = bytes[self.byte_offset];
+                if b >= 0x80 || (0x30..=0x39).contains(&b) {
+                    break;
+                }
+                self.byte_offset += 1;
+            }
+            if self.byte_offset >= len {
+                return None;
+            }
+
+            let start = self.byte_offset;
+            let b = bytes[start];
+            let (cp, char_len) = if b < 0x80 {
+                // ASCII digit (0x30–0x39).
+                (b as u32, 1)
             } else {
-                break;
-            }
-        }
+                // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.
+                unsafe { decode_utf8_raw(bytes, start) }
+            };
+            self.byte_offset += char_len;
 
-        let text = &self.text[self.byte_offset..];
-        for (i, c) in text.char_indices() {
-            let cp = c as u32;
-            let start = self.byte_offset + i;
-            let end = start + c.len_utf8();
-
-            if cp < 0x80 && !c.is_ascii_digit() {
-                continue;
-            }
             if let Some(val) = page_table_lookup(cp, self.l1, self.l2) {
                 let offset = (val >> 8) as usize;
-                let len = (val & 0xFF) as usize;
-                if offset + len <= self.strings.len() {
-                    let mut s = &self.strings[offset..offset + len];
+                let str_len = (val & 0xFF) as usize;
+                if offset + str_len <= self.strings.len() {
+                    let mut s = &self.strings[offset..offset + str_len];
                     if self.trim_space {
                         s = s.trim();
                     }
-                    self.byte_offset = end;
-                    return Some((start, end, SingleCharMatch::Str(s)));
+                    return Some((start, self.byte_offset, SingleCharMatch::Str(s)));
                 }
             }
         }
-        self.byte_offset = self.text.len();
-        None
     }
 }
 
@@ -280,7 +355,7 @@ impl<'a> Iterator for SingleCharFindIter<'a> {
                         }
                     }
                 }
-                SingleCharMatcher::Delete { bitset } => {
+                SingleCharMatcher::Delete { bitset, .. } => {
                     let cp_usize = cp as usize;
                     if cp_usize / 8 < bitset.len()
                         && (bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
@@ -321,11 +396,12 @@ impl SingleCharMatcher {
 
     #[inline(always)]
     pub fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
-        let SingleCharMatcher::Delete { bitset } = self else {
+        let SingleCharMatcher::Delete { bitset, ascii_lut } = self else {
             panic!("delete_iter called on non-Delete matcher");
         };
         DeleteFindIter {
             bitset,
+            ascii_lut: *ascii_lut,
             text,
             byte_offset: 0,
         }
@@ -357,7 +433,10 @@ impl SingleCharMatcher {
     }
 
     pub fn delete(bitset: Cow<'static, [u8]>) -> Self {
-        SingleCharMatcher::Delete { bitset }
+        let mut ascii_lut = [0u8; 16];
+        let copy_len = bitset.len().min(16);
+        ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
+        SingleCharMatcher::Delete { bitset, ascii_lut }
     }
 
     pub fn pinyin(

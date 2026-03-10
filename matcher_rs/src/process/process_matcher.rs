@@ -285,7 +285,8 @@ impl ProcessMatcher {
     /// `(false, Cow::Borrowed(text))` when nothing matched, avoiding any allocation.
     #[inline(always)]
     pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
-        let ProcessMatcher::SingleChar(SingleCharMatcher::Delete { bitset }) = self else {
+        let ProcessMatcher::SingleChar(SingleCharMatcher::Delete { bitset, ascii_lut }) = self
+        else {
             debug_assert!(false, "delete_all called on non-Delete matcher");
             return (false, Cow::Borrowed(text));
         };
@@ -293,6 +294,7 @@ impl ProcessMatcher {
             text,
             DeleteFindIter {
                 bitset,
+                ascii_lut: *ascii_lut,
                 text,
                 byte_offset: 0,
             },
