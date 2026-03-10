@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.10.1 - 2026-03-10
+
+### Performance
+- Monomorphize `SingleChar` iterators and add SIMD ASCII chunk-skip for faster inner loops.
+- Byte-level `PinYin`/`Delete` iterators and `ascii_lut` fast-path, eliminating UTF-8 decoding overhead on ASCII-heavy input.
+- `portable_simd` SIMD helpers (`skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`) for 16-byte parallel probing in `SingleChar` skip loops.
+
+### Features
+- Exhaustive property-based and unit tests for `Fanjian`, `Delete`, `Normalize`, and `PinYin` process types.
+- Macro-based benchmark generation with `BytesCount` metric for normalized throughput measurement.
+
+### Refactor
+- Improve clarity and consistency across the `process` module.
+
+### Documentation
+- Improve `CLAUDE.md` with benchmark scoping, test-file syntax, and architecture details.
+- Move benchmark output to `bench_records/` and link from README.
+- Clarify `get_or_init_matcher` return type in docs.
+
 ## 0.10.0 - 2026-03-07
 
 ### Breaking Changes

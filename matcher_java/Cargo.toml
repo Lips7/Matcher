@@ -16,6 +16,6 @@ crate-type = ["cdylib"]
 path = "src/main/rust/lib.rs"
 
 [dependencies]
-matcher_rs = { path = "../matcher_rs", version = "0.10.0" }
+matcher_rs = { path = "../matcher_rs", version = "0.10.1" }
 jni = "0.21.1"
 sonic-rs = "0.5.7"
