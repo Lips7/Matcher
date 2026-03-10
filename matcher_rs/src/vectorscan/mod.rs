@@ -10,10 +10,10 @@
 //!
 //! For error handling, see the [`error`] module.
 
-pub mod database;
-pub mod error;
-pub mod scanner;
-pub mod scratch;
+pub(crate) mod database;
+pub(crate) mod error;
+pub(crate) mod scanner;
+pub(crate) mod scratch;
 
 pub use crate::vectorscan::scanner::VectorscanScanner;
 pub use crate::vectorscan::scratch::Scratch;

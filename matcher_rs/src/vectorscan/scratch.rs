@@ -25,8 +25,9 @@ pub struct Scratch {
 }
 
 unsafe impl Send for Scratch {}
-// SAFETY: Scratch space must not be mutated concurrently. However, it can be shared across
-// threads as long as exclusive access (`&mut`) is guaranteed during scanning (e.g., via thread_local!).
+// SAFETY: Scratch is only accessed through thread_local! storage, so &Scratch is never
+// actually shared across threads. Sync is implemented to satisfy trait bounds on types
+// containing Scratch (e.g., SimpleMatchState in thread_local!).
 unsafe impl Sync for Scratch {}
 
 impl Scratch {
