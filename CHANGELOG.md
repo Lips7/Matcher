@@ -48,7 +48,6 @@
 
 ### Breaking Changes
 - Removed `Matcher`, `RegexMatcher`, and `SimMatcher` components to focus on the high-performance `SimpleMatcher`.
-- Removed `RegexDatabase` and `Regex` related types from the Vectorscan integration.
 - Updated C and Java FFI interfaces to only support `SimpleMatcher`.
 
 ### Documentation
@@ -56,10 +55,6 @@
 - Cleaned up documentation and examples across all language bindings.
 
 ## 0.9.0 - 2026-03-05
-
-### Features
-- Introduce conditional Vectorscan matcher and improve empty pattern handling in SimpleMatcher.
-- Reorganize Vectorscan integration with dedicated `scanner` and `error` modules, introducing `RegexDatabase` for multi-regex compilation and improving error handling.
 
 ### Refactor & Performance
 - Replace standard `HashMap` and `HashSet` with `FxHashMap` and `FxHashSet` for improved execution speed.
@@ -71,18 +66,14 @@
 - Simplify word splitting logic in `SimpleMatcher::new` using a helper closure and adjust lifetime bounds for borrowed types.
 - Simplify C FFI panic handling and wrap all `panic::catch_unwind` calls in FFI functions with `AssertUnwindSafe`.
 - Remove `word_id` from match result structs, refine regex pattern handling and matching.
-- Explicitly declare `vectorscan` feature dependency using the `dep:` prefix.
 - Unconditionally configure mimalloc as the global allocator and remove conditional allocator dependencies.
-- Conditionally compile Vectorscan's mimalloc allocator initialization for macOS targets.
-- Update `vectorscan` FFI types from `i8` to `c_char`.
 
 ### Maintenance & Documentation
 - Standardize Rust documentation and include detailed algorithm explanations across all matching engines.
-- Add Vectorscan-specific documentation.
 - Update benchmark results in README.md after modifications to the simple matcher.
 - Configure `rustflags` to use 8 compilation threads.
 - Streamline CI Rust testing by adopting `cargo-all-features` and enabling `RUST_BACKTRACE`.
-- Expand and update CI workflows (upgrade action runners to `ubuntu-24.04-arm` and `macos-latest`, add Boost installation, adjust vectorscan feature testing based on platform compatibility).
+- Expand and update CI workflows (upgrade action runners to `ubuntu-24.04-arm` and `macos-latest`).
 - Remove `AGENTS.md` and legacy tracker files.
 
 ## 0.8.1 - 2026-03-01

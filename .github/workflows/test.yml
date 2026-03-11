@@ -87,21 +87,14 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
 
-      - name: Install boost
-        if: runner.os != 'Windows' && matrix.platform.target != 'aarch64-unknown-linux-gnu'
-        uses: MarkusJx/install-boost@v2
-        id: install-boost
-        with:
-          boost_version: 1.89.0
       - name: Test
         if: runner.os != 'Windows' && matrix.platform.target != 'aarch64-unknown-linux-gnu'
         run: |
           cargo doc
           cargo all-features test
         env:
-          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
           RUST_BACKTRACE: 1
-      - name: Test (Windows & Linux Arm, no vectorscan)
+      - name: Test (Windows & Linux Arm)
         if: runner.os == 'Windows' || matrix.platform.target == 'aarch64-unknown-linux-gnu'
         run: |
           cargo doc

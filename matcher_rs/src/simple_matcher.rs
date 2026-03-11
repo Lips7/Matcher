@@ -12,19 +12,12 @@ use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, return_processed_string_to_pool, walk_process_tree,
 };
-#[cfg(feature = "vectorscan")]
-use crate::vectorscan::{Scratch, VectorscanScanner};
 
 /// Threshold for selecting the bitmask fast-path over the matrix fallback.
 ///
 /// Rules with ≤ 64 AND/NOT segments use a `u64` bitmask to track satisfaction;
 /// rules with more segments use the 2-D counter matrix in [`SimpleMatchState`].
 const BITMASK_CAPACITY: usize = 64;
-
-/// Minimum number of deduplicated literal patterns before auto-selecting Vectorscan on x86-64.
-#[cfg(feature = "vectorscan")]
-#[allow(dead_code)]
-const VECTORSCAN_AUTO_MIN_PATTERNS: usize = 512;
 
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
@@ -65,8 +58,6 @@ struct SimpleMatchState {
     matrix: Vec<TinyVec<[i32; 16]>>,
     touched_indices: Vec<usize>,
     generation: u32,
-    #[cfg(feature = "vectorscan")]
-    vectorscan_scratch: Option<Scratch>,
 }
 
 impl SimpleMatchState {
@@ -77,8 +68,6 @@ impl SimpleMatchState {
             matrix: Vec::new(),
             touched_indices: Vec::new(),
             generation: 0,
-            #[cfg(feature = "vectorscan")]
-            vectorscan_scratch: None,
         }
     }
 
@@ -214,64 +203,10 @@ struct PatternEntry {
 }
 
 /// The underlying scan engine used by [`SimpleMatcher`].
-///
-/// Selects between standard Aho-Corasick and Vectorscan at runtime based on feature flags
-/// and whether any patterns were registered. The standard Aho-Corasick variant is used when
-/// the `vectorscan` feature is disabled or when the pattern list is empty.
 #[derive(Debug, Clone)]
-enum AcMatcher {
+enum InternalMatcher {
     /// Standard Aho-Corasick (DFA or ContiguousNFA depending on the `dfa` feature flag).
-    #[cfg_attr(feature = "vectorscan", allow(dead_code))]
     AhoCorasick(AhoCorasick),
-    /// Intel Vectorscan (Hyperscan): SIMD-accelerated literal matching.
-    /// Only available with the `vectorscan` feature; not supported on Windows or ARM64.
-    #[cfg(feature = "vectorscan")]
-    Vectorscan(VectorscanScanner),
-}
-
-#[cfg(feature = "vectorscan")]
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScanBackend {
-    AhoCorasick,
-    Vectorscan,
-}
-
-#[inline]
-fn build_aho_corasick(patterns: &[&str]) -> AhoCorasick {
-    #[cfg(feature = "dfa")]
-    let aho_corasick_kind = AhoCorasickKind::DFA;
-    #[cfg(not(feature = "dfa"))]
-    let aho_corasick_kind = aho_corasick::AhoCorasickKind::ContiguousNFA;
-
-    AhoCorasickBuilder::new()
-        .kind(Some(aho_corasick_kind))
-        .build(patterns)
-        .unwrap()
-}
-
-#[cfg(feature = "vectorscan")]
-#[inline]
-fn choose_scan_backend(patterns: &[&str]) -> ScanBackend {
-    if patterns.is_empty() {
-        return ScanBackend::AhoCorasick;
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        ScanBackend::AhoCorasick
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        if patterns.len() < VECTORSCAN_AUTO_MIN_PATTERNS
-            || !std::arch::is_x86_feature_detected!("avx2")
-        {
-            return ScanBackend::AhoCorasick;
-        }
-
-        ScanBackend::Vectorscan
-    }
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
@@ -298,7 +233,7 @@ fn choose_scan_backend(patterns: &[&str]) -> ScanBackend {
 ///
 /// **Pass 1 — Scan**: The input text is first transformed through the configured
 /// [`ProcessType`] pipelines (producing up to 16 variants). All variants are scanned
-/// simultaneously with a single Aho-Corasick or Vectorscan pass. Each hit updates a
+/// simultaneously with a single Aho-Corasick pass. Each hit updates a
 /// generation-stamped state matrix for the affected rule.
 ///
 /// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND
@@ -336,7 +271,7 @@ fn choose_scan_backend(patterns: &[&str]) -> ScanBackend {
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
-    ac_matcher: AcMatcher,
+    ac_matcher: InternalMatcher,
     ac_dedup_entries: Vec<PatternEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
     rule_hot: Vec<RuleHot>,
@@ -355,7 +290,7 @@ impl SimpleMatcher {
     ///    [`reduce_text_process_emit`].
     /// 3. Deduplicate all variants across all rules and process types into a single
     ///    pattern set.
-    /// 4. Compile the pattern set into an Aho-Corasick (or Vectorscan) automaton.
+    /// 4. Compile the pattern set into an Aho-Corasick automaton.
     /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
     ///    pre-processing at match time.
     ///
@@ -369,7 +304,7 @@ impl SimpleMatcher {
     ///   `AsRef<str>` so both `&str` and `Cow<str>` are accepted.
     ///
     /// # Panics
-    /// Panics if the Aho-Corasick (or Vectorscan) automaton fails to compile. This should
+    /// Panics if the Aho-Corasick automaton fails to compile. This should
     /// only happen if the de-duplicated pattern set is internally inconsistent, which cannot
     /// occur with well-formed input.
     pub fn new<'a, I, S1, S2>(
@@ -512,20 +447,17 @@ impl SimpleMatcher {
             .map(|ac_word| ac_word.as_ref())
             .collect::<Vec<_>>();
 
-        #[cfg(feature = "vectorscan")]
-        let ac_matcher = match choose_scan_backend(&patterns) {
-            ScanBackend::AhoCorasick => AcMatcher::AhoCorasick(build_aho_corasick(&patterns)),
-            ScanBackend::Vectorscan => {
-                let flags = vec![0u32; patterns.len()];
-                AcMatcher::Vectorscan(
-                    VectorscanScanner::new_literal(&patterns, &flags)
-                        .expect("failed to compile vectorscan literal database"),
-                )
-            }
-        };
+        let ac_matcher = InternalMatcher::AhoCorasick({
+            #[cfg(feature = "dfa")]
+            let aho_corasick_kind = AhoCorasickKind::DFA;
+            #[cfg(not(feature = "dfa"))]
+            let aho_corasick_kind = aho_corasick::AhoCorasickKind::ContiguousNFA;
 
-        #[cfg(not(feature = "vectorscan"))]
-        let ac_matcher = AcMatcher::AhoCorasick(build_aho_corasick(&patterns));
+            AhoCorasickBuilder::new()
+                .kind(Some(aho_corasick_kind))
+                .build(patterns)
+                .unwrap()
+        });
 
         let mut ac_dedup_entries = Vec::with_capacity(dedup_entries.iter().map(|v| v.len()).sum());
         let mut ac_dedup_ranges = Vec::with_capacity(dedup_entries.len());
@@ -735,8 +667,7 @@ impl SimpleMatcher {
     /// Scans one pre-processed text variant through the automaton and evaluates rule counters.
     ///
     /// This is the inner loop of Pass 1 + Pass 2 for a single text variant produced by the
-    /// transformation pipeline. It dispatches to either the AhoCorasick or Vectorscan backend
-    /// depending on which was compiled in.
+    /// transformation pipeline.
     ///
     /// # Arguments
     /// * `processed_text` — the transformed text variant to scan.
@@ -753,10 +684,6 @@ impl SimpleMatcher {
     ///   (used by [`SimpleMatcher::is_match`] for short-circuiting).
     ///
     /// Returns `true` if a rule was fully satisfied and `exit_early` is set; `false` otherwise.
-    ///
-    /// For the Vectorscan backend, scratch space is borrowed from `state.vectorscan_scratch`
-    /// (or freshly allocated) and returned to the pool after the scan, so it is reused across
-    /// calls on the same thread.
     #[inline(always)]
     fn scan_variant(
         &self,
@@ -770,7 +697,7 @@ impl SimpleMatcher {
         // `index` identifies which processed text variant this scan came from, so matrix-path
         // rules can track repeated AND / NOT segments per variant.
         match &self.ac_matcher {
-            AcMatcher::AhoCorasick(ac_matcher) => {
+            InternalMatcher::AhoCorasick(ac_matcher) => {
                 for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
                     let pattern_idx = ac_dedup_result.pattern().as_usize();
                     if self.process_match(
@@ -785,42 +712,6 @@ impl SimpleMatcher {
                     }
                 }
                 false
-            }
-            #[cfg(feature = "vectorscan")]
-            AcMatcher::Vectorscan(scanner) => {
-                let mut early_match_found = false;
-                // Scratch is reused per thread and resized lazily when this thread switches
-                // between different compiled Vectorscan databases.
-                let mut scratch = state
-                    .vectorscan_scratch
-                    .take()
-                    .unwrap_or_else(|| unsafe { Scratch::new(scanner.as_db_ptr()).unwrap() });
-
-                let _ = unsafe { scratch.update(scanner.as_db_ptr()) };
-
-                let _ = scanner.scan_with_scratch(
-                    processed_text.as_bytes(),
-                    &mut scratch,
-                    |pattern_idx| {
-                        if early_match_found {
-                            return false;
-                        }
-                        if self.process_match(
-                            pattern_idx,
-                            index,
-                            process_type_mask,
-                            num_variants,
-                            state,
-                            exit_early,
-                        ) {
-                            early_match_found = true;
-                            return false;
-                        }
-                        true
-                    },
-                );
-                state.vectorscan_scratch = Some(scratch);
-                early_match_found
             }
         }
     }
@@ -984,31 +875,5 @@ impl SimpleMatcher {
             let row_start = s * num_variants;
             flat_matrix[row_start..row_start + num_variants].fill(bit);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[cfg(feature = "vectorscan")]
-    use super::{ScanBackend, VECTORSCAN_AUTO_MIN_PATTERNS, choose_scan_backend};
-
-    #[cfg(feature = "vectorscan")]
-    #[test]
-    fn vectorscan_auto_backend_prefers_expected_arch_policy() {
-        let patterns = vec!["abc"; VECTORSCAN_AUTO_MIN_PATTERNS];
-        let backend = choose_scan_backend(&patterns);
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            let expected = if std::arch::is_x86_feature_detected!("avx2") {
-                ScanBackend::Vectorscan
-            } else {
-                ScanBackend::AhoCorasick
-            };
-            assert_eq!(backend, expected);
-        }
-
-        #[cfg(not(target_arch = "x86_64"))]
-        assert_eq!(backend, ScanBackend::AhoCorasick);
     }
 }

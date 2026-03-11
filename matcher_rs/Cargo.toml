@@ -27,12 +27,7 @@ bitflags = "2.11.0"
 daachorse = "1.0.0"
 mimalloc = { version = "0.1.48", features = ["v3"] }
 serde = { version = "1.0.228", features = ["derive"] }
-thiserror = { version = "2.0.18", optional = true}
 tinyvec = { version = "1.10.0", features = ["alloc"] }
-vectorscan-rs-sys = { version = "0.0.5", optional = true, features = [
-    "cpu_native",
-    "simd_specialization",
-] }
 
 [build-dependencies]
 daachorse = "1.0.0"
@@ -50,8 +45,6 @@ runtime_build = []
 dfa = []
 # By enable simd_runtime_dispatch feature, we select the best available transform kernel at runtime.
 simd_runtime_dispatch = []
-# By enable vectorscan feature, we could use vectorscan to perform simple matching.
-vectorscan = ["dep:vectorscan-rs-sys", "dep:thiserror"]
 
 [[bench]]
 name = "bench"

@@ -155,7 +155,6 @@ Three backend options are supported:
 
 *   **`ContiguousNFA`** (default, `!dfa`): Compact, memory-efficient NFA. Overlapping search.
 *   **`DFA`** (`dfa` feature): ~10× more memory, faster throughput. Overlapping search.
-*   **Vectorscan** (`vectorscan` feature): SIMD-accelerated via Intel Hyperscan. Requires Boost. No Windows/ARM64.
 
 #### Pass 2: Logical Evaluation
 
@@ -228,7 +227,7 @@ Rules with >64 segments or repeated sub-patterns use a flat `Vec<TinyVec<[i32; 1
 *   **String Pooling**: A thread-local `STRING_POOL: RefCell<Vec<String>>` (capped at 128 entries) caches and reuses `String` allocations produced during transformations, reducing pressure on the global allocator.
 *   **Zero-Copy Logic**: Heavy use of `Cow<'a, str>` during transformation and zero-copy deserialization (`include_bytes!`) for static transformation tables ensures minimal memory overhead.
 *   **Static Automata**: Core transformation tables (Fanjian, Pinyin, Delete, Normalize) are pre-compiled into binary artifacts at library compile-time via `build.rs`. At runtime, they are loaded via zero-copy byte-slice casts for **instant startup**.
-*   **Thread-Local Storage (TLS)**: All mutable matching state is stored in `thread_local!` buffers — `SIMPLE_MATCH_STATE` (`SimpleMatchState`, including Vectorscan scratch), `STRING_POOL` (recycled `String` allocations), and `TRANSFORM_STATE` (node-index scratch + recycled `ProcessedTextMasks` vectors). `SimpleMatcher` itself is `Send + Sync` and can be shared across threads via `Arc` with zero lock contention.
+*   **Thread-Local Storage (TLS)**: All mutable matching state is stored in `thread_local!` buffers — `SIMPLE_MATCH_STATE` (`SimpleMatchState`), `STRING_POOL` (recycled `String` allocations), and `TRANSFORM_STATE` (node-index scratch + recycled `ProcessedTextMasks` vectors). `SimpleMatcher` itself is `Send + Sync` and can be shared across threads via `Arc` with zero lock contention.
 *   **Static `ProcessMatcher` Cache**: A `PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is initialized once per process and shared across all `SimpleMatcher` instances and threads.
 *   **MiMalloc v3**: The global allocator is replaced with `mimalloc` for improved multi-threaded allocation performance.
 
@@ -237,7 +236,6 @@ Rules with >64 segments or repeated sub-patterns use a flat `Vec<TinyVec<[i32; 1
 | Flag | Default | Effect |
 |------|---------|--------|
 | `dfa` | on | Aho-Corasick DFA backend — faster scan, ~10× memory vs `ContiguousNFA` |
-| `vectorscan` | off | SIMD matching via Intel Hyperscan — requires Boost; unsupported on Windows/ARM64 |
 | `runtime_build` | off | Build transformation tables at runtime from source text files — slower init, enables dynamic rules |
 
 ### 6. Compiled vs. Runtime Transformation Tables

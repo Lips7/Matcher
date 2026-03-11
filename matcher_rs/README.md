@@ -97,7 +97,6 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 * `runtime_build`: Build transformation tables from the source text maps at startup instead of embedding precompiled binaries.
 * `dfa`: Use DFA-backed Aho-Corasick automata where applicable. This is enabled by default and improves speed at the cost of higher memory consumption.
 * `simd_runtime_dispatch`: Enabled by default. Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere).
-* `vectorscan`: Enable Intel's Vectorscan (a fork of Hyperscan) as an optional scan backend. Auto-selection keeps DFA on ARM64 and only switches to Vectorscan on supported x86-64 hosts when the literal set is large enough.
 
 ### Feature Comparison & Recommendation
 
@@ -107,7 +106,6 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 | `simd_runtime_dispatch` | Runtime-selected transform kernels | **Fastest preprocess** | Neutral | None | Portable builds that should exploit the host CPU automatically. |
 | `--no-default-features` | Aho-Corasick (Contiguous NFA) | Good | **Lowest** | None | Memory-constrained environments. |
 | `dfa` | Aho-Corasick (DFA) | **Fast** | High | None | Explicitly enabling the default engine in custom feature sets. |
-| `vectorscan` | Auto-selected Vectorscan or DFA | Best on supported x86-64 | Moderate | **Required** | Large literal sets on x86-64 where Hyperscan/Vectorscan beats DFA. |
 
 ## Benchmarks
 
