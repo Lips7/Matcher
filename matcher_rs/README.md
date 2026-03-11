@@ -57,6 +57,10 @@ cargo add matcher_rs
 
 You can combine these transformations as needed. Pre-defined combinations like `DeleteNormalize` and `FanjianDeleteNormalize` are provided for convenience.
 
+Including `None` in a composite `ProcessType` keeps the raw-text path alongside transformed
+variants. For example, `ProcessType::None | ProcessType::PinYin` allows one part of a rule to
+match the original text while another part matches the Pinyin-transformed text.
+
 Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
 
 ### Basic Example
@@ -69,6 +73,10 @@ use matcher_rs::{text_process, reduce_text_process, ProcessType};
 let result = text_process(ProcessType::Delete, "你好，世界！");
 let results = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好，世界！");
 ```
+
+`text_process` returns only the final transformed text. `reduce_text_process` returns each
+distinct intermediate variant along the pipeline. For shared-prefix multi-variant traversal,
+`SimpleMatcher` uses the internal DAG helpers instead of recomputing each path independently.
 
 
 ```rust
@@ -86,16 +94,17 @@ let results = matcher.process(text);
 For more detailed usage examples, please refer to the [test_simple_matcher.rs](./tests/test_simple_matcher.rs) file.
 
 ## Feature Flags
-* `runtime_build`: Enable building the process matcher at runtime (increases build time).
-* `dfa`: Use a Deterministic Finite Automaton (DFA) for matching. Offers better search speed but significantly higher memory consumption.
+* `runtime_build`: Build transformation tables from the source text maps at startup instead of embedding precompiled binaries.
+* `dfa`: Use DFA-backed Aho-Corasick automata where applicable. This is enabled by default and improves speed at the cost of higher memory consumption.
 * `vectorscan`: Use Intel's Vectorscan (a fork of Hyperscan) for SIMD-accelerated matching. Offers the best performance but requires the Vectorscan library to be installed on the system.
 
 ### Feature Comparison & Recommendation
 
 | Feature | Engine | Search Speed | Memory Usage | External Dependency | Best For |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Default** | Aho-Corasick (NFA) | Good | **Lowest** | None | General purpose, memory-constrained environments. |
-| `dfa` | Aho-Corasick (DFA) | **Fast** | Highest | None | Speed-critical apps where external dependencies are a no-go. |
+| **Default** | Aho-Corasick (DFA) | **Fast** | High | None | General purpose use when extra memory is acceptable. |
+| `--no-default-features` | Aho-Corasick (Contiguous NFA) | Good | **Lowest** | None | Memory-constrained environments. |
+| `dfa` | Aho-Corasick (DFA) | **Fast** | High | None | Explicitly enabling the default engine in custom feature sets. |
 | `vectorscan` | Vectorscan (SIMD) | **Fastest** | Moderate | **Required** | High-throughput production systems requiring max performance. |
 
 ## Benchmarks

@@ -42,6 +42,11 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// supports logical operators: `&` (both sub-patterns must appear) and `~`
     /// (the rule fires only when the following sub-pattern is absent).
     ///
+    /// `process_type` may be a composite flag. For example, `ProcessType::None |
+    /// ProcessType::Delete` means the rule can match against both the raw input
+    /// and the delete-normalized variant. If the same `(process_type, word_id)` is
+    /// inserted multiple times, the most recent `word` replaces the previous one.
+    ///
     /// Returns `self` for chaining.
     pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();

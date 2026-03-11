@@ -107,6 +107,11 @@ bitflags! {
     /// // Serialize/deserialize as a raw u8.
     /// let bits = combined.bits();
     /// assert_eq!(ProcessType::from_bits_retain(bits), combined);
+    ///
+    /// // Including `None` keeps the raw-text path alongside transformed ones.
+    /// let raw_and_deleted = ProcessType::None | ProcessType::Delete;
+    /// assert!(raw_and_deleted.contains(ProcessType::None));
+    /// assert!(raw_and_deleted.contains(ProcessType::Delete));
     /// ```
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, Default)]
     pub struct ProcessType: u8 {
@@ -407,6 +412,7 @@ pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMat
 /// Transformations are applied left-to-right in bit order. Each step fetches a cached
 /// matcher and either replaces or deletes matching spans.
 /// `Cow::Borrowed` is returned when no step modifies the text.
+/// This is the "final result only" helper: intermediate variants are discarded.
 ///
 /// For use cases where multiple composite types share common prefixes, prefer
 /// [`walk_process_tree`] which avoids redundant intermediate computations.
@@ -454,8 +460,23 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 ///
 /// The first entry is always `Cow::Borrowed(text)` (the original input). Steps that leave
 /// the text unchanged add no entry.
+/// Use this when you want a step-by-step view of the pipeline for a single composite type.
 ///
 /// For generating all variants needed for matching, prefer [`walk_process_tree`].
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{ProcessType, reduce_text_process};
+///
+/// let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+///
+/// assert_eq!(variants.len(), 4);
+/// assert_eq!(variants[0], "~ᗩ~躶~𝚩~軆~Ⲉ~");
+/// assert_eq!(variants[1], "~ᗩ~裸~𝚩~軆~Ⲉ~");
+/// assert_eq!(variants[2], "ᗩ裸𝚩軆Ⲉ");
+/// assert_eq!(variants[3], "a裸b軆c");
+/// ```
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -491,6 +512,20 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// rather than appending a new one. Only `Delete` steps append a new entry.
 ///
 /// Used internally by `SimpleMatcher::new` to register all required automaton patterns.
+/// The returned variants correspond to distinct strings that may need to be indexed,
+/// not every intermediate step that happened along the way.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{ProcessType, reduce_text_process_emit};
+///
+/// let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+///
+/// assert_eq!(variants.len(), 2);
+/// assert_eq!(variants[0], "~ᗩ~裸~𝚩~軆~Ⲉ~");
+/// assert_eq!(variants[1], "a裸b軆c");
+/// ```
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -647,8 +682,38 @@ fn dedup_insert(
 /// When `LAZY=false`, `on_variant` is never called and all lazy-only code is dead-code-eliminated.
 ///
 /// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY=true` and
-/// `on_variant` triggered early exit. The caller must pass `text_masks` to
-/// `return_processed_string_to_pool` when done.
+/// `on_variant` triggered early exit. Inside `matcher_rs`, owned strings are usually returned
+/// to a thread-local pool after use; external callers can simply let the returned vector drop.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashSet;
+///
+/// use matcher_rs::{ProcessType, build_process_type_tree, walk_process_tree};
+///
+/// let process_types = HashSet::from([
+///     ProcessType::None,
+///     ProcessType::Fanjian,
+///     ProcessType::Delete,
+///     ProcessType::Fanjian | ProcessType::Delete,
+/// ]);
+/// let tree = build_process_type_tree(&process_types);
+///
+/// let (variants, stopped) = walk_process_tree::<false, _>(&tree, "妳！好", &mut |_, _, _| false);
+/// assert!(!stopped);
+///
+/// let texts = variants
+///     .into_iter()
+///     .map(|(text, _)| text.into_owned())
+///     .collect::<std::collections::HashSet<_>>();
+///
+/// assert_eq!(texts.len(), 4);
+/// assert!(texts.contains("妳！好"));
+/// assert!(texts.contains("你！好"));
+/// assert!(texts.contains("妳好"));
+/// assert!(texts.contains("你好"));
+/// ```
 #[inline(always)]
 pub fn walk_process_tree<'a, const LAZY: bool, F>(
     process_type_tree: &[ProcessTypeBitNode],

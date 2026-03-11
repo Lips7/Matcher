@@ -237,6 +237,7 @@ enum AcMatcher {
 /// "apple&pie"      -- fires only when both "apple" and "pie" appear
 /// "banana~peel"    -- fires when "banana" appears but "peel" does not
 /// "a&b~c"          -- fires when both "a" and "b" appear and "c" does not
+/// "a&a~b~b"        -- fires when "a" appears twice and "b" appears fewer than twice
 /// ```
 ///
 /// ## Two-Pass Matching
@@ -249,6 +250,11 @@ enum AcMatcher {
 /// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND
 /// sub-pattern was satisfied in at least one text variant and no NOT sub-pattern was
 /// triggered in any variant.
+///
+/// Composite process types can match across variants. For example,
+/// `ProcessType::None | ProcessType::PinYin` lets one sub-pattern match the raw text and
+/// another match the Pinyin-transformed variant during the same search. NOT segments are
+/// global across those variants: if a veto pattern appears in any variant, the rule fails.
 ///
 /// ## Thread Safety
 ///
@@ -298,6 +304,11 @@ impl SimpleMatcher {
     /// 4. Compile the pattern set into an Aho-Corasick (or Vectorscan) automaton.
     /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
     ///    pre-processing at match time.
+    ///
+    /// One subtle detail is that sub-patterns are indexed under `process_type -
+    /// ProcessType::Delete`, not the full `process_type`. `Delete` is applied to the input
+    /// text variants before the automaton scan, so the indexed sub-pattern should stay in the
+    /// same deleted-text coordinate space rather than being delete-processed twice.
     ///
     /// # Arguments
     /// * `process_type_word_map` — input rule table; the value type `I` must implement
@@ -546,6 +557,8 @@ impl SimpleMatcher {
     ///
     /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
     /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
+    /// Results are appended in discovery order, which is deterministic for a given matcher
+    /// and input but should not be treated as a stable sort order.
     ///
     /// # Examples
     ///
@@ -745,6 +758,10 @@ impl SimpleMatcher {
     /// when the counter reaches ≤0. For a NOT sub-pattern hit: sets `not_generation` to
     /// permanently disqualify the rule. Returns `true` if `exit_early` and a rule just became
     /// fully satisfied.
+    ///
+    /// Repeated sub-patterns such as `a&a&a` are represented as counters rather than booleans,
+    /// so the rule is satisfied only after enough hits arrive. Rules that do not fit the simple
+    /// bitmask fast-path fall back to the per-rule matrix, which tracks counts per text variant.
     #[inline(always)]
     fn process_match(
         &self,

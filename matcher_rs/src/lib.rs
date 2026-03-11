@@ -34,11 +34,16 @@
 //! assert_eq!(results[0].word_id, 1);
 //! ```
 //!
+//! Composite [`ProcessType`] values can also include [`ProcessType::None`] to match
+//! against both the raw text and a transformed variant. For example, a rule with
+//! `ProcessType::None | ProcessType::PinYin` can satisfy one sub-pattern directly from
+//! the input and another via Pinyin transliteration.
+//!
 //! # Feature Flags
 //!
 //! | Flag | Default | Effect |
 //! |------|---------|--------|
-//! | `dfa` | on | Uses an Aho-Corasick DFA for normalization; ~10× more memory than NFA but faster |
+//! | `dfa` | on | Uses DFA-backed Aho-Corasick automata where applicable; faster than NFA-based matching but with higher memory use |
 //! | `vectorscan` | off | SIMD-accelerated scanning via Intel Hyperscan; requires Boost, no Windows/ARM64 |
 //! | `runtime_build` | off | Builds transformation tables from source text files at startup instead of embedding pre-compiled binaries |
 
