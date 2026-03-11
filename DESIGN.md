@@ -9,6 +9,10 @@
 * `PINYIN` and `PINYIN-CHAR` (used in `PinYin` and `PinYinChar`): built from [Unihan_Readings.txt](./data/str_conv/Unihan_Readings.txt).
 * `NORM` (used in `Normalize`): built from [NormalizationTest.txt](./data/str_conv/NormalizationTest.txt) and [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt) (contains alphanumeric and general symbol variations).
 
+Shorthand bitmasks exist for frequently combined pipelines:
+* `DeleteNormalize` (0b00001100): Equivalent to `Delete | Normalize`.
+* `FanjianDeleteNormalize` (0b00001110): Equivalent to `Fanjian | Delete | Normalize`.
+
 ## SimpleMatcher
 
 ### Overview
@@ -137,8 +141,8 @@ Each `ProcessType` bit is backed by a data structure optimized for its access pa
 |---|---|---|
 | `Fanjian` | 2-stage page table (L1: 4352 × u16, L2: dense u32 blocks) | O(1) per codepoint |
 | `PinYin` / `PinYinChar` | 2-stage page table mapping codepoint → packed `(offset << 8 \| length)` into a concatenated UTF-8 string buffer | O(1) per codepoint |
-| `Delete` | 139 KB flat BitSet covering all Unicode codepoints; cached 16-byte ASCII LUT + 16-wide SIMD fast-skip for ASCII input | O(1) per codepoint, branchless |
-| `Normalize` | `daachorse` `CharwiseDoubleArrayAhoCorasick<u32>` (leftmost-longest) or Aho-Corasick DFA | O(N) per text |
+| `Delete` | 139 KB flat BitSet covering all Unicode codepoints; cached 16-byte ASCII LUT. Highly optimized **SIMD fast-skip** (`simd_runtime_dispatch`) leveraging 32-lane AVX2 on x86_64 or NEON on aarch64 to skip ASCII and non-digit sequences. | O(1) per codepoint, branchless |
+| `Normalize` | `daachorse` `CharwiseDoubleArrayAhoCorasick<u32>` (leftmost-longest). Used because it supports multi-character overlaps and replacements effectively. | O(N) per text |
 
 ### 2. High-Performance Matching Engine (Two-Pass)
 
@@ -149,10 +153,11 @@ The matching process is divided into two distinct phases to decouple substring s
 All unique sub-patterns (segments separated by `&` or `~`) from all rules and all `ProcessType` variants are deduplicated and compiled into a single automaton. Each automaton pattern maps back to one or more rule segments via two parallel arrays:
 
 *   `ac_dedup_ranges: Vec<(usize, usize)>` — `(start, length)` slice of `ac_dedup_entries` for each pattern index.
-*   `ac_dedup_entries: Vec<PatternEntry>` — each entry holds `(process_type_mask, rule_idx, offset)` identifying which rule segment this pattern hit satisfies.
+*   `ac_dedup_entries: Vec<PatternEntry>` — each entry holds `(process_type_mask, rule_idx, offset)` identifying which rule segment this pattern hit satisfies. The `process_type_mask` prevents hits on text variants that do not match the rule's specified pipeline.
 
-Three backend options are supported:
+**Subtle Offset Logic:** When indexing sub-patterns, the system maps them under `process_type - ProcessType::Delete`. Because the `Delete` step is universally applied to the input text variants *before* scanning, the sub-patterns themselves are processed without the `Delete` flag to ensure they remain in the exact deleted-text coordinate space and are not doubly processed.
 
+Two backend options are supported for the scan engine:
 *   **`ContiguousNFA`** (default, `!dfa`): Compact, memory-efficient NFA. Overlapping search.
 *   **`DFA`** (`dfa` feature): ~10× more memory, faster throughput. Overlapping search.
 
@@ -226,17 +231,18 @@ Rules with >64 segments or repeated sub-patterns use a flat `Vec<TinyVec<[i32; 1
 
 *   **String Pooling**: A thread-local `STRING_POOL: RefCell<Vec<String>>` (capped at 128 entries) caches and reuses `String` allocations produced during transformations, reducing pressure on the global allocator.
 *   **Zero-Copy Logic**: Heavy use of `Cow<'a, str>` during transformation and zero-copy deserialization (`include_bytes!`) for static transformation tables ensures minimal memory overhead.
-*   **Static Automata**: Core transformation tables (Fanjian, Pinyin, Delete, Normalize) are pre-compiled into binary artifacts at library compile-time via `build.rs`. At runtime, they are loaded via zero-copy byte-slice casts for **instant startup**.
+*   **Static Automata**: Core transformation tables (Fanjian, Pinyin, Delete, Normalize) are pre-compiled into binary artifacts at library compile-time via `build.rs` using `daachorse` and raw byte arrays. At runtime, they are loaded via zero-copy byte-slice casts for **instant startup**.
 *   **Thread-Local Storage (TLS)**: All mutable matching state is stored in `thread_local!` buffers — `SIMPLE_MATCH_STATE` (`SimpleMatchState`), `STRING_POOL` (recycled `String` allocations), and `TRANSFORM_STATE` (node-index scratch + recycled `ProcessedTextMasks` vectors). `SimpleMatcher` itself is `Send + Sync` and can be shared across threads via `Arc` with zero lock contention.
-*   **Static `ProcessMatcher` Cache**: A `PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is initialized once per process and shared across all `SimpleMatcher` instances and threads.
-*   **MiMalloc v3**: The global allocator is replaced with `mimalloc` for improved multi-threaded allocation performance.
+*   **Static `ProcessMatcher` Cache**: A `PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is lazily initialized once per process and shared across all `SimpleMatcher` instances and threads.
+*   **MiMalloc v3**: The global allocator is replaced with `mimalloc` (v3) for improved multi-threaded allocation performance.
 
 ### 5. Feature Flags
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `dfa` | on | Aho-Corasick DFA backend — faster scan, ~10× memory vs `ContiguousNFA` |
-| `runtime_build` | off | Build transformation tables at runtime from source text files — slower init, enables dynamic rules |
+| `dfa` | on | Aho-Corasick DFA backend — faster scan, ~10× memory vs `ContiguousNFA`. |
+| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set (e.g., AVX2, NEON) at runtime for ASCII deletion scanning. |
+| `runtime_build` | off | Build transformation tables at runtime from source text files — slower init, enables dynamic rules. |
 
 ### 6. Compiled vs. Runtime Transformation Tables
 
