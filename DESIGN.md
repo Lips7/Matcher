@@ -164,20 +164,48 @@ Two backend options are supported for the scan engine:
 #### Pass 2: Logical Evaluation
 
 ```mermaid
-sequenceDiagram
-    participant P as Pipeline
-    participant E as Scan Engine (AC/VS)
-    participant S as SimpleMatchState
-    participant R as Results
-
-    P->>S: prepare(size)
-    loop For each Text Variant
-        P->>E: Scan(Variant, Mask)
-        E->>S: process_match(pattern_id, variant_mask)
-        Note over S: Update bitmask or matrix
-        S-->>R: (Optional) Early Exit
+flowchart TD
+    Input([Input Text]) --> Prepare[SimpleMatchState::prepare<br>Increment Generation ID]
+    Prepare --> WalkTree[walk_process_tree<br>Generate Text Variants]
+    
+    subgraph Pass 1: Pattern Scanning
+        WalkTree --> ScanVariant[Scan variant with Aho-Corasick]
+        ScanVariant -->|Yield Overlapping Hits| Hit[Hit: pattern_idx, process_type_mask]
+        
+        Hit --> MapEntry[Lookup PatternEntry<br>rule_idx, offset]
+        MapEntry --> CheckVeto{Has NOT fired?<br>not_generation == gen}
+        
+        CheckVeto -->|Yes| DiscardHit[Discard Hit]
+        CheckVeto -->|No| CheckMatrix{Rule uses matrix?}
+        
+        CheckMatrix -->|No: ≤64 unique ANDs| FastPath[Bitmask Fast-Path]
+        FastPath --> UpdateMask[satisfied_mask |= 1 << offset]
+        
+        CheckMatrix -->|Yes: >64 or repeats| SlowPath[Counter Matrix Fallback]
+        SlowPath --> UpdateCounter[AND: cell -= 1 <br/>NOT: cell += 1<br>if NOT > 0, set not_generation]
+        
+        UpdateMask --> CheckEarlyExit{Early Exit Enabled?}
+        UpdateCounter --> CheckEarlyExit
+        
+        CheckEarlyExit -->|Yes & fully satisfied| ReturnTrue([Short-Circuit: Return True])
+        CheckEarlyExit -->|No| ContinueScan[Continue Scanning]
     end
-    S->>R: Final Evaluation (Pass 2)
+    
+    ContinueScan -.-> ScanVariant
+    
+    subgraph Pass 2: Logical Evaluation
+        Pass1Done(All Variants Scanned) --> IterateTouched[Iterate state.touched_indices]
+        IterateTouched --> CheckVeto2{Has NOT fired?}
+        
+        CheckVeto2 -->|Yes| SkipRule[Skip Rule]
+        CheckVeto2 -->|No| VerifyAnds{is_rule_satisfied}
+        
+        VerifyAnds -->|Yes| Collect[Add to SimpleResult List]
+        VerifyAnds -->|No| SkipRule
+    end
+    
+    ScanVariant -.->|End of Text| Pass1Done
+    Collect --> Output([Return Matches])
 ```
 
 ### 3. State Management & Evaluation Optimizations
