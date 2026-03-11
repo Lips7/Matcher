@@ -112,7 +112,7 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 Benchmarked on **MacBook Air M4 (24GB RAM)**.
 Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
-Full records are stored in [bench_records/](./bench_records/), named with timestamps in `YYYY-MM-DD HH:mm:ss.txt` format. Latest: [2026-03-11 23:59:44.txt](./bench_records/2026-03-11%2023:59:44.txt).
+Full records are stored in [bench_records/](./bench_records/). Latest: [latest.txt](./bench_records/latest.txt).
 
 To compare two benchmark records:
 
