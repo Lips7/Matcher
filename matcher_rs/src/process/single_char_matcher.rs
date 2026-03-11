@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(feature = "runtime_build")]
 use std::collections::HashSet;
-use std::simd::{Simd, cmp::SimdPartialOrd};
+use std::simd::Simd;
 
 use crate::process::simd_utils::{
-    simd_ascii_delete_mask, skip_ascii_simd, skip_non_digit_ascii_simd,
+    skip_ascii_non_delete_simd, skip_ascii_simd, skip_non_digit_ascii_simd,
 };
 
 /// Byte length of a flat BitSet covering the full Unicode range `U+0000`–`U+10FFFF`.
@@ -264,30 +264,12 @@ impl<'a> Iterator for DeleteFindIter<'a> {
                 if (self.ascii_lut[cp >> 3] & (1 << (cp & 7))) != 0 {
                     return Some((start, self.byte_offset, SingleCharMatch::Delete));
                 }
-                // SIMD fast-skip: process 16 non-deletable ASCII bytes at a time.
-                while self.byte_offset + 16 <= len {
-                    let chunk = Simd::<u8, 16>::from_slice(&bytes[self.byte_offset..]);
-                    let non_ascii_mask = chunk.simd_ge(Simd::<u8, 16>::splat(0x80u8)).to_bitmask();
-                    let del_mask = simd_ascii_delete_mask(chunk, self.ascii_lut_simd);
-                    let stop_mask = non_ascii_mask | del_mask;
-                    if stop_mask != 0 {
-                        self.byte_offset += stop_mask.trailing_zeros() as usize;
-                        break;
-                    }
-                    self.byte_offset += 16;
-                }
-                // Scalar tail for < 16 remaining bytes.
-                while self.byte_offset < len {
-                    let b2 = bytes[self.byte_offset];
-                    if b2 >= 0x80 {
-                        break;
-                    }
-                    let cp2 = b2 as usize;
-                    if (self.ascii_lut[cp2 >> 3] & (1 << (cp2 & 7))) != 0 {
-                        break;
-                    }
-                    self.byte_offset += 1;
-                }
+                self.byte_offset = skip_ascii_non_delete_simd(
+                    bytes,
+                    self.byte_offset,
+                    &self.ascii_lut,
+                    self.ascii_lut_simd,
+                );
             } else {
                 // Non-ASCII: decode and check the full 139 KB bitset.
                 // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.

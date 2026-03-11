@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-#[cfg(not(feature = "vectorscan"))]
+#[cfg(feature = "dfa")]
 use aho_corasick::AhoCorasickKind;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use serde::Serialize;
@@ -20,6 +20,11 @@ use crate::vectorscan::{Scratch, VectorscanScanner};
 /// Rules with ≤ 64 AND/NOT segments use a `u64` bitmask to track satisfaction;
 /// rules with more segments use the 2-D counter matrix in [`SimpleMatchState`].
 const BITMASK_CAPACITY: usize = 64;
+
+/// Minimum number of deduplicated literal patterns before auto-selecting Vectorscan on x86-64.
+#[cfg(feature = "vectorscan")]
+#[allow(dead_code)]
+const VECTORSCAN_AUTO_MIN_PATTERNS: usize = 512;
 
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
@@ -222,6 +227,51 @@ enum AcMatcher {
     /// Only available with the `vectorscan` feature; not supported on Windows or ARM64.
     #[cfg(feature = "vectorscan")]
     Vectorscan(VectorscanScanner),
+}
+
+#[cfg(feature = "vectorscan")]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanBackend {
+    AhoCorasick,
+    Vectorscan,
+}
+
+#[inline]
+fn build_aho_corasick(patterns: &[&str]) -> AhoCorasick {
+    #[cfg(feature = "dfa")]
+    let aho_corasick_kind = AhoCorasickKind::DFA;
+    #[cfg(not(feature = "dfa"))]
+    let aho_corasick_kind = aho_corasick::AhoCorasickKind::ContiguousNFA;
+
+    AhoCorasickBuilder::new()
+        .kind(Some(aho_corasick_kind))
+        .build(patterns)
+        .unwrap()
+}
+
+#[cfg(feature = "vectorscan")]
+#[inline]
+fn choose_scan_backend(patterns: &[&str]) -> ScanBackend {
+    if patterns.is_empty() {
+        return ScanBackend::AhoCorasick;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        ScanBackend::AhoCorasick
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if patterns.len() < VECTORSCAN_AUTO_MIN_PATTERNS
+            || !std::arch::is_x86_feature_detected!("avx2")
+        {
+            return ScanBackend::AhoCorasick;
+        }
+
+        ScanBackend::Vectorscan
+    }
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
@@ -463,30 +513,19 @@ impl SimpleMatcher {
             .collect::<Vec<_>>();
 
         #[cfg(feature = "vectorscan")]
-        let ac_matcher = if patterns.is_empty() {
-            AcMatcher::AhoCorasick(AhoCorasickBuilder::new().build(&patterns).unwrap())
-        } else {
-            let flags = vec![0u32; patterns.len()];
-            AcMatcher::Vectorscan(
-                VectorscanScanner::new_literal(&patterns, &flags)
-                    .expect("failed to compile vectorscan literal database"),
-            )
+        let ac_matcher = match choose_scan_backend(&patterns) {
+            ScanBackend::AhoCorasick => AcMatcher::AhoCorasick(build_aho_corasick(&patterns)),
+            ScanBackend::Vectorscan => {
+                let flags = vec![0u32; patterns.len()];
+                AcMatcher::Vectorscan(
+                    VectorscanScanner::new_literal(&patterns, &flags)
+                        .expect("failed to compile vectorscan literal database"),
+                )
+            }
         };
 
         #[cfg(not(feature = "vectorscan"))]
-        let ac_matcher = {
-            #[cfg(feature = "dfa")]
-            let aho_corasick_kind = AhoCorasickKind::DFA;
-            #[cfg(not(feature = "dfa"))]
-            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
-
-            AcMatcher::AhoCorasick(
-                AhoCorasickBuilder::new()
-                    .kind(Some(aho_corasick_kind))
-                    .build(&patterns)
-                    .unwrap(),
-            )
-        };
+        let ac_matcher = AcMatcher::AhoCorasick(build_aho_corasick(&patterns));
 
         let mut ac_dedup_entries = Vec::with_capacity(dedup_entries.iter().map(|v| v.len()).sum());
         let mut ac_dedup_ranges = Vec::with_capacity(dedup_entries.len());
@@ -945,5 +984,31 @@ impl SimpleMatcher {
             let row_start = s * num_variants;
             flat_matrix[row_start..row_start + num_variants].fill(bit);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "vectorscan")]
+    use super::{ScanBackend, VECTORSCAN_AUTO_MIN_PATTERNS, choose_scan_backend};
+
+    #[cfg(feature = "vectorscan")]
+    #[test]
+    fn vectorscan_auto_backend_prefers_expected_arch_policy() {
+        let patterns = vec!["abc"; VECTORSCAN_AUTO_MIN_PATTERNS];
+        let backend = choose_scan_backend(&patterns);
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            let expected = if std::arch::is_x86_feature_detected!("avx2") {
+                ScanBackend::Vectorscan
+            } else {
+                ScanBackend::AhoCorasick
+            };
+            assert_eq!(backend, expected);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        assert_eq!(backend, ScanBackend::AhoCorasick);
     }
 }

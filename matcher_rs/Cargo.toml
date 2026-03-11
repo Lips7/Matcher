@@ -43,11 +43,13 @@ paste = "1.0"
 proptest = "1.10.0"
 
 [features]
-default = ["dfa"]
+default = ["dfa", "simd_runtime_dispatch"]
 # By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
 runtime_build = []
 # By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
 dfa = []
+# By enable simd_runtime_dispatch feature, we select the best available transform kernel at runtime.
+simd_runtime_dispatch = []
 # By enable vectorscan feature, we could use vectorscan to perform simple matching.
 vectorscan = ["dep:vectorscan-rs-sys", "dep:thiserror"]
 

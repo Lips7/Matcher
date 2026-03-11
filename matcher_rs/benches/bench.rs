@@ -78,6 +78,38 @@ fn build_deterministic_map(
     simple_word_map
 }
 
+fn build_rule_shape_map(
+    en_or_cn: &str,
+    simple_word_map_size: usize,
+    shape: &str,
+) -> HashMap<u32, String> {
+    let mut patterns: Vec<&str> = if en_or_cn == "cn" {
+        CN_WORD_LIST.lines().collect()
+    } else {
+        EN_WORD_LIST.lines().collect()
+    };
+    patterns.sort_unstable();
+
+    let mut simple_word_map = HashMap::with_capacity(simple_word_map_size);
+    for i in 0..simple_word_map_size {
+        let word_idx = (i * 997) % patterns.len();
+        let word = patterns[word_idx];
+        let shaped = match shape {
+            "literal" => word.to_string(),
+            "and" => {
+                let a = patterns[word_idx];
+                let b = patterns[(word_idx + 101) % patterns.len()];
+                let c = patterns[(word_idx + 211) % patterns.len()];
+                format!("{a}&{b}&{c}")
+            }
+            "not" => format!("{word}~__never_block_{i}__"),
+            _ => unreachable!("unknown rule shape: {shape}"),
+        };
+        simple_word_map.insert((i + 1) as u32, shaped);
+    }
+    simple_word_map
+}
+
 mod build {
     use super::*;
 
@@ -267,6 +299,40 @@ mod text_process {
         bencher.counter(BytesCount::new(total_bytes)).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(text_process(process_type, line));
+            }
+        });
+    }
+}
+
+mod rule_shapes {
+    use super::*;
+
+    const RULE_SHAPES: &[&str] = &["literal", "and", "not"];
+
+    #[divan::bench(args = RULE_SHAPES, max_time = 5)]
+    fn is_match_en(bencher: Bencher, shape: &str) {
+        let simple_word_map = build_rule_shape_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, shape);
+        let matcher = SimpleMatcher::new(&HashMap::from([(ProcessType::None, simple_word_map)]));
+        let haystack = EN_HAYSTACK;
+        let total_bytes = haystack.len();
+
+        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(args = RULE_SHAPES, max_time = 5)]
+    fn process_en(bencher: Bencher, shape: &str) {
+        let simple_word_map = build_rule_shape_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, shape);
+        let matcher = SimpleMatcher::new(&HashMap::from([(ProcessType::None, simple_word_map)]));
+        let haystack = EN_HAYSTACK;
+        let total_bytes = haystack.len();
+
+        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
             }
         });
     }

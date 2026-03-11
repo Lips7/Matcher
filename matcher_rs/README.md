@@ -96,23 +96,35 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 ## Feature Flags
 * `runtime_build`: Build transformation tables from the source text maps at startup instead of embedding precompiled binaries.
 * `dfa`: Use DFA-backed Aho-Corasick automata where applicable. This is enabled by default and improves speed at the cost of higher memory consumption.
-* `vectorscan`: Use Intel's Vectorscan (a fork of Hyperscan) for SIMD-accelerated matching. Offers the best performance but requires the Vectorscan library to be installed on the system.
+* `simd_runtime_dispatch`: Enabled by default. Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere).
+* `vectorscan`: Enable Intel's Vectorscan (a fork of Hyperscan) as an optional scan backend. Auto-selection keeps DFA on ARM64 and only switches to Vectorscan on supported x86-64 hosts when the literal set is large enough.
 
 ### Feature Comparison & Recommendation
 
 | Feature | Engine | Search Speed | Memory Usage | External Dependency | Best For |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Default** | Aho-Corasick (DFA) | **Fast** | High | None | General purpose use when extra memory is acceptable. |
+| `simd_runtime_dispatch` | Runtime-selected transform kernels | **Fastest preprocess** | Neutral | None | Portable builds that should exploit the host CPU automatically. |
 | `--no-default-features` | Aho-Corasick (Contiguous NFA) | Good | **Lowest** | None | Memory-constrained environments. |
 | `dfa` | Aho-Corasick (DFA) | **Fast** | High | None | Explicitly enabling the default engine in custom feature sets. |
-| `vectorscan` | Vectorscan (SIMD) | **Fastest** | Moderate | **Required** | High-throughput production systems requiring max performance. |
+| `vectorscan` | Auto-selected Vectorscan or DFA | Best on supported x86-64 | Moderate | **Required** | Large literal sets on x86-64 where Hyperscan/Vectorscan beats DFA. |
 
 ## Benchmarks
 
 Benchmarked on **MacBook Air M4 (24GB RAM)**.
 Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
-Full records are stored in [bench_records/](./bench_records/), named by commit hash. Latest: [b48592c.txt](./bench_records/b48592c.txt).
+Full records are stored in [bench_records/](./bench_records/), named with timestamps in `YYYY-MM-DD HH:mm:ss.txt` format. Latest: [2026-03-11 08:34:20.txt](./bench_records/2026-03-11%2008:34:20.txt).
+
+To compare two benchmark records:
+
+```shell
+python matcher_rs/scripts/compare_benchmarks.py \
+  "matcher_rs/bench_records/2026-03-10 12:22:24.txt" \
+  "matcher_rs/bench_records/2026-03-11 08:34:20.txt"
+```
+
+The script treats the first file as the baseline and prints two sections: `Regression` and `Improvement`, using median latency by default.
 
 ## Contributing
 

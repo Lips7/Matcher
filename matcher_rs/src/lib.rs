@@ -44,7 +44,8 @@
 //! | Flag | Default | Effect |
 //! |------|---------|--------|
 //! | `dfa` | on | Uses DFA-backed Aho-Corasick automata where applicable; faster than NFA-based matching but with higher memory use |
-//! | `vectorscan` | off | SIMD-accelerated scanning via Intel Hyperscan; requires Boost, no Windows/ARM64 |
+//! | `simd_runtime_dispatch` | on | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
+//! | `vectorscan` | off | Enables the optional Vectorscan backend; auto-selection prefers DFA on ARM64 and only switches on supported x86-64 hosts |
 //! | `runtime_build` | off | Builds transformation tables from source text files at startup instead of embedding pre-compiled binaries |
 
 /// Use mimalloc as the global allocator for reduced fragmentation and better multi-threaded throughput.
