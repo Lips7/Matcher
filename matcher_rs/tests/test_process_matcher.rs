@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use matcher_rs::{
     ProcessType, build_process_type_tree, reduce_text_process, reduce_text_process_emit,
-    reduce_text_process_with_tree, text_process,
+    text_process, walk_process_tree,
 };
 
 #[test]
@@ -87,7 +87,8 @@ fn test_reduce_text_process_with_tree() {
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
-    let results = reduce_text_process_with_tree(&process_type_tree, text);
+    let (results, _) =
+        walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _| false);
 
     // Verify specific expected variants and their masks
     let find_variant = |target: &str| results.iter().find(|(s, _)| s == target);
@@ -113,7 +114,11 @@ fn test_reduce_text_process_with_set() {
     ]);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
-    let results = reduce_text_process_with_tree(&build_process_type_tree(&process_type_set), text);
+    let (results, _) = walk_process_tree::<false, _>(
+        &build_process_type_tree(&process_type_set),
+        text,
+        &mut |_, _, _| false,
+    );
 
     assert!(results.iter().any(|(s, _)| s == "a裸b軆c"));
     assert!(results.iter().any(|(s, _)| s == "ᗩ裸𝚩軆Ⲉ"));
@@ -155,7 +160,8 @@ fn test_reduce_text_process_with_tree_correctness() {
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "妳！好";
 
-    let results = reduce_text_process_with_tree(&process_type_tree, text);
+    let (results, _) =
+        walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _| false);
 
     let mut found_variants = results.iter().map(|(s, _)| s.as_ref()).collect::<Vec<_>>();
     found_variants.sort();
@@ -174,8 +180,11 @@ fn test_reduce_text_process_empty_text() {
         ProcessType::Normalize,
     ]);
 
-    let processed_text =
-        reduce_text_process_with_tree(&build_process_type_tree(&process_type_set), "");
+    let (processed_text, _) = walk_process_tree::<false, _>(
+        &build_process_type_tree(&process_type_set),
+        "",
+        &mut |_, _, _| false,
+    );
     assert!(processed_text.iter().all(|(text, _)| text.is_empty()));
 }
 

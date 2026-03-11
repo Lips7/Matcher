@@ -23,7 +23,7 @@ const MASKS_POOL_MAX: usize = 16;
 /// Combined thread-local state for `TREE_NODE_INDICES` and `MASKS_POOL`.
 ///
 /// Merging into a single `thread_local!` eliminates one TLS lookup (~5ns) per
-/// `reduce_text_process_with_tree` call.
+/// `walk_process_tree` call.
 struct TransformThreadState {
     tree_node_indices: Vec<usize>,
     masks_pool: Vec<ProcessedTextMasks<'static>>,
@@ -69,7 +69,7 @@ fn return_string_to_pool(s: String) {
 }
 
 /// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
-pub fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
+pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
     for (cow, _) in text_masks.drain(..) {
         if let Cow::Owned(s) = cow {
             return_string_to_pool(s);
@@ -157,11 +157,11 @@ impl<'de> Deserialize<'de> for ProcessType {
 
 impl Display for ProcessType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let display_str_list = self
+        let names = self
             .iter_names()
             .map(|(name, _)| name.to_lowercase())
             .collect::<Vec<_>>();
-        write!(f, "{}", display_str_list.join("_"))
+        write!(f, "{}", names.join("_"))
     }
 }
 
@@ -177,11 +177,11 @@ static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8] = [
     OnceLock::new(),
 ];
 
-/// A fixed-capacity array of `(processed_text, u64)` pairs produced by
+/// A collection of `(processed_text, bitmask)` pairs produced by
 /// the `reduce_text_process_*` family of functions.
 ///
-/// The capacity of 16 supports up to 16 distinct text-processing variants per input,
-/// which is the practical upper bound given the number of [`ProcessType`] flags.
+/// Each entry pairs a text variant with a bitmask of the [`ProcessType`] flags that
+/// produced it. Up to 16 distinct variants are possible given the number of flags.
 ///
 /// # Type Parameters
 /// * `'a` - The lifetime of the underlying string slice.
@@ -201,7 +201,7 @@ pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64)>;
 ///   Fanjian (2-stage page table), Pinyin (2-stage page table + string buffer), and
 ///   Delete (flat BitSet covering all Unicode planes).
 #[derive(Clone)]
-pub enum ProcessMatcher {
+pub(crate) enum ProcessMatcher {
     MultiChar(MultiCharMatcher),
     SingleChar(SingleCharMatcher),
 }
@@ -239,7 +239,7 @@ impl ProcessMatcher {
     /// Returns `(true, Cow::Owned(result))` when at least one replacement was made, or
     /// `(false, Cow::Borrowed(text))` when the text is unchanged, avoiding any allocation.
     #[inline(always)]
-    pub fn replace_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
+    pub(crate) fn replace_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         match self {
             ProcessMatcher::SingleChar(matcher) => match matcher {
                 SingleCharMatcher::Fanjian { .. } => {
@@ -262,9 +262,9 @@ impl ProcessMatcher {
                 }
             },
             ProcessMatcher::MultiChar(mc) => {
-                let rl = mc.replace_list();
+                let replacements = mc.replace_list();
                 Self::replace_scan(text, mc.find_iter(text), |result, idx| {
-                    result.push_str(rl[idx]);
+                    result.push_str(replacements[idx]);
                 })
             }
         }
@@ -275,7 +275,7 @@ impl ProcessMatcher {
     /// Returns `(true, Cow::Owned(result))` when at least one character or span was removed, or
     /// `(false, Cow::Borrowed(text))` when nothing matched, avoiding any allocation.
     #[inline(always)]
-    pub fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
+    pub(crate) fn delete_all<'a>(&self, text: &'a str) -> (bool, Cow<'a, str>) {
         let ProcessMatcher::SingleChar(matcher) = self else {
             debug_assert!(false, "delete_all called on non-Delete matcher");
             return (false, Cow::Borrowed(text));
@@ -302,16 +302,6 @@ impl ProcessMatcher {
 /// # Panics
 /// Panics (via `unreachable!()`) if `process_type_bit` is a composite or unrecognized value
 /// when the `runtime_build` feature is disabled.
-///
-/// # Examples
-///
-/// ```rust
-/// use matcher_rs::{ProcessType, get_process_matcher};
-///
-/// let matcher = get_process_matcher(ProcessType::Fanjian);
-/// let (changed, simplified) = matcher.replace_all("漢字");
-/// // Traditional '漢' and '字' map to Simplified '汉' and '字'
-/// ```
 pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMatcher {
     let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(index < 8, "ProcessType bit index out of bounds");
@@ -419,7 +409,7 @@ pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMat
 /// `Cow::Borrowed` is returned when no step modifies the text.
 ///
 /// For use cases where multiple composite types share common prefixes, prefer
-/// [`reduce_text_process_with_tree`] which avoids redundant intermediate computations.
+/// [`walk_process_tree`] which avoids redundant intermediate computations.
 ///
 /// # Examples
 ///
@@ -440,15 +430,15 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
         match process_type_bit {
             ProcessType::None => continue,
             ProcessType::Delete => {
-                if let (true, Cow::Owned(pt)) = pm.delete_all(result.as_ref())
-                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(pt))
+                if let (true, Cow::Owned(processed)) = pm.delete_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
                 {
                     return_string_to_pool(old);
                 }
             }
             _ => {
-                if let (true, Cow::Owned(pt)) = pm.replace_all(result.as_ref())
-                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(pt))
+                if let (true, Cow::Owned(processed)) = pm.replace_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
                 {
                     return_string_to_pool(old);
                 }
@@ -465,7 +455,7 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// The first entry is always `Cow::Borrowed(text)` (the original input). Steps that leave
 /// the text unchanged add no entry.
 ///
-/// For generating all variants needed for matching, prefer [`reduce_text_process_with_tree`].
+/// For generating all variants needed for matching, prefer [`walk_process_tree`].
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     let mut text_list: Vec<Cow<'a, str>> = Vec::new();
@@ -478,15 +468,15 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
             .expect("It should always have at least one element");
 
         match process_type_bit {
-            ProcessType::None => {}
+            ProcessType::None => continue,
             ProcessType::Delete => {
-                if let (true, Cow::Owned(pt)) = pm.delete_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(pt));
+                if let (true, Cow::Owned(processed)) = pm.delete_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
                 }
             }
             _ => {
-                if let (true, Cow::Owned(pt)) = pm.replace_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(pt));
+                if let (true, Cow::Owned(processed)) = pm.replace_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
                 }
             }
         }
@@ -513,15 +503,15 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
             .expect("It should always have at least one element");
 
         match process_type_bit {
-            ProcessType::None => {}
+            ProcessType::None => continue,
             ProcessType::Delete => {
-                if let (true, Cow::Owned(pt)) = pm.delete_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(pt));
+                if let (true, Cow::Owned(processed)) = pm.delete_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
                 }
             }
             _ => {
-                if let (true, Cow::Owned(pt)) = pm.replace_all(current_text.as_ref()) {
-                    *current_text = Cow::Owned(pt);
+                if let (true, Cow::Owned(processed)) = pm.replace_all(current_text.as_ref()) {
+                    *current_text = Cow::Owned(processed);
                 }
             }
         }
@@ -530,7 +520,7 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
     text_list
 }
 
-/// A node in the flat-array transformation trie used by [`reduce_text_process_with_tree`].
+/// A node in the flat-array transformation trie used by [`walk_process_tree`].
 ///
 /// The trie is built once by [`build_process_type_tree`] and stored inside `SimpleMatcher`.
 /// Each node represents a single transformation step (`process_type_bit`) reachable from
@@ -542,9 +532,9 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
-    pub(crate) process_type_bit: ProcessType,
-    pub(crate) children: Vec<usize>,
-    pub(crate) folded_mask: u64,
+    process_type_bit: ProcessType,
+    children: Vec<usize>,
+    folded_mask: u64,
 }
 
 /// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
@@ -556,7 +546,7 @@ pub struct ProcessTypeBitNode {
 /// and creating new child nodes when a path diverges.
 ///
 /// The resulting flat `Vec<ProcessTypeBitNode>` is passed to
-/// [`reduce_text_process_with_tree`], which performs a single BFS traversal to compute all
+/// [`walk_process_tree`], which performs a single BFS traversal to compute all
 /// needed text variants while sharing common intermediate results.
 pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
@@ -579,16 +569,19 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                 continue;
             }
 
-            let mut is_found = false;
-            for child_node_index in &current_node.children {
-                if process_type_bit == process_type_tree[*child_node_index].process_type_bit {
-                    current_node_index = *child_node_index;
-                    is_found = true;
-                    break;
-                }
-            }
+            let found_child = current_node
+                .children
+                .iter()
+                .find(|&&idx| process_type_tree[idx].process_type_bit == process_type_bit)
+                .copied();
 
-            if !is_found {
+            if let Some(child_idx) = found_child {
+                current_node_index = child_idx;
+                process_type_tree[current_node_index]
+                    .process_type_list
+                    .push(process_type);
+                process_type_tree[current_node_index].folded_mask |= 1u64 << process_type.bits();
+            } else {
                 let mut child = ProcessTypeBitNode {
                     process_type_list: Vec::new(),
                     process_type_bit,
@@ -603,11 +596,6 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                     .children
                     .push(new_node_index);
                 current_node_index = new_node_index;
-            } else {
-                process_type_tree[current_node_index]
-                    .process_type_list
-                    .push(process_type);
-                process_type_tree[current_node_index].folded_mask |= 1u64 << process_type.bits();
             }
         }
     }
@@ -620,21 +608,21 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 /// returned to the pool and the existing index is returned. Otherwise `pt` is appended.
 /// If `changed` is `None`, `current_index` is returned unchanged.
 #[inline(always)]
-pub(crate) fn dedup_insert(
+fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
     changed: Option<String>,
 ) -> usize {
     match changed {
-        Some(pt) => {
+        Some(processed) => {
             if let Some(pos) = text_masks
                 .iter()
-                .position(|(t, _)| t.as_ref() == pt.as_str())
+                .position(|(t, _)| t.as_ref() == processed.as_str())
             {
-                return_string_to_pool(pt);
+                return_string_to_pool(processed);
                 pos
             } else {
-                text_masks.push((Cow::Owned(pt), 0u64));
+                text_masks.push((Cow::Owned(processed), 0u64));
                 text_masks.len() - 1
             }
         }
@@ -642,25 +630,34 @@ pub(crate) fn dedup_insert(
     }
 }
 
-/// Generates all text variants required for matching, using a pre-built transformation trie.
+/// Walks the transformation trie, producing all text variants needed for matching.
 ///
 /// This is the hot-path function called on every [`crate::SimpleMatcher::is_match`] /
-/// [`crate::SimpleMatcher::process`] invocation. It performs a single left-to-right traversal of
-/// `process_type_tree`, applying each transformation step exactly once per unique path. Common
-/// prefixes (e.g. the shared `Fanjian` step for both `Fanjian | Delete` and
-/// `Fanjian | Normalize`) are computed only once and their result indices are reused for child
-/// nodes.
+/// [`crate::SimpleMatcher::process`] invocation. It performs a single left-to-right BFS traversal
+/// of `process_type_tree`, applying each transformation step exactly once per unique path. Common
+/// prefixes (e.g. the shared `Fanjian` step for both `Fanjian | Delete` and `Fanjian | Normalize`)
+/// are computed only once and their result indices are reused for child nodes.
 ///
-/// Each entry in the returned [`ProcessedTextMasks`] is a `(text_variant, rule_bitmask)` pair.
-/// The bitmask encodes which composite [`ProcessType`]s produced that variant, so the matcher
-/// can filter automaton hits by the correct pipeline.
+/// Each entry in the returned `Vec<(Cow<str>, u64)>` is a `(text_variant, rule_bitmask)` pair.
+/// The bitmask encodes which composite [`ProcessType`]s produced that variant.
 ///
-/// The caller must return owned strings to the pool via `return_processed_string_to_pool` when done.
+/// When `LAZY=true`, `on_variant(text, index, mask)` is called immediately after each new unique
+/// variant is produced. If it returns `true`, the walk stops early. A delta phase at the end
+/// re-invokes `on_variant` for any entry whose mask grew through dedup after its initial callback.
+/// When `LAZY=false`, `on_variant` is never called and all lazy-only code is dead-code-eliminated.
+///
+/// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY=true` and
+/// `on_variant` triggered early exit. The caller must pass `text_masks` to
+/// `return_processed_string_to_pool` when done.
 #[inline(always)]
-pub fn reduce_text_process_with_tree<'a>(
+pub fn walk_process_tree<'a, const LAZY: bool, F>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
-) -> ProcessedTextMasks<'a> {
+    on_variant: &mut F,
+) -> (ProcessedTextMasks<'a>, bool)
+where
+    F: FnMut(&str, usize, u64) -> bool,
+{
     TRANSFORM_STATE.with(|state| {
         let mut ts = state.borrow_mut();
 
@@ -672,83 +669,15 @@ pub fn reduce_text_process_with_tree<'a>(
         text_masks.clear();
         text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
 
-        if process_type_tree[0].children.is_empty() {
-            return text_masks;
-        }
-
-        ts.tree_node_indices.clear();
-        ts.tree_node_indices.resize(process_type_tree.len(), 0);
-
-        for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-            let current_index = ts.tree_node_indices[current_node_index];
-
-            for &child_node_index in &current_node.children {
-                let child_node = &process_type_tree[child_node_index];
-                let pm = get_process_matcher(child_node.process_type_bit);
-
-                let changed = match child_node.process_type_bit {
-                    ProcessType::None => None,
-                    ProcessType::Delete => {
-                        let current_text = text_masks[current_index].0.as_ref();
-                        match pm.delete_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
-                            _ => None,
-                        }
-                    }
-                    _ => {
-                        let current_text = text_masks[current_index].0.as_ref();
-                        match pm.replace_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
-                            _ => None,
-                        }
-                    }
-                };
-                let child_index = dedup_insert(&mut text_masks, current_index, changed);
-
-                ts.tree_node_indices[child_node_index] = child_index;
-                text_masks[child_index].1 |= child_node.folded_mask;
-            }
-        }
-
-        text_masks
-    })
-}
-
-/// Lazily walks the transformation trie, calling `on_variant` for each unique text variant.
-///
-/// Like [`reduce_text_process_with_tree`], but instead of collecting all variants before
-/// returning, it invokes `on_variant(text, index, mask)` immediately after each new unique
-/// text is produced. If `on_variant` returns `true`, the walk stops immediately.
-///
-/// After the trie walk completes (or early exit), a delta phase calls `on_variant` again for
-/// any entries whose mask grew through dedup after their initial callback — this handles the
-/// case where a no-op transform shares an existing entry and contributes additional mask bits.
-///
-/// Returns `(text_masks, stopped)` where `stopped` is `true` if `on_variant` triggered early
-/// exit. The caller must pass `text_masks` to [`return_processed_string_to_pool`] when done.
-pub fn walk_process_tree_lazy<'a>(
-    process_type_tree: &[ProcessTypeBitNode],
-    text: &'a str,
-    on_variant: &mut dyn FnMut(&str, usize, u64) -> bool,
-) -> (ProcessedTextMasks<'a>, bool) {
-    TRANSFORM_STATE.with(|state| {
-        let mut ts = state.borrow_mut();
-
-        let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
-        let mut text_masks: ProcessedTextMasks<'a> =
-            unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
-        text_masks.clear();
-        text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
-
         let mut scanned_masks: TinyVec<[u64; 8]> = TinyVec::new();
-        scanned_masks.push(0u64);
-
-        // Scan the root entry (original text) immediately.
-        let root_mask = process_type_tree[0].folded_mask;
-        if root_mask != 0 && on_variant(text, 0, root_mask) {
-            return (text_masks, true);
+        if LAZY {
+            scanned_masks.push(0u64);
+            let root_mask = process_type_tree[0].folded_mask;
+            if root_mask != 0 && on_variant(text, 0, root_mask) {
+                return (text_masks, true);
+            }
+            scanned_masks[0] = root_mask;
         }
-        scanned_masks[0] = root_mask;
 
         if process_type_tree[0].children.is_empty() {
             return (text_masks, false);
@@ -771,31 +700,32 @@ pub fn walk_process_tree_lazy<'a>(
                     ProcessType::Delete => {
                         let current_text = text_masks[current_index].0.as_ref();
                         match pm.delete_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
+                            (true, Cow::Owned(processed)) => Some(processed),
                             _ => None,
                         }
                     }
                     _ => {
                         let current_text = text_masks[current_index].0.as_ref();
                         match pm.replace_all(current_text) {
-                            (true, Cow::Owned(pt)) => Some(pt),
+                            (true, Cow::Owned(processed)) => Some(processed),
                             _ => None,
                         }
                     }
                 };
 
-                let old_len = text_masks.len();
+                let old_len = if LAZY { text_masks.len() } else { 0 };
                 let child_index = dedup_insert(&mut text_masks, current_index, changed);
 
-                // Grow scanned_masks to match text_masks length.
-                while scanned_masks.len() < text_masks.len() {
-                    scanned_masks.push(0u64);
+                if LAZY {
+                    while scanned_masks.len() < text_masks.len() {
+                        scanned_masks.push(0u64);
+                    }
                 }
 
                 ts.tree_node_indices[child_node_index] = child_index;
                 text_masks[child_index].1 |= child_node.folded_mask;
 
-                if child_index >= old_len {
+                if LAZY && child_index >= old_len {
                     // New unique text: call on_variant immediately.
                     let mask = text_masks[child_index].1;
                     if mask != 0
@@ -810,15 +740,16 @@ pub fn walk_process_tree_lazy<'a>(
             }
         }
 
-        if stopped {
-            return (text_masks, true);
-        }
-
-        // Delta phase: re-scan entries whose mask grew after their initial callback.
-        for i in 0..text_masks.len() {
-            let delta = text_masks[i].1 & !scanned_masks[i];
-            if delta != 0 && on_variant(text_masks[i].0.as_ref(), i, delta) {
+        if LAZY {
+            if stopped {
                 return (text_masks, true);
+            }
+            // Delta phase: re-scan entries whose mask grew after their initial callback.
+            for i in 0..text_masks.len() {
+                let delta = text_masks[i].1 & !scanned_masks[i];
+                if delta != 0 && on_variant(text_masks[i].0.as_ref(), i, delta) {
+                    return (text_masks, true);
+                }
             }
         }
 

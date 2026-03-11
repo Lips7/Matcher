@@ -30,7 +30,7 @@ enum MultiCharEngine {
 /// `replace_list` maps each pattern index to its replacement string and is
 /// populated only for `ProcessType::Normalize`; it is empty for all other types.
 #[derive(Clone)]
-pub struct MultiCharMatcher {
+pub(crate) struct MultiCharMatcher {
     engine: MultiCharEngine,
     replace_list: Vec<&'static str>,
 }
@@ -38,7 +38,7 @@ pub struct MultiCharMatcher {
 /// An iterator over multi-character pattern matches in a text string.
 ///
 /// Yields `(start_byte, end_byte, pattern_idx)` triples for each match.
-pub enum MultiCharFindIter<'a> {
+pub(crate) enum MultiCharFindIter<'a> {
     #[cfg(not(feature = "dfa"))]
     DAAC(daachorse::charwise::iter::LestmostFindIterator<'a, &'a str, u32>),
     AC(aho_corasick::FindIter<'a, 'a>),
@@ -63,7 +63,7 @@ impl<'a> Iterator for MultiCharFindIter<'a> {
 
 impl MultiCharMatcher {
     #[inline(always)]
-    pub fn replace_list(&self) -> &[&'static str] {
+    pub(crate) fn replace_list(&self) -> &[&'static str] {
         &self.replace_list
     }
 
@@ -71,7 +71,7 @@ impl MultiCharMatcher {
     ///
     /// Each item is `(start_byte, end_byte, pattern_idx)`.
     #[inline(always)]
-    pub fn find_iter<'a>(&'a self, text: &'a str) -> MultiCharFindIter<'a> {
+    pub(crate) fn find_iter<'a>(&'a self, text: &'a str) -> MultiCharFindIter<'a> {
         match &self.engine {
             #[cfg(not(feature = "dfa"))]
             MultiCharEngine::DAAC(ac) => MultiCharFindIter::DAAC(ac.leftmost_find_iter(text)),
@@ -80,7 +80,7 @@ impl MultiCharMatcher {
     }
 
     /// Creates an empty no-op matcher (used for `ProcessType::None`).
-    pub fn new_empty() -> Self {
+    pub(crate) fn new_empty() -> Self {
         Self {
             engine: MultiCharEngine::AC(AhoCorasick::new(Vec::<&str>::new()).unwrap()),
             replace_list: Vec::new(),
@@ -93,7 +93,7 @@ impl MultiCharMatcher {
     /// Available when `runtime_build` or `dfa` is active.
     /// Use [`with_replace_list`](Self::with_replace_list) to populate the replace list.
     #[cfg(any(feature = "runtime_build", feature = "dfa"))]
-    pub fn new<I, P>(patterns: I) -> Self
+    pub(crate) fn new<I, P>(patterns: I) -> Self
     where
         I: IntoIterator<Item = P>,
         P: AsRef<str> + AsRef<[u8]>,
@@ -126,7 +126,7 @@ impl MultiCharMatcher {
     }
 
     /// Attaches a replacement list, consuming and returning `self`.
-    pub fn with_replace_list(mut self, replace_list: Vec<&'static str>) -> Self {
+    pub(crate) fn with_replace_list(mut self, replace_list: Vec<&'static str>) -> Self {
         self.replace_list = replace_list;
         self
     }
@@ -135,8 +135,10 @@ impl MultiCharMatcher {
     ///
     /// Only available without the `dfa` feature (non-`runtime_build` path).
     #[cfg(not(feature = "dfa"))]
-    pub fn deserialize_from(bytes: &'static [u8]) -> Self {
+    pub(crate) fn deserialize_from(bytes: &'static [u8]) -> Self {
         Self {
+            // SAFETY: `bytes` is produced by build.rs `serialize()` in the same build,
+            // so the format, alignment, and endianness match the current daachorse version.
             engine: MultiCharEngine::DAAC(unsafe {
                 CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(bytes).0
             }),
@@ -149,7 +151,7 @@ impl MultiCharMatcher {
     /// Pairs are sorted by key; the automaton is built from the sorted keys and
     /// `replace_list` is populated from the corresponding sorted values.
     #[cfg(feature = "runtime_build")]
-    pub fn new_from_dict(dict: HashMap<&'static str, &'static str>) -> Self {
+    pub(crate) fn new_from_dict(dict: HashMap<&'static str, &'static str>) -> Self {
         let mut pairs: Vec<(&'static str, &'static str)> = dict.into_iter().collect();
         pairs.sort_unstable_by_key(|&(k, _)| k);
         let replace_list: Vec<&'static str> = pairs.iter().map(|&(_, v)| v).collect();

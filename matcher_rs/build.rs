@@ -192,8 +192,9 @@ fn build_2_stage_table(
     let mut page_list: Vec<u32> = pages.into_iter().collect();
     page_list.sort_unstable();
 
-    let mut l1 = vec![0u16; 4352]; // up to 0x10FFFF >> 8 = 0x10FF = 4351
-    let mut l2 = vec![0u32; (page_list.len() + 1) * 256]; // page 0 is empty fallback
+    const L1_SIZE: usize = (0x10FFFF >> 8) + 1; // 4352: one entry per 256-codepoint block
+    let mut l1 = vec![0u16; L1_SIZE];
+    let mut l2 = vec![0u32; (page_list.len() + 1) * 256]; // +1: page 0 is the empty fallback
 
     for (i, &page) in page_list.iter().enumerate() {
         let l2_page_idx = (i + 1) as u16;

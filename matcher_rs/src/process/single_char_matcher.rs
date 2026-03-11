@@ -15,8 +15,7 @@ const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 /// Single-character lookup engine backed by compact, pre-compiled data structures.
 ///
 /// Each variant provides O(1) per-codepoint dispatch with no state-machine overhead.
-/// Instances are constructed by [`get_process_matcher`](crate::get_process_matcher) and
-/// cached for the lifetime of the program.
+/// Instances are constructed by `get_process_matcher` and cached for the lifetime of the program.
 ///
 /// ## Page-table layout (Fanjian and Pinyin)
 ///
@@ -32,7 +31,7 @@ const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 /// For Pinyin the `value` packs `(offset << 8) | length` into the string buffer;
 /// for Fanjian the value is the mapped codepoint directly.
 #[derive(Clone)]
-pub enum SingleCharMatcher {
+pub(crate) enum SingleCharMatcher {
     /// Traditional Chinese → Simplified Chinese via a 2-stage page table.
     ///
     /// * `l1` — L1 index: `u16[4352]`, one entry per 256-codepoint block. Non-zero entries
@@ -65,7 +64,7 @@ pub enum SingleCharMatcher {
 }
 
 /// The transformation to apply to a matched codepoint.
-pub enum SingleCharMatch<'a> {
+pub(crate) enum SingleCharMatch<'a> {
     Char(char),
     Str(&'a str),
     Delete,
@@ -83,10 +82,14 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     if page == 0 {
         return None;
     }
+    // SAFETY: page is a non-zero L1 entry produced by build_2_stage_table, so
+    // page * 256 + char_idx (where char_idx < 256) is within the L2 allocation.
+    debug_assert!(page * 256 + char_idx < l2.len());
     let val = unsafe { *l2.get_unchecked(page * 256 + char_idx) };
     if val != 0 { Some(val) } else { None }
 }
 
+#[cfg(not(feature = "runtime_build"))]
 #[inline]
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
@@ -97,6 +100,7 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
         .into_boxed_slice()
 }
 
+#[cfg(not(feature = "runtime_build"))]
 #[inline]
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
@@ -163,7 +167,7 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 }
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
-pub struct FanjianFindIter<'a> {
+pub(crate) struct FanjianFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
     text: &'a str,
@@ -204,7 +208,7 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 }
 
 /// Monomorphized iterator for Delete (bitset-based character removal).
-pub struct DeleteFindIter<'a> {
+pub(crate) struct DeleteFindIter<'a> {
     bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
     ascii_lut: [u8; 16],
@@ -275,7 +279,7 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 }
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
-pub struct PinYinFindIter<'a> {
+pub(crate) struct PinYinFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
     strings: &'a str,
@@ -326,7 +330,7 @@ impl<'a> Iterator for PinYinFindIter<'a> {
 
 impl SingleCharMatcher {
     #[inline(always)]
-    pub fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
+    pub(crate) fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
         let SingleCharMatcher::Fanjian { l1, l2 } = self else {
             unreachable!("fanjian_iter called on non-Fanjian matcher");
         };
@@ -339,7 +343,7 @@ impl SingleCharMatcher {
     }
 
     #[inline(always)]
-    pub fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
+    pub(crate) fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
         let SingleCharMatcher::Delete {
             bitset,
             ascii_lut,
@@ -358,7 +362,7 @@ impl SingleCharMatcher {
     }
 
     #[inline(always)]
-    pub fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
+    pub(crate) fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
         let SingleCharMatcher::Pinyin { l1, l2, strings } = self else {
             unreachable!("pinyin_iter called on non-Pinyin matcher");
         };
@@ -371,14 +375,15 @@ impl SingleCharMatcher {
         }
     }
 
-    pub fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
+    #[cfg(not(feature = "runtime_build"))]
+    pub(crate) fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
         SingleCharMatcher::Fanjian {
             l1: decode_u16_table(l1.as_ref()),
             l2: decode_u32_table(l2.as_ref()),
         }
     }
 
-    pub fn delete(bitset: Cow<'static, [u8]>) -> Self {
+    pub(crate) fn delete(bitset: Cow<'static, [u8]>) -> Self {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
@@ -390,7 +395,8 @@ impl SingleCharMatcher {
         }
     }
 
-    pub fn pinyin(
+    #[cfg(not(feature = "runtime_build"))]
+    pub(crate) fn pinyin(
         l1: Cow<'static, [u8]>,
         l2: Cow<'static, [u8]>,
         strings: Cow<'static, str>,
@@ -416,7 +422,8 @@ impl SingleCharMatcher {
         let mut pages: HashSet<u32> = map.keys().map(|&k| k >> 8).collect();
         let mut page_list: Vec<u32> = pages.drain().collect();
         page_list.sort_unstable();
-        let mut l1 = vec![0u16; 4352];
+        const L1_SIZE: usize = (0x10FFFF >> 8) + 1; // 4352: one entry per 256-codepoint block
+        let mut l1 = vec![0u16; L1_SIZE];
         let mut l2 = vec![0u32; (page_list.len() + 1) * 256];
         for (i, &page) in page_list.iter().enumerate() {
             let l2_page_idx = (i + 1) as u16;
@@ -433,7 +440,7 @@ impl SingleCharMatcher {
 
     /// Builds a Fanjian matcher from a codepoint→codepoint map.
     #[cfg(feature = "runtime_build")]
-    pub fn fanjian_from_map(map: HashMap<u32, u32>) -> Self {
+    pub(crate) fn fanjian_from_map(map: HashMap<u32, u32>) -> Self {
         let (l1, l2) = Self::build_2_stage_table(&map);
         Self::Fanjian {
             l1: l1.into_boxed_slice(),
@@ -443,7 +450,7 @@ impl SingleCharMatcher {
 
     /// Builds a Delete matcher from text source and whitespace list.
     #[cfg(feature = "runtime_build")]
-    pub fn delete_from_sources(text_delete: &str, white_space: &[&str]) -> Self {
+    pub(crate) fn delete_from_sources(text_delete: &str, white_space: &[&str]) -> Self {
         let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
         for line in text_delete.trim().lines() {
             for c in line.chars() {
@@ -465,7 +472,7 @@ impl SingleCharMatcher {
     /// The constructor packs each syllable into a shared strings buffer and
     /// records `(offset, length)` as the L2 value.
     #[cfg(feature = "runtime_build")]
-    pub fn pinyin_from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
+    pub(crate) fn pinyin_from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
         let mut strings = String::new();
         let packed: HashMap<u32, u32> = map
             .into_iter()
