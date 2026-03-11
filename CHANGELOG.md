@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.3 - 2026-03-11
+
+### Performance
+- Hot/cold struct split, pre-computed masks, TLS consolidation for reduced per-call overhead in `SimpleMatcher`.
+- Skip unused text variants during process-tree traversal, avoiding redundant transformations.
+- Cache PinYin trim metadata to eliminate repeated recomputation.
+- Lazy tree walking for unique text variants — process-tree nodes are now visited on demand rather than eagerly.
+
+### Refactor
+- Extract `is_rule_satisfied` as a dedicated method for clarity and measurable performance improvement.
+- Optimize tree node index handling in `walk_process_tree` (formerly `reduce_text_process_with_tree`).
+- Rename traversal function to `walk_process_tree` and update terminology throughout.
+- Improve encapsulation: `SingleCharMatcher`/`SingleCharMatch` visibility narrowed; `SimpleMatcher` internals use more descriptive struct names (`RuleHot`, etc.).
+- Add safety assertions in `page_table_lookup`.
+- Update type-ignore comments in test cases for clarity.
+
+### Documentation
+- Update terminology and traversal descriptions in `DESIGN.md`.
+- Update benchmark records in `README.md` with new results.
+
 ## 0.10.2 - 2026-03-10
 
 ### Bug Fixes
