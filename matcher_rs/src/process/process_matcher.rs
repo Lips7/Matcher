@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use std::sync::OnceLock;
 
+use tinyvec::TinyVec;
+
 use bitflags::bitflags;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -540,9 +542,9 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
     process_type_list: Vec<ProcessType>,
-    process_type_bit: ProcessType,
-    children: Vec<usize>,
-    folded_mask: u64,
+    pub(crate) process_type_bit: ProcessType,
+    pub(crate) children: Vec<usize>,
+    pub(crate) folded_mask: u64,
 }
 
 /// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
@@ -618,7 +620,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 /// returned to the pool and the existing index is returned. Otherwise `pt` is appended.
 /// If `changed` is `None`, `current_index` is returned unchanged.
 #[inline(always)]
-fn dedup_insert(
+pub(crate) fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
     changed: Option<String>,
@@ -709,5 +711,117 @@ pub fn reduce_text_process_with_tree<'a>(
         }
 
         text_masks
+    })
+}
+
+/// Lazily walks the transformation trie, calling `on_variant` for each unique text variant.
+///
+/// Like [`reduce_text_process_with_tree`], but instead of collecting all variants before
+/// returning, it invokes `on_variant(text, index, mask)` immediately after each new unique
+/// text is produced. If `on_variant` returns `true`, the walk stops immediately.
+///
+/// After the trie walk completes (or early exit), a delta phase calls `on_variant` again for
+/// any entries whose mask grew through dedup after their initial callback — this handles the
+/// case where a no-op transform shares an existing entry and contributes additional mask bits.
+///
+/// Returns `(text_masks, stopped)` where `stopped` is `true` if `on_variant` triggered early
+/// exit. The caller must pass `text_masks` to [`return_processed_string_to_pool`] when done.
+pub fn walk_process_tree_lazy<'a>(
+    process_type_tree: &[ProcessTypeBitNode],
+    text: &'a str,
+    on_variant: &mut dyn FnMut(&str, usize, u64) -> bool,
+) -> (ProcessedTextMasks<'a>, bool) {
+    TRANSFORM_STATE.with(|state| {
+        let mut ts = state.borrow_mut();
+
+        let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
+        let mut text_masks: ProcessedTextMasks<'a> =
+            unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
+        text_masks.clear();
+        text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
+
+        let mut scanned_masks: TinyVec<[u64; 8]> = TinyVec::new();
+        scanned_masks.push(0u64);
+
+        // Scan the root entry (original text) immediately.
+        let root_mask = process_type_tree[0].folded_mask;
+        if root_mask != 0 && on_variant(text, 0, root_mask) {
+            return (text_masks, true);
+        }
+        scanned_masks[0] = root_mask;
+
+        if process_type_tree[0].children.is_empty() {
+            return (text_masks, false);
+        }
+
+        ts.tree_node_indices.clear();
+        ts.tree_node_indices.resize(process_type_tree.len(), 0);
+
+        let mut stopped = false;
+
+        'walk: for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
+            let current_index = ts.tree_node_indices[current_node_index];
+
+            for &child_node_index in &current_node.children {
+                let child_node = &process_type_tree[child_node_index];
+                let pm = get_process_matcher(child_node.process_type_bit);
+
+                let changed = match child_node.process_type_bit {
+                    ProcessType::None => None,
+                    ProcessType::Delete => {
+                        let current_text = text_masks[current_index].0.as_ref();
+                        match pm.delete_all(current_text) {
+                            (true, Cow::Owned(pt)) => Some(pt),
+                            _ => None,
+                        }
+                    }
+                    _ => {
+                        let current_text = text_masks[current_index].0.as_ref();
+                        match pm.replace_all(current_text) {
+                            (true, Cow::Owned(pt)) => Some(pt),
+                            _ => None,
+                        }
+                    }
+                };
+
+                let old_len = text_masks.len();
+                let child_index = dedup_insert(&mut text_masks, current_index, changed);
+
+                // Grow scanned_masks to match text_masks length.
+                while scanned_masks.len() < text_masks.len() {
+                    scanned_masks.push(0u64);
+                }
+
+                ts.tree_node_indices[child_node_index] = child_index;
+                text_masks[child_index].1 |= child_node.folded_mask;
+
+                if child_index >= old_len {
+                    // New unique text: call on_variant immediately.
+                    let mask = text_masks[child_index].1;
+                    if mask != 0
+                        && on_variant(text_masks[child_index].0.as_ref(), child_index, mask)
+                    {
+                        stopped = true;
+                        break 'walk;
+                    }
+                    scanned_masks[child_index] = mask;
+                }
+                // Dedup'd entry: mask may have grown; handled in delta phase below.
+            }
+        }
+
+        if stopped {
+            return (text_masks, true);
+        }
+
+        // Delta phase: re-scan entries whose mask grew after their initial callback.
+        for i in 0..text_masks.len() {
+            let delta = text_masks[i].1 & !scanned_masks[i];
+            if delta != 0 && on_variant(text_masks[i].0.as_ref(), i, delta) {
+                return (text_masks, true);
+            }
+        }
+
+        (text_masks, false)
     })
 }

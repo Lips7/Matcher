@@ -11,6 +11,7 @@ use tinyvec::TinyVec;
 use crate::process::process_matcher::{
     ProcessType, ProcessTypeBitNode, ProcessedTextMasks, build_process_type_tree,
     reduce_text_process_emit, reduce_text_process_with_tree, return_processed_string_to_pool,
+    walk_process_tree_lazy,
 };
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::{Scratch, VectorscanScanner};
@@ -194,7 +195,7 @@ struct WordConfCold {
 /// * `process_type_mask` — bitmask of [`ProcessType`] bits that produced this pattern;
 ///   used to discard hits from text variants that don't match the rule's pipeline.
 /// * `word_conf_idx` — index into `word_conf_hot`/`word_conf_cold` identifying the owning rule.
-/// * `offset` — index into `split_bit` of the owning [`WordConf`]; identifies which
+/// * `offset` — index into `split_bit` of the owning `WordConf`; identifies which
 ///   AND or NOT sub-pattern was matched.
 #[derive(Debug, Clone)]
 struct WordConfEntry {
@@ -506,14 +507,39 @@ impl SimpleMatcher {
     /// assert!(matcher.is_match("beautiful world"));
     /// assert!(!matcher.is_match("hi planet!"));
     /// ```
-    pub fn is_match<'a>(&'a self, text: &'a str) -> bool {
+    pub fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
         }
-        let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
-        let result = self.is_match_preprocessed(&processed);
-        return_processed_string_to_pool(processed);
-        result
+        let tree = &self.process_type_tree;
+        let max_pt = tree.len();
+        SIMPLE_MATCH_STATE.with(|state_cell| {
+            let mut state = state_cell.borrow_mut();
+            state.prepare(self.word_conf_hot.len());
+            let (text_masks, stopped) =
+                walk_process_tree_lazy(tree, text, &mut |txt, idx, mask| {
+                    self.scan_variant(txt, idx, mask, max_pt, &mut state, true)
+                });
+            if stopped {
+                return_processed_string_to_pool(text_masks);
+                return true;
+            }
+            let generation = state.generation;
+            let result = state.touched_indices.iter().any(|&wci| {
+                if state.word_states[wci].not_generation == generation {
+                    return false;
+                }
+                Self::is_rule_satisfied(
+                    &self.word_conf_hot[wci],
+                    &state.word_states,
+                    &state.matrix,
+                    wci,
+                    max_pt,
+                )
+            });
+            return_processed_string_to_pool(text_masks);
+            result
+        })
     }
 
     /// Returns all patterns that match `text`.
@@ -568,47 +594,7 @@ impl SimpleMatcher {
         return_processed_string_to_pool(processed);
     }
 
-    /// Runs both Pass 1 and Pass 2 for a boolean match result.
-    ///
-    /// Pass 1 scans all text variants with the automaton (`scan_all_variants`); if
-    /// `exit_early` fires, returns immediately. Pass 2 checks all touched rules:
-    /// skips any disqualified by a NOT hit, then tests the remaining with
-    /// [`is_rule_satisfied`](Self::is_rule_satisfied).
-    fn is_match_preprocessed<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-    ) -> bool {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_hot.len());
-
-            if self.scan_all_variants(processed_text_process_type_masks, &mut state, true) {
-                return true;
-            }
-
-            let generation = state.generation;
-            let processed_times = processed_text_process_type_masks.len();
-
-            state.touched_indices.iter().any(|&word_conf_idx| {
-                if state.word_states[word_conf_idx].not_generation == generation {
-                    return false;
-                }
-                let word_conf = &self.word_conf_hot[word_conf_idx];
-                Self::is_rule_satisfied(
-                    word_conf,
-                    &state.word_states,
-                    &state.matrix,
-                    word_conf_idx,
-                    processed_times,
-                )
-            })
-        })
-    }
-
     /// Runs both Pass 1 and Pass 2, appending all satisfied rules to `results`.
-    ///
-    /// Same evaluation logic as [`is_match_preprocessed`](Self::is_match_preprocessed)
-    /// but collects every satisfied rule instead of short-circuiting on the first.
     fn process_preprocessed_into<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
