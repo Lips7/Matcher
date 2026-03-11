@@ -33,6 +33,9 @@ unsafe impl Sync for Scratch {}
 impl Scratch {
     /// Allocates a new scratch space sized for the given database.
     ///
+    /// # Errors
+    /// Returns [`Error::Vectorscan`] if `hs_alloc_scratch` fails (e.g. `HS_NOMEM`).
+    ///
     /// # Safety
     /// The caller must ensure that `db` is a valid pointer to a compiled Vectorscan database.
     pub unsafe fn new(db: *mut hs::hs_database_t) -> Result<Self, Error> {

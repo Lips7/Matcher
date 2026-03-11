@@ -15,6 +15,10 @@ use crate::process::process_matcher::{
 #[cfg(feature = "vectorscan")]
 use crate::vectorscan::{Scratch, VectorscanScanner};
 
+/// Threshold for selecting the bitmask fast-path over the matrix fallback.
+///
+/// Rules with ≤ 64 AND/NOT segments use a `u64` bitmask to track satisfaction;
+/// rules with more segments use the 2-D counter matrix in [`SimpleMatchState`].
 const BITMASK_CAPACITY: usize = 64;
 
 /// Per-rule match state for a single search, keyed by generation ID.
@@ -313,6 +317,11 @@ impl SimpleMatcher {
     /// # Arguments
     /// * `process_type_word_map` — input rule table; the value type `I` must implement
     ///   `AsRef<str>` so both `&str` and `Cow<str>` are accepted.
+    ///
+    /// # Panics
+    /// Panics if the Aho-Corasick (or Vectorscan) automaton fails to compile. This should
+    /// only happen if the de-duplicated pattern set is internally inconsistent, which cannot
+    /// occur with well-formed input.
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -684,6 +693,31 @@ impl SimpleMatcher {
         false
     }
 
+    /// Scans one pre-processed text variant through the automaton and evaluates rule counters.
+    ///
+    /// This is the inner loop of Pass 1 + Pass 2 for a single text variant produced by the
+    /// transformation pipeline. It dispatches to either the AhoCorasick or Vectorscan backend
+    /// depending on which was compiled in.
+    ///
+    /// # Arguments
+    /// * `processed_text` — the transformed text variant to scan.
+    /// * `index` — ordinal of this variant among all variants generated for the current input.
+    ///   Used by matrix-path rules to track which variant a repeated AND/NOT segment hit came
+    ///   from, preventing a single sub-pattern matched in multiple variants from counting twice
+    ///   for the same variant slot.
+    /// * `process_type_mask` — bitmask of the `ProcessType` bits that produced this variant,
+    ///   used to filter which rules are eligible for this scan.
+    /// * `num_variants` — total number of variants being scanned; required by the matrix path
+    ///   to index the per-variant counter columns.
+    /// * `state` — mutable per-call match state (word states, counters, touched list).
+    /// * `exit_early` — if `true`, return `true` as soon as any rule is fully satisfied
+    ///   (used by [`SimpleMatcher::is_match`] for short-circuiting).
+    ///
+    /// Returns `true` if a rule was fully satisfied and `exit_early` is set; `false` otherwise.
+    ///
+    /// For the Vectorscan backend, scratch space is borrowed from `state.vectorscan_scratch`
+    /// (or freshly allocated) and returned to the pool after the scan, so it is reused across
+    /// calls on the same thread.
     #[inline(always)]
     fn scan_variant(
         &self,

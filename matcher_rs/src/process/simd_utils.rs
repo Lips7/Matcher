@@ -3,8 +3,16 @@ use std::simd::{
     cmp::{SimdPartialEq, SimdPartialOrd},
 };
 
-/// Advances `offset` past all ASCII bytes (< 0x80), using 16-byte SIMD chunks.
-/// Returns the new offset pointing at the first non-ASCII byte or end of slice.
+/// Advances `offset` past all ASCII bytes (`< 0x80`), using 16-byte SIMD chunks.
+///
+/// # Arguments
+/// * `bytes` — the raw byte slice of the string being scanned (e.g. `str::as_bytes()`).
+/// * `offset` — the byte position to start scanning from; must be `<= bytes.len()`.
+///
+/// Returns the new offset pointing at the first non-ASCII byte, or `bytes.len()` if all
+/// remaining bytes are ASCII. If `bytes[offset] >= 0x80` on entry, returns `offset` unchanged.
+///
+/// Internally processes 16 bytes per iteration with a scalar tail for the remaining `< 16` bytes.
 #[inline(always)]
 pub fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
     // Fast path: already at end or at a non-ASCII byte — nothing to skip.
@@ -33,7 +41,12 @@ pub fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
 /// Returns a bitmask of deletable ASCII bytes in `chunk` using the 16-byte `ascii_lut`.
 ///
 /// Bit `i` is set if `chunk[i]` is a deletable character per `ascii_lut`.
-/// Caller must ensure all bytes in `chunk` are ASCII (< 0x80).
+///
+/// # Arguments
+/// * `chunk` — a 16-byte SIMD vector of ASCII bytes to test. All bytes must be `< 0x80`.
+/// * `ascii_lut` — a 16-byte packed bitset covering codepoints 0–127: byte `b >> 3` holds
+///   the bits for codepoints `b & !7 ..= b | 7`, with bit `b & 7` set if `b` is deletable.
+///   This is the first 16 bytes of the full Unicode deletion bitset from `SingleCharMatcher::Delete`.
 ///
 /// Two `swizzle_dyn` calls (compiling to `pshufb`/`tbl`) perform the parallel
 /// 16-way LUT lookup without any scalar branching.
@@ -55,8 +68,20 @@ pub fn simd_ascii_delete_mask(chunk: Simd<u8, 16>, ascii_lut: Simd<u8, 16>) -> u
         .to_bitmask()
 }
 
-/// Advances `offset` past non-digit ASCII bytes, using 16-byte SIMD chunks.
-/// Stops at bytes >= 0x80 (non-ASCII) or 0x30–0x39 (ASCII digits).
+/// Advances `offset` past non-digit, non-ASCII-stop bytes, using 16-byte SIMD chunks.
+///
+/// Stops at the first byte that is either:
+/// - non-ASCII (`>= 0x80`), or
+/// - an ASCII digit (`0x30`–`0x39`, i.e. `'0'`–`'9'`).
+///
+/// # Arguments
+/// * `bytes` — the raw byte slice of the string being scanned (e.g. `str::as_bytes()`).
+/// * `offset` — the byte position to start scanning from; must be `<= bytes.len()`.
+///
+/// Returns the new offset at the first stop byte, or `bytes.len()` if the slice ends first.
+/// If `bytes[offset]` is already a stop byte on entry, returns `offset` unchanged.
+///
+/// Internally processes 16 bytes per iteration with a scalar tail for the remaining `< 16` bytes.
 #[inline(always)]
 pub fn skip_non_digit_ascii_simd(bytes: &[u8], offset: usize) -> usize {
     // Fast path: already at a stop byte (non-ASCII or digit) — nothing to skip.

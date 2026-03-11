@@ -47,6 +47,7 @@
 //! | `vectorscan` | off | SIMD-accelerated scanning via Intel Hyperscan; requires Boost, no Windows/ARM64 |
 //! | `runtime_build` | off | Builds transformation tables from source text files at startup instead of embedding pre-compiled binaries |
 
+/// Use mimalloc as the global allocator for reduced fragmentation and better multi-threaded throughput.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

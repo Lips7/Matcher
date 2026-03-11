@@ -64,6 +64,10 @@ impl VectorscanScanner {
 
     /// Scans `haystack` and invokes `on_match` for every matching pattern.
     ///
+    /// `on_match` receives the zero-based index of the matching pattern (its position in the
+    /// `patterns` slice passed to [`new_literal`](Self::new_literal)) and should return `true`
+    /// to continue scanning or `false` to stop early.
+    ///
     /// Allocates a fresh [`Scratch`] space on every call. For hot-paths use
     /// [`scan_with_scratch`](Self::scan_with_scratch) with a pre-allocated and reused
     /// scratch space instead.
@@ -80,12 +84,13 @@ impl VectorscanScanner {
 
     /// Scans `haystack` using the provided `scratch` space, invoking `on_match` for every hit.
     ///
+    /// `on_match` receives the zero-based index of the matching pattern and should return
+    /// `true` to continue scanning or `false` to abort early. Early termination is useful
+    /// for [`is_match`](crate::SimpleMatcher::is_match)-style short-circuiting.
+    ///
     /// `scratch` must have been allocated or updated for this scanner's database (via
     /// [`Scratch::new`](crate::vectorscan::scratch::Scratch::new) or
     /// [`Scratch::update`](crate::vectorscan::scratch::Scratch::update)).
-    ///
-    /// Returning `false` from `on_match` terminates the scan early (useful for
-    /// [`is_match`](crate::SimpleMatcher::is_match)-style short-circuiting).
     ///
     /// # Errors
     /// Returns [`Error::Vectorscan`] on unexpected API failures. Early termination via a

@@ -168,14 +168,25 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Generates a compact, 2-stage flat-array structure for character-based lookups.
+/// Generates a compact 2-stage flat-array page table for sparse Unicode codepoint mappings.
 ///
-/// This function constructs a page-based directory system for sparse Unicode mappings:
-/// - **L1 Page Table**: 4352 elements (`0x10FFFF >> 8`) mapping character blocks to L2 segments.
-/// - **L2 Data Table**: Dense arrays containing the actual mapping data (e.g., replacement code points).
+/// Constructs two binary files consumed at compile time by `constants.rs`:
+/// - **L1** (`{prefix}_l1.bin`): 4352 `u16` entries (`(0x10FFFF >> 8) + 1`), one per 256-codepoint
+///   block. Non-zero entries are 1-based indices into L2; zero means the whole block is unmapped.
+/// - **L2** (`{prefix}_l2.bin`): dense `u32` pages, each 256 entries. Entry at
+///   `page * 256 + (cp & 0xFF)` holds the mapping value for codepoint `cp`.
 ///
-/// This structure provides $O(1)$ lookup performance with a very small memory footprint,
-/// making it ideal for large-scale character transformations like Pinyin or Fanjian.
+/// This provides O(1) per-codepoint lookup with a compact footprint, ideal for Fanjian
+/// (Traditional→Simplified) and Pinyin (codepoint→packed syllable offset/length).
+///
+/// # Arguments
+/// * `map` — sparse codepoint-to-value mapping; keys are Unicode scalar values (`u32`),
+///   values are the packed output (Fanjian: mapped codepoint; Pinyin: `(offset << 8) | length`).
+/// * `prefix` — file path prefix; the function writes `{prefix}_l1.bin` and `{prefix}_l2.bin`
+///   into the directory. Typically an `OUT_DIR`-relative path.
+///
+/// # Errors
+/// Returns `io::Error` if either output file cannot be created or written.
 #[cfg(not(feature = "runtime_build"))]
 fn build_2_stage_table(
     map: &std::collections::HashMap<u32, u32>,

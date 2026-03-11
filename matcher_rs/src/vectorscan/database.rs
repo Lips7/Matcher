@@ -44,6 +44,9 @@ impl Database {
     /// * `flags` — per-pattern Hyperscan flags (e.g. `HS_FLAG_CASELESS`). Must be the
     ///   same length as `patterns`.
     ///
+    /// # Panics
+    /// In debug builds, panics if `patterns.len() != flags.len()`.
+    ///
     /// # Errors
     /// Returns [`Error::VectorscanCompile`] if any pattern fails to compile (includes the
     /// diagnostic message and the zero-based pattern index). Returns [`Error::Vectorscan`]

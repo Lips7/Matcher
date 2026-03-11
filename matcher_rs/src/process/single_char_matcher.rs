@@ -9,6 +9,7 @@ use crate::process::simd_utils::{
     simd_ascii_delete_mask, skip_ascii_simd, skip_non_digit_ascii_simd,
 };
 
+/// Byte length of a flat BitSet covering the full Unicode range `U+0000`–`U+10FFFF`.
 #[cfg(feature = "runtime_build")]
 const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
@@ -94,9 +95,9 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     if val != 0 { Some(val) } else { None }
 }
 
+/// Decodes a little-endian `u16` table embedded as raw bytes by `build.rs`.
 #[cfg(not(feature = "runtime_build"))]
 #[inline]
-/// Decodes a little-endian `u16` table embedded as raw bytes by `build.rs`.
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
     bytes
@@ -106,9 +107,9 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
         .into_boxed_slice()
 }
 
+/// Decodes a little-endian `u32` table embedded as raw bytes by `build.rs`.
 #[cfg(not(feature = "runtime_build"))]
 #[inline]
-/// Decodes a little-endian `u32` table embedded as raw bytes by `build.rs`.
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
     bytes
@@ -118,11 +119,11 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
         .into_boxed_slice()
 }
 
-#[inline]
 /// Trims leading and trailing spaces from a packed Pinyin `(offset, len)` entry.
 ///
 /// `PinYin` keeps spaces between syllables, while `PinYinChar` removes boundary spaces so
 /// multi-syllable readings collapse into a single contiguous string such as `xian`.
+#[inline]
 fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
         return 0;
@@ -182,9 +183,13 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 /// Iterates only over codepoints that actually change, skipping ASCII entirely because it
 /// has no Fanjian mappings.
 pub(crate) struct FanjianFindIter<'a> {
+    /// L1 index slice of the 2-stage page table.
     l1: &'a [u16],
+    /// L2 data slice of the 2-stage page table.
     l2: &'a [u32],
+    /// The text being iterated over.
     text: &'a str,
+    /// Current byte position within `text`.
     byte_offset: usize,
 }
 
@@ -226,11 +231,15 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 /// ASCII is handled from the hot `ascii_lut`/SIMD path first; non-ASCII falls back to the
 /// full Unicode bitset.
 pub(crate) struct DeleteFindIter<'a> {
+    /// The full 139 KB Unicode bitset; bit `cp % 8` of byte `cp / 8` is set if `cp` is deletable.
     bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
     ascii_lut: [u8; 16],
+    /// SIMD form of `ascii_lut` for 16-byte parallel ASCII deletion checks.
     ascii_lut_simd: Simd<u8, 16>,
+    /// The text being iterated over.
     text: &'a str,
+    /// Current byte position within `text`.
     byte_offset: usize,
 }
 
@@ -300,10 +309,15 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 /// Non-digit ASCII is skipped aggressively because only digits and mapped non-ASCII codepoints
 /// can produce output in the current tables.
 pub(crate) struct PinYinFindIter<'a> {
+    /// L1 index slice of the 2-stage page table.
     l1: &'a [u16],
+    /// L2 data slice of the 2-stage page table (values encode `(offset << 8) | length`).
     l2: &'a [u32],
+    /// Concatenated Pinyin syllable buffer that L2 values index into.
     strings: &'a str,
+    /// The text being iterated over.
     text: &'a str,
+    /// Current byte position within `text`.
     byte_offset: usize,
 }
 

@@ -15,9 +15,13 @@ use crate::process::constants::*;
 use crate::process::multi_char_matcher::MultiCharMatcher;
 use crate::process::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
 
+/// Initial capacity of the per-thread `String` pool (number of pre-allocated slots).
 const STRING_POOL_INIT_CAP: usize = 16;
+/// Initial capacity of the per-thread `ProcessedTextMasks` pool (number of pre-allocated slots).
 const MASKS_POOL_INIT_CAP: usize = 4;
+/// Maximum number of `String` buffers retained in the pool between calls; excess are dropped.
 const STRING_POOL_MAX: usize = 128;
+/// Maximum number of `ProcessedTextMasks` buffers retained in the pool between calls; excess are dropped.
 const MASKS_POOL_MAX: usize = 16;
 
 /// Combined thread-local state for `TREE_NODE_INDICES` and `MASKS_POOL`.
@@ -43,7 +47,11 @@ impl TransformThreadState {
 }
 
 thread_local! {
+    /// Pool of reusable [`String`] buffers, one per thread, to avoid repeated allocation during
+    /// text transformation. Bounded to [`STRING_POOL_MAX`] entries between calls.
     static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::with_capacity(STRING_POOL_INIT_CAP));
+    /// Combined per-thread traversal state for [`walk_process_tree`]: the trie-node index map
+    /// and the [`ProcessedTextMasks`] pool, merged into one TLS slot to save a lookup.
     static TRANSFORM_STATE: RefCell<TransformThreadState> = RefCell::new(TransformThreadState::new());
 }
 
@@ -225,6 +233,22 @@ pub(crate) enum ProcessMatcher {
 }
 
 impl ProcessMatcher {
+    /// Generic scan-and-replace engine underlying both [`replace_all`](Self::replace_all) and
+    /// [`delete_all`](Self::delete_all).
+    ///
+    /// Iterates over non-overlapping match spans from `iter` and builds a new string by
+    /// copying the gaps between spans verbatim and calling `push_replacement` to emit the
+    /// substitution for each span.
+    ///
+    /// # Type Parameters
+    /// * `I` — an iterator that yields `(start_byte, end_byte, match_data)` tuples for each
+    ///   matched span (non-overlapping, in order).
+    /// * `M` — the match payload forwarded to `push_replacement` (e.g. a replacement `char`,
+    ///   `&str`, or a `usize` index into a replacement list).
+    /// * `F` — a closure `FnMut(&mut String, M)` that writes the replacement for one span.
+    ///
+    /// Returns `(true, Cow::Owned(result))` when at least one span was replaced, or
+    /// `(false, Cow::Borrowed(text))` when `iter` yielded no matches (zero allocations).
     #[inline(always)]
     fn replace_scan<'a, I, M, F>(
         text: &'a str,
@@ -579,9 +603,16 @@ pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) ->
 /// `process_type_list`, avoiding the per-call fold in the hot traversal loop.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProcessTypeBitNode {
+    /// The composite [`ProcessType`] values whose decomposed bit-path terminates at this node.
+    /// A non-empty list means that one or more rules emit a text variant here.
     process_type_list: Vec<ProcessType>,
+    /// The single-bit [`ProcessType`] step that this node represents (i.e., the edge label
+    /// from the parent). For the root node this is [`ProcessType::None`].
     process_type_bit: ProcessType,
+    /// Flat-array indices of child nodes (the next transformation steps reachable from here).
     children: Vec<usize>,
+    /// Pre-computed OR of `1u64 << pt.bits()` for every `pt` in `process_type_list`.
+    /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop.
     folded_mask: u64,
 }
 

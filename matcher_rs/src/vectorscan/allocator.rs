@@ -3,11 +3,14 @@ use std::sync::Once;
 
 use vectorscan_rs_sys as hs;
 
+// Raw FFI bindings to mimalloc's C allocator functions, used to register mimalloc
+// as Vectorscan's internal allocator via `hs_set_allocator` on macOS.
 unsafe extern "C" {
     pub fn mi_malloc(size: usize) -> *mut c_void;
     pub unsafe fn mi_free(ptr: *mut c_void);
 }
 
+/// Guards one-time registration of mimalloc with Vectorscan's allocator hook.
 static INIT_ALLOCATOR: Once = Once::new();
 
 /// Registers mimalloc as Vectorscan's internal allocator (macOS only).
