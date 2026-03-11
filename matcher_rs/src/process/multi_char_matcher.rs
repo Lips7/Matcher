@@ -39,8 +39,10 @@ pub(crate) struct MultiCharMatcher {
 ///
 /// Yields `(start_byte, end_byte, pattern_idx)` triples for each match.
 pub(crate) enum MultiCharFindIter<'a> {
+    /// DAAC leftmost-longest iterator.
     #[cfg(not(feature = "dfa"))]
     DAAC(daachorse::charwise::iter::LestmostFindIterator<'a, &'a str, u32>),
+    /// Standard Aho-Corasick iterator.
     AC(aho_corasick::FindIter<'a, 'a>),
 }
 
@@ -62,6 +64,9 @@ impl<'a> Iterator for MultiCharFindIter<'a> {
 }
 
 impl MultiCharMatcher {
+    /// Returns the replacement strings parallel to automaton pattern indices.
+    ///
+    /// Only normalization matchers populate this; empty/no-op matchers leave it empty.
     #[inline(always)]
     pub(crate) fn replace_list(&self) -> &[&'static str] {
         &self.replace_list
@@ -126,6 +131,8 @@ impl MultiCharMatcher {
     }
 
     /// Attaches a replacement list, consuming and returning `self`.
+    ///
+    /// `replace_list[i]` must correspond to pattern `i` in the compiled automaton.
     pub(crate) fn with_replace_list(mut self, replace_list: Vec<&'static str>) -> Self {
         self.replace_list = replace_list;
         self
@@ -149,7 +156,8 @@ impl MultiCharMatcher {
     /// Builds a matcher from a pattern→replacement dict.
     ///
     /// Pairs are sorted by key; the automaton is built from the sorted keys and
-    /// `replace_list` is populated from the corresponding sorted values.
+    /// `replace_list` is populated from the corresponding sorted values so pattern
+    /// indices stay aligned with replacements.
     #[cfg(feature = "runtime_build")]
     pub(crate) fn new_from_dict(dict: HashMap<&'static str, &'static str>) -> Self {
         let mut pairs: Vec<(&'static str, &'static str)> = dict.into_iter().collect();

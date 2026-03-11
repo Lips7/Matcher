@@ -694,6 +694,8 @@ impl SimpleMatcher {
         state: &mut SimpleMatchState,
         exit_early: bool,
     ) -> bool {
+        // `index` identifies which processed text variant this scan came from, so matrix-path
+        // rules can track repeated AND / NOT segments per variant.
         match &self.ac_matcher {
             AcMatcher::AhoCorasick(ac_matcher) => {
                 for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
@@ -714,6 +716,8 @@ impl SimpleMatcher {
             #[cfg(feature = "vectorscan")]
             AcMatcher::Vectorscan(scanner) => {
                 let mut early_match_found = false;
+                // Scratch is reused per thread and resized lazily when this thread switches
+                // between different compiled Vectorscan databases.
                 let mut scratch = state
                     .vectorscan_scratch
                     .take()

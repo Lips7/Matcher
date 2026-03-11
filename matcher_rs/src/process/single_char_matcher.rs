@@ -65,12 +65,17 @@ pub(crate) enum SingleCharMatcher {
 
 /// The transformation to apply to a matched codepoint.
 pub(crate) enum SingleCharMatch<'a> {
+    /// Replace the matched span with a single Unicode scalar value.
     Char(char),
+    /// Replace the matched span with a borrowed string slice.
     Str(&'a str),
+    /// Remove the matched span entirely.
     Delete,
 }
 
 /// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
+///
+/// `None` means either the page is absent from L1 or the concrete L2 entry is zero.
 #[inline(always)]
 fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     let page_idx = (cp >> 8) as usize;
@@ -91,6 +96,7 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
 
 #[cfg(not(feature = "runtime_build"))]
 #[inline]
+/// Decodes a little-endian `u16` table embedded as raw bytes by `build.rs`.
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
     bytes
@@ -102,6 +108,7 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
 
 #[cfg(not(feature = "runtime_build"))]
 #[inline]
+/// Decodes a little-endian `u32` table embedded as raw bytes by `build.rs`.
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
     bytes
@@ -112,6 +119,10 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
 }
 
 #[inline]
+/// Trims leading and trailing spaces from a packed Pinyin `(offset, len)` entry.
+///
+/// `PinYin` keeps spaces between syllables, while `PinYinChar` removes boundary spaces so
+/// multi-syllable readings collapse into a single contiguous string such as `xian`.
 fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
         return 0;
@@ -167,6 +178,9 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 }
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
+///
+/// Iterates only over codepoints that actually change, skipping ASCII entirely because it
+/// has no Fanjian mappings.
 pub(crate) struct FanjianFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -208,6 +222,9 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 }
 
 /// Monomorphized iterator for Delete (bitset-based character removal).
+///
+/// ASCII is handled from the hot `ascii_lut`/SIMD path first; non-ASCII falls back to the
+/// full Unicode bitset.
 pub(crate) struct DeleteFindIter<'a> {
     bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
@@ -279,6 +296,9 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 }
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
+///
+/// Non-digit ASCII is skipped aggressively because only digits and mapped non-ASCII codepoints
+/// can produce output in the current tables.
 pub(crate) struct PinYinFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -329,6 +349,9 @@ impl<'a> Iterator for PinYinFindIter<'a> {
 }
 
 impl SingleCharMatcher {
+    /// Returns an iterator over Fanjian replacements in `text`.
+    ///
+    /// The iterator yields only codepoints whose simplified form differs from the input.
     #[inline(always)]
     pub(crate) fn fanjian_iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
         let SingleCharMatcher::Fanjian { l1, l2 } = self else {
@@ -342,6 +365,9 @@ impl SingleCharMatcher {
         }
     }
 
+    /// Returns an iterator over deletable spans in `text`.
+    ///
+    /// Each yielded match identifies one codepoint that should be removed by the Delete step.
     #[inline(always)]
     pub(crate) fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
         let SingleCharMatcher::Delete {
@@ -361,6 +387,9 @@ impl SingleCharMatcher {
         }
     }
 
+    /// Returns an iterator over Pinyin replacements in `text`.
+    ///
+    /// Each yielded match borrows a slice from the shared Pinyin string buffer.
     #[inline(always)]
     pub(crate) fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
         let SingleCharMatcher::Pinyin { l1, l2, strings } = self else {
@@ -376,6 +405,7 @@ impl SingleCharMatcher {
     }
 
     #[cfg(not(feature = "runtime_build"))]
+    /// Builds a Fanjian matcher from precompiled L1/L2 byte tables.
     pub(crate) fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
         SingleCharMatcher::Fanjian {
             l1: decode_u16_table(l1.as_ref()),
@@ -383,6 +413,10 @@ impl SingleCharMatcher {
         }
     }
 
+    /// Builds a Delete matcher from a flat Unicode bitset.
+    ///
+    /// The first 16 bytes are copied into an ASCII lookup table so ASCII-heavy inputs avoid
+    /// touching the full bitset on the hot path.
     pub(crate) fn delete(bitset: Cow<'static, [u8]>) -> Self {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
@@ -396,6 +430,10 @@ impl SingleCharMatcher {
     }
 
     #[cfg(not(feature = "runtime_build"))]
+    /// Builds a Pinyin matcher from precompiled page tables and string storage.
+    ///
+    /// When `trim_space` is `true`, each packed entry is rewritten so leading/trailing spaces
+    /// are removed, producing the `PinYinChar` behavior.
     pub(crate) fn pinyin(
         l1: Cow<'static, [u8]>,
         l2: Cow<'static, [u8]>,
@@ -416,7 +454,8 @@ impl SingleCharMatcher {
     ///
     /// Returns `(l1, l2)`. L1 is a `u16[4352]` array (one entry per
     /// 256-codepoint block); non-zero entries index into L2. L2 stores the `u32`
-    /// values for each mapped codepoint.
+    /// values for each mapped codepoint. Page index 0 is reserved as the sentinel
+    /// "missing page", so real pages start at 1.
     #[cfg(feature = "runtime_build")]
     fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
         let mut pages: HashSet<u32> = map.keys().map(|&k| k >> 8).collect();
@@ -449,6 +488,8 @@ impl SingleCharMatcher {
     }
 
     /// Builds a Delete matcher from text source and whitespace list.
+    ///
+    /// Every codepoint present in `text_delete` or `white_space` is marked in the bitset.
     #[cfg(feature = "runtime_build")]
     pub(crate) fn delete_from_sources(text_delete: &str, white_space: &[&str]) -> Self {
         let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
@@ -470,7 +511,8 @@ impl SingleCharMatcher {
     /// Builds a Pinyin matcher from a codepoint→syllable map.
     ///
     /// The constructor packs each syllable into a shared strings buffer and
-    /// records `(offset, length)` as the L2 value.
+    /// records `(offset, length)` as the L2 value. With `trim_space`, the packed offsets
+    /// are rewritten after table construction to remove leading/trailing spaces in-place.
     #[cfg(feature = "runtime_build")]
     pub(crate) fn pinyin_from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
         let mut strings = String::new();

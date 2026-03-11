@@ -30,6 +30,10 @@ struct TransformThreadState {
 }
 
 impl TransformThreadState {
+    /// Creates empty reusable traversal state for `walk_process_tree`.
+    ///
+    /// `tree_node_indices` is resized per traversal to map trie node index → text variant
+    /// index, while `masks_pool` stores emptied `ProcessedTextMasks` buffers for reuse.
     fn new() -> Self {
         Self {
             tree_node_indices: Vec::with_capacity(16),
@@ -44,6 +48,9 @@ thread_local! {
 }
 
 /// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
+///
+/// The requested `capacity` is treated as a lower bound; a recycled string is reserved
+/// upward if needed so callers can append without repeated growth.
 fn get_string_from_pool(capacity: usize) -> String {
     STRING_POOL.with(|pool| {
         if let Some(mut s) = pool.borrow_mut().pop() {
@@ -59,6 +66,9 @@ fn get_string_from_pool(capacity: usize) -> String {
 }
 
 /// Returns a [`String`] to the thread-local pool for future reuse.
+///
+/// The pool is intentionally bounded: large bursts can allocate temporarily, but only the
+/// hottest strings are retained to keep thread-local memory usage predictable.
 fn return_string_to_pool(s: String) {
     STRING_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
@@ -69,6 +79,9 @@ fn return_string_to_pool(s: String) {
 }
 
 /// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
+///
+/// This is only needed inside `matcher_rs`, where traversal output is frequently recycled
+/// between calls. External users of [`walk_process_tree`] can drop the returned vector.
 pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
     for (cow, _) in text_masks.drain(..) {
         if let Cow::Owned(s) = cow {
@@ -642,6 +655,9 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 /// If `changed` is `Some(pt)` and `pt` already exists in `text_masks`, the string is
 /// returned to the pool and the existing index is returned. Otherwise `pt` is appended.
 /// If `changed` is `None`, `current_index` is returned unchanged.
+///
+/// This keeps `walk_process_tree` in "unique string" space even when different trie paths
+/// converge onto the same transformed text.
 #[inline(always)]
 fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
