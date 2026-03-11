@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.0 - 2026-03-12
+
+### Breaking Changes
+- Removed the `vectorscan` backend to simplify the build process and eliminate the external Boost dependency requirement.
+
+### Performance
+- Simplified SIMD utility dispatching by removing `OnceLock`/`SimdDispatch` for AArch64 (NEON is now always baseline) and gating it for x86_64 only.
+- Removed dead API surface and unused parameters in SIMD hot paths.
+- Optimized search hot paths and benchmark tooling in `matcher_rs`.
+- Added comprehensive benchmark results for MacBook Air M4 (Apple Silicon).
+
+### Documentation
+- Filled documentation gaps, added `# Panics` / `# Errors` / `# Arguments` sections, and explained internal implementations in `matcher_rs`.
+- Aligned public documentation and improved comments on private items for better maintainability.
+
 ## 0.10.3 - 2026-03-11
 
 ### Performance
