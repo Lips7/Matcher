@@ -112,14 +112,14 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 Benchmarked on **MacBook Air M4 (24GB RAM)**.
 Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
-Full records are stored in [bench_records/](./bench_records/), named with timestamps in `YYYY-MM-DD HH:mm:ss.txt` format. Latest: [2026-03-11 08:34:20.txt](./bench_records/2026-03-11%2008:34:20.txt).
+Full records are stored in [bench_records/](./bench_records/), named with timestamps in `YYYY-MM-DD HH:mm:ss.txt` format. Latest: [2026-03-11 23:16:38.txt](./bench_records/2026-03-11%2023:16:38.txt).
 
 To compare two benchmark records:
 
 ```shell
 python matcher_rs/scripts/compare_benchmarks.py \
   "matcher_rs/bench_records/2026-03-10 12:22:24.txt" \
-  "matcher_rs/bench_records/2026-03-11 08:34:20.txt"
+  "matcher_rs/bench_records/2026-03-11 23:16:38.txt"
 ```
 
 The script treats the first file as the baseline and prints two sections: `Regression` and `Improvement`, using median latency by default.

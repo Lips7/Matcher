@@ -194,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-change-pct",
         type=float,
-        default=0.0,
+        default=5.0,
         help="Ignore rows whose absolute percentage change is smaller than this threshold.",
     )
     parser.add_argument(
