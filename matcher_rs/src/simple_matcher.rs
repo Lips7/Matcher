@@ -16,7 +16,6 @@ use crate::process::process_matcher::{
 use crate::vectorscan::{Scratch, VectorscanScanner};
 
 const BITMASK_CAPACITY: usize = 64;
-const NONE_PROCESS_TYPE_MASK: u64 = 1u64 << ProcessType::None.bits();
 
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
@@ -275,7 +274,6 @@ enum AcMatcher {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
-    none_only: bool,
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AcMatcher,
     ac_dedup_entries: Vec<WordConfEntry>,
@@ -437,8 +435,6 @@ impl SimpleMatcher {
         }
 
         let process_type_tree = build_process_type_tree(&process_type_set);
-        let none_only =
-            process_type_set.len() == 1 && process_type_set.contains(&ProcessType::None);
 
         let patterns = dedup_patterns
             .iter()
@@ -481,7 +477,6 @@ impl SimpleMatcher {
         }
 
         SimpleMatcher {
-            none_only,
             process_type_tree,
             ac_matcher,
             ac_dedup_entries,
@@ -489,6 +484,164 @@ impl SimpleMatcher {
             word_conf_hot,
             word_conf_cold,
         }
+    }
+
+    /// Returns `true` if `text` satisfies at least one registered pattern.
+    ///
+    /// Equivalent to `!self.process(text).is_empty()` but short-circuits as soon as the
+    /// first matching rule is found, making it significantly faster when a match is expected.
+    /// Returns `false` immediately for empty input.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "hello")
+    ///     .add_word(ProcessType::None, 2, "world")
+    ///     .build();
+    ///
+    /// assert!(matcher.is_match("hello there"));
+    /// assert!(matcher.is_match("beautiful world"));
+    /// assert!(!matcher.is_match("hi planet!"));
+    /// ```
+    pub fn is_match<'a>(&'a self, text: &'a str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
+        let result = self.is_match_preprocessed(&processed);
+        return_processed_string_to_pool(processed);
+        result
+    }
+
+    /// Returns all patterns that match `text`.
+    ///
+    /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
+    /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "apple")
+    ///     .add_word(ProcessType::None, 2, "banana")
+    ///     .build();
+    ///
+    /// let results = matcher.process("I have an apple and a banana");
+    /// assert_eq!(results.len(), 2);
+    /// ```
+    pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
+        let mut results = Vec::new();
+        self.process_into(text, &mut results);
+        results
+    }
+
+    /// Appends all patterns that match `text` to `results`.
+    ///
+    /// Like [`process`](Self::process) but reuses a caller-supplied buffer, avoiding a
+    /// `Vec` allocation per call. Useful in high-throughput loops where the caller can
+    /// clear and reuse the same `Vec` across iterations.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, SimpleResult};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "apple")
+    ///     .build();
+    ///
+    /// let mut results: Vec<SimpleResult> = Vec::new();
+    /// matcher.process_into("I have an apple", &mut results);
+    /// assert_eq!(results.len(), 1);
+    /// ```
+    pub fn process_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
+        if text.is_empty() {
+            return;
+        }
+        let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
+        self.process_preprocessed_into(&processed, results);
+        return_processed_string_to_pool(processed);
+    }
+
+    /// Runs both Pass 1 and Pass 2 for a boolean match result.
+    ///
+    /// Pass 1 scans all text variants with the automaton (`scan_all_variants`); if
+    /// `exit_early` fires, returns immediately. Pass 2 checks all touched rules:
+    /// skips any disqualified by a NOT hit, then tests the remaining with
+    /// [`is_rule_satisfied`](Self::is_rule_satisfied).
+    fn is_match_preprocessed<'a>(
+        &'a self,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
+    ) -> bool {
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            state.prepare(self.word_conf_hot.len());
+
+            if self.scan_all_variants(processed_text_process_type_masks, &mut state, true) {
+                return true;
+            }
+
+            let generation = state.generation;
+            let processed_times = processed_text_process_type_masks.len();
+
+            state.touched_indices.iter().any(|&word_conf_idx| {
+                if state.word_states[word_conf_idx].not_generation == generation {
+                    return false;
+                }
+                let word_conf = &self.word_conf_hot[word_conf_idx];
+                Self::is_rule_satisfied(
+                    word_conf,
+                    &state.word_states,
+                    &state.matrix,
+                    word_conf_idx,
+                    processed_times,
+                )
+            })
+        })
+    }
+
+    /// Runs both Pass 1 and Pass 2, appending all satisfied rules to `results`.
+    ///
+    /// Same evaluation logic as [`is_match_preprocessed`](Self::is_match_preprocessed)
+    /// but collects every satisfied rule instead of short-circuiting on the first.
+    fn process_preprocessed_into<'a>(
+        &'a self,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
+        results: &mut Vec<SimpleResult<'a>>,
+    ) {
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            state.prepare(self.word_conf_hot.len());
+
+            self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
+
+            let generation = state.generation;
+            let processed_times = processed_text_process_type_masks.len();
+
+            for &word_conf_idx in &state.touched_indices {
+                if state.word_states[word_conf_idx].not_generation == generation {
+                    continue;
+                }
+                if Self::is_rule_satisfied(
+                    &self.word_conf_hot[word_conf_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    word_conf_idx,
+                    processed_times,
+                ) {
+                    let cold = &self.word_conf_cold[word_conf_idx];
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+            }
+        });
     }
 
     /// Pass 1: scans all text variants with the automaton, updating [`SimpleMatchState`].
@@ -593,52 +746,6 @@ impl SimpleMatcher {
                 early_match_found
             }
         }
-    }
-
-    /// Initializes the flat counter matrix for a rule on its first touch in a generation.
-    ///
-    /// Marked `#[cold]` because the matrix path is rare (rules with >64 segments or
-    /// repeated sub-patterns). Extracting it helps the compiler optimize the common
-    /// bitmask fast-path layout in `process_match`.
-    #[cold]
-    #[inline(never)]
-    fn init_matrix(
-        flat_matrix: &mut TinyVec<[i32; 16]>,
-        split_bit: &[i32],
-        processed_times: usize,
-    ) {
-        let num_splits = split_bit.len();
-        flat_matrix.clear();
-        flat_matrix.resize(num_splits * processed_times, 0i32);
-        for (s, &bit) in split_bit.iter().enumerate() {
-            let row_start = s * processed_times;
-            flat_matrix[row_start..row_start + processed_times].fill(bit);
-        }
-    }
-
-    /// Returns `true` if all AND sub-patterns of `word_conf` have been satisfied.
-    ///
-    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 unique AND
-    /// sub-patterns); falls back to scanning the flat counter matrix otherwise.
-    #[inline(always)]
-    fn is_rule_satisfied(
-        word_conf: &WordConfHot,
-        word_states: &[WordState],
-        matrix: &[TinyVec<[i32; 16]>],
-        word_conf_idx: usize,
-        processed_times: usize,
-    ) -> bool {
-        let expected_mask = word_conf.expected_mask;
-        if expected_mask > 0 {
-            return word_states[word_conf_idx].satisfied_mask == expected_mask;
-        }
-        let num_splits = word_conf.num_splits as usize;
-        let flat_matrix = &matrix[word_conf_idx];
-        (0..num_splits).all(|s| {
-            flat_matrix[s * processed_times..(s + 1) * processed_times]
-                .iter()
-                .any(|&bit| bit <= 0)
-        })
     }
 
     /// Updates rule counters for a single automaton hit (called from Pass 1).
@@ -752,227 +859,49 @@ impl SimpleMatcher {
         false
     }
 
-    /// Returns `true` if `text` satisfies at least one registered pattern.
+    /// Returns `true` if all AND sub-patterns of `word_conf` have been satisfied.
     ///
-    /// Equivalent to `!self.process(text).is_empty()` but short-circuits as soon as the
-    /// first matching rule is found, making it significantly faster when a match is expected.
-    /// Returns `false` immediately for empty input.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "hello")
-    ///     .add_word(ProcessType::None, 2, "world")
-    ///     .build();
-    ///
-    /// assert!(matcher.is_match("hello there"));
-    /// assert!(matcher.is_match("beautiful world"));
-    /// assert!(!matcher.is_match("hi planet!"));
-    /// ```
-    pub fn is_match<'a>(&'a self, text: &'a str) -> bool {
-        if text.is_empty() {
-            return false;
-        }
-        if self.none_only {
-            return self.is_match_raw(text);
-        }
-
-        let processed_text_process_type_masks =
-            reduce_text_process_with_tree(&self.process_type_tree, text);
-
-        let result = self.is_match_preprocessed(&processed_text_process_type_masks);
-
-        return_processed_string_to_pool(processed_text_process_type_masks);
-
-        result
-    }
-
-    fn is_match_raw(&self, text: &str) -> bool {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_hot.len());
-
-            if self.scan_variant(text, 0, NONE_PROCESS_TYPE_MASK, 1, &mut state, true) {
-                return true;
-            }
-
-            let generation = state.generation;
-            state.touched_indices.iter().any(|&word_conf_idx| {
-                if state.word_states[word_conf_idx].not_generation == generation {
-                    return false;
-                }
-                Self::is_rule_satisfied(
-                    &self.word_conf_hot[word_conf_idx],
-                    &state.word_states,
-                    &state.matrix,
-                    word_conf_idx,
-                    1,
-                )
-            })
-        })
-    }
-
-    /// Returns all patterns that match `text`.
-    ///
-    /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
-    /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "apple")
-    ///     .add_word(ProcessType::None, 2, "banana")
-    ///     .build();
-    ///
-    /// let results = matcher.process("I have an apple and a banana");
-    /// assert_eq!(results.len(), 2);
-    /// ```
-    pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
-        let mut results = Vec::new();
-        self.process_into(text, &mut results);
-        results
-    }
-
-    /// Pass 2 (boolean): runs Pass 1 then checks touched rules for any full match.
-    ///
-    /// Iterates only over `touched_indices` (rules that had at least one sub-pattern hit).
-    /// Skips any rule whose `not_generation` equals the current generation (NOT fired).
-    /// For rules with `expected_mask`, uses a fast bitmask comparison; otherwise falls back
-    /// to scanning the flat counter matrix.
-    fn is_match_preprocessed<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
+    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 unique AND
+    /// sub-patterns); falls back to scanning the flat counter matrix otherwise.
+    #[inline(always)]
+    fn is_rule_satisfied(
+        word_conf: &WordConfHot,
+        word_states: &[WordState],
+        matrix: &[TinyVec<[i32; 16]>],
+        word_conf_idx: usize,
+        processed_times: usize,
     ) -> bool {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_hot.len());
-
-            if self.scan_all_variants(processed_text_process_type_masks, &mut state, true) {
-                return true;
-            }
-
-            let generation = state.generation;
-            let processed_times = processed_text_process_type_masks.len();
-
-            state.touched_indices.iter().any(|&word_conf_idx| {
-                if state.word_states[word_conf_idx].not_generation == generation {
-                    return false;
-                }
-                let word_conf = &self.word_conf_hot[word_conf_idx];
-                Self::is_rule_satisfied(
-                    word_conf,
-                    &state.word_states,
-                    &state.matrix,
-                    word_conf_idx,
-                    processed_times,
-                )
-            })
+        let expected_mask = word_conf.expected_mask;
+        if expected_mask > 0 {
+            return word_states[word_conf_idx].satisfied_mask == expected_mask;
+        }
+        let num_splits = word_conf.num_splits as usize;
+        let flat_matrix = &matrix[word_conf_idx];
+        (0..num_splits).all(|s| {
+            flat_matrix[s * processed_times..(s + 1) * processed_times]
+                .iter()
+                .any(|&bit| bit <= 0)
         })
     }
 
-    /// Appends all patterns that match `text` to `results`.
+    /// Initializes the flat counter matrix for a rule on its first touch in a generation.
     ///
-    /// Like [`process`](Self::process) but reuses a caller-supplied buffer, avoiding a
-    /// `Vec` allocation per call. Useful in high-throughput loops where the caller can
-    /// clear and reuse the same `Vec` across iterations.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, SimpleResult};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "apple")
-    ///     .build();
-    ///
-    /// let mut results: Vec<SimpleResult> = Vec::new();
-    /// matcher.process_into("I have an apple", &mut results);
-    /// assert_eq!(results.len(), 1);
-    /// ```
-    pub fn process_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
-        if text.is_empty() {
-            return;
-        }
-        if self.none_only {
-            self.process_raw_into(text, results);
-            return;
-        }
-        let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
-        self.process_preprocessed_into(&processed, results);
-        return_processed_string_to_pool(processed);
-    }
-
-    fn process_raw_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_hot.len());
-
-            self.scan_variant(text, 0, NONE_PROCESS_TYPE_MASK, 1, &mut state, false);
-
-            let generation = state.generation;
-            for &word_conf_idx in &state.touched_indices {
-                if state.word_states[word_conf_idx].not_generation == generation {
-                    continue;
-                }
-                if Self::is_rule_satisfied(
-                    &self.word_conf_hot[word_conf_idx],
-                    &state.word_states,
-                    &state.matrix,
-                    word_conf_idx,
-                    1,
-                ) {
-                    let cold = &self.word_conf_cold[word_conf_idx];
-                    results.push(SimpleResult {
-                        word_id: cold.word_id,
-                        word: Cow::Borrowed(&cold.word),
-                    });
-                }
-            }
-        });
-    }
-
-    /// Pass 2 (collect into): runs Pass 1 then appends all satisfied rules to `results`.
-    ///
-    /// Same evaluation logic as `is_match_preprocessed` but appends every satisfied rule
-    /// to the caller-supplied buffer instead of allocating a new `Vec`.
-    fn process_preprocessed_into<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        results: &mut Vec<SimpleResult<'a>>,
+    /// Marked `#[cold]` because the matrix path is rare (rules with >64 segments or
+    /// repeated sub-patterns). Extracting it helps the compiler optimize the common
+    /// bitmask fast-path layout in `process_match`.
+    #[cold]
+    #[inline(never)]
+    fn init_matrix(
+        flat_matrix: &mut TinyVec<[i32; 16]>,
+        split_bit: &[i32],
+        processed_times: usize,
     ) {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.word_conf_hot.len());
-
-            self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
-
-            let generation = state.generation;
-            let processed_times = processed_text_process_type_masks.len();
-
-            for &word_conf_idx in &state.touched_indices {
-                if state.word_states[word_conf_idx].not_generation == generation {
-                    continue;
-                }
-                if Self::is_rule_satisfied(
-                    &self.word_conf_hot[word_conf_idx],
-                    &state.word_states,
-                    &state.matrix,
-                    word_conf_idx,
-                    processed_times,
-                ) {
-                    let cold = &self.word_conf_cold[word_conf_idx];
-                    results.push(SimpleResult {
-                        word_id: cold.word_id,
-                        word: Cow::Borrowed(&cold.word),
-                    });
-                }
-            }
-        });
+        let num_splits = split_bit.len();
+        flat_matrix.clear();
+        flat_matrix.resize(num_splits * processed_times, 0i32);
+        for (s, &bit) in split_bit.iter().enumerate() {
+            let row_start = s * processed_times;
+            flat_matrix[row_start..row_start + processed_times].fill(bit);
+        }
     }
 }

@@ -662,9 +662,6 @@ pub fn reduce_text_process_with_tree<'a>(
     TRANSFORM_STATE.with(|state| {
         let mut ts = state.borrow_mut();
 
-        ts.tree_node_indices.clear();
-        ts.tree_node_indices.resize(process_type_tree.len(), 0);
-
         let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
         // Safety: pool holds empty Vecs with no live borrows; transmuting from
         // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
@@ -672,6 +669,13 @@ pub fn reduce_text_process_with_tree<'a>(
             unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
         text_masks.clear();
         text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
+
+        if process_type_tree[0].children.is_empty() {
+            return text_masks;
+        }
+
+        ts.tree_node_indices.clear();
+        ts.tree_node_indices.resize(process_type_tree.len(), 0);
 
         for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
             let current_index = ts.tree_node_indices[current_node_index];
