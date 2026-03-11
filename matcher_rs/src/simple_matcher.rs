@@ -16,6 +16,7 @@ use crate::process::process_matcher::{
 use crate::vectorscan::{Scratch, VectorscanScanner};
 
 const BITMASK_CAPACITY: usize = 64;
+const NONE_PROCESS_TYPE_MASK: u64 = 1u64 << ProcessType::None.bits();
 
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
@@ -274,6 +275,7 @@ enum AcMatcher {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimpleMatcher {
+    none_only: bool,
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: AcMatcher,
     ac_dedup_entries: Vec<WordConfEntry>,
@@ -435,6 +437,8 @@ impl SimpleMatcher {
         }
 
         let process_type_tree = build_process_type_tree(&process_type_set);
+        let none_only =
+            process_type_set.len() == 1 && process_type_set.contains(&ProcessType::None);
 
         let patterns = dedup_patterns
             .iter()
@@ -477,6 +481,7 @@ impl SimpleMatcher {
         }
 
         SimpleMatcher {
+            none_only,
             process_type_tree,
             ac_matcher,
             ac_dedup_entries,
@@ -509,63 +514,85 @@ impl SimpleMatcher {
         for (index, (processed_text, process_type_mask)) in
             processed_text_process_type_masks.iter().enumerate()
         {
-            match &self.ac_matcher {
-                AcMatcher::AhoCorasick(ac_matcher) => {
-                    for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text.as_ref())
-                    {
-                        let pattern_idx = ac_dedup_result.pattern().as_usize();
+            if *process_type_mask == 0 {
+                continue;
+            }
+            if self.scan_variant(
+                processed_text.as_ref(),
+                index,
+                *process_type_mask,
+                processed_times,
+                state,
+                exit_early,
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline(always)]
+    fn scan_variant(
+        &self,
+        processed_text: &str,
+        index: usize,
+        process_type_mask: u64,
+        processed_times: usize,
+        state: &mut SimpleMatchState,
+        exit_early: bool,
+    ) -> bool {
+        match &self.ac_matcher {
+            AcMatcher::AhoCorasick(ac_matcher) => {
+                for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
+                    let pattern_idx = ac_dedup_result.pattern().as_usize();
+                    if self.process_match(
+                        pattern_idx,
+                        index,
+                        process_type_mask,
+                        processed_times,
+                        state,
+                        exit_early,
+                    ) {
+                        return true;
+                    }
+                }
+                false
+            }
+            #[cfg(feature = "vectorscan")]
+            AcMatcher::Vectorscan(scanner) => {
+                let mut early_match_found = false;
+                let mut scratch = state
+                    .vectorscan_scratch
+                    .take()
+                    .unwrap_or_else(|| unsafe { Scratch::new(scanner.as_db_ptr()).unwrap() });
+
+                let _ = unsafe { scratch.update(scanner.as_db_ptr()) };
+
+                let _ = scanner.scan_with_scratch(
+                    processed_text.as_bytes(),
+                    &mut scratch,
+                    |pattern_idx| {
+                        if early_match_found {
+                            return false;
+                        }
                         if self.process_match(
                             pattern_idx,
                             index,
-                            *process_type_mask,
+                            process_type_mask,
                             processed_times,
                             state,
                             exit_early,
                         ) {
-                            return true;
+                            early_match_found = true;
+                            return false;
                         }
-                    }
-                }
-                #[cfg(feature = "vectorscan")]
-                AcMatcher::Vectorscan(scanner) => {
-                    let mut early_match_found = false;
-                    let mut scratch = state
-                        .vectorscan_scratch
-                        .take()
-                        .unwrap_or_else(|| unsafe { Scratch::new(scanner.as_db_ptr()).unwrap() });
-
-                    let _ = unsafe { scratch.update(scanner.as_db_ptr()) };
-
-                    let _ = scanner.scan_with_scratch(
-                        processed_text.as_ref().as_bytes(),
-                        &mut scratch,
-                        |pattern_idx| {
-                            if early_match_found {
-                                return false; // stop scanning
-                            }
-                            if self.process_match(
-                                pattern_idx,
-                                index,
-                                *process_type_mask,
-                                processed_times,
-                                state,
-                                exit_early,
-                            ) {
-                                early_match_found = true;
-                                return false; // stop scanning
-                            }
-                            true // continue scanning
-                        },
-                    );
-                    state.vectorscan_scratch = Some(scratch);
-
-                    if early_match_found {
-                        return true;
-                    }
-                }
+                        true
+                    },
+                );
+                state.vectorscan_scratch = Some(scratch);
+                early_match_found
             }
         }
-        false
     }
 
     /// Initializes the flat counter matrix for a rule on its first touch in a generation.
@@ -749,6 +776,9 @@ impl SimpleMatcher {
         if text.is_empty() {
             return false;
         }
+        if self.none_only {
+            return self.is_match_raw(text);
+        }
 
         let processed_text_process_type_masks =
             reduce_text_process_with_tree(&self.process_type_tree, text);
@@ -758,6 +788,31 @@ impl SimpleMatcher {
         return_processed_string_to_pool(processed_text_process_type_masks);
 
         result
+    }
+
+    fn is_match_raw(&self, text: &str) -> bool {
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            state.prepare(self.word_conf_hot.len());
+
+            if self.scan_variant(text, 0, NONE_PROCESS_TYPE_MASK, 1, &mut state, true) {
+                return true;
+            }
+
+            let generation = state.generation;
+            state.touched_indices.iter().any(|&word_conf_idx| {
+                if state.word_states[word_conf_idx].not_generation == generation {
+                    return false;
+                }
+                Self::is_rule_satisfied(
+                    &self.word_conf_hot[word_conf_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    word_conf_idx,
+                    1,
+                )
+            })
+        })
     }
 
     /// Returns all patterns that match `text`.
@@ -844,9 +899,42 @@ impl SimpleMatcher {
         if text.is_empty() {
             return;
         }
+        if self.none_only {
+            self.process_raw_into(text, results);
+            return;
+        }
         let processed = reduce_text_process_with_tree(&self.process_type_tree, text);
         self.process_preprocessed_into(&processed, results);
         return_processed_string_to_pool(processed);
+    }
+
+    fn process_raw_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
+        SIMPLE_MATCH_STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            state.prepare(self.word_conf_hot.len());
+
+            self.scan_variant(text, 0, NONE_PROCESS_TYPE_MASK, 1, &mut state, false);
+
+            let generation = state.generation;
+            for &word_conf_idx in &state.touched_indices {
+                if state.word_states[word_conf_idx].not_generation == generation {
+                    continue;
+                }
+                if Self::is_rule_satisfied(
+                    &self.word_conf_hot[word_conf_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    word_conf_idx,
+                    1,
+                ) {
+                    let cold = &self.word_conf_cold[word_conf_idx];
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+            }
+        });
     }
 
     /// Pass 2 (collect into): runs Pass 1 then appends all satisfied rules to `results`.

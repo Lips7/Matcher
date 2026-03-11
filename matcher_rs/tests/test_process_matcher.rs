@@ -92,9 +92,9 @@ fn test_reduce_text_process_with_tree() {
     // Verify specific expected variants and their masks
     let find_variant = |target: &str| results.iter().find(|(s, _)| s == target);
 
-    // mask 2 = 1 << None.bits() (1 << 1)
+    // No `ProcessType::None` rules are registered here, so the untouched root text carries no mask.
     assert!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").is_some());
-    assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().1, 2);
+    assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().1, 0);
 
     // mask 16388 = (1 << (Fanjian | Delete | Normalize).bits()) | (1 << Fanjian.bits())
     // bits: (1 << 14) | (1 << 2) = 16384 | 4 = 16388

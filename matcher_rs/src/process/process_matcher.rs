@@ -558,12 +558,16 @@ pub struct ProcessTypeBitNode {
 /// needed text variants while sharing common intermediate results.
 pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
-    let root = ProcessTypeBitNode {
+    let mut root = ProcessTypeBitNode {
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         children: Vec::new(),
         folded_mask: 0,
     };
+    if process_type_set.contains(&ProcessType::None) {
+        root.process_type_list.push(ProcessType::None);
+        root.folded_mask |= 1u64 << ProcessType::None.bits();
+    }
     process_type_tree.push(root);
     for &process_type in process_type_set.iter() {
         let mut current_node_index = 0;
@@ -667,7 +671,7 @@ pub fn reduce_text_process_with_tree<'a>(
         let mut text_masks: ProcessedTextMasks<'a> =
             unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
         text_masks.clear();
-        text_masks.push((Cow::Borrowed(text), 1u64 << ProcessType::None.bits()));
+        text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
 
         for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
             let current_index = ts.tree_node_indices[current_node_index];
