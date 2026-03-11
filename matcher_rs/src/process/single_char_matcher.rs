@@ -39,23 +39,17 @@ pub enum SingleCharMatcher {
     ///   point to a page in `l2`.
     /// * `l2` — L2 data: `u32[num_pages * 256]`. Each entry is the mapped codepoint, or
     ///   `0` if the source codepoint has no mapping (i.e. already Simplified).
-    Fanjian {
-        l1: Cow<'static, [u8]>,
-        l2: Cow<'static, [u8]>,
-    },
+    Fanjian { l1: Box<[u16]>, l2: Box<[u32]> },
     /// Chinese character → Pinyin syllable(s) via a 2-stage page table.
     ///
     /// * `l1` / `l2` — same page-table structure as `Fanjian`, but each L2 value packs
     ///   `(offset << 8) | length` pointing into `strings`.
     /// * `strings` — concatenated Pinyin syllables (e.g. `"zhong guo ..."`) with space
     ///   separators between syllables.
-    /// * `trim_space` — when `true` (used by `PinYinChar`), leading/trailing spaces are
-    ///   stripped from each syllable slice before yielding.
     Pinyin {
-        l1: Cow<'static, [u8]>,
-        l2: Cow<'static, [u8]>,
+        l1: Box<[u16]>,
+        l2: Box<[u32]>,
         strings: Cow<'static, str>,
-        trim_space: bool,
     },
     /// Character deletion via a 139 KB flat BitSet covering all Unicode planes.
     ///
@@ -66,6 +60,7 @@ pub enum SingleCharMatcher {
     Delete {
         bitset: Cow<'static, [u8]>,
         ascii_lut: [u8; 16],
+        ascii_lut_simd: Simd<u8, 16>,
     },
 }
 
@@ -78,19 +73,55 @@ pub enum SingleCharMatch<'a> {
 
 /// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
 #[inline(always)]
-fn page_table_lookup(cp: u32, l1: &[u8], l2: &[u8]) -> Option<u32> {
+fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     let page_idx = (cp >> 8) as usize;
     let char_idx = (cp & 0xFF) as usize;
-    if page_idx * 2 + 1 >= l1.len() {
+    if page_idx >= l1.len() {
         return None;
     }
-    let page = u16::from_le_bytes(l1[page_idx * 2..page_idx * 2 + 2].try_into().unwrap()) as usize;
+    let page = unsafe { *l1.get_unchecked(page_idx) as usize };
     if page == 0 {
         return None;
     }
-    let l2_idx = page * 256 + char_idx;
-    let val = u32::from_le_bytes(l2[l2_idx * 4..l2_idx * 4 + 4].try_into().unwrap());
+    let val = unsafe { *l2.get_unchecked(page * 256 + char_idx) };
     if val != 0 { Some(val) } else { None }
+}
+
+#[inline]
+fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
+    debug_assert_eq!(bytes.len() % 2, 0);
+    bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+}
+
+#[inline]
+fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
+    debug_assert_eq!(bytes.len() % 4, 0);
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+}
+
+#[inline]
+fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
+    if value == 0 {
+        return 0;
+    }
+    let mut start = (value >> 8) as usize;
+    let mut end = start + (value & 0xFF) as usize;
+    let bytes = strings.as_bytes();
+    while start < end && bytes[start] == b' ' {
+        start += 1;
+    }
+    while end > start && bytes[end - 1] == b' ' {
+        end -= 1;
+    }
+    ((start as u32) << 8) | ((end - start) as u32)
 }
 
 /// Decodes one UTF-8 character from `bytes` starting at `offset`.
@@ -133,8 +164,8 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
 
 /// Monomorphized iterator for Fanjian (Traditional→Simplified) lookups.
 pub struct FanjianFindIter<'a> {
-    l1: &'a [u8],
-    l2: &'a [u8],
+    l1: &'a [u16],
+    l2: &'a [u32],
     text: &'a str,
     byte_offset: usize,
 }
@@ -177,6 +208,7 @@ pub struct DeleteFindIter<'a> {
     bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
     ascii_lut: [u8; 16],
+    ascii_lut_simd: Simd<u8, 16>,
     text: &'a str,
     byte_offset: usize,
 }
@@ -188,7 +220,6 @@ impl<'a> Iterator for DeleteFindIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
         let len = bytes.len();
-        let ascii_lut_simd = Simd::<u8, 16>::from_array(self.ascii_lut);
 
         loop {
             if self.byte_offset >= len {
@@ -207,7 +238,7 @@ impl<'a> Iterator for DeleteFindIter<'a> {
                 while self.byte_offset + 16 <= len {
                     let chunk = Simd::<u8, 16>::from_slice(&bytes[self.byte_offset..]);
                     let non_ascii_mask = chunk.simd_ge(Simd::<u8, 16>::splat(0x80u8)).to_bitmask();
-                    let del_mask = simd_ascii_delete_mask(chunk, ascii_lut_simd);
+                    let del_mask = simd_ascii_delete_mask(chunk, self.ascii_lut_simd);
                     let stop_mask = non_ascii_mask | del_mask;
                     if stop_mask != 0 {
                         self.byte_offset += stop_mask.trailing_zeros() as usize;
@@ -245,10 +276,9 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
 pub struct PinYinFindIter<'a> {
-    l1: &'a [u8],
-    l2: &'a [u8],
+    l1: &'a [u16],
+    l2: &'a [u32],
     strings: &'a str,
-    trim_space: bool,
     text: &'a str,
     byte_offset: usize,
 }
@@ -283,11 +313,11 @@ impl<'a> Iterator for PinYinFindIter<'a> {
                 let offset = (val >> 8) as usize;
                 let str_len = (val & 0xFF) as usize;
                 if offset + str_len <= self.strings.len() {
-                    let mut s = &self.strings[offset..offset + str_len];
-                    if self.trim_space {
-                        s = s.trim();
-                    }
-                    return Some((start, self.byte_offset, SingleCharMatch::Str(s)));
+                    return Some((
+                        start,
+                        self.byte_offset,
+                        SingleCharMatch::Str(&self.strings[offset..offset + str_len]),
+                    ));
                 }
             }
         }
@@ -310,12 +340,18 @@ impl SingleCharMatcher {
 
     #[inline(always)]
     pub fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
-        let SingleCharMatcher::Delete { bitset, ascii_lut } = self else {
+        let SingleCharMatcher::Delete {
+            bitset,
+            ascii_lut,
+            ascii_lut_simd,
+        } = self
+        else {
             unreachable!("delete_iter called on non-Delete matcher");
         };
         DeleteFindIter {
             bitset,
             ascii_lut: *ascii_lut,
+            ascii_lut_simd: *ascii_lut_simd,
             text,
             byte_offset: 0,
         }
@@ -323,34 +359,35 @@ impl SingleCharMatcher {
 
     #[inline(always)]
     pub fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
-        let SingleCharMatcher::Pinyin {
-            l1,
-            l2,
-            strings,
-            trim_space,
-        } = self
-        else {
+        let SingleCharMatcher::Pinyin { l1, l2, strings } = self else {
             unreachable!("pinyin_iter called on non-Pinyin matcher");
         };
         PinYinFindIter {
             l1,
             l2,
             strings,
-            trim_space: *trim_space,
             text,
             byte_offset: 0,
         }
     }
 
     pub fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
-        SingleCharMatcher::Fanjian { l1, l2 }
+        SingleCharMatcher::Fanjian {
+            l1: decode_u16_table(l1.as_ref()),
+            l2: decode_u32_table(l2.as_ref()),
+        }
     }
 
     pub fn delete(bitset: Cow<'static, [u8]>) -> Self {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
-        SingleCharMatcher::Delete { bitset, ascii_lut }
+        let ascii_lut_simd = Simd::<u8, 16>::from_array(ascii_lut);
+        SingleCharMatcher::Delete {
+            bitset,
+            ascii_lut,
+            ascii_lut_simd,
+        }
     }
 
     pub fn pinyin(
@@ -359,21 +396,23 @@ impl SingleCharMatcher {
         strings: Cow<'static, str>,
         trim_space: bool,
     ) -> Self {
-        SingleCharMatcher::Pinyin {
-            l1,
-            l2,
-            strings,
-            trim_space,
+        let l1 = decode_u16_table(l1.as_ref());
+        let mut l2 = decode_u32_table(l2.as_ref());
+        if trim_space {
+            for value in l2.iter_mut() {
+                *value = trim_pinyin_packed(*value, strings.as_ref());
+            }
         }
+        SingleCharMatcher::Pinyin { l1, l2, strings }
     }
 
     /// Converts a codepoint→value map into a 2-stage page-table byte representation.
     ///
-    /// Returns `(l1_bytes, l2_bytes)`. L1 is a `u16[4352]` array (one entry per
+    /// Returns `(l1, l2)`. L1 is a `u16[4352]` array (one entry per
     /// 256-codepoint block); non-zero entries index into L2. L2 stores the `u32`
     /// values for each mapped codepoint.
     #[cfg(feature = "runtime_build")]
-    fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u8>, Vec<u8>) {
+    fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
         let mut pages: HashSet<u32> = map.keys().map(|&k| k >> 8).collect();
         let mut page_list: Vec<u32> = pages.drain().collect();
         page_list.sort_unstable();
@@ -389,22 +428,17 @@ impl SingleCharMatcher {
                 }
             }
         }
-        let mut l1_bytes = Vec::with_capacity(l1.len() * 2);
-        for val in l1 {
-            l1_bytes.extend_from_slice(&val.to_le_bytes());
-        }
-        let mut l2_bytes = Vec::with_capacity(l2.len() * 4);
-        for val in l2 {
-            l2_bytes.extend_from_slice(&val.to_le_bytes());
-        }
-        (l1_bytes, l2_bytes)
+        (l1, l2)
     }
 
     /// Builds a Fanjian matcher from a codepoint→codepoint map.
     #[cfg(feature = "runtime_build")]
     pub fn fanjian_from_map(map: HashMap<u32, u32>) -> Self {
         let (l1, l2) = Self::build_2_stage_table(&map);
-        Self::fanjian(Cow::Owned(l1), Cow::Owned(l2))
+        Self::Fanjian {
+            l1: l1.into_boxed_slice(),
+            l2: l2.into_boxed_slice(),
+        }
     }
 
     /// Builds a Delete matcher from text source and whitespace list.
@@ -443,11 +477,17 @@ impl SingleCharMatcher {
             })
             .collect();
         let (l1, l2) = Self::build_2_stage_table(&packed);
-        Self::pinyin(
-            Cow::Owned(l1),
-            Cow::Owned(l2),
-            Cow::Owned(strings),
-            trim_space,
-        )
+        let strings: Cow<'static, str> = Cow::Owned(strings);
+        let mut l2 = l2.into_boxed_slice();
+        if trim_space {
+            for value in l2.iter_mut() {
+                *value = trim_pinyin_packed(*value, strings.as_ref());
+            }
+        }
+        Self::Pinyin {
+            l1: l1.into_boxed_slice(),
+            l2,
+            strings,
+        }
     }
 }
