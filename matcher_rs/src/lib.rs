@@ -1,4 +1,7 @@
-#![feature(portable_simd)]
+#![cfg_attr(
+    not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
+    feature(portable_simd)
+)]
 //! High-performance multi-pattern text matcher with logical operators and text normalization.
 //!
 //! `matcher_rs` solves precision/recall problems in keyword matching by combining:

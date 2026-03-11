@@ -1,71 +1,44 @@
-use std::simd::{
-    Simd,
-    cmp::{SimdPartialEq, SimdPartialOrd},
-};
-use std::sync::OnceLock;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::Simd;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 use std::arch::aarch64::*;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+use std::sync::OnceLock;
 
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 type SkipFn = fn(&[u8], usize) -> usize;
-type SkipDeleteFn = fn(&[u8], usize, &[u8; 16], Simd<u8, 16>) -> usize;
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+type SkipDeleteFn = fn(&[u8], usize, &[u8; 16]) -> usize;
 
 const SHIFT_TABLE_16: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-#[allow(dead_code)]
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 const SHIFT_TABLE_32: [u8; 32] = [
     1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4,
     8, 16, 32, 64, 128,
 ];
 
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 struct SimdDispatch {
     skip_ascii: SkipFn,
     skip_non_digit_ascii: SkipFn,
     skip_ascii_non_delete: SkipDeleteFn,
 }
 
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 impl SimdDispatch {
     fn detect() -> Self {
-        #[cfg(feature = "simd_runtime_dispatch")]
-        {
-            #[cfg(target_arch = "x86_64")]
-            {
-                if std::arch::is_x86_feature_detected!("avx2") {
-                    return Self {
-                        skip_ascii: skip_ascii_avx2,
-                        skip_non_digit_ascii: skip_non_digit_ascii_avx2,
-                        skip_ascii_non_delete: skip_ascii_non_delete_avx2,
-                    };
-                }
-
-                return Self {
-                    skip_ascii: skip_ascii_portable,
-                    skip_non_digit_ascii: skip_non_digit_ascii_portable,
-                    skip_ascii_non_delete: skip_ascii_non_delete_portable,
-                };
-            }
-
-            #[cfg(target_arch = "aarch64")]
-            {
-                Self {
-                    skip_ascii: skip_ascii_neon,
-                    skip_non_digit_ascii: skip_non_digit_ascii_neon,
-                    skip_ascii_non_delete: skip_ascii_non_delete_neon,
-                }
-            }
-
-            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-            {
-                return Self {
-                    skip_ascii: skip_ascii_portable,
-                    skip_non_digit_ascii: skip_non_digit_ascii_portable,
-                    skip_ascii_non_delete: skip_ascii_non_delete_portable,
-                };
-            }
+        if std::arch::is_x86_feature_detected!("avx2") {
+            return Self {
+                skip_ascii: skip_ascii_avx2,
+                skip_non_digit_ascii: skip_non_digit_ascii_avx2,
+                skip_ascii_non_delete: skip_ascii_non_delete_avx2,
+            };
         }
-
-        #[cfg(not(feature = "simd_runtime_dispatch"))]
         Self {
             skip_ascii: skip_ascii_portable,
             skip_non_digit_ascii: skip_non_digit_ascii_portable,
@@ -74,6 +47,7 @@ impl SimdDispatch {
     }
 }
 
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 #[inline(always)]
 fn dispatch() -> &'static SimdDispatch {
     static DISPATCH: OnceLock<SimdDispatch> = OnceLock::new();
@@ -121,8 +95,8 @@ fn find_ascii_non_delete_scalar(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16
     offset
 }
 
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 #[inline(always)]
-#[allow(dead_code)]
 fn portable_ascii_delete_mask_16(chunk: Simd<u8, 16>, ascii_lut: Simd<u8, 16>) -> u64 {
     let byte_idx = chunk >> Simd::<u8, 16>::splat(3);
     let lut_byte = ascii_lut.swizzle_dyn(byte_idx);
@@ -136,8 +110,8 @@ fn portable_ascii_delete_mask_16(chunk: Simd<u8, 16>, ascii_lut: Simd<u8, 16>) -
         .to_bitmask()
 }
 
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 #[inline(always)]
-#[allow(dead_code)]
 fn portable_ascii_delete_mask_32(chunk: Simd<u8, 32>, ascii_lut: Simd<u8, 32>) -> u64 {
     let byte_idx = chunk >> Simd::<u8, 32>::splat(3);
     let lut_byte = ascii_lut.swizzle_dyn(byte_idx);
@@ -151,8 +125,8 @@ fn portable_ascii_delete_mask_32(chunk: Simd<u8, 32>, ascii_lut: Simd<u8, 32>) -
         .to_bitmask()
 }
 
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 #[inline(always)]
-#[allow(dead_code)]
 fn skip_ascii_portable(bytes: &[u8], offset: usize) -> usize {
     if offset >= bytes.len() || bytes[offset] >= 0x80 {
         return offset;
@@ -172,8 +146,8 @@ fn skip_ascii_portable(bytes: &[u8], offset: usize) -> usize {
     find_non_ascii_scalar(bytes, offset)
 }
 
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 #[inline(always)]
-#[allow(dead_code)]
 fn skip_non_digit_ascii_portable(bytes: &[u8], offset: usize) -> usize {
     if offset >= bytes.len() {
         return offset;
@@ -202,14 +176,9 @@ fn skip_non_digit_ascii_portable(bytes: &[u8], offset: usize) -> usize {
     find_non_digit_ascii_scalar(bytes, offset)
 }
 
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 #[inline(always)]
-#[allow(dead_code)]
-fn skip_ascii_non_delete_portable(
-    bytes: &[u8],
-    offset: usize,
-    ascii_lut: &[u8; 16],
-    _ascii_lut_simd: Simd<u8, 16>,
-) -> usize {
+fn skip_ascii_non_delete_portable(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
     if offset >= bytes.len() {
         return offset;
     }
@@ -348,12 +317,7 @@ unsafe fn skip_ascii_non_delete_avx2_impl(
 }
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
-fn skip_ascii_non_delete_avx2(
-    bytes: &[u8],
-    offset: usize,
-    ascii_lut: &[u8; 16],
-    _ascii_lut_simd: Simd<u8, 16>,
-) -> usize {
+fn skip_ascii_non_delete_avx2(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
     if offset >= bytes.len() {
         return offset;
     }
@@ -377,6 +341,7 @@ unsafe fn first_non_ascii_in_neon(bytes: *const u8, offset: usize) -> usize {
 }
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+#[inline(always)]
 fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     if offset >= bytes.len() || bytes[offset] >= 0x80 {
         return offset;
@@ -397,6 +362,7 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
 }
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+#[inline(always)]
 fn skip_non_digit_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     if offset >= bytes.len() {
         return offset;
@@ -430,12 +396,8 @@ fn skip_non_digit_ascii_neon(bytes: &[u8], offset: usize) -> usize {
 }
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
-fn skip_ascii_non_delete_neon(
-    bytes: &[u8],
-    offset: usize,
-    ascii_lut: &[u8; 16],
-    _ascii_lut_simd: Simd<u8, 16>,
-) -> usize {
+#[inline(always)]
+fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
     if offset >= bytes.len() {
         return offset;
     }
@@ -478,24 +440,49 @@ fn skip_ascii_non_delete_neon(
 /// Advances `offset` past all ASCII bytes (`< 0x80`) using the best available kernel.
 #[inline(always)]
 pub fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
-    (dispatch().skip_ascii)(bytes, offset)
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+    return (dispatch().skip_ascii)(bytes, offset);
+
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+    return skip_ascii_neon(bytes, offset);
+
+    #[cfg(not(all(
+        feature = "simd_runtime_dispatch",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
+    skip_ascii_portable(bytes, offset)
 }
 
 /// Advances `offset` past non-digit, non-ASCII-stop bytes using the best available kernel.
 #[inline(always)]
 pub fn skip_non_digit_ascii_simd(bytes: &[u8], offset: usize) -> usize {
-    (dispatch().skip_non_digit_ascii)(bytes, offset)
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+    return (dispatch().skip_non_digit_ascii)(bytes, offset);
+
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+    return skip_non_digit_ascii_neon(bytes, offset);
+
+    #[cfg(not(all(
+        feature = "simd_runtime_dispatch",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
+    skip_non_digit_ascii_portable(bytes, offset)
 }
 
 /// Advances `offset` past ASCII bytes that are neither deletable nor non-ASCII.
 #[inline(always)]
-pub fn skip_ascii_non_delete_simd(
-    bytes: &[u8],
-    offset: usize,
-    ascii_lut: &[u8; 16],
-    ascii_lut_simd: Simd<u8, 16>,
-) -> usize {
-    (dispatch().skip_ascii_non_delete)(bytes, offset, ascii_lut, ascii_lut_simd)
+pub fn skip_ascii_non_delete_simd(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+    return (dispatch().skip_ascii_non_delete)(bytes, offset, ascii_lut);
+
+    #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+    return skip_ascii_non_delete_neon(bytes, offset, ascii_lut);
+
+    #[cfg(not(all(
+        feature = "simd_runtime_dispatch",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
+    skip_ascii_non_delete_portable(bytes, offset, ascii_lut)
 }
 
 #[cfg(test)]
@@ -528,18 +515,11 @@ mod tests {
     fn skip_ascii_non_delete_stops_on_delete_and_unicode() {
         let mut ascii_lut = [0u8; 16];
         ascii_lut[(b'!' as usize) >> 3] |= 1 << (b'!' & 7);
-        let ascii_lut_simd = Simd::<u8, 16>::from_array(ascii_lut);
 
         let text = "abc!def".as_bytes();
-        assert_eq!(
-            skip_ascii_non_delete_simd(text, 0, &ascii_lut, ascii_lut_simd),
-            3
-        );
+        assert_eq!(skip_ascii_non_delete_simd(text, 0, &ascii_lut), 3);
 
         let unicode = "abcdef你".as_bytes();
-        assert_eq!(
-            skip_ascii_non_delete_simd(unicode, 0, &ascii_lut, ascii_lut_simd),
-            6
-        );
+        assert_eq!(skip_ascii_non_delete_simd(unicode, 0, &ascii_lut), 6);
     }
 }

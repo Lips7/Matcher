@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
-use std::collections::HashMap;
-#[cfg(feature = "runtime_build")]
-use std::collections::HashSet;
-use std::simd::Simd;
+use std::collections::{HashMap, HashSet};
 
 use crate::process::simd_utils::{
     skip_ascii_non_delete_simd, skip_ascii_simd, skip_non_digit_ascii_simd,
@@ -60,7 +57,6 @@ pub(crate) enum SingleCharMatcher {
     Delete {
         bitset: Cow<'static, [u8]>,
         ascii_lut: [u8; 16],
-        ascii_lut_simd: Simd<u8, 16>,
     },
 }
 
@@ -235,8 +231,6 @@ pub(crate) struct DeleteFindIter<'a> {
     bitset: &'a [u8],
     /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
     ascii_lut: [u8; 16],
-    /// SIMD form of `ascii_lut` for 16-byte parallel ASCII deletion checks.
-    ascii_lut_simd: Simd<u8, 16>,
     /// The text being iterated over.
     text: &'a str,
     /// Current byte position within `text`.
@@ -264,12 +258,8 @@ impl<'a> Iterator for DeleteFindIter<'a> {
                 if (self.ascii_lut[cp >> 3] & (1 << (cp & 7))) != 0 {
                     return Some((start, self.byte_offset, SingleCharMatch::Delete));
                 }
-                self.byte_offset = skip_ascii_non_delete_simd(
-                    bytes,
-                    self.byte_offset,
-                    &self.ascii_lut,
-                    self.ascii_lut_simd,
-                );
+                self.byte_offset =
+                    skip_ascii_non_delete_simd(bytes, self.byte_offset, &self.ascii_lut);
             } else {
                 // Non-ASCII: decode and check the full 139 KB bitset.
                 // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.
@@ -366,18 +356,12 @@ impl SingleCharMatcher {
     /// Each yielded match identifies one codepoint that should be removed by the Delete step.
     #[inline(always)]
     pub(crate) fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
-        let SingleCharMatcher::Delete {
-            bitset,
-            ascii_lut,
-            ascii_lut_simd,
-        } = self
-        else {
+        let SingleCharMatcher::Delete { bitset, ascii_lut } = self else {
             unreachable!("delete_iter called on non-Delete matcher");
         };
         DeleteFindIter {
             bitset,
             ascii_lut: *ascii_lut,
-            ascii_lut_simd: *ascii_lut_simd,
             text,
             byte_offset: 0,
         }
@@ -417,12 +401,7 @@ impl SingleCharMatcher {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
-        let ascii_lut_simd = Simd::<u8, 16>::from_array(ascii_lut);
-        SingleCharMatcher::Delete {
-            bitset,
-            ascii_lut,
-            ascii_lut_simd,
-        }
+        SingleCharMatcher::Delete { bitset, ascii_lut }
     }
 
     #[cfg(not(feature = "runtime_build"))]
