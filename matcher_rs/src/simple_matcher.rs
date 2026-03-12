@@ -2,9 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-#[cfg(feature = "dfa")]
-use aho_corasick::AhoCorasickKind;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use serde::Serialize;
 use tinyvec::TinyVec;
 
@@ -451,7 +449,7 @@ impl SimpleMatcher {
             #[cfg(feature = "dfa")]
             let aho_corasick_kind = AhoCorasickKind::DFA;
             #[cfg(not(feature = "dfa"))]
-            let aho_corasick_kind = aho_corasick::AhoCorasickKind::ContiguousNFA;
+            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
 
             AhoCorasickBuilder::new()
                 .kind(Some(aho_corasick_kind))
