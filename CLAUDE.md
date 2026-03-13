@@ -27,7 +27,7 @@ make test                           # All languages (Rust + Python + Java + C)
 make lint                           # All languages
 make lint-rs                        # cargo fmt + cargo clippy
 cargo fmt --all
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo all-features clippy --workspace --all-targets -- -D warnings
 
 # Python bindings
 cd matcher_py && uv sync && uv run pytest
@@ -36,6 +36,9 @@ cd matcher_py && uv run ruff check --fix
 # Benchmarks
 cargo bench -p matcher_rs                      # Rust only (avoids Python linker errors)
 cargo bench -p matcher_rs -- text_process      # Specific benchmark group
+cargo bench -p matcher_rs > baseline.txt       # save baseline
+cargo bench -p matcher_rs > new.txt            # run new benchmark
+python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # compare results
 ```
 
 **Pre-commit:** `.pre-commit-config.yaml` exists — run `prek run` before committing.
