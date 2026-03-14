@@ -1,11 +1,15 @@
 use aho_corasick::AhoCorasick;
 #[cfg(feature = "dfa")]
-use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
+use aho_corasick::{
+    AhoCorasickBuilder, AhoCorasickKind, FindIter as AhoCorasickFindIter,
+    MatchKind as AhoCorasickMatchKind,
+};
 #[cfg(not(feature = "dfa"))]
 use daachorse::CharwiseDoubleArrayAhoCorasick;
 #[cfg(all(not(feature = "dfa"), feature = "runtime_build"))]
 use daachorse::{
     CharwiseDoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
+    charwise::iter::LestmostFindIterator as DoubleArrayAhoCorasickFindIter,
 };
 #[cfg(feature = "runtime_build")]
 use std::collections::HashMap;
@@ -41,9 +45,9 @@ pub(crate) struct MultiCharMatcher {
 pub(crate) enum MultiCharFindIter<'a> {
     /// DAAC leftmost-longest iterator.
     #[cfg(not(feature = "dfa"))]
-    DoubleArrayAhoCorasick(daachorse::charwise::iter::LestmostFindIterator<'a, &'a str, u32>),
+    DoubleArrayAhoCorasick(DoubleArrayAhoCorasickFindIter<'a>),
     /// Standard Aho-Corasick iterator.
-    AhoCorasick(aho_corasick::FindIter<'a, 'a>),
+    AhoCorasick(AhoCorasickFindIter<'a, 'a>),
 }
 
 impl<'a> Iterator for MultiCharFindIter<'a> {
