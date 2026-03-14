@@ -105,3 +105,7 @@ Transformation tables in `matcher_rs/process_map/` are compiled into binary arti
 ### Construction subtlety: Delete and AC pattern indexing
 
 During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - ProcessType::Delete` rather than the full `ProcessType`. Delete-normalized text is what the automaton scans, so patterns must NOT themselves be Delete-transformed before indexing — they are stored verbatim and matched against the already-deleted text variants.
+
+## Important Notes
+
+- ALWAYS run benchmarks to measure baseline performance before making optimizations, run it again after changes. Use `cargo bench -p matcher_rs` and the provided comparison script.
