@@ -3,6 +3,10 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use daachorse::{
+    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
+    MatchKind as DoubleArrayAhoCorasickMatchKind,
+};
 use serde::Serialize;
 use tinyvec::TinyVec;
 
@@ -201,10 +205,12 @@ struct PatternEntry {
 }
 
 /// The underlying scan engine used by [`SimpleMatcher`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum InternalMatcher {
     /// Standard Aho-Corasick (DFA or ContiguousNFA depending on the `dfa` feature flag).
     AhoCorasick(AhoCorasick),
+    /// Double-array Aho-Corasick (DAAC) matcher, optimized for CJK text.
+    DoubleArrayAhoCorasick(CharwiseDoubleArrayAhoCorasick<u32>),
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
@@ -266,7 +272,7 @@ enum InternalMatcher {
 /// assert_eq!(results.len(), 1);
 /// assert_eq!(results[0].word_id, 1);
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     ac_matcher: InternalMatcher,
@@ -445,17 +451,26 @@ impl SimpleMatcher {
             .map(|ac_word| ac_word.as_ref())
             .collect::<Vec<_>>();
 
-        let ac_matcher = InternalMatcher::AhoCorasick({
-            #[cfg(feature = "dfa")]
-            let aho_corasick_kind = AhoCorasickKind::DFA;
-            #[cfg(not(feature = "dfa"))]
-            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+        let ac_matcher = if false {
+            InternalMatcher::AhoCorasick({
+                #[cfg(feature = "dfa")]
+                let aho_corasick_kind = AhoCorasickKind::DFA;
+                #[cfg(not(feature = "dfa"))]
+                let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
 
-            AhoCorasickBuilder::new()
-                .kind(Some(aho_corasick_kind))
-                .build(patterns)
-                .unwrap()
-        });
+                AhoCorasickBuilder::new()
+                    .kind(Some(aho_corasick_kind))
+                    .build(patterns)
+                    .unwrap()
+            })
+        } else {
+            InternalMatcher::DoubleArrayAhoCorasick(
+                CharwiseDoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                    .build(patterns)
+                    .unwrap(),
+            )
+        };
 
         let mut ac_dedup_entries = Vec::with_capacity(dedup_entries.iter().map(|v| v.len()).sum());
         let mut ac_dedup_ranges = Vec::with_capacity(dedup_entries.len());
@@ -698,6 +713,22 @@ impl SimpleMatcher {
             InternalMatcher::AhoCorasick(ac_matcher) => {
                 for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
                     let pattern_idx = ac_dedup_result.pattern().as_usize();
+                    if self.process_match(
+                        pattern_idx,
+                        index,
+                        process_type_mask,
+                        num_variants,
+                        state,
+                        exit_early,
+                    ) {
+                        return true;
+                    }
+                }
+                false
+            }
+            InternalMatcher::DoubleArrayAhoCorasick(ac_matcher) => {
+                for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
+                    let pattern_idx = ac_dedup_result.value() as usize;
                     if self.process_match(
                         pattern_idx,
                         index,
