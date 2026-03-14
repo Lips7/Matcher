@@ -1,8 +1,11 @@
-use aho_corasick::AhoCorasick;
+use aho_corasick::{AhoCorasick, FindIter as AhoCorasickFindIter};
 #[cfg(feature = "dfa")]
 use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
 #[cfg(not(feature = "dfa"))]
-use daachorse::CharwiseDoubleArrayAhoCorasick;
+use daachorse::{
+    CharwiseDoubleArrayAhoCorasick,
+    charwise::iter::LestmostFindIterator as DoubleArrayAhoCorasickFindIter,
+};
 #[cfg(all(not(feature = "dfa"), feature = "runtime_build"))]
 use daachorse::{
     CharwiseDoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
@@ -15,9 +18,9 @@ use std::collections::HashMap;
 enum MultiCharEngine {
     /// Charwise double-array Aho-Corasick (non-`dfa` builds only).
     #[cfg(not(feature = "dfa"))]
-    DAAC(CharwiseDoubleArrayAhoCorasick<u32>),
+    DoubleArrayAhoCorasick(CharwiseDoubleArrayAhoCorasick<u32>),
     /// Standard Aho-Corasick automaton.
-    AC(AhoCorasick),
+    AhoCorasick(AhoCorasick),
 }
 
 /// Multi-character pattern matching engine backed by a compiled automaton.
@@ -41,9 +44,9 @@ pub(crate) struct MultiCharMatcher {
 pub(crate) enum MultiCharFindIter<'a> {
     /// DAAC leftmost-longest iterator.
     #[cfg(not(feature = "dfa"))]
-    DAAC(daachorse::charwise::iter::LestmostFindIterator<'a, &'a str, u32>),
+    DoubleArrayAhoCorasick(DoubleArrayAhoCorasickFindIter<'a, &'a str, u32>),
     /// Standard Aho-Corasick iterator.
-    AC(aho_corasick::FindIter<'a, 'a>),
+    AhoCorasick(AhoCorasickFindIter<'a, 'a>),
 }
 
 impl<'a> Iterator for MultiCharFindIter<'a> {
@@ -53,10 +56,10 @@ impl<'a> Iterator for MultiCharFindIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             #[cfg(not(feature = "dfa"))]
-            MultiCharFindIter::DAAC(iter) => iter
+            MultiCharFindIter::DoubleArrayAhoCorasick(iter) => iter
                 .next()
                 .map(|m| (m.start(), m.end(), m.value() as usize)),
-            MultiCharFindIter::AC(iter) => iter
+            MultiCharFindIter::AhoCorasick(iter) => iter
                 .next()
                 .map(|m| (m.start(), m.end(), m.pattern().as_usize())),
         }
@@ -79,15 +82,17 @@ impl MultiCharMatcher {
     pub(crate) fn find_iter<'a>(&'a self, text: &'a str) -> MultiCharFindIter<'a> {
         match &self.engine {
             #[cfg(not(feature = "dfa"))]
-            MultiCharEngine::DAAC(ac) => MultiCharFindIter::DAAC(ac.leftmost_find_iter(text)),
-            MultiCharEngine::AC(ac) => MultiCharFindIter::AC(ac.find_iter(text)),
+            MultiCharEngine::DoubleArrayAhoCorasick(ac) => {
+                MultiCharFindIter::DoubleArrayAhoCorasick(ac.leftmost_find_iter(text))
+            }
+            MultiCharEngine::AhoCorasick(ac) => MultiCharFindIter::AhoCorasick(ac.find_iter(text)),
         }
     }
 
     /// Creates an empty no-op matcher (used for `ProcessType::None`).
     pub(crate) fn new_empty() -> Self {
         Self {
-            engine: MultiCharEngine::AC(AhoCorasick::new(Vec::<&str>::new()).unwrap()),
+            engine: MultiCharEngine::AhoCorasick(AhoCorasick::new(Vec::<&str>::new()).unwrap()),
             replace_list: Vec::new(),
         }
     }
@@ -106,7 +111,7 @@ impl MultiCharMatcher {
         #[cfg(not(feature = "dfa"))]
         {
             Self {
-                engine: MultiCharEngine::DAAC(
+                engine: MultiCharEngine::DoubleArrayAhoCorasick(
                     CharwiseDoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
                         .build(patterns)
@@ -118,7 +123,7 @@ impl MultiCharMatcher {
         #[cfg(feature = "dfa")]
         {
             Self {
-                engine: MultiCharEngine::AC(
+                engine: MultiCharEngine::AhoCorasick(
                     AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
                         .match_kind(AhoCorasickMatchKind::LeftmostLongest)
@@ -146,7 +151,7 @@ impl MultiCharMatcher {
         Self {
             // SAFETY: `bytes` is produced by build.rs `serialize()` in the same build,
             // so the format, alignment, and endianness match the current daachorse version.
-            engine: MultiCharEngine::DAAC(unsafe {
+            engine: MultiCharEngine::DoubleArrayAhoCorasick(unsafe {
                 CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(bytes).0
             }),
             replace_list: Vec::new(),

@@ -63,8 +63,15 @@ fn build_deterministic_map(
             let mut word = patterns[word_idx].to_string();
 
             if !match_scenario {
-                // Mangle the word so it cannot possibly match normal text
-                word = format!("__impossible_{word_idx}_match_{i}__");
+                // Mangle the word so it cannot possibly match normal text.
+                // For CN, append a Unicode PUA suffix to a real CJK word so the automaton
+                // retains realistic CJK byte structure while the pattern is unachievable.
+                // For EN, use a fully ASCII sentinel string.
+                word = if en_or_cn == "cn" {
+                    format!("{word}\u{E000}{i}")
+                } else {
+                    format!("__impossible_{word_idx}_match_{i}__")
+                };
             }
 
             combined_word_list.push(word);
