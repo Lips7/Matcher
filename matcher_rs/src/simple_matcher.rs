@@ -204,15 +204,6 @@ struct PatternEntry {
     offset: u16,
 }
 
-/// The underlying scan engine used by [`SimpleMatcher`].
-#[derive(Clone)]
-enum InternalMatcher {
-    /// Standard Aho-Corasick (DFA or ContiguousNFA depending on the `dfa` feature flag).
-    AhoCorasick(AhoCorasick),
-    /// Double-array Aho-Corasick (DAAC) matcher, optimized for CJK text.
-    DoubleArrayAhoCorasick(CharwiseDoubleArrayAhoCorasick<u32>),
-}
-
 /// Multi-pattern matcher with logical operators and text normalization.
 ///
 /// Prefer constructing via [`crate::SimpleMatcherBuilder`] rather than calling [`new`](Self::new) directly.
@@ -275,7 +266,14 @@ enum InternalMatcher {
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
-    ac_matcher: InternalMatcher,
+    /// ASCII-only patterns — fast bytewise scan, best for English text.
+    bytewise_matcher: Option<AhoCorasick>,
+    /// Non-ASCII (CJK, etc.) patterns — charwise DAAC, best for CJK text.
+    charwise_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
+    /// Maps bytewise automaton local pattern index → global dedup index.
+    bytewise_to_dedup: Vec<usize>,
+    /// Maps charwise automaton local pattern index → global dedup index.
+    charwise_to_dedup: Vec<usize>,
     ac_dedup_entries: Vec<PatternEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
     rule_hot: Vec<RuleHot>,
@@ -446,30 +444,49 @@ impl SimpleMatcher {
 
         let process_type_tree = build_process_type_tree(&process_type_set);
 
-        let patterns = dedup_patterns
-            .iter()
-            .map(|ac_word| ac_word.as_ref())
-            .collect::<Vec<_>>();
+        // Partition deduplicated patterns by character content.
+        // ASCII-only patterns go to the bytewise AC (fast for English text);
+        // patterns with any non-ASCII byte go to the charwise DAAC (fast for CJK text).
+        let mut bytewise_patterns: Vec<&str> = Vec::new();
+        let mut bytewise_to_dedup: Vec<usize> = Vec::new();
+        let mut charwise_patterns: Vec<&str> = Vec::new();
+        let mut charwise_to_dedup: Vec<usize> = Vec::new();
 
-        let ac_matcher = if false {
-            InternalMatcher::AhoCorasick({
-                #[cfg(feature = "dfa")]
-                let aho_corasick_kind = AhoCorasickKind::DFA;
-                #[cfg(not(feature = "dfa"))]
-                let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+        for (dedup_id, pattern) in dedup_patterns.iter().enumerate() {
+            if pattern.as_ref().is_ascii() {
+                bytewise_to_dedup.push(dedup_id);
+                bytewise_patterns.push(pattern.as_ref());
+            } else {
+                charwise_to_dedup.push(dedup_id);
+                charwise_patterns.push(pattern.as_ref());
+            }
+        }
 
+        let bytewise_matcher = if !bytewise_patterns.is_empty() {
+            #[cfg(feature = "dfa")]
+            let aho_corasick_kind = AhoCorasickKind::DFA;
+            #[cfg(not(feature = "dfa"))]
+            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
+
+            Some(
                 AhoCorasickBuilder::new()
                     .kind(Some(aho_corasick_kind))
-                    .build(patterns)
-                    .unwrap()
-            })
-        } else {
-            InternalMatcher::DoubleArrayAhoCorasick(
-                CharwiseDoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build(patterns)
+                    .build(&bytewise_patterns)
                     .unwrap(),
             )
+        } else {
+            None
+        };
+
+        let charwise_matcher = if !charwise_patterns.is_empty() {
+            Some(
+                CharwiseDoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                    .build(&charwise_patterns)
+                    .unwrap(),
+            )
+        } else {
+            None
         };
 
         let mut ac_dedup_entries = Vec::with_capacity(dedup_entries.iter().map(|v| v.len()).sum());
@@ -483,7 +500,10 @@ impl SimpleMatcher {
 
         SimpleMatcher {
             process_type_tree,
-            ac_matcher,
+            bytewise_matcher,
+            charwise_matcher,
+            bytewise_to_dedup,
+            charwise_to_dedup,
             ac_dedup_entries,
             ac_dedup_ranges,
             rule_hot,
@@ -709,40 +729,45 @@ impl SimpleMatcher {
     ) -> bool {
         // `index` identifies which processed text variant this scan came from, so matrix-path
         // rules can track repeated AND / NOT segments per variant.
-        match &self.ac_matcher {
-            InternalMatcher::AhoCorasick(ac_matcher) => {
-                for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                    let pattern_idx = ac_dedup_result.pattern().as_usize();
-                    if self.process_match(
-                        pattern_idx,
-                        index,
-                        process_type_mask,
-                        num_variants,
-                        state,
-                        exit_early,
-                    ) {
-                        return true;
-                    }
+
+        // Bytewise AC handles all ASCII-only patterns. Scan every variant.
+        if let Some(ref ac_matcher) = self.bytewise_matcher {
+            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
+                let dedup_idx = self.bytewise_to_dedup[ac_dedup_result.pattern().as_usize()];
+                if self.process_match(
+                    dedup_idx,
+                    index,
+                    process_type_mask,
+                    num_variants,
+                    state,
+                    exit_early,
+                ) {
+                    return true;
                 }
-                false
-            }
-            InternalMatcher::DoubleArrayAhoCorasick(ac_matcher) => {
-                for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                    let pattern_idx = ac_dedup_result.value() as usize;
-                    if self.process_match(
-                        pattern_idx,
-                        index,
-                        process_type_mask,
-                        num_variants,
-                        state,
-                        exit_early,
-                    ) {
-                        return true;
-                    }
-                }
-                false
             }
         }
+
+        // Charwise DAAC handles non-ASCII (CJK, etc.) patterns. Non-ASCII patterns can never
+        // match pure-ASCII text, so skip the scan entirely when the text is all ASCII.
+        if !processed_text.is_ascii()
+            && let Some(ref ac_matcher) = self.charwise_matcher
+        {
+            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
+                let dedup_idx = self.charwise_to_dedup[ac_dedup_result.value() as usize];
+                if self.process_match(
+                    dedup_idx,
+                    index,
+                    process_type_mask,
+                    num_variants,
+                    state,
+                    exit_early,
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Updates rule counters for a single automaton hit (called from Pass 1).
