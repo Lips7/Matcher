@@ -2,10 +2,11 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "dfa")]
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use daachorse::{
-    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
-    MatchKind as DoubleArrayAhoCorasickMatchKind,
+    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder, DoubleArrayAhoCorasick,
+    DoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 use serde::Serialize;
 use tinyvec::TinyVec;
@@ -20,6 +21,31 @@ use crate::process::process_matcher::{
 /// Rules with ≤ 64 AND/NOT segments use a `u64` bitmask to track satisfaction;
 /// rules with more segments use the 2-D counter matrix in [`SimpleMatchState`].
 const BITMASK_CAPACITY: usize = 64;
+
+/// Maximum number of ASCII patterns to route through AC DFA before switching
+/// to DAAC bytewise. Below this count AC DFA leads on search throughput
+/// (especially against non-ASCII text); above it DAAC bytewise wins while
+/// using ~16x less memory.
+///
+/// Derived from `bench_engine.rs`: AC DFA leads at n≤1000, DAAC bytewise
+/// leads at n≥10000 on ASCII text. 5000 is a conservative midpoint.
+const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
+
+/// Bytewise automaton engine for ASCII-only patterns.
+///
+/// When the `dfa` feature is enabled and the ASCII pattern count is below
+/// [`AC_DFA_PATTERN_THRESHOLD`], the `AcDfa` variant is used (faster at
+/// small counts). Otherwise `DaacBytewise` is used (faster at large counts
+/// and uses ~16x less memory).
+///
+/// When the `dfa` feature is disabled, only `DaacBytewise` is available —
+/// it outperforms `AhoCorasick` (ContiguousNFA) at every pattern count.
+#[derive(Clone)]
+enum BytewiseMatcher {
+    #[cfg(feature = "dfa")]
+    AcDfa(AhoCorasick),
+    DaacBytewise(DoubleArrayAhoCorasick<u32>),
+}
 
 /// Per-rule match state for a single search, keyed by generation ID.
 ///
@@ -267,7 +293,7 @@ struct PatternEntry {
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     /// ASCII-only patterns — fast bytewise scan, best for English text.
-    bytewise_matcher: Option<AhoCorasick>,
+    bytewise_matcher: Option<BytewiseMatcher>,
     /// Non-ASCII (CJK, etc.) patterns — charwise DAAC, best for CJK text.
     charwise_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
     /// Maps bytewise automaton local pattern index → global dedup index.
@@ -464,16 +490,29 @@ impl SimpleMatcher {
 
         let bytewise_matcher = if !bytewise_patterns.is_empty() {
             #[cfg(feature = "dfa")]
-            let aho_corasick_kind = AhoCorasickKind::DFA;
+            let engine = if bytewise_patterns.len() <= AC_DFA_PATTERN_THRESHOLD {
+                BytewiseMatcher::AcDfa(
+                    AhoCorasickBuilder::new()
+                        .kind(Some(AhoCorasickKind::DFA))
+                        .build(&bytewise_patterns)
+                        .unwrap(),
+                )
+            } else {
+                BytewiseMatcher::DaacBytewise(
+                    DoubleArrayAhoCorasickBuilder::new()
+                        .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+                        .build(&bytewise_patterns)
+                        .unwrap(),
+                )
+            };
             #[cfg(not(feature = "dfa"))]
-            let aho_corasick_kind = AhoCorasickKind::ContiguousNFA;
-
-            Some(
-                AhoCorasickBuilder::new()
-                    .kind(Some(aho_corasick_kind))
+            let engine = BytewiseMatcher::DaacBytewise(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                     .build(&bytewise_patterns)
                     .unwrap(),
-            )
+            );
+            Some(engine)
         } else {
             None
         };
@@ -730,19 +769,39 @@ impl SimpleMatcher {
         // `index` identifies which processed text variant this scan came from, so matrix-path
         // rules can track repeated AND / NOT segments per variant.
 
-        // Bytewise AC handles all ASCII-only patterns. Scan every variant.
-        if let Some(ref ac_matcher) = self.bytewise_matcher {
-            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                let dedup_idx = self.bytewise_to_dedup[ac_dedup_result.pattern().as_usize()];
-                if self.process_match(
-                    dedup_idx,
-                    index,
-                    process_type_mask,
-                    num_variants,
-                    state,
-                    exit_early,
-                ) {
-                    return true;
+        // Bytewise engine handles all ASCII-only patterns. Scan every variant.
+        if let Some(ref bytewise) = self.bytewise_matcher {
+            match bytewise {
+                #[cfg(feature = "dfa")]
+                BytewiseMatcher::AcDfa(ac_matcher) => {
+                    for hit in ac_matcher.find_overlapping_iter(processed_text) {
+                        let dedup_idx = self.bytewise_to_dedup[hit.pattern().as_usize()];
+                        if self.process_match(
+                            dedup_idx,
+                            index,
+                            process_type_mask,
+                            num_variants,
+                            state,
+                            exit_early,
+                        ) {
+                            return true;
+                        }
+                    }
+                }
+                BytewiseMatcher::DaacBytewise(daac_matcher) => {
+                    for hit in daac_matcher.find_overlapping_iter(processed_text) {
+                        let dedup_idx = self.bytewise_to_dedup[hit.value() as usize];
+                        if self.process_match(
+                            dedup_idx,
+                            index,
+                            process_type_mask,
+                            num_variants,
+                            state,
+                            exit_early,
+                        ) {
+                            return true;
+                        }
+                    }
                 }
             }
         }

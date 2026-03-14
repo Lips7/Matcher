@@ -49,3 +49,7 @@ simd_runtime_dispatch = []
 [[bench]]
 name = "bench"
 harness = false
+
+[[bench]]
+name = "bench_engine"
+harness = false
