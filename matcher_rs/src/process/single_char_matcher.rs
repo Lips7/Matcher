@@ -384,8 +384,8 @@ impl SingleCharMatcher {
         }
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     /// Builds a Fanjian matcher from precompiled L1/L2 byte tables.
+    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn fanjian(l1: Cow<'static, [u8]>, l2: Cow<'static, [u8]>) -> Self {
         SingleCharMatcher::Fanjian {
             l1: decode_u16_table(l1.as_ref()),
@@ -404,11 +404,11 @@ impl SingleCharMatcher {
         SingleCharMatcher::Delete { bitset, ascii_lut }
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     /// Builds a Pinyin matcher from precompiled page tables and string storage.
     ///
     /// When `trim_space` is `true`, each packed entry is rewritten so leading/trailing spaces
     /// are removed, producing the `PinYinChar` behavior.
+    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn pinyin(
         l1: Cow<'static, [u8]>,
         l2: Cow<'static, [u8]>,

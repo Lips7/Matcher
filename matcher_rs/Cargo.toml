@@ -39,11 +39,11 @@ proptest = "1.10.0"
 
 [features]
 default = ["dfa", "simd_runtime_dispatch"]
-# By enable runtime_build feature, we could build process matcher at runtime, but with build time increasing.
+# By enabling the runtime_build feature, process matchers are built at startup from source text maps, increasing startup time.
 runtime_build = []
-# By enable dfa feature, we could use dfa to perform simple matching, but with significantly increasing memory consumption.
+# By enabling the dfa feature, DFA-backed Aho-Corasick automata are used for matching, significantly increasing memory usage.
 dfa = []
-# By enable simd_runtime_dispatch feature, we select the best available transform kernel at runtime.
+# By enabling the simd_runtime_dispatch feature, the best available transform kernel is selected at runtime (AVX2/NEON/portable).
 simd_runtime_dispatch = []
 
 [[bench]]

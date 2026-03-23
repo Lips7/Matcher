@@ -303,8 +303,7 @@ unsafe fn skip_ascii_non_delete_avx2_impl(
         let bit_pos = _mm256_and_si256(chunk, bit_pos_mask);
         let bit_mask = _mm256_shuffle_epi8(shift_table, bit_pos);
         let deleted = _mm256_and_si256(lut_byte, bit_mask);
-        let delete_mask =
-            (!_mm256_movemask_epi8(_mm256_cmpeq_epi8(deleted, zero)) as u32) & u32::MAX;
+        let delete_mask = !_mm256_movemask_epi8(_mm256_cmpeq_epi8(deleted, zero)) as u32;
 
         let stop_mask = non_ascii_mask | delete_mask;
         if stop_mask != 0 {
@@ -439,7 +438,7 @@ fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
 
 /// Advances `offset` past all ASCII bytes (`< 0x80`) using the best available kernel.
 #[inline(always)]
-pub fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
+pub(crate) fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
     #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
     return (dispatch().skip_ascii)(bytes, offset);
 
@@ -455,7 +454,7 @@ pub fn skip_ascii_simd(bytes: &[u8], offset: usize) -> usize {
 
 /// Advances `offset` past non-digit, non-ASCII-stop bytes using the best available kernel.
 #[inline(always)]
-pub fn skip_non_digit_ascii_simd(bytes: &[u8], offset: usize) -> usize {
+pub(crate) fn skip_non_digit_ascii_simd(bytes: &[u8], offset: usize) -> usize {
     #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
     return (dispatch().skip_non_digit_ascii)(bytes, offset);
 
@@ -471,7 +470,11 @@ pub fn skip_non_digit_ascii_simd(bytes: &[u8], offset: usize) -> usize {
 
 /// Advances `offset` past ASCII bytes that are neither deletable nor non-ASCII.
 #[inline(always)]
-pub fn skip_ascii_non_delete_simd(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
+pub(crate) fn skip_ascii_non_delete_simd(
+    bytes: &[u8],
+    offset: usize,
+    ascii_lut: &[u8; 16],
+) -> usize {
     #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
     return (dispatch().skip_ascii_non_delete)(bytes, offset, ascii_lut);
 

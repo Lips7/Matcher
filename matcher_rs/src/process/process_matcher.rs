@@ -348,7 +348,7 @@ impl ProcessMatcher {
 /// # Panics
 /// Panics (via `unreachable!()`) if `process_type_bit` is a composite or unrecognized value
 /// when the `runtime_build` feature is disabled.
-pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMatcher {
+pub(crate) fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMatcher {
     let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(index < 8, "ProcessType bit index out of bounds");
 
@@ -496,6 +496,47 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     result
 }
 
+/// Shared implementation for [`reduce_text_process`] and [`reduce_text_process_emit`].
+///
+/// When `overwrite_replace` is `false`, each replace-type step appends a new entry.
+/// When `overwrite_replace` is `true`, replace-type steps overwrite the last entry in place;
+/// only `Delete` steps append. See the public wrappers for full semantics.
+fn reduce_text_process_inner<'a>(
+    process_type: ProcessType,
+    text: &'a str,
+    overwrite_replace: bool,
+) -> Vec<Cow<'a, str>> {
+    let mut text_list: Vec<Cow<'a, str>> = Vec::new();
+    text_list.push(Cow::Borrowed(text));
+
+    for process_type_bit in process_type.iter() {
+        let pm = get_process_matcher(process_type_bit);
+        let current_text = text_list
+            .last_mut()
+            .expect("text_list is never empty (seeded with original text)");
+
+        match process_type_bit {
+            ProcessType::None => continue,
+            ProcessType::Delete => {
+                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
+                }
+            }
+            _ => {
+                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
+                    if overwrite_replace {
+                        *current_text = Cow::Owned(processed);
+                    } else {
+                        text_list.push(Cow::Owned(processed));
+                    }
+                }
+            }
+        }
+    }
+
+    text_list
+}
+
 /// Applies a composite [`ProcessType`] pipeline to `text`, recording every intermediate
 /// variant that diverges from its predecessor.
 ///
@@ -520,31 +561,7 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// ```
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
-    let mut text_list: Vec<Cow<'a, str>> = Vec::new();
-    text_list.push(Cow::Borrowed(text));
-
-    for process_type_bit in process_type.iter() {
-        let pm = get_process_matcher(process_type_bit);
-        let current_text = text_list
-            .last_mut()
-            .expect("It should always have at least one element");
-
-        match process_type_bit {
-            ProcessType::None => continue,
-            ProcessType::Delete => {
-                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(processed));
-                }
-            }
-            _ => {
-                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(processed));
-                }
-            }
-        }
-    }
-
-    text_list
+    reduce_text_process_inner(process_type, text, false)
 }
 
 /// Like [`reduce_text_process`], but composing replace-type steps in-place.
@@ -563,37 +580,17 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 ///
 /// let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
 ///
+/// // emit: Fanjian overwrites (1 entry), Delete appends, Normalize overwrites last
+/// // 1. Fanjian:  ["~ᗩ~裸~𝚩~軆~Ⲉ~"]              (overwritten)
+/// // 2. Delete:   ["~ᗩ~裸~𝚩~軆~Ⲉ~", "ᗩ裸𝚩軆Ⲉ"]   (pushed)
+/// // 3. Normalize:["~ᗩ~裸~𝚩~軆~Ⲉ~", "a裸b軆c"]    (overwritten last)
 /// assert_eq!(variants.len(), 2);
 /// assert_eq!(variants[0], "~ᗩ~裸~𝚩~軆~Ⲉ~");
 /// assert_eq!(variants[1], "a裸b軆c");
 /// ```
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
-    let mut text_list: Vec<Cow<'a, str>> = Vec::new();
-    text_list.push(Cow::Borrowed(text));
-
-    for process_type_bit in process_type.iter() {
-        let pm = get_process_matcher(process_type_bit);
-        let current_text = text_list
-            .last_mut()
-            .expect("It should always have at least one element");
-
-        match process_type_bit {
-            ProcessType::None => continue,
-            ProcessType::Delete => {
-                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
-                    text_list.push(Cow::Owned(processed));
-                }
-            }
-            _ => {
-                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
-                    *current_text = Cow::Owned(processed);
-                }
-            }
-        }
-    }
-
-    text_list
+    reduce_text_process_inner(process_type, text, true)
 }
 
 /// A node in the flat-array transformation trie used by [`walk_process_tree`].

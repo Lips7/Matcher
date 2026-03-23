@@ -45,15 +45,11 @@ fn test_reduce_text_process() {
 fn test_reduce_text_process_emit() {
     let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
 
-    // reduce_text_process_emit behavior:
-    // - replace_all (Fanjian) overwrites the last element if changed.
-    // - delete_all pushes a new element.
-    // - replace_all (Normalize) overwrites the last element.
-
-    // 1. Start with ["~ᗩ~躶~𝚩~軆~Ⲉ~"]
-    // 2. Fanjian: ["~ᗩ~裸~𝚩~軆~Ⲉ~"] (overwritten)
-    // 3. Delete: ["~ᗩ~裸~𝚩~軆~Ⲉ~", "ᗩ裸𝚩軆Ⲉ"] (pushed)
-    // 4. Normalize: ["~ᗩ~裸~𝚩~軆~Ⲉ~", "a裸b軆c"] (overwritten last)
+    // emit behavior: replace-type steps overwrite; Delete appends.
+    // 1. Start:    ["~ᗩ~躶~𝚩~軆~Ⲉ~"]
+    // 2. Fanjian:  ["~ᗩ~裸~𝚩~軆~Ⲉ~"]  (overwritten)
+    // 3. Delete:   ["~ᗩ~裸~𝚩~軆~Ⲉ~", "ᗩ裸𝚩軆Ⲉ"]  (pushed)
+    // 4. Normalize:["~ᗩ~裸~𝚩~軆~Ⲉ~", "a裸b軆c"]  (overwritten last)
 
     assert_eq!(variants.len(), 2);
     assert_eq!(variants[0], "~ᗩ~裸~𝚩~軆~Ⲉ~");

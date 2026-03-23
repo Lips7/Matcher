@@ -22,6 +22,13 @@ use crate::process::process_matcher::{
 /// rules with more segments use the 2-D counter matrix in [`SimpleMatchState`].
 const BITMASK_CAPACITY: usize = 64;
 
+/// Number of slots in the sequential `ProcessType` index table.
+///
+/// [`ProcessType`] bit flags occupy positions 0–7 (8 single-bit flags), but the bitflag
+/// `.bits()` value of a composite type can be up to 63 (all 6 flags set = 0b111111 = 63).
+/// The table must be large enough to index any composite `.bits()` value directly.
+const PROCESS_TYPE_TABLE_SIZE: usize = 64;
+
 /// Maximum number of ASCII patterns to route through AC DFA before switching
 /// to DAAC bytewise. Below this count AC DFA leads on search throughput
 /// (especially against non-ASCII text); above it DAAC bytewise wins while
@@ -378,14 +385,14 @@ impl SimpleMatcher {
         // ProcessType::None is always present in the root's folded_mask, so it must be
         // included even if no rule uses ProcessType::None directly.
         // Values of u8::MAX indicate unused slots.
-        let mut pt_index_table = [u8::MAX; 64];
+        let mut pt_index_table = [u8::MAX; PROCESS_TYPE_TABLE_SIZE];
         let mut next_pt_idx: u8 = 0;
         // None first — it always occupies a slot (root node always emits it).
         pt_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
         next_pt_idx += 1;
         for &pt in &process_type_set {
             let bits = pt.bits() as usize;
-            if bits < 64 && pt_index_table[bits] == u8::MAX {
+            if bits < PROCESS_TYPE_TABLE_SIZE && pt_index_table[bits] == u8::MAX {
                 pt_index_table[bits] = next_pt_idx;
                 next_pt_idx += 1;
             }
@@ -924,18 +931,18 @@ impl SimpleMatcher {
 
             let is_satisfied = if rule.use_matrix {
                 let flat_matrix = &mut state.matrix[rule_idx];
-                let bit = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
+                let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                 if offset < rule.and_count {
-                    *bit -= 1; // AND segment: counts down toward satisfaction (≤0 = satisfied)
+                    *counter -= 1; // AND segment: counts down toward satisfaction (≤0 = satisfied)
                 } else {
-                    *bit += 1; // NOT segment: counts up toward disqualification (>0 = fired)
+                    *counter += 1; // NOT segment: counts up toward disqualification (>0 = fired)
                 }
 
                 if offset < rule.and_count {
-                    if *bit <= 0 && offset < BITMASK_CAPACITY {
+                    if *counter <= 0 && offset < BITMASK_CAPACITY {
                         state.word_states[rule_idx].satisfied_mask |= 1u64 << offset;
                     }
-                } else if *bit > 0 {
+                } else if *counter > 0 {
                     state.word_states[rule_idx].not_generation = generation;
                 }
 

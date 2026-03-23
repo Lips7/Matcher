@@ -15,32 +15,32 @@
 /// Used by [`get_process_matcher`](crate::get_process_matcher) under `runtime_build` to
 /// build the Fanjian 2-stage page table at startup.
 #[cfg(feature = "runtime_build")]
-pub const FANJIAN: &str = include_str!("../../process_map/FANJIAN.txt");
+pub(crate) const FANJIAN: &str = include_str!("../../process_map/FANJIAN.txt");
 
 /// Newline-separated characters (and ranges) that should be removed by the Delete step.
 ///
 /// Used under `runtime_build` to populate the Delete BitSet.
 #[cfg(feature = "runtime_build")]
-pub const TEXT_DELETE: &str = include_str!("../../process_map/TEXT-DELETE.txt");
+pub(crate) const TEXT_DELETE: &str = include_str!("../../process_map/TEXT-DELETE.txt");
 
 /// Tab-separated `(source, normalized)` pairs for digit/number normalization.
 ///
 /// Merged with [`NORM`] to build the Normalize Aho-Corasick automaton under `runtime_build`.
 #[cfg(feature = "runtime_build")]
-pub const NUM_NORM: &str = include_str!("../../process_map/NUM-NORM.txt");
+pub(crate) const NUM_NORM: &str = include_str!("../../process_map/NUM-NORM.txt");
 
 /// Tab-separated `(source, normalized)` pairs for general Unicode normalization
 /// (full-width→half-width, variant forms, etc.).
 ///
 /// Merged with [`NUM_NORM`] to build the Normalize automaton under `runtime_build`.
 #[cfg(feature = "runtime_build")]
-pub const NORM: &str = include_str!("../../process_map/NORM.txt");
+pub(crate) const NORM: &str = include_str!("../../process_map/NORM.txt");
 
 /// Tab-separated `(character, pinyin_with_spaces)` pairs covering CJK codepoints.
 ///
 /// Used under `runtime_build` to build the Pinyin 2-stage page table and string buffer.
 #[cfg(feature = "runtime_build")]
-pub const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
+pub(crate) const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
 
 /// All Unicode codepoints considered whitespace for the Delete step.
 ///
@@ -49,7 +49,7 @@ pub const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
 /// Loaded at runtime under `runtime_build` to populate the Delete BitSet alongside
 /// [`TEXT_DELETE`].
 #[cfg(feature = "runtime_build")]
-pub const WHITE_SPACE: &[&str] = &[
+pub(crate) const WHITE_SPACE: &[&str] = &[
     "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}", "\u{00A0}",
     "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
     "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}", "\u{200F}", "\u{2028}", "\u{2029}",
@@ -63,7 +63,7 @@ pub const WHITE_SPACE: &[&str] = &[
 /// Loaded via `include_str!` from the `OUT_DIR` binary artifact produced by `build.rs`.
 /// Only used when the `dfa` feature is enabled and `runtime_build` is disabled.
 #[cfg(all(not(feature = "runtime_build"), feature = "dfa"))]
-pub const NORMALIZE_PROCESS_LIST_STR: &str =
+pub(crate) const NORMALIZE_PROCESS_LIST_STR: &str =
     include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
 
 /// Pre-serialized `daachorse` double-array Aho-Corasick matcher for the Normalize step.
@@ -71,7 +71,7 @@ pub const NORMALIZE_PROCESS_LIST_STR: &str =
 /// Loaded via `include_bytes!` from the `OUT_DIR` artifact produced by `build.rs`.
 /// Only used when `dfa` is disabled and `runtime_build` is disabled.
 #[cfg(all(not(feature = "runtime_build"), not(feature = "dfa")))]
-pub const NORMALIZE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
+pub(crate) const NORMALIZE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/normalize_daachorse_charwise_u32_matcher.bin"
 ));
@@ -81,7 +81,7 @@ pub const NORMALIZE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
 /// Index `i` is the replacement for pattern `i` in `NORMALIZE_PROCESS_LIST_STR` (DFA) or
 /// the pattern order in `NORMALIZE_PROCESS_MATCHER_BYTES` (DAAC). Loaded from `OUT_DIR`.
 #[cfg(not(feature = "runtime_build"))]
-pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
+pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
     env!("OUT_DIR"),
     "/normalize_process_replace_list.bin"
 ));
@@ -93,29 +93,33 @@ pub const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
 /// See [`SingleCharMatcher::Fanjian`](crate::process::single_char_matcher::SingleCharMatcher)
 /// for the full layout description.
 #[cfg(not(feature = "runtime_build"))]
-pub const FANJIAN_L1_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l1.bin"));
+pub(crate) const FANJIAN_L1_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l1.bin"));
 
 /// L2 data for the Fanjian 2-stage page table (`u32[num_pages * 256]`, little-endian).
 #[cfg(not(feature = "runtime_build"))]
-pub const FANJIAN_L2_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l2.bin"));
+pub(crate) const FANJIAN_L2_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l2.bin"));
 
 // ── default build: Pinyin page tables ───────────────────────────────────────
 
 /// L1 index for the Pinyin 2-stage page table (`u16[4352]`, little-endian).
 #[cfg(not(feature = "runtime_build"))]
-pub const PINYIN_L1_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/pinyin_l1.bin"));
+pub(crate) const PINYIN_L1_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/pinyin_l1.bin"));
 
 /// L2 data for the Pinyin 2-stage page table (`u32[num_pages * 256]`, little-endian).
 ///
 /// Each entry packs `(offset << 8) | length` into a `u32`, pointing into [`PINYIN_STR_BYTES`].
 #[cfg(not(feature = "runtime_build"))]
-pub const PINYIN_L2_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/pinyin_l2.bin"));
+pub(crate) const PINYIN_L2_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/pinyin_l2.bin"));
 
 /// Concatenated Pinyin syllable strings referenced by [`PINYIN_L2_BYTES`].
 ///
 /// Individual syllables are separated by spaces; `PinYinChar` mode trims them after lookup.
 #[cfg(not(feature = "runtime_build"))]
-pub const PINYIN_STR_BYTES: &str = include_str!(concat!(env!("OUT_DIR"), "/pinyin_str.bin"));
+pub(crate) const PINYIN_STR_BYTES: &str = include_str!(concat!(env!("OUT_DIR"), "/pinyin_str.bin"));
 
 // ── default build: Delete BitSet ─────────────────────────────────────────────
 
@@ -124,5 +128,5 @@ pub const PINYIN_STR_BYTES: &str = include_str!(concat!(env!("OUT_DIR"), "/pinyi
 /// Bit `cp % 8` of byte `cp / 8` is set when codepoint `cp` should be removed by the
 /// Delete step. Generated at build time from `TEXT-DELETE.txt` and `WHITE_SPACE`.
 #[cfg(not(feature = "runtime_build"))]
-pub const DELETE_BITSET_BYTES: &[u8] =
+pub(crate) const DELETE_BITSET_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/delete_bitset.bin"));
