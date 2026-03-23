@@ -91,7 +91,7 @@ fn return_string_to_pool(s: String) {
 /// This is only needed inside `matcher_rs`, where traversal output is frequently recycled
 /// between calls. External users of [`walk_process_tree`] can drop the returned vector.
 pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
-    for (cow, _) in text_masks.drain(..) {
+    for (cow, _, _) in text_masks.drain(..) {
         if let Cow::Owned(s) = cow {
             return_string_to_pool(s);
         }
@@ -211,7 +211,7 @@ static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8] = [
 ///
 /// # Type Parameters
 /// * `'a` - The lifetime of the underlying string slice.
-pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64)>;
+pub type ProcessedTextMasks<'a> = Vec<(Cow<'a, str>, u64, bool)>;
 
 /// Underlying engine used by a single-step text transformation.
 ///
@@ -687,6 +687,9 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 /// returned to the pool and the existing index is returned. Otherwise `pt` is appended.
 /// If `changed` is `None`, `current_index` is returned unchanged.
 ///
+/// `is_ascii` indicates whether `processed` contains only ASCII bytes; stored alongside
+/// the text so callers can skip the charwise automaton without a redundant byte scan.
+///
 /// This keeps `walk_process_tree` in "unique string" space even when different trie paths
 /// converge onto the same transformed text.
 #[inline(always)]
@@ -694,17 +697,18 @@ fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
     changed: Option<String>,
+    is_ascii: bool,
 ) -> usize {
     match changed {
         Some(processed) => {
             if let Some(pos) = text_masks
                 .iter()
-                .position(|(t, _)| t.as_ref() == processed.as_str())
+                .position(|(t, _, _)| t.as_ref() == processed.as_str())
             {
                 return_string_to_pool(processed);
                 pos
             } else {
-                text_masks.push((Cow::Owned(processed), 0u64));
+                text_masks.push((Cow::Owned(processed), 0u64, is_ascii));
                 text_masks.len() - 1
             }
         }
@@ -720,13 +724,17 @@ fn dedup_insert(
 /// prefixes (e.g. the shared `Fanjian` step for both `Fanjian | Delete` and `Fanjian | Normalize`)
 /// are computed only once and their result indices are reused for child nodes.
 ///
-/// Each entry in the returned `Vec<(Cow<str>, u64)>` is a `(text_variant, rule_bitmask)` pair.
-/// The bitmask encodes which composite [`ProcessType`]s produced that variant.
+/// Each entry in the returned `Vec<(Cow<str>, u64, bool)>` is a
+/// `(text_variant, rule_bitmask, is_ascii)` triple.
+/// The bitmask encodes which composite [`ProcessType`]s produced that variant. `is_ascii` is
+/// `true` when the text variant contains only ASCII bytes; callers can use it to skip the
+/// charwise automaton without a redundant byte scan.
 ///
-/// When `LAZY=true`, `on_variant(text, index, mask)` is called immediately after each new unique
-/// variant is produced. If it returns `true`, the walk stops early. A delta phase at the end
-/// re-invokes `on_variant` for any entry whose mask grew through dedup after its initial callback.
-/// When `LAZY=false`, `on_variant` is never called and all lazy-only code is dead-code-eliminated.
+/// When `LAZY=true`, `on_variant(text, index, mask, is_ascii)` is called immediately after each
+/// new unique variant is produced. If it returns `true`, the walk stops early. A delta phase at
+/// the end re-invokes `on_variant` for any entry whose mask grew through dedup after its initial
+/// callback. When `LAZY=false`, `on_variant` is never called and all lazy-only code is
+/// dead-code-eliminated.
 ///
 /// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY=true` and
 /// `on_variant` triggered early exit. Inside `matcher_rs`, owned strings are usually returned
@@ -747,12 +755,12 @@ fn dedup_insert(
 /// ]);
 /// let tree = build_process_type_tree(&process_types);
 ///
-/// let (variants, stopped) = walk_process_tree::<false, _>(&tree, "妳！好", &mut |_, _, _| false);
+/// let (variants, stopped) = walk_process_tree::<false, _>(&tree, "妳！好", &mut |_, _, _, _| false);
 /// assert!(!stopped);
 ///
 /// let texts = variants
 ///     .into_iter()
-///     .map(|(text, _)| text.into_owned())
+///     .map(|(text, _, _)| text.into_owned())
 ///     .collect::<std::collections::HashSet<_>>();
 ///
 /// assert_eq!(texts.len(), 4);
@@ -768,7 +776,7 @@ pub fn walk_process_tree<'a, const LAZY: bool, F>(
     on_variant: &mut F,
 ) -> (ProcessedTextMasks<'a>, bool)
 where
-    F: FnMut(&str, usize, u64) -> bool,
+    F: FnMut(&str, usize, u64, bool) -> bool,
 {
     TRANSFORM_STATE.with(|state| {
         let mut ts = state.borrow_mut();
@@ -779,13 +787,18 @@ where
         let mut text_masks: ProcessedTextMasks<'a> =
             unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
         text_masks.clear();
-        text_masks.push((Cow::Borrowed(text), process_type_tree[0].folded_mask));
+        let root_is_ascii = text.is_ascii();
+        text_masks.push((
+            Cow::Borrowed(text),
+            process_type_tree[0].folded_mask,
+            root_is_ascii,
+        ));
 
         let mut scanned_masks: TinyVec<[u64; 8]> = TinyVec::new();
         if LAZY {
             scanned_masks.push(0u64);
             let root_mask = process_type_tree[0].folded_mask;
-            if root_mask != 0 && on_variant(text, 0, root_mask) {
+            if root_mask != 0 && on_variant(text, 0, root_mask, root_is_ascii) {
                 return (text_masks, true);
             }
             scanned_masks[0] = root_mask;
@@ -802,31 +815,64 @@ where
 
         'walk: for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
             let current_index = ts.tree_node_indices[current_node_index];
+            let parent_is_ascii = text_masks[current_index].2;
 
             for &child_node_index in &current_node.children {
                 let child_node = &process_type_tree[child_node_index];
                 let pm = get_process_matcher(child_node.process_type_bit);
 
-                let changed = match child_node.process_type_bit {
-                    ProcessType::None => None,
+                // Compute (changed_text, is_ascii_of_result) for this transformation step.
+                // - PinYin/PinYinChar output is always ASCII (romanized).
+                // - Fanjian maps CJK→CJK: if changed, result is non-ASCII.
+                // - Delete can only remove chars: if parent is ASCII, result is still ASCII;
+                //   if parent is non-ASCII, check the shorter result directly.
+                // - Normalize: check the result string.
+                // - None: no transformation, inherit parent.
+                // When unchanged (None returned), child inherits parent's flag (O(1)).
+                let (changed, child_is_ascii) = match child_node.process_type_bit {
+                    ProcessType::None => (None, parent_is_ascii),
+                    ProcessType::PinYin | ProcessType::PinYinChar => {
+                        let current_text = text_masks[current_index].0.as_ref();
+                        match pm.replace_all(current_text) {
+                            (true, Cow::Owned(processed)) => (Some(processed), true),
+                            _ => (None, parent_is_ascii),
+                        }
+                    }
+                    ProcessType::Fanjian => {
+                        let current_text = text_masks[current_index].0.as_ref();
+                        match pm.replace_all(current_text) {
+                            (true, Cow::Owned(processed)) => (Some(processed), false),
+                            _ => (None, parent_is_ascii),
+                        }
+                    }
                     ProcessType::Delete => {
                         let current_text = text_masks[current_index].0.as_ref();
                         match pm.delete_all(current_text) {
-                            (true, Cow::Owned(processed)) => Some(processed),
-                            _ => None,
+                            (true, Cow::Owned(processed)) => {
+                                // If parent was ASCII, result is still ASCII (only ASCII chars removed).
+                                // If parent was non-ASCII, some non-ASCII may have been deleted —
+                                // check the shorter result string.
+                                let ia = parent_is_ascii || processed.is_ascii();
+                                (Some(processed), ia)
+                            }
+                            _ => (None, parent_is_ascii),
                         }
                     }
                     _ => {
                         let current_text = text_masks[current_index].0.as_ref();
                         match pm.replace_all(current_text) {
-                            (true, Cow::Owned(processed)) => Some(processed),
-                            _ => None,
+                            (true, Cow::Owned(processed)) => {
+                                let ia = processed.is_ascii();
+                                (Some(processed), ia)
+                            }
+                            _ => (None, parent_is_ascii),
                         }
                     }
                 };
 
                 let old_len = if LAZY { text_masks.len() } else { 0 };
-                let child_index = dedup_insert(&mut text_masks, current_index, changed);
+                let child_index =
+                    dedup_insert(&mut text_masks, current_index, changed, child_is_ascii);
 
                 if LAZY {
                     while scanned_masks.len() < text_masks.len() {
@@ -840,8 +886,14 @@ where
                 if LAZY && child_index >= old_len {
                     // New unique text: call on_variant immediately.
                     let mask = text_masks[child_index].1;
+                    let is_ascii = text_masks[child_index].2;
                     if mask != 0
-                        && on_variant(text_masks[child_index].0.as_ref(), child_index, mask)
+                        && on_variant(
+                            text_masks[child_index].0.as_ref(),
+                            child_index,
+                            mask,
+                            is_ascii,
+                        )
                     {
                         stopped = true;
                         break 'walk;
@@ -859,7 +911,7 @@ where
             // Delta phase: re-scan entries whose mask grew after their initial callback.
             for i in 0..text_masks.len() {
                 let delta = text_masks[i].1 & !scanned_masks[i];
-                if delta != 0 && on_variant(text_masks[i].0.as_ref(), i, delta) {
+                if delta != 0 && on_variant(text_masks[i].0.as_ref(), i, delta, text_masks[i].2) {
                     return (text_masks, true);
                 }
             }

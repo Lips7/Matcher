@@ -580,8 +580,8 @@ impl SimpleMatcher {
             let mut state = state_cell.borrow_mut();
             state.prepare(self.rule_hot.len());
             let (text_masks, stopped) =
-                walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask| {
-                    self.scan_variant(txt, idx, mask, max_pt, &mut state, true)
+                walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
+                    self.scan_variant(txt, idx, mask, max_pt, &mut state, true, is_ascii)
                 });
             if stopped {
                 return_processed_string_to_pool(text_masks);
@@ -655,7 +655,7 @@ impl SimpleMatcher {
             return;
         }
         let (processed, _) =
-            walk_process_tree::<false, _>(&self.process_type_tree, text, &mut |_, _, _| false);
+            walk_process_tree::<false, _>(&self.process_type_tree, text, &mut |_, _, _, _| false);
         self.process_preprocessed_into(&processed, results);
         return_processed_string_to_pool(processed);
     }
@@ -716,7 +716,7 @@ impl SimpleMatcher {
 
         let num_variants = processed_text_process_type_masks.len();
 
-        for (index, (processed_text, process_type_mask)) in
+        for (index, (processed_text, process_type_mask, is_ascii)) in
             processed_text_process_type_masks.iter().enumerate()
         {
             if *process_type_mask == 0 {
@@ -729,6 +729,7 @@ impl SimpleMatcher {
                 num_variants,
                 state,
                 exit_early,
+                *is_ascii,
             ) {
                 return true;
             }
@@ -757,6 +758,7 @@ impl SimpleMatcher {
     ///
     /// Returns `true` if a rule was fully satisfied and `exit_early` is set; `false` otherwise.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     fn scan_variant(
         &self,
         processed_text: &str,
@@ -765,6 +767,7 @@ impl SimpleMatcher {
         num_variants: usize,
         state: &mut SimpleMatchState,
         exit_early: bool,
+        is_ascii: bool,
     ) -> bool {
         // `index` identifies which processed text variant this scan came from, so matrix-path
         // rules can track repeated AND / NOT segments per variant.
@@ -808,9 +811,8 @@ impl SimpleMatcher {
 
         // Charwise DAAC handles non-ASCII (CJK, etc.) patterns. Non-ASCII patterns can never
         // match pure-ASCII text, so skip the scan entirely when the text is all ASCII.
-        if !processed_text.is_ascii()
-            && let Some(ref ac_matcher) = self.charwise_matcher
-        {
+        // `is_ascii` is pre-computed by walk_process_tree to avoid a redundant byte scan here.
+        if !is_ascii && let Some(ref ac_matcher) = self.charwise_matcher {
             for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
                 let dedup_idx = self.charwise_to_dedup[ac_dedup_result.value() as usize];
                 if self.process_match(
