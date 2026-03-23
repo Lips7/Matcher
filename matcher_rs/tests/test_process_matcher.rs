@@ -91,16 +91,16 @@ fn test_reduce_text_process_with_tree() {
         walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _, _| false);
 
     // Verify specific expected variants and their masks
-    let find_variant = |target: &str| results.iter().find(|(s, _, _)| s == target);
+    let find_variant = |target: &str| results.iter().find(|tv| tv.text == target);
 
     // No `ProcessType::None` rules are registered here, so the untouched root text carries no mask.
     assert!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").is_some());
-    assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().1, 0);
+    assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().mask, 0);
 
     // mask 16388 = (1 << (Fanjian | Delete | Normalize).bits()) | (1 << Fanjian.bits())
     // bits: (1 << 14) | (1 << 2) = 16384 | 4 = 16388
     assert!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").is_some());
-    assert_eq!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").unwrap().1, 16388);
+    assert_eq!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").unwrap().mask, 16388);
 }
 
 #[test]
@@ -120,8 +120,8 @@ fn test_reduce_text_process_with_set() {
         &mut |_, _, _, _| false,
     );
 
-    assert!(results.iter().any(|(s, _, _)| s == "a裸b軆c"));
-    assert!(results.iter().any(|(s, _, _)| s == "ᗩ裸𝚩軆Ⲉ"));
+    assert!(results.iter().any(|tv| tv.text == "a裸b軆c"));
+    assert!(results.iter().any(|tv| tv.text == "ᗩ裸𝚩軆Ⲉ"));
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn test_reduce_text_process_with_tree_correctness() {
 
     let mut found_variants = results
         .iter()
-        .map(|(s, _, _)| s.as_ref())
+        .map(|tv| tv.text.as_ref())
         .collect::<Vec<_>>();
     found_variants.sort();
 
@@ -188,7 +188,7 @@ fn test_reduce_text_process_empty_text() {
         "",
         &mut |_, _, _, _| false,
     );
-    assert!(processed_text.iter().all(|(text, _, _)| text.is_empty()));
+    assert!(processed_text.iter().all(|tv| tv.text.is_empty()));
 }
 
 const FANJIAN_TEST_DATA: &str = include_str!("../process_map/FANJIAN.txt");

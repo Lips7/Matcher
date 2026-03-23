@@ -139,6 +139,17 @@ thread_local! {
     static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> = RefCell::new(SimpleMatchState::new());
 }
 
+/// Context for a single text variant scan, bundling parameters shared between
+/// `scan_variant` and `process_match`.
+#[derive(Clone, Copy)]
+struct ScanContext {
+    text_index: usize,
+    process_type_mask: u64,
+    num_variants: usize,
+    exit_early: bool,
+    is_ascii: bool,
+}
+
 /// Mapping from [`ProcessType`] to a `{word_id → pattern}` dictionary.
 ///
 /// The primary input to [`SimpleMatcher::new`]. Each outer key selects the
@@ -624,7 +635,14 @@ impl SimpleMatcher {
             state.prepare(self.rule_hot.len());
             let (text_masks, stopped) =
                 walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
-                    self.scan_variant(txt, idx, mask, max_pt, &mut state, true, is_ascii)
+                    let ctx = ScanContext {
+                        text_index: idx,
+                        process_type_mask: mask,
+                        num_variants: max_pt,
+                        exit_early: true,
+                        is_ascii,
+                    };
+                    self.scan_variant(txt, ctx, &mut state)
                 });
             if stopped {
                 return_processed_string_to_pool(text_masks);
@@ -759,21 +777,18 @@ impl SimpleMatcher {
 
         let num_variants = processed_text_process_type_masks.len();
 
-        for (index, (processed_text, process_type_mask, is_ascii)) in
-            processed_text_process_type_masks.iter().enumerate()
-        {
-            if *process_type_mask == 0 {
+        for (index, tv) in processed_text_process_type_masks.iter().enumerate() {
+            if tv.mask == 0 {
                 continue;
             }
-            if self.scan_variant(
-                processed_text.as_ref(),
-                index,
-                *process_type_mask,
+            let ctx = ScanContext {
+                text_index: index,
+                process_type_mask: tv.mask,
                 num_variants,
-                state,
                 exit_early,
-                *is_ascii,
-            ) {
+                is_ascii: tv.is_ascii,
+            };
+            if self.scan_variant(tv.text.as_ref(), ctx, state) {
                 return true;
             }
         }
@@ -787,34 +802,18 @@ impl SimpleMatcher {
     ///
     /// # Arguments
     /// * `processed_text` — the transformed text variant to scan.
-    /// * `index` — ordinal of this variant among all variants generated for the current input.
-    ///   Used by matrix-path rules to track which variant a repeated AND/NOT segment hit came
-    ///   from, preventing a single sub-pattern matched in multiple variants from counting twice
-    ///   for the same variant slot.
-    /// * `process_type_mask` — bitmask of the `ProcessType` bits that produced this variant,
-    ///   used to filter which rules are eligible for this scan.
-    /// * `num_variants` — total number of variants being scanned; required by the matrix path
-    ///   to index the per-variant counter columns.
+    /// * `ctx` — scan context bundling the variant index, process-type mask, variant count,
+    ///   early-exit flag, and ASCII flag (see [`ScanContext`]).
     /// * `state` — mutable per-call match state (word states, counters, touched list).
-    /// * `exit_early` — if `true`, return `true` as soon as any rule is fully satisfied
-    ///   (used by [`SimpleMatcher::is_match`] for short-circuiting).
     ///
-    /// Returns `true` if a rule was fully satisfied and `exit_early` is set; `false` otherwise.
+    /// Returns `true` if a rule was fully satisfied and `ctx.exit_early` is set; `false` otherwise.
     #[inline(always)]
-    #[allow(clippy::too_many_arguments)]
     fn scan_variant(
         &self,
         processed_text: &str,
-        index: usize,
-        process_type_mask: u64,
-        num_variants: usize,
+        ctx: ScanContext,
         state: &mut SimpleMatchState,
-        exit_early: bool,
-        is_ascii: bool,
     ) -> bool {
-        // `index` identifies which processed text variant this scan came from, so matrix-path
-        // rules can track repeated AND / NOT segments per variant.
-
         // Bytewise engine handles all ASCII-only patterns. Scan every variant.
         if let Some(ref bytewise) = self.bytewise_matcher {
             match bytewise {
@@ -823,14 +822,7 @@ impl SimpleMatcher {
                     for hit in matcher.find_overlapping_iter(processed_text) {
                         // AC DFA assigns sequential IDs; translate to global dedup index.
                         let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
-                        if self.process_match(
-                            dedup_idx,
-                            index,
-                            process_type_mask,
-                            num_variants,
-                            state,
-                            exit_early,
-                        ) {
+                        if self.process_match(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
@@ -839,14 +831,7 @@ impl SimpleMatcher {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
                         // DAAC value IS the global dedup index — no indirection needed.
                         let dedup_idx = hit.value() as usize;
-                        if self.process_match(
-                            dedup_idx,
-                            index,
-                            process_type_mask,
-                            num_variants,
-                            state,
-                            exit_early,
-                        ) {
+                        if self.process_match(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
@@ -857,18 +842,13 @@ impl SimpleMatcher {
         // Charwise DAAC handles non-ASCII (CJK, etc.) patterns. Non-ASCII patterns can never
         // match pure-ASCII text, so skip the scan entirely when the text is all ASCII.
         // `is_ascii` is pre-computed by walk_process_tree to avoid a redundant byte scan here.
-        if !is_ascii && let Some(ref ac_matcher) = self.charwise_matcher {
+        if !ctx.is_ascii
+            && let Some(ref ac_matcher) = self.charwise_matcher
+        {
             for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
                 // DAAC value IS the global dedup index — no indirection needed.
                 let dedup_idx = ac_dedup_result.value() as usize;
-                if self.process_match(
-                    dedup_idx,
-                    index,
-                    process_type_mask,
-                    num_variants,
-                    state,
-                    exit_early,
-                ) {
+                if self.process_match(dedup_idx, ctx, state) {
                     return true;
                 }
             }
@@ -895,11 +875,8 @@ impl SimpleMatcher {
     fn process_match(
         &self,
         pattern_idx: usize,
-        text_index: usize,
-        process_type_mask: u64,
-        num_variants: usize,
+        ctx: ScanContext,
         state: &mut SimpleMatchState,
-        exit_early: bool,
     ) -> bool {
         let generation = state.generation;
         let (start, len) = self.ac_dedup_ranges[pattern_idx];
@@ -916,7 +893,7 @@ impl SimpleMatcher {
             // Check that this text variant was produced by the pattern entry's process type.
             // Sequential pt_index encodes the same information as the former u64 mask field,
             // but using 1 byte instead of 8, halving PatternEntry size.
-            if process_type_mask & (1u64 << pt_index) == 0
+            if ctx.process_type_mask & (1u64 << pt_index) == 0
                 || state.word_states[rule_idx].not_generation == generation
             {
                 continue;
@@ -925,7 +902,7 @@ impl SimpleMatcher {
             let rule = &self.rule_hot[rule_idx];
 
             if state.word_states[rule_idx].satisfied_generation == generation {
-                if exit_early {
+                if ctx.exit_early {
                     return true;
                 }
                 continue;
@@ -940,14 +917,14 @@ impl SimpleMatcher {
                     Self::init_matrix(
                         &mut state.matrix[rule_idx],
                         &rule.segment_counts,
-                        num_variants,
+                        ctx.num_variants,
                     );
                 }
             }
 
             let is_satisfied = if rule.use_matrix {
                 let flat_matrix = &mut state.matrix[rule_idx];
-                let bit = &mut flat_matrix[offset * num_variants + text_index];
+                let bit = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                 if offset < rule.and_count {
                     *bit -= 1; // AND segment: counts down toward satisfaction (≤0 = satisfied)
                 } else {
@@ -967,7 +944,7 @@ impl SimpleMatcher {
                     &state.word_states,
                     &state.matrix,
                     rule_idx,
-                    num_variants,
+                    ctx.num_variants,
                 )
             } else if offset < rule.and_count {
                 if offset < BITMASK_CAPACITY {
@@ -984,7 +961,7 @@ impl SimpleMatcher {
                 false
             };
 
-            if exit_early
+            if ctx.exit_early
                 && is_satisfied
                 && rule.and_count == rule.num_splits as usize
                 && state.word_states[rule_idx].not_generation != generation
