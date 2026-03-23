@@ -136,6 +136,13 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     ((start as u32) << 8) | ((end - start) as u32)
 }
 
+#[inline]
+fn trim_pinyin_table_entries(entries: &mut [u32], strings: &str) {
+    for value in entries.iter_mut() {
+        *value = trim_pinyin_packed(*value, strings);
+    }
+}
+
 /// Decodes one UTF-8 character from `bytes` starting at `offset`.
 ///
 /// Returns `(codepoint, byte_length)`. Only handles non-ASCII leading bytes (>= 0x80).
@@ -280,7 +287,7 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 ///
 /// Non-digit ASCII is skipped aggressively because only digits and mapped non-ASCII codepoints
 /// can produce output in the current tables.
-pub(crate) struct PinYinFindIter<'a> {
+pub(crate) struct PinyinFindIter<'a> {
     /// L1 index slice of the 2-stage page table.
     l1: &'a [u16],
     /// L2 data slice of the 2-stage page table (values encode `(offset << 8) | length`).
@@ -293,7 +300,7 @@ pub(crate) struct PinYinFindIter<'a> {
     byte_offset: usize,
 }
 
-impl<'a> Iterator for PinYinFindIter<'a> {
+impl<'a> Iterator for PinyinFindIter<'a> {
     type Item = (usize, usize, SingleCharMatch<'a>);
 
     #[inline(always)]
@@ -371,11 +378,11 @@ impl SingleCharMatcher {
     ///
     /// Each yielded match borrows a slice from the shared Pinyin string buffer.
     #[inline(always)]
-    pub(crate) fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinYinFindIter<'a> {
+    pub(crate) fn pinyin_iter<'a>(&'a self, text: &'a str) -> PinyinFindIter<'a> {
         let SingleCharMatcher::Pinyin { l1, l2, strings } = self else {
             unreachable!("pinyin_iter called on non-Pinyin matcher");
         };
-        PinYinFindIter {
+        PinyinFindIter {
             l1,
             l2,
             strings,
@@ -399,7 +406,7 @@ impl SingleCharMatcher {
     /// touching the full bitset on the hot path.
     pub(crate) fn delete(bitset: Cow<'static, [u8]>) -> Self {
         let mut ascii_lut = [0u8; 16];
-        let copy_len = bitset.len().min(16);
+        let copy_len = bitset.len().min(ascii_lut.len());
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
         SingleCharMatcher::Delete { bitset, ascii_lut }
     }
@@ -418,9 +425,7 @@ impl SingleCharMatcher {
         let l1 = decode_u16_table(l1.as_ref());
         let mut l2 = decode_u32_table(l2.as_ref());
         if trim_space {
-            for value in l2.iter_mut() {
-                *value = trim_pinyin_packed(*value, strings.as_ref());
-            }
+            trim_pinyin_table_entries(&mut l2, strings.as_ref());
         }
         SingleCharMatcher::Pinyin { l1, l2, strings }
     }
@@ -504,9 +509,7 @@ impl SingleCharMatcher {
         let strings: Cow<'static, str> = Cow::Owned(strings);
         let mut l2 = l2.into_boxed_slice();
         if trim_space {
-            for value in l2.iter_mut() {
-                *value = trim_pinyin_packed(*value, strings.as_ref());
-            }
+            trim_pinyin_table_entries(&mut l2, strings.as_ref());
         }
         Self::Pinyin {
             l1: l1.into_boxed_slice(),
