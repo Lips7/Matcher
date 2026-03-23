@@ -448,50 +448,6 @@ pub fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMat
     })
 }
 
-struct AppliedProcessStep {
-    changed: Option<String>,
-    is_ascii: bool,
-}
-
-#[inline(always)]
-fn apply_process_step(
-    process_type_bit: ProcessType,
-    matcher: &ProcessMatcher,
-    text: &str,
-    was_ascii: bool,
-) -> AppliedProcessStep {
-    match process_type_bit {
-        ProcessType::None => AppliedProcessStep {
-            changed: None,
-            is_ascii: was_ascii,
-        },
-        ProcessType::Delete => {
-            let changed = matcher.delete_all(text);
-            let is_ascii = changed
-                .as_ref()
-                .map_or(was_ascii, |processed| was_ascii || processed.is_ascii());
-            AppliedProcessStep { changed, is_ascii }
-        }
-        ProcessType::PinYin | ProcessType::PinYinChar => {
-            let changed = matcher.replace_all(text);
-            let is_ascii = changed.as_ref().map_or(was_ascii, |_| true);
-            AppliedProcessStep { changed, is_ascii }
-        }
-        ProcessType::Fanjian => {
-            let changed = matcher.replace_all(text);
-            let is_ascii = changed.as_ref().map_or(was_ascii, |_| false);
-            AppliedProcessStep { changed, is_ascii }
-        }
-        _ => {
-            let changed = matcher.replace_all(text);
-            let is_ascii = changed
-                .as_ref()
-                .map_or(was_ascii, |processed| processed.is_ascii());
-            AppliedProcessStep { changed, is_ascii }
-        }
-    }
-}
-
 /// Applies a composite [`ProcessType`] pipeline to `text` and returns the final result.
 ///
 /// Transformations are applied left-to-right in bit order. Each step fetches a cached
@@ -514,21 +470,26 @@ fn apply_process_step(
 #[inline(always)]
 pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str> {
     let mut result = Cow::Borrowed(text);
-    let mut is_ascii = text.is_ascii();
 
     for process_type_bit in process_type.iter() {
-        let step = apply_process_step(
-            process_type_bit,
-            get_process_matcher(process_type_bit),
-            result.as_ref(),
-            is_ascii,
-        );
-        is_ascii = step.is_ascii;
+        let pm = get_process_matcher(process_type_bit);
 
-        if let Some(processed) = step.changed
-            && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
-        {
-            return_string_to_pool(old);
+        match process_type_bit {
+            ProcessType::None => continue,
+            ProcessType::Delete => {
+                if let Some(processed) = pm.delete_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
+                {
+                    return_string_to_pool(old);
+                }
+            }
+            _ => {
+                if let Some(processed) = pm.replace_all(result.as_ref())
+                    && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
+                {
+                    return_string_to_pool(old);
+                }
+            }
         }
     }
 
@@ -559,20 +520,27 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// ```
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
-    let mut text_list = vec![Cow::Borrowed(text)];
-    let mut is_ascii = text.is_ascii();
+    let mut text_list: Vec<Cow<'a, str>> = Vec::new();
+    text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
-        let step = apply_process_step(
-            process_type_bit,
-            get_process_matcher(process_type_bit),
-            text_list.last().map(Cow::as_ref).unwrap_or_default(),
-            is_ascii,
-        );
-        is_ascii = step.is_ascii;
+        let pm = get_process_matcher(process_type_bit);
+        let current_text = text_list
+            .last_mut()
+            .expect("It should always have at least one element");
 
-        if let Some(processed) = step.changed {
-            text_list.push(Cow::Owned(processed));
+        match process_type_bit {
+            ProcessType::None => continue,
+            ProcessType::Delete => {
+                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
+                }
+            }
+            _ => {
+                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
+                }
+            }
         }
     }
 
@@ -601,26 +569,26 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// ```
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
-    let mut text_list = vec![Cow::Borrowed(text)];
-    let mut is_ascii = text.is_ascii();
+    let mut text_list: Vec<Cow<'a, str>> = Vec::new();
+    text_list.push(Cow::Borrowed(text));
 
     for process_type_bit in process_type.iter() {
-        let step = apply_process_step(
-            process_type_bit,
-            get_process_matcher(process_type_bit),
-            text_list.last().map(Cow::as_ref).unwrap_or_default(),
-            is_ascii,
-        );
-        is_ascii = step.is_ascii;
+        let pm = get_process_matcher(process_type_bit);
+        let current_text = text_list
+            .last_mut()
+            .expect("It should always have at least one element");
 
-        if let Some(processed) = step.changed {
-            if process_type_bit == ProcessType::Delete {
-                text_list.push(Cow::Owned(processed));
-            } else {
-                let current_text = text_list
-                    .last_mut()
-                    .expect("text_list always contains the original text");
-                *current_text = Cow::Owned(processed);
+        match process_type_bit {
+            ProcessType::None => continue,
+            ProcessType::Delete => {
+                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
+                    text_list.push(Cow::Owned(processed));
+                }
+            }
+            _ => {
+                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
+                    *current_text = Cow::Owned(processed);
+                }
             }
         }
     }
@@ -750,9 +718,10 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
-    step: AppliedProcessStep,
+    changed: Option<String>,
+    is_ascii: bool,
 ) -> usize {
-    match step.changed {
+    match changed {
         Some(processed) => {
             if let Some(pos) = text_masks
                 .iter()
@@ -764,7 +733,7 @@ fn dedup_insert(
                 text_masks.push(TextVariant {
                     text: Cow::Owned(processed),
                     mask: 0u64,
-                    is_ascii: step.is_ascii,
+                    is_ascii,
                 });
                 text_masks.len() - 1
             }
@@ -874,18 +843,60 @@ where
 
             for &child_node_index in &current_node.children {
                 let child_node = &process_type_tree[child_node_index];
-                let step = {
-                    let current_text = text_masks[current_index].text.as_ref();
-                    apply_process_step(
-                        child_node.process_type_bit,
-                        get_process_matcher(child_node.process_type_bit),
-                        current_text,
-                        parent_is_ascii,
-                    )
+                let pm = get_process_matcher(child_node.process_type_bit);
+
+                // Compute (changed_text, is_ascii_of_result) for this transformation step.
+                // - PinYin/PinYinChar output is always ASCII (romanized).
+                // - Fanjian maps CJK→CJK: if changed, result is non-ASCII.
+                // - Delete can only remove chars: if parent is ASCII, result is still ASCII;
+                //   if parent is non-ASCII, check the shorter result directly.
+                // - Normalize: check the result string.
+                // - None: no transformation, inherit parent.
+                // When unchanged (None returned), child inherits parent's flag (O(1)).
+                let (changed, child_is_ascii) = match child_node.process_type_bit {
+                    ProcessType::None => (None, parent_is_ascii),
+                    ProcessType::PinYin | ProcessType::PinYinChar => {
+                        let current_text = text_masks[current_index].text.as_ref();
+                        if let Some(processed) = pm.replace_all(current_text) {
+                            (Some(processed), true)
+                        } else {
+                            (None, parent_is_ascii)
+                        }
+                    }
+                    ProcessType::Fanjian => {
+                        let current_text = text_masks[current_index].text.as_ref();
+                        if let Some(processed) = pm.replace_all(current_text) {
+                            (Some(processed), false)
+                        } else {
+                            (None, parent_is_ascii)
+                        }
+                    }
+                    ProcessType::Delete => {
+                        let current_text = text_masks[current_index].text.as_ref();
+                        if let Some(processed) = pm.delete_all(current_text) {
+                            // If parent was ASCII, result is still ASCII (only ASCII chars removed).
+                            // If parent was non-ASCII, some non-ASCII may have been deleted —
+                            // check the shorter result string.
+                            let ia = parent_is_ascii || processed.is_ascii();
+                            (Some(processed), ia)
+                        } else {
+                            (None, parent_is_ascii)
+                        }
+                    }
+                    _ => {
+                        let current_text = text_masks[current_index].text.as_ref();
+                        if let Some(processed) = pm.replace_all(current_text) {
+                            let ia = processed.is_ascii();
+                            (Some(processed), ia)
+                        } else {
+                            (None, parent_is_ascii)
+                        }
+                    }
                 };
 
                 let old_len = if LAZY { text_masks.len() } else { 0 };
-                let child_index = dedup_insert(&mut text_masks, current_index, step);
+                let child_index =
+                    dedup_insert(&mut text_masks, current_index, changed, child_is_ascii);
 
                 if LAZY {
                     while scanned_masks.len() < text_masks.len() {

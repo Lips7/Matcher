@@ -224,13 +224,6 @@ struct RuleHot {
     num_splits: u16,
 }
 
-impl RuleHot {
-    #[inline(always)]
-    fn is_positive_only(&self) -> bool {
-        self.and_count == self.num_splits as usize
-    }
-}
-
 /// Cold result-construction fields for a single pattern rule, accessed only in Pass 2.
 ///
 /// * `word_id` — caller-assigned identifier returned in [`SimpleResult`].
@@ -259,190 +252,6 @@ struct PatternEntry {
     rule_idx: u32,
     offset: u16,
     pt_index: u8,
-}
-
-struct ParsedRule<'a> {
-    and_segments: HashMap<&'a str, i32>,
-    not_segments: HashMap<&'a str, i32>,
-}
-
-impl<'a> ParsedRule<'a> {
-    fn parse(pattern: &'a str) -> Option<Self> {
-        if pattern.is_empty() {
-            return None;
-        }
-
-        let mut and_segments = HashMap::new();
-        let mut not_segments = HashMap::new();
-        let mut start = 0;
-        let mut current_is_not = false;
-
-        let mut push_segment = |segment: &'a str, is_not: bool| {
-            if segment.is_empty() {
-                return;
-            }
-
-            if is_not {
-                let entry = not_segments.entry(segment).or_insert(1);
-                *entry -= 1;
-            } else {
-                let entry = and_segments.entry(segment).or_insert(0);
-                *entry += 1;
-            }
-        };
-
-        for (index, operator) in pattern.match_indices(['&', '~']) {
-            push_segment(&pattern[start..index], current_is_not);
-            current_is_not = operator == "~";
-            start = index + 1;
-        }
-        push_segment(&pattern[start..], current_is_not);
-
-        if and_segments.is_empty() && not_segments.is_empty() {
-            return None;
-        }
-
-        Some(Self {
-            and_segments,
-            not_segments,
-        })
-    }
-
-    fn build_hot_rule(&self) -> RuleHot {
-        let and_count = self.and_segments.len();
-        let segment_counts = self
-            .and_segments
-            .values()
-            .copied()
-            .chain(self.not_segments.values().copied())
-            .collect::<Vec<_>>();
-        let expected_mask = if and_count > 0 && and_count <= BITMASK_CAPACITY {
-            u64::MAX >> (BITMASK_CAPACITY - and_count)
-        } else {
-            0
-        };
-        let num_splits = segment_counts.len() as u16;
-        let use_matrix = and_count > BITMASK_CAPACITY
-            || segment_counts.len() > BITMASK_CAPACITY
-            || segment_counts[..and_count].iter().any(|&value| value != 1)
-            || segment_counts[and_count..].iter().any(|&value| value != 0);
-
-        RuleHot {
-            segment_counts,
-            and_count,
-            expected_mask,
-            use_matrix,
-            num_splits,
-        }
-    }
-
-    fn segments(&self) -> impl Iterator<Item = &'a str> + '_ {
-        self.and_segments
-            .keys()
-            .copied()
-            .chain(self.not_segments.keys().copied())
-    }
-}
-
-struct PatternBuildState<'a> {
-    dedup_entries: Vec<Vec<PatternEntry>>,
-    dedup_patterns: Vec<Cow<'a, str>>,
-    pattern_id_map: HashMap<Cow<'a, str>, usize>,
-    rule_hot: Vec<RuleHot>,
-    rule_cold: Vec<RuleCold>,
-    rule_index_by_key: HashMap<(ProcessType, u32), usize>,
-}
-
-struct BuiltPatternSet<'a> {
-    rule_hot: Vec<RuleHot>,
-    rule_cold: Vec<RuleCold>,
-    dedup_patterns: Vec<Cow<'a, str>>,
-    dedup_entries: Vec<Vec<PatternEntry>>,
-}
-
-impl<'a> PatternBuildState<'a> {
-    fn with_capacity(rule_capacity: usize) -> Self {
-        Self {
-            dedup_entries: Vec::with_capacity(rule_capacity),
-            dedup_patterns: Vec::with_capacity(rule_capacity),
-            pattern_id_map: HashMap::with_capacity(rule_capacity),
-            rule_hot: Vec::with_capacity(rule_capacity),
-            rule_cold: Vec::with_capacity(rule_capacity),
-            rule_index_by_key: HashMap::with_capacity(rule_capacity),
-        }
-    }
-
-    fn upsert_rule(
-        &mut self,
-        process_type: ProcessType,
-        word_id: u32,
-        word: &str,
-        hot_rule: RuleHot,
-    ) -> usize {
-        if let Some(&rule_idx) = self.rule_index_by_key.get(&(process_type, word_id)) {
-            self.rule_hot[rule_idx] = hot_rule;
-            self.rule_cold[rule_idx] = RuleCold {
-                word_id,
-                word: word.to_owned(),
-            };
-            return rule_idx;
-        }
-
-        let rule_idx = self.rule_hot.len();
-        self.rule_index_by_key
-            .insert((process_type, word_id), rule_idx);
-        self.rule_hot.push(hot_rule);
-        self.rule_cold.push(RuleCold {
-            word_id,
-            word: word.to_owned(),
-        });
-        rule_idx
-    }
-
-    fn register_segments(
-        &mut self,
-        process_type: ProcessType,
-        scan_process_type: ProcessType,
-        rule_idx: usize,
-        parsed_rule: &ParsedRule<'a>,
-        pt_index_table: &[u8; 64],
-    ) {
-        let pt_index = pt_index_table[process_type.bits() as usize];
-
-        for (offset, segment) in parsed_rule.segments().enumerate() {
-            for dedup_pattern in reduce_text_process_emit(scan_process_type, segment) {
-                self.push_pattern(
-                    dedup_pattern,
-                    PatternEntry {
-                        rule_idx: rule_idx as u32,
-                        offset: offset as u16,
-                        pt_index,
-                    },
-                );
-            }
-        }
-    }
-
-    fn push_pattern(&mut self, pattern: Cow<'a, str>, entry: PatternEntry) {
-        if let Some(&dedup_idx) = self.pattern_id_map.get(pattern.as_ref()) {
-            self.dedup_entries[dedup_idx].push(entry);
-            return;
-        }
-
-        let dedup_idx = self.dedup_patterns.len();
-        self.pattern_id_map.insert(pattern.clone(), dedup_idx);
-        self.dedup_entries.push(vec![entry]);
-        self.dedup_patterns.push(pattern);
-    }
-
-    fn finish(self) -> BuiltPatternSet<'a> {
-        BuiltPatternSet {
-            rule_hot: self.rule_hot,
-            rule_cold: self.rule_cold,
-            dedup_patterns: self.dedup_patterns,
-            dedup_entries: self.dedup_entries,
-        }
-    }
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
@@ -555,92 +364,174 @@ impl SimpleMatcher {
     where
         I: AsRef<str> + 'a,
     {
-        let rule_capacity: usize = process_type_word_map
-            .values()
-            .map(|entries| entries.len())
-            .sum();
-        let process_type_set: HashSet<ProcessType> =
-            process_type_word_map.keys().copied().collect();
-        let pt_index_table = Self::build_process_type_index_table(&process_type_set);
-        let mut build_state = PatternBuildState::with_capacity(rule_capacity);
+        let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
-        for (&process_type, word_map) in process_type_word_map {
-            let scan_process_type = process_type - ProcessType::Delete;
+        // Pass 1: collect all composite ProcessTypes so we can build the sequential index
+        // table before constructing PatternEntries.
+        let mut process_type_set: HashSet<ProcessType> =
+            HashSet::with_capacity(process_type_word_map.len());
+        for &pt in process_type_word_map.keys() {
+            process_type_set.insert(pt);
+        }
 
-            for (&word_id, word) in word_map {
-                let word = word.as_ref();
-                let Some(parsed_rule) = ParsedRule::parse(word) else {
-                    continue;
-                };
-
-                let rule_idx = build_state.upsert_rule(
-                    process_type,
-                    word_id,
-                    word,
-                    parsed_rule.build_hot_rule(),
-                );
-                build_state.register_segments(
-                    process_type,
-                    scan_process_type,
-                    rule_idx,
-                    &parsed_rule,
-                    &pt_index_table,
-                );
+        // Sequential index table: pt_index_table[pt.bits()] = compact sequential index.
+        // ProcessType::None is always present in the root's folded_mask, so it must be
+        // included even if no rule uses ProcessType::None directly.
+        // Values of u8::MAX indicate unused slots.
+        let mut pt_index_table = [u8::MAX; 64];
+        let mut next_pt_idx: u8 = 0;
+        // None first — it always occupies a slot (root node always emits it).
+        pt_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
+        next_pt_idx += 1;
+        for &pt in &process_type_set {
+            let bits = pt.bits() as usize;
+            if bits < 64 && pt_index_table[bits] == u8::MAX {
+                pt_index_table[bits] = next_pt_idx;
+                next_pt_idx += 1;
             }
         }
 
-        let BuiltPatternSet {
-            rule_hot,
-            rule_cold,
-            dedup_patterns,
-            dedup_entries,
-        } = build_state.finish();
+        let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
+        let mut rule_hot: Vec<RuleHot> = Vec::with_capacity(word_size);
+        let mut rule_cold: Vec<RuleCold> = Vec::with_capacity(word_size);
+        let mut word_id_to_idx: HashMap<(ProcessType, u32), usize> =
+            HashMap::with_capacity(word_size);
+
+        let mut next_pattern_id: usize = 0;
+        let mut dedup_patterns = Vec::with_capacity(word_size);
+        let mut pattern_id_map: HashMap<Cow<str>, usize> = HashMap::with_capacity(word_size);
+
+        for (&process_type, simple_word_map) in process_type_word_map {
+            let word_process_type = process_type - ProcessType::Delete;
+
+            for (&simple_word_id, simple_word) in simple_word_map {
+                if simple_word.as_ref().is_empty() {
+                    continue;
+                }
+                let mut and_splits: HashMap<&str, i32> = HashMap::new();
+                let mut not_splits: HashMap<&str, i32> = HashMap::new();
+
+                let mut start = 0;
+                let mut current_is_not = false;
+
+                let mut add_sub_word = |word: &'a str, is_not: bool| {
+                    if word.is_empty() {
+                        return;
+                    }
+                    if is_not {
+                        let entry = not_splits.entry(word).or_insert(1);
+                        *entry -= 1;
+                    } else {
+                        let entry = and_splits.entry(word).or_insert(0);
+                        *entry += 1;
+                    }
+                };
+
+                for (index, char) in simple_word.as_ref().match_indices(['&', '~']) {
+                    add_sub_word(&simple_word.as_ref()[start..index], current_is_not);
+                    current_is_not = char == "~";
+                    start = index + 1;
+                }
+                add_sub_word(&simple_word.as_ref()[start..], current_is_not);
+
+                if and_splits.is_empty() && not_splits.is_empty() {
+                    continue;
+                }
+
+                let and_count = and_splits.len();
+                let segment_counts = and_splits
+                    .values()
+                    .copied()
+                    .chain(not_splits.values().copied())
+                    .collect::<Vec<i32>>();
+
+                let expected_mask = if and_count > 0 && and_count <= BITMASK_CAPACITY {
+                    u64::MAX >> (BITMASK_CAPACITY - and_count)
+                } else {
+                    0
+                };
+
+                let num_splits = segment_counts.len() as u16;
+                let use_matrix = and_count > BITMASK_CAPACITY
+                    || segment_counts.len() > BITMASK_CAPACITY
+                    || segment_counts[..and_count].iter().any(|&v| v != 1)
+                    || segment_counts[and_count..].iter().any(|&v| v != 0);
+
+                let rule_idx = if let Some(&existing_idx) =
+                    word_id_to_idx.get(&(process_type, simple_word_id))
+                {
+                    rule_hot[existing_idx] = RuleHot {
+                        segment_counts,
+                        and_count,
+                        expected_mask,
+                        use_matrix,
+                        num_splits,
+                    };
+                    rule_cold[existing_idx] = RuleCold {
+                        word_id: simple_word_id,
+                        word: simple_word.as_ref().to_owned(),
+                    };
+                    existing_idx
+                } else {
+                    let idx = rule_hot.len();
+                    word_id_to_idx.insert((process_type, simple_word_id), idx);
+                    rule_hot.push(RuleHot {
+                        segment_counts,
+                        and_count,
+                        expected_mask,
+                        use_matrix,
+                        num_splits,
+                    });
+                    rule_cold.push(RuleCold {
+                        word_id: simple_word_id,
+                        word: simple_word.as_ref().to_owned(),
+                    });
+                    idx
+                };
+
+                for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
+                {
+                    for ac_word in reduce_text_process_emit(word_process_type, split_word) {
+                        let pt_index = pt_index_table[process_type.bits() as usize];
+                        let Some(&existing_dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
+                            pattern_id_map.insert(ac_word.clone(), next_pattern_id);
+                            dedup_entries.push(vec![PatternEntry {
+                                rule_idx: rule_idx as u32,
+                                offset: offset as u16,
+                                pt_index,
+                            }]);
+                            dedup_patterns.push(ac_word);
+                            next_pattern_id += 1;
+                            continue;
+                        };
+                        dedup_entries[existing_dedup_id].push(PatternEntry {
+                            rule_idx: rule_idx as u32,
+                            offset: offset as u16,
+                            pt_index,
+                        });
+                    }
+                }
+            }
+        }
+
         let mut process_type_tree = build_process_type_tree(&process_type_set);
+
+        // Re-encode each node's folded_mask to use the sequential pt_index_table so that
+        // text variant masks and PatternEntry.pt_index use the same compact encoding.
         for node in &mut process_type_tree {
             node.recompute_mask_with_index(&pt_index_table);
         }
-        let (bytewise_matcher, charwise_matcher) = Self::build_automata(&dedup_patterns);
-        let (ac_dedup_entries, ac_dedup_ranges) = Self::flatten_dedup_entries(dedup_entries);
 
-        SimpleMatcher {
-            process_type_tree,
-            bytewise_matcher,
-            charwise_matcher,
-            ac_dedup_entries,
-            ac_dedup_ranges,
-            rule_hot,
-            rule_cold,
-        }
-    }
-
-    fn build_process_type_index_table(process_type_set: &HashSet<ProcessType>) -> [u8; 64] {
-        let mut pt_index_table = [u8::MAX; 64];
-        let mut next_pt_index = 0u8;
-
-        pt_index_table[ProcessType::None.bits() as usize] = next_pt_index;
-        next_pt_index += 1;
-
-        for &process_type in process_type_set {
-            let bits = process_type.bits() as usize;
-            if bits < pt_index_table.len() && pt_index_table[bits] == u8::MAX {
-                pt_index_table[bits] = next_pt_index;
-                next_pt_index += 1;
-            }
-        }
-
-        pt_index_table
-    }
-
-    fn build_automata(
-        dedup_patterns: &[Cow<'_, str>],
-    ) -> (
-        Option<BytewiseMatcher>,
-        Option<CharwiseDoubleArrayAhoCorasick<u32>>,
-    ) {
-        let mut bytewise_patvals = Vec::new();
-        let mut charwise_patvals = Vec::new();
+        // Partition deduplicated patterns by character content.
+        // ASCII-only patterns go to the bytewise engine (fast for English text);
+        // patterns with any non-ASCII byte go to the charwise DAAC (fast for CJK text).
+        // For DAAC engines, the pattern value IS the global dedup index so scan_variant
+        // can use hit.value() directly without an extra indirection lookup.
+        let mut bytewise_patvals: Vec<(&str, u32)> = Vec::new();
+        let mut charwise_patvals: Vec<(&str, u32)> = Vec::new();
+        // For AC DFA only: sequential AC pattern ID → global dedup index.
         #[cfg(feature = "dfa")]
-        let mut bytewise_ac_to_dedup = Vec::new();
+        let mut bytewise_ac_to_dedup: Vec<u32> = Vec::new();
 
         for (dedup_id, pattern) in dedup_patterns.iter().enumerate() {
             if pattern.as_ref().is_ascii() {
@@ -652,15 +543,13 @@ impl SimpleMatcher {
             }
         }
 
-        let bytewise_matcher = if bytewise_patvals.is_empty() {
-            None
-        } else {
+        let bytewise_matcher = if !bytewise_patvals.is_empty() {
             #[cfg(feature = "dfa")]
-            let matcher = if bytewise_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+            let engine = if bytewise_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
                 BytewiseMatcher::AcDfa {
                     matcher: AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
-                        .build(bytewise_patvals.iter().map(|(pattern, _)| pattern))
+                        .build(bytewise_patvals.iter().map(|(p, _)| p))
                         .unwrap(),
                     to_dedup: bytewise_ac_to_dedup,
                 }
@@ -673,110 +562,45 @@ impl SimpleMatcher {
                 )
             };
             #[cfg(not(feature = "dfa"))]
-            let matcher = BytewiseMatcher::DaacBytewise(
+            let engine = BytewiseMatcher::DaacBytewise(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                     .build_with_values(bytewise_patvals)
                     .unwrap(),
             );
-            Some(matcher)
+            Some(engine)
+        } else {
+            None
         };
 
-        let charwise_matcher = if charwise_patvals.is_empty() {
-            None
-        } else {
+        let charwise_matcher = if !charwise_patvals.is_empty() {
             Some(
                 CharwiseDoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                     .build_with_values(charwise_patvals)
                     .unwrap(),
             )
+        } else {
+            None
         };
 
-        (bytewise_matcher, charwise_matcher)
-    }
-
-    fn flatten_dedup_entries(
-        dedup_entries: Vec<Vec<PatternEntry>>,
-    ) -> (Vec<PatternEntry>, Vec<(usize, usize)>) {
-        let mut flat_entries = Vec::with_capacity(dedup_entries.iter().map(Vec::len).sum());
-        let mut ranges = Vec::with_capacity(dedup_entries.len());
-
+        let mut ac_dedup_entries = Vec::with_capacity(dedup_entries.iter().map(|v| v.len()).sum());
+        let mut ac_dedup_ranges = Vec::with_capacity(dedup_entries.len());
         for entries in dedup_entries {
-            let start = flat_entries.len();
+            let start = ac_dedup_entries.len();
             let len = entries.len();
-            flat_entries.extend(entries);
-            ranges.push((start, len));
+            ac_dedup_entries.extend(entries);
+            ac_dedup_ranges.push((start, len));
         }
 
-        (flat_entries, ranges)
-    }
-
-    #[inline(always)]
-    fn scan_context(
-        text_index: usize,
-        process_type_mask: u64,
-        num_variants: usize,
-        exit_early: bool,
-        is_ascii: bool,
-    ) -> ScanContext {
-        ScanContext {
-            text_index,
-            process_type_mask,
-            num_variants,
-            exit_early,
-            is_ascii,
-        }
-    }
-
-    #[inline(always)]
-    fn is_rule_disqualified(word_states: &[WordState], rule_idx: usize, generation: u32) -> bool {
-        word_states[rule_idx].not_generation == generation
-    }
-
-    #[inline(always)]
-    fn touched_rule_matches(
-        &self,
-        state: &SimpleMatchState,
-        rule_idx: usize,
-        num_variants: usize,
-    ) -> bool {
-        if Self::is_rule_disqualified(&state.word_states, rule_idx, state.generation) {
-            return false;
-        }
-
-        Self::is_rule_satisfied(
-            &self.rule_hot[rule_idx],
-            &state.word_states,
-            &state.matrix,
-            rule_idx,
-            num_variants,
-        )
-    }
-
-    fn any_touched_rule_matches(&self, state: &SimpleMatchState, num_variants: usize) -> bool {
-        state
-            .touched_indices
-            .iter()
-            .any(|&rule_idx| self.touched_rule_matches(state, rule_idx, num_variants))
-    }
-
-    fn append_touched_matches<'a>(
-        &'a self,
-        state: &SimpleMatchState,
-        num_variants: usize,
-        results: &mut Vec<SimpleResult<'a>>,
-    ) {
-        for &rule_idx in &state.touched_indices {
-            if !self.touched_rule_matches(state, rule_idx, num_variants) {
-                continue;
-            }
-
-            let cold = &self.rule_cold[rule_idx];
-            results.push(SimpleResult {
-                word_id: cold.word_id,
-                word: Cow::Borrowed(&cold.word),
-            });
+        SimpleMatcher {
+            process_type_tree,
+            bytewise_matcher,
+            charwise_matcher,
+            ac_dedup_entries,
+            ac_dedup_ranges,
+            rule_hot,
+            rule_cold,
         }
     }
 
@@ -811,14 +635,32 @@ impl SimpleMatcher {
             state.prepare(self.rule_hot.len());
             let (text_masks, stopped) =
                 walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
-                    let ctx = Self::scan_context(idx, mask, max_pt, true, is_ascii);
+                    let ctx = ScanContext {
+                        text_index: idx,
+                        process_type_mask: mask,
+                        num_variants: max_pt,
+                        exit_early: true,
+                        is_ascii,
+                    };
                     self.scan_variant(txt, ctx, &mut state)
                 });
             if stopped {
                 return_processed_string_to_pool(text_masks);
                 return true;
             }
-            let result = self.any_touched_rule_matches(&state, max_pt);
+            let generation = state.generation;
+            let result = state.touched_indices.iter().any(|&rule_idx| {
+                if state.word_states[rule_idx].not_generation == generation {
+                    return false;
+                }
+                Self::is_rule_satisfied(
+                    &self.rule_hot[rule_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    rule_idx,
+                    max_pt,
+                )
+            });
             return_processed_string_to_pool(text_masks);
             result
         })
@@ -890,8 +732,28 @@ impl SimpleMatcher {
             state.prepare(self.rule_hot.len());
 
             self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
+
+            let generation = state.generation;
             let num_variants = processed_text_process_type_masks.len();
-            self.append_touched_matches(&state, num_variants, results);
+
+            for &rule_idx in &state.touched_indices {
+                if state.word_states[rule_idx].not_generation == generation {
+                    continue;
+                }
+                if Self::is_rule_satisfied(
+                    &self.rule_hot[rule_idx],
+                    &state.word_states,
+                    &state.matrix,
+                    rule_idx,
+                    num_variants,
+                ) {
+                    let cold = &self.rule_cold[rule_idx];
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+            }
         });
     }
 
@@ -919,7 +781,13 @@ impl SimpleMatcher {
             if tv.mask == 0 {
                 continue;
             }
-            let ctx = Self::scan_context(index, tv.mask, num_variants, exit_early, tv.is_ascii);
+            let ctx = ScanContext {
+                text_index: index,
+                process_type_mask: tv.mask,
+                num_variants,
+                exit_early,
+                is_ascii: tv.is_ascii,
+            };
             if self.scan_variant(tv.text.as_ref(), ctx, state) {
                 return true;
             }
@@ -1026,7 +894,7 @@ impl SimpleMatcher {
             // Sequential pt_index encodes the same information as the former u64 mask field,
             // but using 1 byte instead of 8, halving PatternEntry size.
             if ctx.process_type_mask & (1u64 << pt_index) == 0
-                || Self::is_rule_disqualified(&state.word_states, rule_idx, generation)
+                || state.word_states[rule_idx].not_generation == generation
             {
                 continue;
             }
@@ -1084,7 +952,7 @@ impl SimpleMatcher {
                 }
                 let expected_mask = rule.expected_mask;
                 let satisfied = state.word_states[rule_idx].satisfied_mask == expected_mask;
-                if satisfied && rule.is_positive_only() {
+                if satisfied && rule.and_count == rule.num_splits as usize {
                     state.word_states[rule_idx].satisfied_generation = generation;
                 }
                 satisfied
@@ -1095,8 +963,8 @@ impl SimpleMatcher {
 
             if ctx.exit_early
                 && is_satisfied
-                && rule.is_positive_only()
-                && !Self::is_rule_disqualified(&state.word_states, rule_idx, generation)
+                && rule.and_count == rule.num_splits as usize
+                && state.word_states[rule_idx].not_generation != generation
             {
                 return true;
             }
