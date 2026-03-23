@@ -40,10 +40,20 @@ const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
 ///
 /// When the `dfa` feature is disabled, only `DaacBytewise` is available —
 /// it outperforms `AhoCorasick` (ContiguousNFA) at every pattern count.
+///
+/// For `DaacBytewise`, the automaton value directly encodes the global dedup
+/// index, eliminating one indirection hop per automaton hit. For `AcDfa`,
+/// `aho_corasick` assigns sequential pattern IDs that differ from dedup
+/// indices, so a compact `to_dedup` map is kept inside the enum variant.
 #[derive(Clone)]
 enum BytewiseMatcher {
     #[cfg(feature = "dfa")]
-    AcDfa(AhoCorasick),
+    AcDfa {
+        matcher: AhoCorasick,
+        /// Maps sequential AC pattern ID → global dedup index.
+        to_dedup: Vec<u32>,
+    },
+    /// DAAC value IS the global dedup index — no extra indirection.
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
 }
 
@@ -293,13 +303,12 @@ struct PatternEntry {
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
     /// ASCII-only patterns — fast bytewise scan, best for English text.
+    /// Dedup indices are embedded directly in the automaton (DAAC value = dedup index) or
+    /// stored inside the enum variant (AC DFA `to_dedup`), eliminating a top-level Vec lookup.
     bytewise_matcher: Option<BytewiseMatcher>,
     /// Non-ASCII (CJK, etc.) patterns — charwise DAAC, best for CJK text.
+    /// Automaton value IS the global dedup index — no extra indirection.
     charwise_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
-    /// Maps bytewise automaton local pattern index → global dedup index.
-    bytewise_to_dedup: Vec<usize>,
-    /// Maps charwise automaton local pattern index → global dedup index.
-    charwise_to_dedup: Vec<usize>,
     ac_dedup_entries: Vec<PatternEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
     rule_hot: Vec<RuleHot>,
@@ -471,37 +480,41 @@ impl SimpleMatcher {
         let process_type_tree = build_process_type_tree(&process_type_set);
 
         // Partition deduplicated patterns by character content.
-        // ASCII-only patterns go to the bytewise AC (fast for English text);
+        // ASCII-only patterns go to the bytewise engine (fast for English text);
         // patterns with any non-ASCII byte go to the charwise DAAC (fast for CJK text).
-        let mut bytewise_patterns: Vec<&str> = Vec::new();
-        let mut bytewise_to_dedup: Vec<usize> = Vec::new();
-        let mut charwise_patterns: Vec<&str> = Vec::new();
-        let mut charwise_to_dedup: Vec<usize> = Vec::new();
+        // For DAAC engines, the pattern value IS the global dedup index so scan_variant
+        // can use hit.value() directly without an extra indirection lookup.
+        let mut bytewise_patvals: Vec<(&str, u32)> = Vec::new();
+        let mut charwise_patvals: Vec<(&str, u32)> = Vec::new();
+        // For AC DFA only: sequential AC pattern ID → global dedup index.
+        #[cfg(feature = "dfa")]
+        let mut bytewise_ac_to_dedup: Vec<u32> = Vec::new();
 
         for (dedup_id, pattern) in dedup_patterns.iter().enumerate() {
             if pattern.as_ref().is_ascii() {
-                bytewise_to_dedup.push(dedup_id);
-                bytewise_patterns.push(pattern.as_ref());
+                #[cfg(feature = "dfa")]
+                bytewise_ac_to_dedup.push(dedup_id as u32);
+                bytewise_patvals.push((pattern.as_ref(), dedup_id as u32));
             } else {
-                charwise_to_dedup.push(dedup_id);
-                charwise_patterns.push(pattern.as_ref());
+                charwise_patvals.push((pattern.as_ref(), dedup_id as u32));
             }
         }
 
-        let bytewise_matcher = if !bytewise_patterns.is_empty() {
+        let bytewise_matcher = if !bytewise_patvals.is_empty() {
             #[cfg(feature = "dfa")]
-            let engine = if bytewise_patterns.len() <= AC_DFA_PATTERN_THRESHOLD {
-                BytewiseMatcher::AcDfa(
-                    AhoCorasickBuilder::new()
+            let engine = if bytewise_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+                BytewiseMatcher::AcDfa {
+                    matcher: AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
-                        .build(&bytewise_patterns)
+                        .build(bytewise_patvals.iter().map(|(p, _)| p))
                         .unwrap(),
-                )
+                    to_dedup: bytewise_ac_to_dedup,
+                }
             } else {
                 BytewiseMatcher::DaacBytewise(
                     DoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                        .build(&bytewise_patterns)
+                        .build_with_values(bytewise_patvals)
                         .unwrap(),
                 )
             };
@@ -509,7 +522,7 @@ impl SimpleMatcher {
             let engine = BytewiseMatcher::DaacBytewise(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build(&bytewise_patterns)
+                    .build_with_values(bytewise_patvals)
                     .unwrap(),
             );
             Some(engine)
@@ -517,11 +530,11 @@ impl SimpleMatcher {
             None
         };
 
-        let charwise_matcher = if !charwise_patterns.is_empty() {
+        let charwise_matcher = if !charwise_patvals.is_empty() {
             Some(
                 CharwiseDoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build(&charwise_patterns)
+                    .build_with_values(charwise_patvals)
                     .unwrap(),
             )
         } else {
@@ -541,8 +554,6 @@ impl SimpleMatcher {
             process_type_tree,
             bytewise_matcher,
             charwise_matcher,
-            bytewise_to_dedup,
-            charwise_to_dedup,
             ac_dedup_entries,
             ac_dedup_ranges,
             rule_hot,
@@ -776,9 +787,10 @@ impl SimpleMatcher {
         if let Some(ref bytewise) = self.bytewise_matcher {
             match bytewise {
                 #[cfg(feature = "dfa")]
-                BytewiseMatcher::AcDfa(ac_matcher) => {
-                    for hit in ac_matcher.find_overlapping_iter(processed_text) {
-                        let dedup_idx = self.bytewise_to_dedup[hit.pattern().as_usize()];
+                BytewiseMatcher::AcDfa { matcher, to_dedup } => {
+                    for hit in matcher.find_overlapping_iter(processed_text) {
+                        // AC DFA assigns sequential IDs; translate to global dedup index.
+                        let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
                         if self.process_match(
                             dedup_idx,
                             index,
@@ -793,7 +805,8 @@ impl SimpleMatcher {
                 }
                 BytewiseMatcher::DaacBytewise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                        let dedup_idx = self.bytewise_to_dedup[hit.value() as usize];
+                        // DAAC value IS the global dedup index — no indirection needed.
+                        let dedup_idx = hit.value() as usize;
                         if self.process_match(
                             dedup_idx,
                             index,
@@ -814,7 +827,8 @@ impl SimpleMatcher {
         // `is_ascii` is pre-computed by walk_process_tree to avoid a redundant byte scan here.
         if !is_ascii && let Some(ref ac_matcher) = self.charwise_matcher {
             for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                let dedup_idx = self.charwise_to_dedup[ac_dedup_result.value() as usize];
+                // DAAC value IS the global dedup index — no indirection needed.
+                let dedup_idx = ac_dedup_result.value() as usize;
                 if self.process_match(
                     dedup_idx,
                     index,
