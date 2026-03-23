@@ -228,16 +228,19 @@ struct RuleCold {
 /// Stored in the flat `ac_dedup_entries` array; a `(start, len)` range in
 /// `ac_dedup_ranges` maps each automaton pattern index to its slice of entries.
 ///
-/// * `process_type_mask` — bitmask of [`ProcessType`] bits that produced this pattern;
-///   used to discard hits from text variants that don't match the rule's pipeline.
 /// * `rule_idx` — index into `rule_hot`/`rule_cold` identifying the owning rule.
 /// * `offset` — index into `segment_counts` of the owning rule; identifies which
 ///   AND or NOT sub-pattern was matched.
+/// * `pt_index` — sequential index into the compact process-type table built during
+///   [`SimpleMatcher::new`]. Used as `1u64 << pt_index` to compare against the
+///   text variant's `process_type_mask` and discard hits from the wrong pipeline.
+///   Replaces the former `process_type_mask: u64` field, shrinking the struct from
+///   16 bytes to 8 bytes and doubling entries per cache line.
 #[derive(Debug, Clone)]
 struct PatternEntry {
-    process_type_mask: u64,
     rule_idx: u32,
     offset: u16,
+    pt_index: u8,
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
@@ -352,8 +355,31 @@ impl SimpleMatcher {
     {
         let word_size: usize = process_type_word_map.values().map(|m| m.len()).sum();
 
+        // Pass 1: collect all composite ProcessTypes so we can build the sequential index
+        // table before constructing PatternEntries.
         let mut process_type_set: HashSet<ProcessType> =
             HashSet::with_capacity(process_type_word_map.len());
+        for &pt in process_type_word_map.keys() {
+            process_type_set.insert(pt);
+        }
+
+        // Sequential index table: pt_index_table[pt.bits()] = compact sequential index.
+        // ProcessType::None is always present in the root's folded_mask, so it must be
+        // included even if no rule uses ProcessType::None directly.
+        // Values of u8::MAX indicate unused slots.
+        let mut pt_index_table = [u8::MAX; 64];
+        let mut next_pt_idx: u8 = 0;
+        // None first — it always occupies a slot (root node always emits it).
+        pt_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
+        next_pt_idx += 1;
+        for &pt in &process_type_set {
+            let bits = pt.bits() as usize;
+            if bits < 64 && pt_index_table[bits] == u8::MAX {
+                pt_index_table[bits] = next_pt_idx;
+                next_pt_idx += 1;
+            }
+        }
+
         let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
         let mut rule_hot: Vec<RuleHot> = Vec::with_capacity(word_size);
         let mut rule_cold: Vec<RuleCold> = Vec::with_capacity(word_size);
@@ -366,7 +392,6 @@ impl SimpleMatcher {
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
-            process_type_set.insert(process_type);
 
             for (&simple_word_id, simple_word) in simple_word_map {
                 if simple_word.as_ref().is_empty() {
@@ -456,28 +481,35 @@ impl SimpleMatcher {
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
+                        let pt_index = pt_index_table[process_type.bits() as usize];
                         let Some(&existing_dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
                             pattern_id_map.insert(ac_word.clone(), next_pattern_id);
                             dedup_entries.push(vec![PatternEntry {
-                                process_type_mask: 1u64 << process_type.bits(),
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u16,
+                                pt_index,
                             }]);
                             dedup_patterns.push(ac_word);
                             next_pattern_id += 1;
                             continue;
                         };
                         dedup_entries[existing_dedup_id].push(PatternEntry {
-                            process_type_mask: 1u64 << process_type.bits(),
                             rule_idx: rule_idx as u32,
                             offset: offset as u16,
+                            pt_index,
                         });
                     }
                 }
             }
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set);
+        let mut process_type_tree = build_process_type_tree(&process_type_set);
+
+        // Re-encode each node's folded_mask to use the sequential pt_index_table so that
+        // text variant masks and PatternEntry.pt_index use the same compact encoding.
+        for node in &mut process_type_tree {
+            node.recompute_mask_with_index(&pt_index_table);
+        }
 
         // Partition deduplicated patterns by character content.
         // ASCII-only patterns go to the bytewise engine (fast for English text);
@@ -873,15 +905,18 @@ impl SimpleMatcher {
         let (start, len) = self.ac_dedup_ranges[pattern_idx];
         for entry in &self.ac_dedup_entries[start..start + len] {
             let &PatternEntry {
-                process_type_mask: match_process_type_mask,
                 rule_idx,
                 offset,
+                pt_index,
             } = entry;
 
             let rule_idx = rule_idx as usize;
             let offset = offset as usize;
 
-            if process_type_mask & match_process_type_mask == 0
+            // Check that this text variant was produced by the pattern entry's process type.
+            // Sequential pt_index encodes the same information as the former u64 mask field,
+            // but using 1 byte instead of 8, halving PatternEntry size.
+            if process_type_mask & (1u64 << pt_index) == 0
                 || state.word_states[rule_idx].not_generation == generation
             {
                 continue;

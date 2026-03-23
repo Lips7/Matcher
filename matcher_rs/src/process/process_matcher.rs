@@ -616,6 +616,24 @@ pub struct ProcessTypeBitNode {
     folded_mask: u64,
 }
 
+impl ProcessTypeBitNode {
+    /// Re-encodes `folded_mask` using a sequential index table.
+    ///
+    /// The default encoding stores `1u64 << pt.bits()`, which can use bits up to 63 for
+    /// composite [`ProcessType`] values. A sequential index keeps bit positions small (0..N
+    /// where N is the number of unique composite types) so [`PatternEntry`] can store the
+    /// index as a `u8` rather than a `u64`, halving the entry size.
+    ///
+    /// `pt_index_table[pt.bits()]` must contain the sequential index for every composite
+    /// [`ProcessType`] that terminates at any node (i.e. every type in the original
+    /// `process_type_set` plus [`ProcessType::None`]).
+    pub(crate) fn recompute_mask_with_index(&mut self, pt_index_table: &[u8; 64]) {
+        self.folded_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
+            acc | (1u64 << pt_index_table[pt.bits() as usize])
+        });
+    }
+}
+
 /// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
 ///
 /// The trie encodes every unique prefix path among the given composite types. A root node
