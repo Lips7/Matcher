@@ -50,23 +50,17 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 
 /// Maximum number of ASCII patterns to route through AC DFA before switching
-/// to DAAC bytewise. Below this count AC DFA leads on search throughput
-/// (especially against non-ASCII text); above it DAAC bytewise wins while
-/// using ~16x less memory.
+/// to the DAAC bytewise matcher when the `dfa` feature is enabled.
 ///
-/// Derived from `bench_engine.rs`: AC DFA leads at n≤1000, DAAC bytewise
-/// leads at n≥10000 on ASCII text. 5000 is a conservative midpoint.
+/// The threshold is benchmark-driven and intentionally conservative.
+#[cfg(feature = "dfa")]
 pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
 
 /// Bytewise automaton engine for ASCII-only patterns.
 ///
 /// When the `dfa` feature is enabled and the ASCII pattern count is below
-/// [`AC_DFA_PATTERN_THRESHOLD`], the `AcDfa` variant is used (faster at
-/// small counts). Otherwise `DaacBytewise` is used (faster at large counts
-/// and uses ~16x less memory).
-///
-/// When the `dfa` feature is disabled, only `DaacBytewise` is available —
-/// it outperforms `AhoCorasick` (ContiguousNFA) at every pattern count.
+/// [`AC_DFA_PATTERN_THRESHOLD`], the `AcDfa` variant is used. Otherwise
+/// `DaacBytewise` is used. Without `dfa`, only `DaacBytewise` is built.
 ///
 /// For `DaacBytewise`, the automaton value directly encodes the global dedup
 /// index, eliminating one indirection hop per automaton hit. For `AcDfa`,
@@ -92,20 +86,19 @@ pub(super) enum BytewiseMatcher {
 /// search without requiring a full zero-fill between calls.
 #[derive(Default, Clone, Copy)]
 pub(super) struct WordState {
-    /// Set to the current generation when this rule is first touched (matrix path only).
+    /// Set to the current generation when this rule is first touched.
     pub(super) matrix_generation: u32,
     /// Set to the current generation when a NOT sub-pattern fires, permanently
     /// disqualifying this rule for the remainder of the search.
     pub(super) not_generation: u32,
-    /// Set to the current generation when the rule is fully satisfied (bitmask fast-path
-    /// only, rules without NOT segments). Enables a single-comparison skip in
-    /// `process_match` instead of a 4-condition check.
+    /// Set to the current generation when a rule is fully satisfied on the simple
+    /// bitmask path, allowing later hits in the same search to skip extra work.
     pub(super) satisfied_generation: u32,
     /// Bitmask of AND sub-patterns (up to 64) satisfied so far this generation.
     pub(super) satisfied_mask: u64,
 }
 
-/// Reusable per-thread scratch space for a single [`super::SimpleMatcher`] scan.
+/// Reusable per-thread scratch space for a single [`super::SimpleMatcher`] search.
 ///
 /// Allocated once and stored in a `thread_local!`; reused across calls via the generation
 /// trick in [`WordState`] to avoid clearing the full state between searches.
@@ -118,8 +111,8 @@ pub(super) struct SimpleMatchState {
     /// Indices of rules written during the current generation; iterated in Pass 2 to avoid
     /// scanning the entire `word_states` array.
     pub(super) touched_indices: Vec<usize>,
-    /// Monotonically incrementing ID; wrapping to `u32::MAX` triggers a full reset of all
-    /// generation fields before incrementing to `1`.
+    /// Monotonically incrementing ID; wrapping triggers a full reset of the generation
+    /// markers before the next search starts at `1`.
     pub(super) generation: u32,
 }
 
@@ -180,7 +173,7 @@ pub(super) struct ScanContext {
     pub(super) is_ascii: bool,
 }
 
-/// Hot match-evaluation fields for a single pattern rule, accessed during Pass 1.
+/// Hot match-evaluation fields for a single rule, accessed during Pass 1.
 ///
 /// Kept separate from [`RuleCold`] so that the hot data fits in fewer cache lines
 /// when scanning large rule sets.
@@ -196,14 +189,14 @@ pub(super) struct RuleHot {
     /// Bitmask of AND segments that must all reach ≤0. Non-zero when `and_count > 0` and
     /// `and_count ≤ 64`; zero otherwise (more than 64 AND segments or no AND segments).
     pub(super) expected_mask: u64,
-    /// `true` when the rule requires the full counter matrix (>64 segments, repeated
-    /// sub-patterns across `&`-splits, or a non-trivial NOT pattern).
+    /// `true` when the rule requires the full counter matrix instead of the simple
+    /// bitmask path.
     pub(super) use_matrix: bool,
     /// `segment_counts.len()`, cached to avoid pointer chasing in the hot loop.
     pub(super) num_splits: u16,
 }
 
-/// Cold result-construction fields for a single pattern rule, accessed only in Pass 2.
+/// Cold result-construction fields for a single rule, accessed only in Pass 2.
 #[derive(Debug, Clone)]
 pub(super) struct RuleCold {
     /// Caller-assigned identifier returned in [`super::SimpleResult`].
@@ -212,7 +205,7 @@ pub(super) struct RuleCold {
     pub(super) word: String,
 }
 
-/// Links a deduplicated automaton pattern back to the rule and sub-pattern it belongs to.
+/// Links a deduplicated emitted pattern back to the rule and sub-pattern it belongs to.
 ///
 /// Stored in the flat `ac_dedup_entries` array; a `(start, len)` range in
 /// `ac_dedup_ranges` maps each automaton pattern index to its slice of entries.

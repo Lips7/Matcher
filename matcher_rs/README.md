@@ -1,28 +1,15 @@
 # Matcher
 
-A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust.
+A high-performance Rust matcher for rules that need both logical operators and text variation handling.
 
 For detailed implementation, see the [Design Document](../DESIGN.md).
 
 ## Features
 
-- **Text Transformation**:
-  - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫艹`
-  - **Delete**: Remove specific characters.
-    Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
-  - **Normalize**: Normalize special characters to identifiable characters.
-    Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
-  - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
-    Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
-  - **PinYinChar**: Convert Chinese characters to Pinyin.
-    Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
-- **AND OR NOT Word Matching**:
-  - Takes into account the number of repetitions of words.
-  - Example: `hello&world` matches `hello world` and `world,hello`
-  - Example: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
-  - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
-- **Efficient Handling of Large Word Lists**: Optimized for performance.
+- Logical rule syntax with `&` and `~`
+- Configurable text-transformation pipelines through `ProcessType`
+- Shared-prefix transform traversal so related pipelines reuse intermediate results
+- Separate bytewise and charwise matcher engines chosen from the final rule set
 
 ## Usage
 
@@ -38,20 +25,20 @@ cargo add matcher_rs
 
 #### ProcessType
 
-* `None`: No transformation.
-* `Fanjian`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](./process_map/FANJIAN.txt).
+* `None`: Match against the original input text.
+* `Fanjian`: Traditional Chinese to simplified Chinese conversion. Based on [FANJIAN](./process_map/FANJIAN.txt).
   * `妳好` -> `你好`
   * `現⾝` -> `现身`
-* `Delete`: Delete all punctuation, special characters and white spaces. Based on [TEXT_DELETE](./process_map/TEXT-DELETE.txt) and `WHITE_SPACE`.
+* `Delete`: Remove the codepoints listed in [TEXT_DELETE](./process_map/TEXT-DELETE.txt) plus the built-in whitespace set.
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
-* `Normalize`: Normalize all English character variations and number variations to basic characters. Based on [NORM](./process_map/NORM.txt) and [NUM_NORM](./process_map/NUM-NORM.txt).
+* `Normalize`: Apply the replacement tables from [NORM](./process_map/NORM.txt) and [NUM_NORM](./process_map/NUM-NORM.txt).
   * `ℋЀ⒈㈠Õ` -> `he11o`
   * `⒈Ƨ㊂` -> `123`
-* `PinYin`: Convert all unicode Chinese characters to pinyin with boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
+* `PinYin`: Convert mapped codepoints to pinyin with boundary spaces. Based on [PINYIN](./process_map/PINYIN.txt).
   * `你好` -> ` ni  hao `
   * `西安` -> ` xi  an `
-* `PinYinChar`: Convert all unicode Chinese characters to pinyin without boundaries. Based on [PINYIN](./process_map/PINYIN.txt).
+* `PinYinChar`: Convert the same mapped codepoints to pinyin with trimmed boundaries.
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
@@ -61,7 +48,14 @@ Including `None` in a composite `ProcessType` keeps the raw-text path alongside 
 variants. For example, `ProcessType::None | ProcessType::PinYin` allows one part of a rule to
 match the original text while another part matches the Pinyin-transformed text.
 
-Avoid combining `PinYin` and `PinYinChar` due to that `PinYin` is a more limited version of `PinYinChar`, in some cases like `xian`, can be treat as two words `xi` and `an`, or only one word `xian`.
+Be careful combining `PinYin` and `PinYinChar`: they preserve different word boundaries, so the
+same input can behave like `xi` + `an` in one pipeline and `xian` in the other.
+
+#### Rule syntax
+
+* `a&b`: both sub-patterns must appear, in any order
+* `a~b`: `a` must appear and `b` must stay absent
+* repeated segments count: `无&法&无&天` requires two matches of `无`
 
 ### Basic Example
 
@@ -75,8 +69,8 @@ let results = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好�
 ```
 
 `text_process` returns only the final transformed text. `reduce_text_process` returns each
-distinct intermediate variant along the pipeline. For shared-prefix multi-variant traversal,
-`SimpleMatcher` uses the internal DAG helpers instead of recomputing each path independently.
+changed intermediate result along one pipeline. For shared-prefix multi-variant traversal,
+`SimpleMatcher` uses the internal transform-tree helpers instead of recomputing each path independently.
 
 
 ```rust
@@ -94,18 +88,18 @@ let results = matcher.process(text);
 For more detailed usage examples, please refer to the [test_simple_matcher.rs](./tests/test_simple_matcher.rs) file.
 
 ## Feature Flags
-* `runtime_build`: Build transformation tables from the source text maps at startup instead of embedding precompiled binaries.
-* `dfa`: Use DFA-backed Aho-Corasick automata where applicable. This is enabled by default and improves speed at the cost of higher memory consumption.
+* `runtime_build`: Build transformation tables from the source text maps at runtime instead of loading build-time artifacts.
+* `dfa`: Use `aho-corasick` DFA mode in the parts of the matcher that opt into it. This is enabled by default.
 * `simd_runtime_dispatch`: Enabled by default. Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere).
 
 ### Feature Comparison & Recommendation
 
 | Feature | Engine | Search Speed | Memory Usage | External Dependency | Best For |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Default** | Aho-Corasick (DFA) | **Fast** | High | None | General purpose use when extra memory is acceptable. |
+| **Default** | Mixed bytewise/charwise engines with `dfa` enabled where applicable | **Fast** | Higher | None | General purpose use. |
 | `simd_runtime_dispatch` | Runtime-selected transform kernels | **Fastest preprocess** | Neutral | None | Portable builds that should exploit the host CPU automatically. |
-| `--no-default-features` | Aho-Corasick (Contiguous NFA) | Good | **Lowest** | None | Memory-constrained environments. |
-| `dfa` | Aho-Corasick (DFA) | **Fast** | High | None | Explicitly enabling the default engine in custom feature sets. |
+| `--no-default-features` | `daachorse`-first matching plus portable transform kernels | Good | Lower | None | Leaner builds and feature debugging. |
+| `dfa` | Adds DFA-backed `aho-corasick` where this crate selects it | **Fast** | Higher | None | Custom feature sets that still want the default automaton choices. |
 
 ## Benchmarks
 

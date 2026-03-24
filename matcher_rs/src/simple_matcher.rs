@@ -63,10 +63,12 @@ pub struct SimpleResult<'a> {
 ///
 /// ## Two-Pass Matching
 ///
-/// **Pass 1 — Scan**: The input text is first transformed through the configured
-/// [`crate::ProcessType`] pipelines (producing multiple text variants). All variants are scanned
-/// simultaneously in a single scan phase (bytewise + charwise automata). Each hit updates a
-/// generation-stamped state matrix for the affected rule.
+/// **Pass 1 — Transform and Scan**: The input text is transformed through the configured
+/// [`crate::ProcessType`] pipelines, producing the distinct text variants needed for this
+/// matcher. Those variants are scanned one by one. Each variant first goes through the
+/// bytewise engine, then through the charwise engine when the variant is not pure ASCII.
+/// Hits update per-rule state; simple rules stay on a bitmask fast path, while more complex
+/// rules fall back to a per-rule counter matrix.
 ///
 /// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND
 /// sub-pattern was satisfied in at least one text variant and no NOT sub-pattern was
@@ -103,11 +105,11 @@ pub struct SimpleResult<'a> {
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
-    /// ASCII-only patterns — fast bytewise scan, best for English text.
+    /// ASCII-only patterns — scanned through the bytewise engine.
     /// Dedup indices are embedded directly in the automaton (DAAC value = dedup index) or
     /// stored inside the enum variant (AC DFA `to_dedup`), eliminating a top-level Vec lookup.
     bytewise_matcher: Option<BytewiseMatcher>,
-    /// Non-ASCII (CJK, etc.) patterns — charwise DAAC, best for CJK text.
+    /// Patterns containing any non-ASCII byte — scanned through the charwise matcher.
     /// Automaton value IS the global dedup index — no extra indirection.
     charwise_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
     ac_dedup_entries: Vec<PatternEntry>,
@@ -119,8 +121,8 @@ pub struct SimpleMatcher {
 impl SimpleMatcher {
     /// Returns `true` if `text` satisfies at least one registered pattern.
     ///
-    /// Equivalent to `!self.process(text).is_empty()` but short-circuits as soon as the
-    /// first matching rule is found, making it significantly faster when a match is expected.
+    /// Equivalent to `!self.process(text).is_empty()`, but it can stop scanning as soon as
+    /// one rule is confirmed.
     /// Returns `false` immediately for empty input.
     ///
     /// # Examples
@@ -183,8 +185,8 @@ impl SimpleMatcher {
     ///
     /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
     /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
-    /// Results are appended in discovery order, which is deterministic for a given matcher
-    /// and input but should not be treated as a stable sort order.
+    /// Results are appended in the matcher's discovery order. That order is deterministic
+    /// for one constructed matcher, but it is not a public sorting guarantee.
     ///
     /// # Examples
     ///

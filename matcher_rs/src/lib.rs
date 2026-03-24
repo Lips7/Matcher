@@ -2,17 +2,23 @@
     not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
     feature(portable_simd)
 )]
-//! High-performance multi-pattern text matcher with logical operators and text normalization.
+//! High-performance multi-pattern text matcher with logical operators and transformation pipelines.
 //!
-//! `matcher_rs` solves precision/recall problems in keyword matching by combining:
+//! `matcher_rs` is designed for rule matching tasks where plain substring search is too rigid.
+//! A rule can combine multiple sub-patterns, veto on other sub-patterns, and match against
+//! raw text, transformed text, or both.
 //!
-//! - **Two-pass Aho-Corasick matching** — O(N) text scan regardless of the number of patterns.
-//! - **Logical operators** — Patterns can require co-occurrence of sub-patterns (`&`) or
+//! The crate is built around three ideas:
+//!
+//! - **Logical operators** — Rules can require co-occurrence of sub-patterns (`&`) or
 //!   veto a match when a sub-pattern is present (`~`).
-//! - **Text normalization pipeline** — Input is transformed through configurable combinations
-//!   of Traditional→Simplified Chinese ([`ProcessType::Fanjian`]), noise-character deletion
-//!   ([`ProcessType::Delete`]), Unicode normalization ([`ProcessType::Normalize`]), and
-//!   Pinyin transliteration ([`ProcessType::PinYin`] / [`ProcessType::PinYinChar`]).
+//! - **Transformation pipelines** — Input can be matched after Traditional→Simplified
+//!   Chinese conversion ([`ProcessType::Fanjian`]), deletion of configured codepoints
+//!   ([`ProcessType::Delete`]), replacement-table normalization ([`ProcessType::Normalize`]),
+//!   and Pinyin transliteration ([`ProcessType::PinYin`] / [`ProcessType::PinYinChar`]).
+//! - **Two-pass evaluation** — Construction deduplicates emitted patterns and partitions them
+//!   into bytewise and charwise matcher engines. Search walks the needed transform tree once,
+//!   scans each produced text variant, then evaluates only touched rules.
 //!
 //! # Quick Start
 //!
@@ -40,15 +46,15 @@
 //! Composite [`ProcessType`] values can also include [`ProcessType::None`] to match
 //! against both the raw text and a transformed variant. For example, a rule with
 //! `ProcessType::None | ProcessType::PinYin` can satisfy one sub-pattern directly from
-//! the input and another via Pinyin transliteration.
+//! the input and another via Pinyin transliteration during the same search.
 //!
 //! # Feature Flags
 //!
 //! | Flag | Default | Effect |
 //! |------|---------|--------|
-//! | `dfa` | on | Uses DFA-backed Aho-Corasick automata where applicable; faster than NFA-based matching but with higher memory use |
+//! | `dfa` | on | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
 //! | `simd_runtime_dispatch` | on | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
-//! | `runtime_build` | off | Builds transformation tables from source text files at startup instead of embedding pre-compiled binaries |
+//! | `runtime_build` | off | Parses the source transform maps at runtime instead of loading build-time artifacts lazily on first use |
 
 /// Use mimalloc as the global allocator for reduced fragmentation and better multi-threaded throughput.
 #[global_allocator]

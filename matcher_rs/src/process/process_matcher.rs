@@ -1,4 +1,4 @@
-//! [`ProcessMatcher`] enum, per-type caching, and public text-processing functions.
+//! Cached single-step transformation engines and public text-processing helpers.
 //!
 //! Public API: [`text_process`], [`reduce_text_process`], [`reduce_text_process_emit`].
 //! Internal API: [`get_process_matcher`] (returns cached `&'static ProcessMatcher`).
@@ -33,12 +33,10 @@ static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8] = [
 ///
 /// # Variants
 ///
-/// * `MultiChar` — Multi-character pattern matching via [`MultiCharMatcher`]; used for
-///   leftmost-longest multi-character substitutions (Normalize) and as an empty no-op
-///   for `ProcessType::None`.
-/// * `SingleChar` — O(1) per-codepoint dispatch via a [`SingleCharMatcher`]; used for
-///   Fanjian (2-stage page table), Pinyin (2-stage page table + string buffer), and
-///   Delete (flat BitSet covering all Unicode planes).
+/// * `MultiChar` — Multi-character replacement via [`MultiCharMatcher`]; used for
+///   Normalize and as the no-op engine for `ProcessType::None`.
+/// * `SingleChar` — Per-codepoint lookup via a [`SingleCharMatcher`]; used for
+///   Fanjian, Pinyin, and Delete.
 #[derive(Clone)]
 pub(crate) enum ProcessMatcher {
     MultiChar(MultiCharMatcher),
@@ -143,16 +141,16 @@ impl ProcessMatcher {
 /// The construction strategy depends on the type:
 /// - **Normalize** — builds a leftmost-longest Aho-Corasick automaton (`daachorse` by default,
 ///   DFA variant under the `dfa` feature). With `runtime_build` the normalization table is
-///   read from `process_map/` text files; otherwise a pre-compiled binary is embedded at
-///   build time.
-/// - **Fanjian / PinYin / PinYinChar** — zero-copy 2-stage page tables loaded from binary
-///   data embedded at build time (or built dynamically under `runtime_build`).
-/// - **Delete** — a 139 KB flat BitSet embedded at build time (or built dynamically).
+///   read from `process_map/` text files; otherwise build-time artifacts are loaded lazily.
+/// - **Fanjian / PinYin / PinYinChar** — 2-stage page tables built either from embedded
+///   artifacts or from the source maps under `runtime_build`.
+/// - **Delete** — a flat Unicode bitset built either from embedded artifacts or from the
+///   source delete lists.
 /// - **None** — an empty Aho-Corasick automaton (no-op).
 ///
 /// # Panics
-/// Panics (via `unreachable!()`) if `process_type_bit` is a composite or unrecognized value
-/// when the `runtime_build` feature is disabled.
+/// Passing anything other than a supported single-bit value is unsupported. In non-
+/// `runtime_build` builds that reaches `unreachable!()`.
 pub(crate) fn get_process_matcher(process_type_bit: ProcessType) -> &'static ProcessMatcher {
     let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(index < 8, "ProcessType bit index out of bounds");
@@ -255,8 +253,8 @@ pub(crate) fn get_process_matcher(process_type_bit: ProcessType) -> &'static Pro
 
 /// Applies a composite [`ProcessType`] pipeline to `text` and returns the final result.
 ///
-/// Transformations are applied left-to-right in bit order. Each step fetches a cached
-/// matcher and either replaces or deletes matching spans.
+/// Transformations are applied in [`ProcessType::iter`] order. Each step fetches a cached
+/// engine and either replaces or deletes matching spans.
 /// `Cow::Borrowed` is returned when no step modifies the text.
 /// This is the "final result only" helper: intermediate variants are discarded.
 ///
@@ -342,12 +340,11 @@ fn reduce_text_process_inner<'a>(
     text_list
 }
 
-/// Applies a composite [`ProcessType`] pipeline to `text`, recording every intermediate
-/// variant that diverges from its predecessor.
+/// Applies a composite [`ProcessType`] pipeline to `text`, recording each changed result.
 ///
 /// The first entry is always `Cow::Borrowed(text)` (the original input). Steps that leave
-/// the text unchanged add no entry.
-/// Use this when you want a step-by-step view of the pipeline for a single composite type.
+/// the text unchanged add no entry. Use this when you want a step-by-step view of one
+/// composite pipeline.
 ///
 /// For generating all variants needed for matching, prefer [`crate::walk_process_tree`].
 ///
@@ -374,7 +371,8 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// When a *replace*-type step changes the text, the result overwrites the last entry
 /// rather than appending a new one. Only `Delete` steps append a new entry.
 ///
-/// Used internally by `SimpleMatcher::new` to register all required automaton patterns.
+/// Used internally by `SimpleMatcher::new` to register all emitted patterns that may be
+/// scanned after Delete-normalized text is produced.
 /// The returned variants correspond to distinct strings that may need to be indexed,
 /// not every intermediate step that happened along the way.
 ///

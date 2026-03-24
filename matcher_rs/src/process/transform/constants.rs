@@ -3,10 +3,10 @@
 //! All items are conditional on feature flags:
 //!
 //! - `runtime_build` — exposes raw text-map string constants (`FANJIAN`, `TEXT_DELETE`, etc.)
-//!   that are parsed at startup to build transformation tables dynamically.
+//!   that are parsed on first use to build transformation tables dynamically.
 //! - default (`not(runtime_build)`) — exposes pre-compiled binary constants (`*_L1_BYTES`,
-//!   `*_L2_BYTES`, `*_BYTES`, `*_STR`) embedded at build time by `build.rs` for zero-startup-
-//!   cost loading.
+//!   `*_L2_BYTES`, `*_BYTES`, `*_STR`) embedded at build time by `build.rs` and decoded
+//!   lazily when the corresponding matcher is first requested.
 
 // ── runtime_build: source text maps ─────────────────────────────────────────
 
@@ -59,15 +59,15 @@ pub(crate) const WHITE_SPACE: &[&str] = &[
 
 // ── default build: pre-compiled normalization automaton ──────────────────────
 
-/// Newline-separated source patterns for the Normalize Aho-Corasick DFA.
+/// Newline-separated source patterns for the Normalize matcher.
 ///
-/// Loaded via `include_str!` from the `OUT_DIR` binary artifact produced by `build.rs`.
-/// Only used when the `dfa` feature is enabled and `runtime_build` is disabled.
+/// Loaded via `include_str!` from the `OUT_DIR` artifact produced by `build.rs`.
+/// Used when the `dfa` feature is enabled and `runtime_build` is disabled.
 #[cfg(all(not(feature = "runtime_build"), feature = "dfa"))]
 pub(crate) const NORMALIZE_PROCESS_LIST_STR: &str =
     include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
 
-/// Pre-serialized `daachorse` double-array Aho-Corasick matcher for the Normalize step.
+/// Pre-serialized `daachorse` matcher for the Normalize step.
 ///
 /// Loaded via `include_bytes!` from the `OUT_DIR` artifact produced by `build.rs`.
 /// Only used when `dfa` is disabled and `runtime_build` is disabled.
@@ -92,7 +92,7 @@ pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!
 /// L1 index for the Fanjian 2-stage page table (`u16[4352]`, little-endian).
 ///
 /// See `SingleCharMatcher::Fanjian` in `process/transform/single_char_matcher.rs`
-/// for the full layout description.
+/// for the table layout.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const FANJIAN_L1_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/fanjian_l1.bin"));
@@ -118,13 +118,14 @@ pub(crate) const PINYIN_L2_BYTES: &[u8] =
 
 /// Concatenated Pinyin syllable strings referenced by [`PINYIN_L2_BYTES`].
 ///
-/// Individual syllables are separated by spaces; `PinYinChar` mode trims them after lookup.
+/// Individual mappings may include surrounding spaces; `PinYinChar` trims those boundaries
+/// after lookup.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const PINYIN_STR_BYTES: &str = include_str!(concat!(env!("OUT_DIR"), "/pinyin_str.bin"));
 
 // ── default build: Delete BitSet ─────────────────────────────────────────────
 
-/// Flat 139 KB BitSet (`u8[139264]`) covering all Unicode codepoints 0x0–0x10FFFF.
+/// Flat 139 KB bitset (`u8[139264]`) covering all Unicode codepoints 0x0–0x10FFFF.
 ///
 /// Bit `cp % 8` of byte `cp / 8` is set when codepoint `cp` should be removed by the
 /// Delete step. Generated at build time from `TEXT-DELETE.txt` and `WHITE_SPACE`.

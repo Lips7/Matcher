@@ -1,7 +1,7 @@
 //! Hot-path scan and rule evaluation for [`super::SimpleMatcher`].
 //!
-//! Implements the two-pass matching loop: Pass 1 runs the automaton over all text variants;
-//! Pass 2 iterates touched rules and collects every satisfied result.
+//! Implements the two-pass matching loop: Pass 1 scans each text variant and updates
+//! per-rule state; Pass 2 iterates touched rules and collects the satisfied ones.
 
 use std::borrow::Cow;
 
@@ -52,12 +52,13 @@ impl SimpleMatcher {
         });
     }
 
-    /// Pass 1: scans all text variants with the automaton, updating [`SimpleMatchState`].
+    /// Pass 1: scans all text variants, updating [`SimpleMatchState`].
     ///
-    /// For each text variant in `processed_text_process_type_masks` the automaton finds
-    /// all overlapping sub-pattern hits. Each hit is dispatched to [`Self::process_match`],
-    /// which updates the affected rule's counters. If `exit_early` is `true`, scanning
-    /// halts as soon as a rule becomes fully satisfied (used by `is_match`).
+    /// For each text variant in `processed_text_process_type_masks`, the matcher scans the
+    /// bytewise engine first and then, when needed, the charwise engine. Each hit is
+    /// dispatched to [`Self::process_match`], which updates the affected rule's counters.
+    /// If `exit_early` is `true`, scanning halts as soon as a rule becomes fully satisfied
+    /// on a path where early exit is sound (used by `is_match`).
     ///
     /// Returns `true` only when `exit_early` is `true` and at least one rule fired early.
     pub(super) fn scan_all_variants<'a>(
@@ -90,7 +91,7 @@ impl SimpleMatcher {
         false
     }
 
-    /// Scans one pre-processed text variant through the automaton and updates rule counters.
+    /// Scans one pre-processed text variant through the relevant matcher engines.
     ///
     /// This is the inner loop of Pass 1 for a single text variant produced by the
     /// transformation pipeline.
@@ -155,8 +156,8 @@ impl SimpleMatcher {
     /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
     /// Looks up all [`PatternEntry`] records for `pattern_idx`, skipping any rule whose
-    /// process-type bitmask doesn't overlap with the current text variant's `process_type_mask`
-    /// or that has already been disqualified this generation.
+    /// process-type mask does not include the current text variant or that has already been
+    /// disqualified in this generation.
     ///
     /// For an AND sub-pattern hit: decrements the counter and sets the bit in `satisfied_mask`
     /// when the counter reaches ≤0. For a NOT sub-pattern hit: sets `not_generation` to
@@ -164,8 +165,9 @@ impl SimpleMatcher {
     /// fully satisfied.
     ///
     /// Repeated sub-patterns such as `a&a&a` are represented as counters rather than booleans,
-    /// so the rule is satisfied only after enough hits arrive. Rules that do not fit the simple
-    /// bitmask fast-path fall back to the per-rule matrix, which tracks counts per text variant.
+    /// so the rule is satisfied only after enough hits arrive. Rules that do not fit the
+    /// simple bitmask path fall back to the per-rule matrix, which tracks counts per text
+    /// variant.
     #[inline(always)]
     pub(super) fn process_match(
         &self,
@@ -269,13 +271,12 @@ impl SimpleMatcher {
 
     /// Returns `true` if `rule` is fully satisfied for this generation.
     ///
-    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 AND segments):
-    /// checks that every AND segment's bit is set in `satisfied_mask`.
+    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with at most 64 distinct
+    /// AND segments): every required bit must be set in `satisfied_mask`.
     ///
-    /// Falls back to the counter matrix when `expected_mask == 0`, iterating all segments
-    /// (AND and NOT). For AND segments the counter must be ≤0 in at least one variant;
-    /// for NOT segments the counter starts ≤0 and remains so unless the NOT sub-pattern
-    /// fires enough times to exceed the threshold. Callers in Pass 2 typically pre-filter
+    /// Falls back to the counter matrix when `expected_mask == 0`, iterating all segments.
+    /// For AND segments the counter must be ≤0 in at least one variant. For NOT segments
+    /// the counter must stay ≤0 in every variant. Callers in Pass 2 typically pre-filter
     /// disqualified rules via `not_generation` before reaching this check.
     #[inline(always)]
     pub(super) fn is_rule_satisfied(
@@ -300,9 +301,8 @@ impl SimpleMatcher {
 
     /// Initializes the flat counter matrix for a rule on its first touch in a generation.
     ///
-    /// Marked `#[cold]` because the matrix path is rare (rules with >64 segments or
-    /// repeated sub-patterns). Extracting it helps the compiler optimize the common
-    /// bitmask fast-path layout in `process_match`.
+    /// Marked `#[cold]` because the matrix path is uncommon. Extracting it helps the
+    /// compiler keep the simple bitmask path compact.
     #[cold]
     #[inline(never)]
     pub(super) fn init_matrix(

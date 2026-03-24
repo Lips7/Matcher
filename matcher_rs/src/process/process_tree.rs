@@ -1,9 +1,8 @@
-//! Transformation trie construction and BFS traversal.
+//! Transformation tree construction and traversal.
 //!
 //! [`build_process_type_tree`] builds a flat-array trie from a set of [`ProcessType`] bitmasks.
-//! [`walk_process_tree`] traverses it, applying each transformation step once per unique prefix
-//! path so that shared intermediates (e.g. `Fanjian` for both `Fanjian|Delete` and
-//! `Fanjian|Normalize`) are computed only once.
+//! [`walk_process_tree`] then walks that flat array in parent-before-child order, applying
+//! each transformation step once per reachable prefix so shared intermediates are reused.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -66,9 +65,9 @@ impl ProcessTypeBitNode {
 /// order, reusing existing child nodes where the path overlaps with previously inserted types
 /// and creating new child nodes when a path diverges.
 ///
-/// The resulting flat `Vec<ProcessTypeBitNode>` is passed to
-/// [`walk_process_tree`], which performs a single BFS traversal to compute all
-/// needed text variants while sharing common intermediate results.
+/// The resulting flat `Vec<ProcessTypeBitNode>` is passed to [`walk_process_tree`], which
+/// scans the node array in parent-before-child order to compute all required text variants
+/// while reusing common prefixes.
 pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let mut root = ProcessTypeBitNode {
@@ -165,20 +164,20 @@ fn dedup_insert(
 /// Walks the transformation trie, producing all text variants needed for matching.
 ///
 /// This is the hot-path function called on every [`crate::SimpleMatcher::is_match`] /
-/// [`crate::SimpleMatcher::process`] invocation. It performs a single left-to-right BFS traversal
-/// of `process_type_tree`, applying each transformation step exactly once per unique path. Common
-/// prefixes (e.g. the shared `Fanjian` step for both `Fanjian | Delete` and `Fanjian | Normalize`)
-/// are computed only once and their result indices are reused for child nodes.
+/// [`crate::SimpleMatcher::process`] invocation. It performs one forward pass over the
+/// flat tree, relying on the invariant that every parent node appears before its children.
+/// Common prefixes (for example the shared `Fanjian` step in both
+/// `Fanjian | Delete` and `Fanjian | Normalize`) are computed once and their result
+/// indices are reused for child nodes.
 ///
 /// Each [`TextVariant`] in the returned `Vec` carries the transformed text, the bitmask of
 /// [`ProcessType`] indices that produced it, and an `is_ascii` flag. Callers can use
 /// `is_ascii` to skip the charwise automaton without a redundant byte scan.
 ///
-/// When `LAZY=true`, `on_variant(text, index, mask, is_ascii)` is called immediately after each
-/// new unique variant is produced. If it returns `true`, the walk stops early. A delta phase at
-/// the end re-invokes `on_variant` for any entry whose mask grew through dedup after its initial
-/// callback. When `LAZY=false`, `on_variant` is never called and all lazy-only code is
-/// dead-code-eliminated.
+/// When `LAZY=true`, `on_variant(text, index, mask, is_ascii)` is called as soon as each
+/// new unique variant is produced. If it returns `true`, the walk stops early. A delta
+/// phase at the end replays any additional mask bits that were merged into an already-seen
+/// text through deduplication. When `LAZY=false`, `on_variant` is never called.
 ///
 /// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY=true` and
 /// `on_variant` triggered early exit. Inside `matcher_rs`, owned strings are usually returned

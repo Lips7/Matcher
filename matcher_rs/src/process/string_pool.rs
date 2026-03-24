@@ -2,7 +2,7 @@
 //!
 //! [`TextVariant`] and [`ProcessedTextMasks`] are the output types of
 //! [`super::process_tree::walk_process_tree`]. The string pool and [`TransformThreadState`]
-//! reduce per-call allocation overhead by recycling buffers across invocations.
+//! reduce allocation churn by recycling buffers across matcher calls.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -37,8 +37,7 @@ pub type ProcessedTextMasks<'a> = Vec<TextVariant<'a>>;
 
 /// Combined thread-local state for `tree_node_indices` and `masks_pool`.
 ///
-/// Merging into a single `thread_local!` eliminates one TLS lookup (~5ns) per
-/// `walk_process_tree` call.
+/// Keeping both in one `thread_local!` avoids a second TLS lookup in the transform walk.
 pub(crate) struct TransformThreadState {
     /// Maps trie node index → text variant index; resized at the start of each
     /// [`super::process_tree::walk_process_tree`] call.

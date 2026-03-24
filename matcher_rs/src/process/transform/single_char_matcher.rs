@@ -283,8 +283,8 @@ impl<'a> Iterator for DeleteFindIter<'a> {
 
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
 ///
-/// Non-digit ASCII is skipped aggressively because only digits and mapped non-ASCII codepoints
-/// can produce output in the current tables.
+/// Non-digit ASCII is skipped aggressively because the current tables only map ASCII digits
+/// and selected non-ASCII codepoints.
 pub(crate) struct PinYinFindIter<'a> {
     /// L1 index slice of the 2-stage page table.
     l1: &'a [u16],
@@ -430,7 +430,7 @@ impl SingleCharMatcher {
         SingleCharMatcher::Pinyin { l1, l2, strings }
     }
 
-    /// Converts a codepoint→value map into a 2-stage page-table byte representation.
+    /// Converts a codepoint→value map into a 2-stage page-table representation.
     ///
     /// Returns `(l1, l2)`. L1 is a `u16[4352]` array (one entry per
     /// 256-codepoint block); non-zero entries index into L2. L2 stores the `u32`

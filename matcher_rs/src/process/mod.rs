@@ -1,10 +1,9 @@
 //! Text normalization pipeline for standardizing input before pattern matching.
 //!
-//! Provides the [`ProcessType`] bitflags that describe
-//! which transformation steps to apply to a text, together with the functions that
-//! execute those steps. Available transformations include noise-character deletion,
-//! Unicode normalization, Traditional→Simplified Chinese conversion (`Fanjian`),
-//! and Pinyin transliteration.
+//! Exposes the [`ProcessType`] bitflags together with the helpers that execute those
+//! transformation steps. The public surface is small: use the one-shot processing
+//! helpers for a single composite pipeline, or build a transform tree when multiple
+//! pipelines should share work.
 pub(crate) mod process_matcher;
 pub(crate) mod process_tree;
 pub(crate) mod process_type;

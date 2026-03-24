@@ -1,7 +1,9 @@
-//! Construction of [`super::SimpleMatcher`] — rule parsing, deduplication, and automaton compilation.
+//! Construction of [`super::SimpleMatcher`] — rule parsing, emitted-pattern deduplication,
+//! and matcher compilation.
 //!
 //! [`SimpleMatcher::new`](super::SimpleMatcher::new) is the entry point; the helpers in this
-//! module perform the four stages: parse → deduplicate → compile automata → flatten entries.
+//! module parse rules, emit transformed sub-patterns, compile the scan engines, and flatten
+//! the rule metadata used during search.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -17,9 +19,10 @@ use crate::process::process_matcher::reduce_text_process_emit;
 use crate::process::{ProcessType, build_process_type_tree};
 
 use super::SimpleMatcher;
+#[cfg(feature = "dfa")]
+use super::types::AC_DFA_PATTERN_THRESHOLD;
 use super::types::{
-    AC_DFA_PATTERN_THRESHOLD, BITMASK_CAPACITY, BytewiseMatcher, PROCESS_TYPE_TABLE_SIZE,
-    PatternEntry, RuleCold, RuleHot,
+    BITMASK_CAPACITY, BytewiseMatcher, PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
 };
 
 /// Intermediate outputs of [`SimpleMatcher::parse_rules`], bundling all data
@@ -36,14 +39,16 @@ impl SimpleMatcher {
     ///
     /// Prefer [`crate::SimpleMatcherBuilder`] for a more ergonomic API.
     ///
-    /// Construction is O(patterns × normalized_variants) and should happen once at startup.
+    /// Construction cost scales with the number of rules and the number of emitted
+    /// sub-pattern variants, so it is intended to happen once and then be reused.
     /// The steps are:
     /// 1. Parse `&`/`~` operators in each pattern into AND and NOT sub-patterns.
     /// 2. For each sub-pattern, generate all normalized text variants via
     ///    [`reduce_text_process_emit`].
     /// 3. Deduplicate all variants across all rules and process types into a single
     ///    pattern set.
-    /// 4. Compile the pattern set into an Aho-Corasick automaton.
+    /// 4. Partition that pattern set into bytewise and charwise buckets, then compile the
+    ///    corresponding matcher engines.
     /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
     ///    pre-processing at match time.
     ///
@@ -57,9 +62,8 @@ impl SimpleMatcher {
     ///   `AsRef<str>` so both `&str` and `Cow<str>` are accepted.
     ///
     /// # Panics
-    /// Panics if the Aho-Corasick automaton fails to compile. This should
-    /// only happen if the de-duplicated pattern set is internally inconsistent, which cannot
-    /// occur with well-formed input.
+    /// Panics if one of the internal matcher builders rejects the deduplicated pattern set.
+    /// With normal UTF-8 input this should not happen.
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> SimpleMatcher
@@ -263,10 +267,11 @@ impl SimpleMatcher {
         }
     }
 
-    /// Partitions deduplicated patterns by character content and compiles automata.
+    /// Partitions deduplicated patterns by character content and compiles the scan engines.
     ///
-    /// ASCII-only patterns go to the bytewise engine (fast for English text);
-    /// patterns with any non-ASCII byte go to the charwise DAAC (fast for CJK text).
+    /// ASCII-only patterns go to the bytewise engine. Patterns with any non-ASCII byte go
+    /// to the charwise matcher. With the `dfa` feature, small ASCII sets use AC DFA and
+    /// larger ones use the DAAC bytewise matcher.
     fn compile_automata(
         dedup_patterns: &[Cow<'_, str>],
     ) -> (
@@ -332,7 +337,7 @@ impl SimpleMatcher {
         (bytewise_matcher, charwise_matcher)
     }
 
-    /// Flattens `Vec<Vec<PatternEntry>>` into a single SOA layout for cache-friendly scan.
+    /// Flattens `Vec<Vec<PatternEntry>>` into one contiguous entry array plus per-pattern ranges.
     ///
     /// Returns `(ac_dedup_entries, ac_dedup_ranges)` where `ac_dedup_ranges[i] = (start, len)`
     /// maps automaton pattern index `i` to its slice of [`PatternEntry`] records.

@@ -10,27 +10,27 @@ use std::io::Result;
 /// ### Binary Generation Strategy:
 /// 1. **Normalize (Complex Rules)**:
 ///    Rules in `NORM.txt` and `NUM-NORM.txt` are compiled into sorted pattern/replacement
-///    text files. When the `dfa` feature is **disabled**, a `daachorse` double-array
-///    Aho-Corasick state machine is also serialized to binary for zero-cost deserialization
-///    at startup. When `dfa` is enabled, only the text files are written and the DFA is
-///    built from them at startup.
+///    text files. When the `dfa` feature is **disabled**, a serialized `daachorse`
+///    matcher is also written. When `dfa` is enabled, only the text files are written and
+///    the DFA is built lazily from them on first use.
 ///
 /// 2. **Fanjian (Traditional to Simplified Chinese)**:
 ///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
 ///    - `L1`: A page directory mapping character blocks to `L2` indices.
 ///    - `L2`: A data array containing the target character code points.
-///      This allows O(1) character conversion via direct memory indexing.
+///      The runtime decodes these artifacts into lookup tables on first use.
 ///
 /// 3. **Pinyin & PinyinChar**:
 ///    Character-to-string mappings are stored using a hybrid structure:
 ///    - A **Concatenated String Buffer**: Stores all Pinyin strings as a single UTF-8 block.
 ///    - A **2-Stage Page Table**: Maps character code points to a packed `u32` containing
 ///      both the `offset` into the string buffer and the `length` of the Pinyin string.
+///      `PinYinChar` trims boundary spaces after the table is decoded at runtime.
 ///
 /// 4. **Text Delete (BitSet)**:
-///    Deletion rules and whitespace are compiled into a **Global BitSet** (139 KB) covering the
-///    entire Unicode spectrum (U+0000 to U+10FFFF). Each bit represents whether a character
-///    should be discarded during processing, enabling branchless filtering.
+///    Deletion rules and whitespace are compiled into a **Global BitSet** (139 KB) covering
+///    the Unicode range U+0000 to U+10FFFF. Each bit represents whether a character should
+///    be discarded during processing.
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");
@@ -181,8 +181,8 @@ fn main() -> Result<()> {
 /// - **L2** (`{prefix}_l2.bin`): dense `u32` pages, each 256 entries. Entry at
 ///   `page * 256 + (cp & 0xFF)` holds the mapping value for codepoint `cp`.
 ///
-/// This provides O(1) per-codepoint lookup with a compact footprint, ideal for Fanjian
-/// (Traditional→Simplified) and Pinyin (codepoint→packed syllable offset/length).
+/// This produces compact lookup artifacts for Fanjian (Traditional→Simplified) and
+/// Pinyin (codepoint→packed syllable offset/length).
 ///
 /// # Arguments
 /// * `map` — sparse codepoint-to-value mapping; keys are Unicode scalar values (`u32`),

@@ -6,11 +6,14 @@ use bitflags::bitflags;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 bitflags! {
-    /// Bitflags controlling which text normalization steps to apply before matching.
+    /// Bitflags controlling which text-transformation steps to apply before matching.
     ///
-    /// Flags can be combined freely. The matcher builds an internal transformation DAG
-    /// from the active flag set and reuses shared intermediate results (e.g., a
-    /// `Fanjian | Delete` rule and a `Fanjian | Normalize` rule share the Fanjian output).
+    /// Flags can be combined freely. The matcher decomposes each composite value into
+    /// single-step edges, builds a shared transform tree from the active set, and reuses
+    /// intermediate results where prefixes overlap.
+    ///
+    /// `DeleteNormalize` and `FanjianDeleteNormalize` are named aliases for common
+    /// combinations, not separate transformation primitives.
     ///
     /// # Examples
     ///
@@ -39,10 +42,12 @@ bitflags! {
         /// Traditional Chinese → Simplified Chinese conversion.
         const Fanjian = 0b00000010;
 
-        /// Remove noise characters and whitespace.
+        /// Remove the codepoints configured in the Delete tables, including the built-in
+        /// whitespace set.
         const Delete = 0b00000100;
 
-        /// Unicode normalization (full-width→half-width, digit normalization, etc.).
+        /// Apply the Normalize replacement tables (for example full-width forms and
+        /// digit-like variants).
         const Normalize = 0b00001000;
 
         /// Shorthand for `Delete | Normalize`.
