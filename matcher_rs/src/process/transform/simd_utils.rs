@@ -1,3 +1,9 @@
+//! SIMD-accelerated skip helpers for the text transformation pipeline.
+//!
+//! [`skip_ascii_simd`], [`skip_non_digit_ascii_simd`], and [`skip_ascii_non_delete_simd`]
+//! dispatch to the best available kernel at compile time (`AVX2` on x86-64, `NEON` on
+//! ARM64 with `simd_runtime_dispatch`, or a portable fallback elsewhere).
+
 #[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 use std::simd::Simd;
 #[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]

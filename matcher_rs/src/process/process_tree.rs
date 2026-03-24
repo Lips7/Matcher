@@ -1,3 +1,10 @@
+//! Transformation trie construction and BFS traversal.
+//!
+//! [`build_process_type_tree`] builds a flat-array trie from a set of [`ProcessType`] bitmasks.
+//! [`walk_process_tree`] traverses it, applying each transformation step once per unique prefix
+//! path so that shared intermediates (e.g. `Fanjian` for both `Fanjian|Delete` and
+//! `Fanjian|Normalize`) are computed only once.
+
 use std::borrow::Cow;
 use std::collections::HashSet;
 
@@ -38,7 +45,7 @@ impl ProcessTypeBitNode {
     ///
     /// The default encoding stores `1u64 << pt.bits()`, which can use bits up to 63 for
     /// composite [`ProcessType`] values. A sequential index keeps bit positions small (0..N
-    /// where N is the number of unique composite types) so [`PatternEntry`] can store the
+    /// where N is the number of unique composite types) so `PatternEntry` can store the
     /// index as a `u8` rather than a `u64`, halving the entry size.
     ///
     /// `pt_index_table[pt.bits()]` must contain the sequential index for every composite

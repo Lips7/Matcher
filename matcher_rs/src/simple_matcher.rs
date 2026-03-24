@@ -1,3 +1,9 @@
+//! [`SimpleMatcher`] and [`SimpleResult`] — the public matching API.
+//!
+//! Prefer constructing via [`crate::SimpleMatcherBuilder`]. The type aliases
+//! [`SimpleTable`] and [`SimpleTableSerde`] describe the rule-map format accepted
+//! by [`SimpleMatcher::new`].
+
 use std::borrow::Cow;
 
 use daachorse::CharwiseDoubleArrayAhoCorasick;
@@ -14,10 +20,6 @@ pub use types::{SimpleTable, SimpleTableSerde};
 
 /// A single match returned by [`SimpleMatcher::process`].
 ///
-/// # Fields
-/// * `word_id` — the caller-assigned identifier from the input [`SimpleTable`].
-/// * `word` — the original pattern string, borrowed from the compiled rule.
-///
 /// # Examples
 ///
 /// ```rust
@@ -33,7 +35,9 @@ pub use types::{SimpleTable, SimpleTableSerde};
 /// ```
 #[derive(Serialize, Debug)]
 pub struct SimpleResult<'a> {
+    /// Caller-assigned identifier from the input [`SimpleTable`].
     pub word_id: u32,
+    /// The original pattern string, borrowed from the compiled rule.
     pub word: Cow<'a, str>,
 }
 
@@ -60,7 +64,7 @@ pub struct SimpleResult<'a> {
 /// ## Two-Pass Matching
 ///
 /// **Pass 1 — Scan**: The input text is first transformed through the configured
-/// [`ProcessType`] pipelines (producing up to 16 variants). All variants are scanned
+/// [`crate::ProcessType`] pipelines (producing up to 16 variants). All variants are scanned
 /// simultaneously with a single Aho-Corasick pass. Each hit updates a
 /// generation-stamped state matrix for the affected rule.
 ///

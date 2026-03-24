@@ -1,3 +1,5 @@
+//! [`ProcessType`] bitflags definition and its serde/display implementations.
+
 use std::fmt::Display;
 
 use bitflags::bitflags;

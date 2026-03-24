@@ -1,3 +1,8 @@
+//! [`ProcessMatcher`] enum, per-type caching, and public text-processing functions.
+//!
+//! Public API: [`text_process`], [`reduce_text_process`], [`reduce_text_process_emit`].
+//! Internal API: [`get_process_matcher`] (returns cached `&'static ProcessMatcher`).
+
 use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
 use std::collections::HashMap;
@@ -256,7 +261,7 @@ pub(crate) fn get_process_matcher(process_type_bit: ProcessType) -> &'static Pro
 /// This is the "final result only" helper: intermediate variants are discarded.
 ///
 /// For use cases where multiple composite types share common prefixes, prefer
-/// [`walk_process_tree`] which avoids redundant intermediate computations.
+/// [`crate::walk_process_tree`] which avoids redundant intermediate computations.
 ///
 /// # Examples
 ///
@@ -344,7 +349,7 @@ fn reduce_text_process_inner<'a>(
 /// the text unchanged add no entry.
 /// Use this when you want a step-by-step view of the pipeline for a single composite type.
 ///
-/// For generating all variants needed for matching, prefer [`walk_process_tree`].
+/// For generating all variants needed for matching, prefer [`crate::walk_process_tree`].
 ///
 /// # Examples
 ///

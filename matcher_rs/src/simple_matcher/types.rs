@@ -1,3 +1,8 @@
+//! Internal types and constants for [`super::SimpleMatcher`].
+//!
+//! All items here are `pub(super)`, visible within the `simple_matcher` module only.
+//! Public-facing types ([`SimpleTable`], [`SimpleTableSerde`]) are the exception.
+
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -39,7 +44,7 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 
 /// Number of slots in the sequential `ProcessType` index table.
 ///
-/// [`ProcessType`](crate::ProcessType) bit flags occupy positions 0–7 (8 single-bit flags), but
+/// [`crate::ProcessType`] bit flags occupy positions 0–7 (8 single-bit flags), but
 /// the bitflag `.bits()` value of a composite type can be up to 63 (all 6 flags set = 0b111111 = 63).
 /// The table must be large enough to index any composite `.bits()` value directly.
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
@@ -85,19 +90,18 @@ pub(super) enum BytewiseMatcher {
 /// Generation IDs implement a sparse-set pattern: comparing a field against the current
 /// `SimpleMatchState::generation` determines whether the field was written during this
 /// search without requiring a full zero-fill between calls.
-///
-/// * `matrix_generation` — set to the current generation when this rule is first touched.
-/// * `not_generation` — set to the current generation when a NOT sub-pattern fires,
-///   permanently disqualifying this rule for the remainder of the search.
-/// * `satisfied_mask` — bitmask of AND sub-patterns (up to 64) satisfied so far.
-/// * `satisfied_generation` — set to the current generation when the rule is fully
-///   satisfied (bitmask fast-path only, rules without NOT segments). Enables a
-///   single-comparison skip in `process_match` instead of a 4-condition check.
 #[derive(Default, Clone, Copy)]
 pub(super) struct WordState {
+    /// Set to the current generation when this rule is first touched (matrix path only).
     pub(super) matrix_generation: u32,
+    /// Set to the current generation when a NOT sub-pattern fires, permanently
+    /// disqualifying this rule for the remainder of the search.
     pub(super) not_generation: u32,
+    /// Set to the current generation when the rule is fully satisfied (bitmask fast-path
+    /// only, rules without NOT segments). Enables a single-comparison skip in
+    /// `process_match` instead of a 4-condition check.
     pub(super) satisfied_generation: u32,
+    /// Bitmask of AND sub-patterns (up to 64) satisfied so far this generation.
     pub(super) satisfied_mask: u64,
 }
 
@@ -105,18 +109,17 @@ pub(super) struct WordState {
 ///
 /// Allocated once and stored in a `thread_local!`; reused across calls via the generation
 /// trick in [`WordState`] to avoid clearing the full state between searches.
-///
-/// * `word_states` — flat array indexed by `rule_idx`; one [`WordState`] per rule.
-/// * `matrix` — fallback storage for rules with >64 AND-splits or repeated sub-patterns;
-///   a flattened `(num_splits × num_text_variants)` counter matrix per rule.
-/// * `touched_indices` — indices of rules written during the current generation; iterated
-///   in Pass 2 to avoid scanning the entire `word_states` array.
-/// * `generation` — monotonically incrementing ID; wrapping to `u32::MAX` triggers a
-///   full reset of all generation fields.
 pub(super) struct SimpleMatchState {
+    /// Flat array indexed by `rule_idx`; one [`WordState`] per rule.
     pub(super) word_states: Vec<WordState>,
+    /// Fallback counter storage for rules with >64 AND-splits or repeated sub-patterns;
+    /// a flattened `(num_splits × num_text_variants)` counter matrix per rule.
     pub(super) matrix: Vec<TinyVec<[i32; 16]>>,
+    /// Indices of rules written during the current generation; iterated in Pass 2 to avoid
+    /// scanning the entire `word_states` array.
     pub(super) touched_indices: Vec<usize>,
+    /// Monotonically incrementing ID; wrapping to `u32::MAX` triggers a full reset of all
+    /// generation fields before incrementing to `1`.
     pub(super) generation: u32,
 }
 
@@ -165,10 +168,15 @@ thread_local! {
 /// `scan_variant` and `process_match`.
 #[derive(Clone, Copy)]
 pub(super) struct ScanContext {
+    /// Index of this variant within the [`crate::ProcessedTextMasks`] collection.
     pub(super) text_index: usize,
+    /// Bitmask of sequential [`crate::ProcessType`] indices for this variant.
     pub(super) process_type_mask: u64,
+    /// Total number of text variants being scanned this call.
     pub(super) num_variants: usize,
+    /// If `true`, halt scanning as soon as any rule is fully satisfied.
     pub(super) exit_early: bool,
+    /// Whether the scanned text is entirely ASCII; selects the bytewise automaton path.
     pub(super) is_ascii: bool,
 }
 
@@ -176,33 +184,30 @@ pub(super) struct ScanContext {
 ///
 /// Kept separate from [`RuleCold`] so that the hot data fits in fewer cache lines
 /// when scanning large rule sets.
-///
-/// * `segment_counts` — per-sub-pattern counters. Indices `0..and_count` are AND segments
-///   (initial value +1, decremented toward ≤0 to signal satisfaction); indices
-///   `and_count..` are NOT segments (initial value 0, incremented toward >0 to signal
-///   disqualification).
-/// * `and_count` — boundary in `segment_counts` separating AND from NOT segments.
-/// * `expected_mask` — bitmask of AND segments that must all reach ≤0. Non-zero only
-///   when `and_count ≤ 64` and all AND segments appear exactly once (the common, fast case).
-/// * `use_matrix` — `true` when the rule requires the full counter matrix (>64 segments,
-///   repeated sub-patterns across `&`-splits, or a non-trivial NOT pattern).
-/// * `num_splits` — `segment_counts.len()` cached to avoid pointer chasing.
 #[derive(Debug, Clone)]
 pub(super) struct RuleHot {
+    /// Per-sub-pattern counters. Indices `0..and_count` are AND segments (initial value
+    /// +1, decremented toward ≤0 to signal satisfaction); indices `and_count..` are NOT
+    /// segments (initial value 0, incremented toward >0 to signal disqualification).
     pub(super) segment_counts: Vec<i32>,
+    /// Boundary in `segment_counts` separating AND segment indices from NOT segment indices.
     pub(super) and_count: usize,
+    /// Bitmask of AND segments that must all reach ≤0. Non-zero only when `and_count ≤ 64`
+    /// and all AND segments appear exactly once (the common, fast case).
     pub(super) expected_mask: u64,
+    /// `true` when the rule requires the full counter matrix (>64 segments, repeated
+    /// sub-patterns across `&`-splits, or a non-trivial NOT pattern).
     pub(super) use_matrix: bool,
+    /// `segment_counts.len()`, cached to avoid pointer chasing in the hot loop.
     pub(super) num_splits: u16,
 }
 
 /// Cold result-construction fields for a single pattern rule, accessed only in Pass 2.
-///
-/// * `word_id` — caller-assigned identifier returned in [`super::SimpleResult`].
-/// * `word` — the original pattern string (stored for inclusion in results).
 #[derive(Debug, Clone)]
 pub(super) struct RuleCold {
+    /// Caller-assigned identifier returned in [`super::SimpleResult`].
     pub(super) word_id: u32,
+    /// The original pattern string, stored for inclusion in match results.
     pub(super) word: String,
 }
 
@@ -210,18 +215,16 @@ pub(super) struct RuleCold {
 ///
 /// Stored in the flat `ac_dedup_entries` array; a `(start, len)` range in
 /// `ac_dedup_ranges` maps each automaton pattern index to its slice of entries.
-///
-/// * `rule_idx` — index into `rule_hot`/`rule_cold` identifying the owning rule.
-/// * `offset` — index into `segment_counts` of the owning rule; identifies which
-///   AND or NOT sub-pattern was matched.
-/// * `pt_index` — sequential index into the compact process-type table built during
-///   [`super::SimpleMatcher::new`]. Used as `1u64 << pt_index` to compare against the
-///   text variant's `process_type_mask` and discard hits from the wrong pipeline.
-///   Replaces the former `process_type_mask: u64` field, shrinking the struct from
-///   16 bytes to 8 bytes and doubling entries per cache line.
+/// At 8 bytes this struct fits two entries per cache line (vs. 16 bytes for the
+/// former `process_type_mask: u64` field layout).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {
+    /// Index into `rule_hot`/`rule_cold` identifying the owning rule.
     pub(super) rule_idx: u32,
+    /// Index into `segment_counts` of the owning rule; identifies which AND or NOT
+    /// sub-pattern was matched.
     pub(super) offset: u16,
+    /// Sequential process-type table index built during [`super::SimpleMatcher::new`];
+    /// used as `1u64 << pt_index` to filter hits from the wrong pipeline.
     pub(super) pt_index: u8,
 }

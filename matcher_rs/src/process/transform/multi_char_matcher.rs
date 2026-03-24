@@ -1,3 +1,8 @@
+//! Multi-character substitution engine backed by a compiled Aho-Corasick automaton.
+//!
+//! [`MultiCharMatcher`] provides leftmost-longest matching for the Normalize pipeline step.
+//! Engine selection (DAAC charwise vs. DFA) is controlled by the `dfa` feature flag.
+
 #[cfg(feature = "runtime_build")]
 use std::collections::HashMap;
 

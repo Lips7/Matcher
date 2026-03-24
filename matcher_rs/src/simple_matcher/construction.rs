@@ -1,3 +1,8 @@
+//! Construction of [`super::SimpleMatcher`] — rule parsing, deduplication, and automaton compilation.
+//!
+//! [`SimpleMatcher::new`](super::SimpleMatcher::new) is the entry point; the helpers in this
+//! module perform the four stages: parse → deduplicate → compile automata → flatten entries.
+
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 

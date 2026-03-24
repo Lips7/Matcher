@@ -1,3 +1,8 @@
+//! Single-character lookup engines for Fanjian, Delete, and Pinyin transformations.
+//!
+//! [`SingleCharMatcher`] provides O(1) per-codepoint dispatch via 2-stage page tables
+//! (Fanjian/Pinyin) and a flat BitSet covering all Unicode planes (Delete).
+
 use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
 use std::collections::{HashMap, HashSet};

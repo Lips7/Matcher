@@ -1,3 +1,8 @@
+//! Hot-path scan and rule evaluation for [`super::SimpleMatcher`].
+//!
+//! Implements the two-pass matching loop: Pass 1 runs the automaton over all text variants;
+//! Pass 2 iterates touched rules and collects every satisfied result.
+
 use std::borrow::Cow;
 
 use tinyvec::TinyVec;

@@ -1,3 +1,8 @@
+//! Fluent builder API for constructing a [`crate::SimpleMatcher`].
+//!
+//! [`SimpleMatcherBuilder`] accumulates patterns grouped by [`crate::ProcessType`] pipeline
+//! and compiles them into an optimized automaton in one shot via [`SimpleMatcherBuilder::build`].
+
 use std::collections::HashMap;
 
 use crate::{ProcessType, SimpleMatcher};

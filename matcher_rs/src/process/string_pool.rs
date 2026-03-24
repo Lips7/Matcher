@@ -1,3 +1,9 @@
+//! Thread-local string pool and text variant types for the transformation pipeline.
+//!
+//! [`TextVariant`] and [`ProcessedTextMasks`] are the output types of
+//! [`super::process_tree::walk_process_tree`]. The string pool and [`TransformThreadState`]
+//! reduce per-call allocation overhead by recycling buffers across invocations.
+
 use std::borrow::Cow;
 use std::cell::RefCell;
 
@@ -11,15 +17,15 @@ const STRING_POOL_MAX: usize = 128;
 const MASKS_POOL_MAX: usize = 16;
 
 /// A text variant produced by the transformation pipeline, paired with metadata for matching.
-///
-/// `text` is the transformed string for this variant. `mask` is the bitmask of
-/// [`ProcessType`](crate::ProcessType) indices that produced it (used to filter which rules are eligible).
-/// `is_ascii` records whether the text is all-ASCII so callers can skip the charwise
-/// automaton without a redundant byte scan.
 #[derive(Clone)]
 pub struct TextVariant<'a> {
+    /// The transformed string for this variant.
     pub text: Cow<'a, str>,
+    /// Bitmask of sequential [`crate::ProcessType`] indices that produced this variant;
+    /// used by the matcher to filter which rules are eligible for this text.
     pub mask: u64,
+    /// Whether `text` is entirely ASCII; callers use this to skip the charwise automaton
+    /// without a redundant byte scan.
     pub is_ascii: bool,
 }
 
@@ -33,7 +39,10 @@ pub type ProcessedTextMasks<'a> = Vec<TextVariant<'a>>;
 /// Merging into a single `thread_local!` eliminates one TLS lookup (~5ns) per
 /// `walk_process_tree` call.
 pub(crate) struct TransformThreadState {
+    /// Maps trie node index → text variant index; resized at the start of each
+    /// [`super::process_tree::walk_process_tree`] call.
     pub(crate) tree_node_indices: Vec<usize>,
+    /// Recycled empty [`ProcessedTextMasks`] buffers; bounded by `MASKS_POOL_MAX`.
     pub(crate) masks_pool: Vec<ProcessedTextMasks<'static>>,
 }
 
@@ -93,7 +102,7 @@ pub(crate) fn return_string_to_pool(s: String) {
 /// Drains a [`ProcessedTextMasks`] collection and returns all owned strings to the pool.
 ///
 /// This is only needed inside `matcher_rs`, where traversal output is frequently recycled
-/// between calls. External users of [`walk_process_tree`] can drop the returned vector.
+/// between calls. External users of [`crate::walk_process_tree`] can drop the returned vector.
 pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
     for TextVariant { text: cow, .. } in text_masks.drain(..) {
         if let Cow::Owned(s) = cow {
