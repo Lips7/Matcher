@@ -31,10 +31,11 @@ pub struct TextVariant<'a> {
 
 /// All text variants produced for a single input by the transformation pipeline.
 ///
-/// Up to 16 distinct variants are possible given the number of [`ProcessType`](crate::ProcessType) flags.
+/// The number of distinct variants depends on the active [`ProcessType`](crate::ProcessType)
+/// configuration and how many intermediate results are shared or deduplicated.
 pub type ProcessedTextMasks<'a> = Vec<TextVariant<'a>>;
 
-/// Combined thread-local state for `TREE_NODE_INDICES` and `MASKS_POOL`.
+/// Combined thread-local state for `tree_node_indices` and `masks_pool`.
 ///
 /// Merging into a single `thread_local!` eliminates one TLS lookup (~5ns) per
 /// `walk_process_tree` call.

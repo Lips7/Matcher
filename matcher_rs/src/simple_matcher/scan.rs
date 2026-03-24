@@ -90,9 +90,9 @@ impl SimpleMatcher {
         false
     }
 
-    /// Scans one pre-processed text variant through the automaton and evaluates rule counters.
+    /// Scans one pre-processed text variant through the automaton and updates rule counters.
     ///
-    /// This is the inner loop of Pass 1 + Pass 2 for a single text variant produced by the
+    /// This is the inner loop of Pass 1 for a single text variant produced by the
     /// transformation pipeline.
     ///
     /// # Arguments
@@ -267,10 +267,16 @@ impl SimpleMatcher {
         false
     }
 
-    /// Returns `true` if all AND sub-patterns of `rule` have been satisfied.
+    /// Returns `true` if `rule` is fully satisfied for this generation.
     ///
-    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 unique AND
-    /// sub-patterns); falls back to scanning the flat counter matrix otherwise.
+    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with ≤64 AND segments):
+    /// checks that every AND segment's bit is set in `satisfied_mask`.
+    ///
+    /// Falls back to the counter matrix when `expected_mask == 0`, iterating all segments
+    /// (AND and NOT). For AND segments the counter must be ≤0 in at least one variant;
+    /// for NOT segments the counter starts ≤0 and remains so unless the NOT sub-pattern
+    /// fires enough times to exceed the threshold. Callers in Pass 2 typically pre-filter
+    /// disqualified rules via `not_generation` before reaching this check.
     #[inline(always)]
     pub(super) fn is_rule_satisfied(
         rule: &RuleHot,

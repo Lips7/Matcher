@@ -44,8 +44,8 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 
 /// Number of slots in the sequential `ProcessType` index table.
 ///
-/// [`crate::ProcessType`] bit flags occupy positions 0–7 (8 single-bit flags), but
-/// the bitflag `.bits()` value of a composite type can be up to 63 (all 6 flags set = 0b111111 = 63).
+/// [`crate::ProcessType`] has 6 single-bit flags at bit positions 0–5. The bitflag
+/// `.bits()` value of a composite type can be up to 0b00111111 = 63.
 /// The table must be large enough to index any composite `.bits()` value directly.
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 
@@ -187,13 +187,14 @@ pub(super) struct ScanContext {
 #[derive(Debug, Clone)]
 pub(super) struct RuleHot {
     /// Per-sub-pattern counters. Indices `0..and_count` are AND segments (initial value
-    /// +1, decremented toward ≤0 to signal satisfaction); indices `and_count..` are NOT
-    /// segments (initial value 0, incremented toward >0 to signal disqualification).
+    /// equal to the required occurrence count, decremented toward ≤0 to signal satisfaction);
+    /// indices `and_count..` are NOT segments (initial value 0 minus the required absence
+    /// count, incremented toward >0 to signal disqualification).
     pub(super) segment_counts: Vec<i32>,
     /// Boundary in `segment_counts` separating AND segment indices from NOT segment indices.
     pub(super) and_count: usize,
-    /// Bitmask of AND segments that must all reach ≤0. Non-zero only when `and_count ≤ 64`
-    /// and all AND segments appear exactly once (the common, fast case).
+    /// Bitmask of AND segments that must all reach ≤0. Non-zero when `and_count > 0` and
+    /// `and_count ≤ 64`; zero otherwise (more than 64 AND segments or no AND segments).
     pub(super) expected_mask: u64,
     /// `true` when the rule requires the full counter matrix (>64 segments, repeated
     /// sub-patterns across `&`-splits, or a non-trivial NOT pattern).
@@ -215,7 +216,7 @@ pub(super) struct RuleCold {
 ///
 /// Stored in the flat `ac_dedup_entries` array; a `(start, len)` range in
 /// `ac_dedup_ranges` maps each automaton pattern index to its slice of entries.
-/// At 8 bytes this struct fits two entries per cache line (vs. 16 bytes for the
+/// At 8 bytes this struct fits eight entries per cache line (vs. four entries for the
 /// former `process_type_mask: u64` field layout).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {

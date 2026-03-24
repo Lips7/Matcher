@@ -1,20 +1,25 @@
 use std::io::Result;
 
-/// The `main` function serves as the build script for the `matcher_rs` project.
-/// Its primary responsibility is to transform raw text transformation rules (from the `process_map` directory)
-/// into highly optimized, high-performance binary structures for text processing.
+/// Build script for `matcher_rs`.
+///
+/// Transforms raw text-map files in `process_map/` into pre-compiled binary structures
+/// embedded at compile time by `constants.rs`. When the `runtime_build` feature is enabled,
+/// this function is a no-op (tables are built at runtime instead) and no binary artifacts
+/// are generated.
 ///
 /// ### Binary Generation Strategy:
 /// 1. **Normalize (Complex Rules)**:
-///    Rules in `NORM.txt` and `NUM-NORM.txt` contain multi-character sequences and overlapping patterns
-///    (e.g., Unicode combining marks). These are compiled into a `daachorse` Double-Array Aho-Corasick
-///    state machine, which supports aggressive leftmost-longest matching.
+///    Rules in `NORM.txt` and `NUM-NORM.txt` are compiled into sorted pattern/replacement
+///    text files. When the `dfa` feature is **disabled**, a `daachorse` double-array
+///    Aho-Corasick state machine is also serialized to binary for zero-cost deserialization
+///    at startup. When `dfa` is enabled, only the text files are written and the DFA is
+///    built from them at startup.
 ///
 /// 2. **Fanjian (Traditional to Simplified Chinese)**:
 ///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
 ///    - `L1`: A page directory mapping character blocks to `L2` indices.
 ///    - `L2`: A data array containing the target character code points.
-///      This allows $O(1)$ character conversion via direct memory indexing.
+///      This allows O(1) character conversion via direct memory indexing.
 ///
 /// 3. **Pinyin & PinyinChar**:
 ///    Character-to-string mappings are stored using a hybrid structure:
@@ -23,9 +28,9 @@ use std::io::Result;
 ///      both the `offset` into the string buffer and the `length` of the Pinyin string.
 ///
 /// 4. **Text Delete (BitSet)**:
-///    Deletion rules and whitespace are compiled into a **Global BitSet** (139KB) covering the
-///    entire Unicode spectrum (`0` to `U+10FFFF`). Each bit represents whether a character
-///    should be discarded during processing, enabling extremely fast, branchless filtering.
+///    Deletion rules and whitespace are compiled into a **Global BitSet** (139 KB) covering the
+///    entire Unicode spectrum (U+0000 to U+10FFFF). Each bit represents whether a character
+///    should be discarded during processing, enabling branchless filtering.
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");

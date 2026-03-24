@@ -64,8 +64,8 @@ pub struct SimpleResult<'a> {
 /// ## Two-Pass Matching
 ///
 /// **Pass 1 — Scan**: The input text is first transformed through the configured
-/// [`crate::ProcessType`] pipelines (producing up to 16 variants). All variants are scanned
-/// simultaneously with a single Aho-Corasick pass. Each hit updates a
+/// [`crate::ProcessType`] pipelines (producing multiple text variants). All variants are scanned
+/// simultaneously in a single scan phase (bytewise + charwise automata). Each hit updates a
 /// generation-stamped state matrix for the affected rule.
 ///
 /// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND

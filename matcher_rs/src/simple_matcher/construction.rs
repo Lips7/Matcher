@@ -47,10 +47,10 @@ impl SimpleMatcher {
     /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
     ///    pre-processing at match time.
     ///
-    /// One subtle detail is that sub-patterns are indexed under `process_type -
-    /// ProcessType::Delete`, not the full `process_type`. `Delete` is applied to the input
-    /// text variants before the automaton scan, so the indexed sub-pattern should stay in the
-    /// same deleted-text coordinate space rather than being delete-processed twice.
+    /// One subtle detail: sub-patterns are indexed under `process_type - ProcessType::Delete`,
+    /// not the full `process_type`. Each sub-pattern is transformed with all steps except
+    /// Delete, so it lives in the same coordinate space as the delete-transformed input text.
+    /// Applying Delete a second time to the sub-pattern would corrupt the match.
     ///
     /// # Arguments
     /// * `process_type_word_map` — input rule table; the value type `I` must implement

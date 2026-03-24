@@ -125,8 +125,8 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 
 /// Inserts a transformed text into `text_masks`, deduplicating against existing entries.
 ///
-/// If `changed` is `Some(pt)` and `pt` already exists in `text_masks`, the string is
-/// returned to the pool and the existing index is returned. Otherwise `pt` is appended.
+/// If `changed` is `Some(text)` and `text` already exists in `text_masks`, the string is
+/// returned to the pool and the existing index is returned. Otherwise `text` is appended.
 /// If `changed` is `None`, `current_index` is returned unchanged.
 ///
 /// `is_ascii` indicates whether `processed` contains only ASCII bytes; stored alongside

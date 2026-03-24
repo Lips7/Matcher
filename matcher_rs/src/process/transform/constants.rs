@@ -17,7 +17,7 @@
 #[cfg(feature = "runtime_build")]
 pub(crate) const FANJIAN: &str = include_str!("../../../process_map/FANJIAN.txt");
 
-/// Newline-separated characters (and ranges) that should be removed by the Delete step.
+/// Newline-separated characters that should be removed by the Delete step.
 ///
 /// Used under `runtime_build` to populate the Delete BitSet.
 #[cfg(feature = "runtime_build")]
@@ -44,8 +44,9 @@ pub(crate) const PINYIN: &str = include_str!("../../../process_map/PINYIN.txt");
 
 /// All Unicode codepoints considered whitespace for the Delete step.
 ///
-/// Includes standard ASCII control characters plus a wide range of Unicode space variants
-/// (General Punctuation U+2000–U+200F, line/paragraph separators, ideographic space, etc.).
+/// Includes standard ASCII control characters plus selected Unicode space variants
+/// (selected codepoints from U+2000–U+200F such as U+200D/U+200F, line/paragraph separators,
+/// ideographic space, etc.).
 /// Loaded at runtime under `runtime_build` to populate the Delete BitSet alongside
 /// [`TEXT_DELETE`].
 #[cfg(feature = "runtime_build")]
