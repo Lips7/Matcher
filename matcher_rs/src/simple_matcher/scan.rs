@@ -1,19 +1,21 @@
 use std::borrow::Cow;
 
+use tinyvec::TinyVec;
+
 use crate::process::ProcessedTextMasks;
 
-use super::SimpleMatcher;
 use super::types::{
     BITMASK_CAPACITY, BytewiseMatcher, PatternEntry, RuleHot, SIMPLE_MATCH_STATE, ScanContext,
     SimpleMatchState, WordState,
 };
+use super::{SimpleMatcher, SimpleResult};
 
 impl SimpleMatcher {
     /// Runs both Pass 1 and Pass 2, appending all satisfied rules to `results`.
     pub(super) fn process_preprocessed_into<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        results: &mut Vec<super::SimpleResult<'a>>,
+        results: &mut Vec<SimpleResult<'a>>,
     ) {
         SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
@@ -36,7 +38,7 @@ impl SimpleMatcher {
                     num_variants,
                 ) {
                     let cold = &self.rule_cold[rule_idx];
-                    results.push(super::SimpleResult {
+                    results.push(SimpleResult {
                         word_id: cold.word_id,
                         word: Cow::Borrowed(&cold.word),
                     });
@@ -268,7 +270,7 @@ impl SimpleMatcher {
     pub(super) fn is_rule_satisfied(
         rule: &RuleHot,
         word_states: &[WordState],
-        matrix: &[tinyvec::TinyVec<[i32; 16]>],
+        matrix: &[TinyVec<[i32; 16]>],
         rule_idx: usize,
         num_variants: usize,
     ) -> bool {
@@ -293,7 +295,7 @@ impl SimpleMatcher {
     #[cold]
     #[inline(never)]
     pub(super) fn init_matrix(
-        flat_matrix: &mut tinyvec::TinyVec<[i32; 16]>,
+        flat_matrix: &mut TinyVec<[i32; 16]>,
         segment_counts: &[i32],
         num_variants: usize,
     ) {

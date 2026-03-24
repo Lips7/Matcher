@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use tinyvec::TinyVec;
 
@@ -20,8 +21,7 @@ use crate::process::ProcessType;
 /// table.entry(ProcessType::None).or_default().insert(1, "hello");
 /// table.entry(ProcessType::Fanjian).or_default().insert(2, "漢字");
 /// ```
-pub type SimpleTable<'a> =
-    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, &'a str>>;
+pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 
 /// Owned/borrowed variant of [`SimpleTable`] suitable for serialization.
 ///
@@ -29,8 +29,7 @@ pub type SimpleTable<'a> =
 /// `&'a str` so that both owned and borrowed patterns can be stored. Useful when
 /// loading rules from a deserialized source (e.g. JSON) where the strings are
 /// owned `String` values.
-pub type SimpleTableSerde<'a> =
-    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, Cow<'a, str>>>;
+pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
 /// Threshold for selecting the bitmask fast-path over the matrix fallback.
 ///
