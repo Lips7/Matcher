@@ -1,3 +1,6 @@
+#[cfg(feature = "runtime_build")]
+use std::collections::HashMap;
+
 use aho_corasick::{AhoCorasick, FindIter as AhoCorasickFindIter};
 #[cfg(feature = "dfa")]
 use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
@@ -10,8 +13,6 @@ use daachorse::{
 use daachorse::{
     CharwiseDoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
-#[cfg(feature = "runtime_build")]
-use std::collections::HashMap;
 
 /// Underlying automaton variants for [`MultiCharMatcher`].
 #[derive(Clone)]
