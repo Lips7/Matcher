@@ -1,6 +1,36 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 use tinyvec::TinyVec;
+
+use crate::process::ProcessType;
+
+/// Mapping from [`ProcessType`] to a `{word_id → pattern}` dictionary.
+///
+/// The primary input to [`SimpleMatcher::new`](super::SimpleMatcher::new). Each outer key selects the
+/// normalization pipeline applied before the patterns in the inner map are matched.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashMap;
+/// use matcher_rs::{SimpleTable, ProcessType};
+///
+/// let mut table: SimpleTable = HashMap::new();
+/// table.entry(ProcessType::None).or_default().insert(1, "hello");
+/// table.entry(ProcessType::Fanjian).or_default().insert(2, "漢字");
+/// ```
+pub type SimpleTable<'a> =
+    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, &'a str>>;
+
+/// Owned/borrowed variant of [`SimpleTable`] suitable for serialization.
+///
+/// Identical in structure to [`SimpleTable`], but uses `Cow<'a, str>` instead of
+/// `&'a str` so that both owned and borrowed patterns can be stored. Useful when
+/// loading rules from a deserialized source (e.g. JSON) where the strings are
+/// owned `String` values.
+pub type SimpleTableSerde<'a> =
+    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, Cow<'a, str>>>;
 
 /// Threshold for selecting the bitmask fast-path over the matrix fallback.
 ///

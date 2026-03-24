@@ -3,42 +3,14 @@ use std::borrow::Cow;
 use daachorse::CharwiseDoubleArrayAhoCorasick;
 use serde::Serialize;
 
-use crate::process::process_matcher::{
-    ProcessType, ProcessTypeBitNode, return_processed_string_to_pool, walk_process_tree,
-};
+use crate::process::{ProcessTypeBitNode, return_processed_string_to_pool, walk_process_tree};
 
 mod construction;
 mod scan;
 mod types;
 
 use types::{BytewiseMatcher, PatternEntry, RuleCold, RuleHot, SIMPLE_MATCH_STATE, ScanContext};
-
-/// Mapping from [`ProcessType`] to a `{word_id → pattern}` dictionary.
-///
-/// The primary input to [`SimpleMatcher::new`]. Each outer key selects the
-/// normalization pipeline applied before the patterns in the inner map are matched.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use matcher_rs::{SimpleTable, ProcessType};
-///
-/// let mut table: SimpleTable = HashMap::new();
-/// table.entry(ProcessType::None).or_default().insert(1, "hello");
-/// table.entry(ProcessType::Fanjian).or_default().insert(2, "漢字");
-/// ```
-pub type SimpleTable<'a> =
-    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, &'a str>>;
-
-/// Owned/borrowed variant of [`SimpleTable`] suitable for serialization.
-///
-/// Identical in structure to [`SimpleTable`], but uses `Cow<'a, str>` instead of
-/// `&'a str` so that both owned and borrowed patterns can be stored. Useful when
-/// loading rules from a deserialized source (e.g. JSON) where the strings are
-/// owned `String` values.
-pub type SimpleTableSerde<'a> =
-    std::collections::HashMap<ProcessType, std::collections::HashMap<u32, Cow<'a, str>>>;
+pub use types::{SimpleTable, SimpleTableSerde};
 
 /// A single match returned by [`SimpleMatcher::process`].
 ///

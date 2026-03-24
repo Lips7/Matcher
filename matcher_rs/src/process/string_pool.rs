@@ -6,9 +6,9 @@ const STRING_POOL_INIT_CAP: usize = 16;
 /// Initial capacity of the per-thread `ProcessedTextMasks` pool (number of pre-allocated slots).
 const MASKS_POOL_INIT_CAP: usize = 4;
 /// Maximum number of `String` buffers retained in the pool between calls; excess are dropped.
-pub(crate) const STRING_POOL_MAX: usize = 128;
+const STRING_POOL_MAX: usize = 128;
 /// Maximum number of `ProcessedTextMasks` buffers retained in the pool between calls; excess are dropped.
-pub(crate) const MASKS_POOL_MAX: usize = 16;
+const MASKS_POOL_MAX: usize = 16;
 
 /// A text variant produced by the transformation pipeline, paired with metadata for matching.
 ///

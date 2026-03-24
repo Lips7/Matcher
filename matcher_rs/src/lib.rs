@@ -58,9 +58,9 @@ mod builder;
 pub use builder::SimpleMatcherBuilder;
 
 mod process;
-pub use process::process_matcher::{
-    ProcessType, ProcessedTextMasks, TextVariant, build_process_type_tree, reduce_text_process,
-    reduce_text_process_emit, text_process, walk_process_tree,
+pub use process::process_matcher::{reduce_text_process, reduce_text_process_emit, text_process};
+pub use process::{
+    ProcessType, ProcessedTextMasks, TextVariant, build_process_type_tree, walk_process_tree,
 };
 
 mod simple_matcher;

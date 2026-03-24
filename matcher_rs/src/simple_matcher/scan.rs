@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use crate::process::process_matcher::ProcessedTextMasks;
+use crate::process::ProcessedTextMasks;
 
 use super::SimpleMatcher;
 use super::types::{
-    BITMASK_CAPACITY, BytewiseMatcher, PatternEntry, RuleHot, ScanContext, SimpleMatchState,
-    WordState,
+    BITMASK_CAPACITY, BytewiseMatcher, PatternEntry, RuleHot, SIMPLE_MATCH_STATE, ScanContext,
+    SimpleMatchState, WordState,
 };
 
 impl SimpleMatcher {
@@ -15,7 +15,7 @@ impl SimpleMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         results: &mut Vec<super::SimpleResult<'a>>,
     ) {
-        super::types::SIMPLE_MATCH_STATE.with(|state| {
+        SIMPLE_MATCH_STATE.with(|state| {
             let mut state = state.borrow_mut();
             state.prepare(self.rule_hot.len());
 

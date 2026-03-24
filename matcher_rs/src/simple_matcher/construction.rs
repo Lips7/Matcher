@@ -8,9 +8,8 @@ use daachorse::{
     DoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
 };
 
-use crate::process::process_matcher::{
-    ProcessType, build_process_type_tree, reduce_text_process_emit,
-};
+use crate::process::process_matcher::reduce_text_process_emit;
+use crate::process::{ProcessType, build_process_type_tree};
 
 use super::SimpleMatcher;
 use super::types::{

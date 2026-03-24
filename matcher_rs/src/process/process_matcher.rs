@@ -3,17 +3,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::process::process_type::ProcessType;
 use crate::process::string_pool::{get_string_from_pool, return_string_to_pool};
 use crate::process::transform::constants::*;
 use crate::process::transform::multi_char_matcher::MultiCharMatcher;
 use crate::process::transform::single_char_matcher::{SingleCharMatch, SingleCharMatcher};
-
-pub use crate::process::process_tree::{
-    ProcessTypeBitNode, build_process_type_tree, walk_process_tree,
-};
-pub use crate::process::process_type::ProcessType;
-pub(crate) use crate::process::string_pool::return_processed_string_to_pool;
-pub use crate::process::string_pool::{ProcessedTextMasks, TextVariant};
 
 /// Maps the bit position of a single-bit [`ProcessType`] to its compiled [`ProcessMatcher`].
 static PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8] = [
