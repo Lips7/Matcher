@@ -15,32 +15,32 @@
 /// Used by [`get_process_matcher`](crate::get_process_matcher) under `runtime_build` to
 /// build the Fanjian 2-stage page table at startup.
 #[cfg(feature = "runtime_build")]
-pub(crate) const FANJIAN: &str = include_str!("../../process_map/FANJIAN.txt");
+pub(crate) const FANJIAN: &str = include_str!("../../../process_map/FANJIAN.txt");
 
 /// Newline-separated characters (and ranges) that should be removed by the Delete step.
 ///
 /// Used under `runtime_build` to populate the Delete BitSet.
 #[cfg(feature = "runtime_build")]
-pub(crate) const TEXT_DELETE: &str = include_str!("../../process_map/TEXT-DELETE.txt");
+pub(crate) const TEXT_DELETE: &str = include_str!("../../../process_map/TEXT-DELETE.txt");
 
 /// Tab-separated `(source, normalized)` pairs for digit/number normalization.
 ///
 /// Merged with [`NORM`] to build the Normalize Aho-Corasick automaton under `runtime_build`.
 #[cfg(feature = "runtime_build")]
-pub(crate) const NUM_NORM: &str = include_str!("../../process_map/NUM-NORM.txt");
+pub(crate) const NUM_NORM: &str = include_str!("../../../process_map/NUM-NORM.txt");
 
 /// Tab-separated `(source, normalized)` pairs for general Unicode normalization
 /// (full-width→half-width, variant forms, etc.).
 ///
 /// Merged with [`NUM_NORM`] to build the Normalize automaton under `runtime_build`.
 #[cfg(feature = "runtime_build")]
-pub(crate) const NORM: &str = include_str!("../../process_map/NORM.txt");
+pub(crate) const NORM: &str = include_str!("../../../process_map/NORM.txt");
 
 /// Tab-separated `(character, pinyin_with_spaces)` pairs covering CJK codepoints.
 ///
 /// Used under `runtime_build` to build the Pinyin 2-stage page table and string buffer.
 #[cfg(feature = "runtime_build")]
-pub(crate) const PINYIN: &str = include_str!("../../process_map/PINYIN.txt");
+pub(crate) const PINYIN: &str = include_str!("../../../process_map/PINYIN.txt");
 
 /// All Unicode codepoints considered whitespace for the Delete step.
 ///

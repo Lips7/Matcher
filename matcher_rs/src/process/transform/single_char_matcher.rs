@@ -2,7 +2,7 @@ use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
 use std::collections::{HashMap, HashSet};
 
-use crate::process::simd_utils::{
+use crate::process::transform::simd_utils::{
     skip_ascii_non_delete_simd, skip_ascii_simd, skip_non_digit_ascii_simd,
 };
 

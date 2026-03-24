@@ -5,8 +5,8 @@
 //! execute those steps. Available transformations include noise-character deletion,
 //! Unicode normalization, Traditional→Simplified Chinese conversion (`Fanjian`),
 //! and Pinyin transliteration.
-mod constants;
-pub(crate) mod multi_char_matcher;
 pub(crate) mod process_matcher;
-pub(crate) mod simd_utils;
-pub(crate) mod single_char_matcher;
+pub(crate) mod process_tree;
+pub(crate) mod process_type;
+pub(crate) mod string_pool;
+pub(crate) mod transform;
