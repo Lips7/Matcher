@@ -15,7 +15,7 @@ mod construction;
 mod scan;
 mod types;
 
-use types::{BytewiseMatcher, PatternEntry, RuleCold, RuleHot, SIMPLE_MATCH_STATE, ScanContext};
+use types::{AsciiMatcher, PatternEntry, RuleCold, RuleHot, SIMPLE_MATCH_STATE, ScanContext};
 pub use types::{SimpleTable, SimpleTableSerde};
 
 /// A single match returned by [`SimpleMatcher::process`].
@@ -66,7 +66,7 @@ pub struct SimpleResult<'a> {
 /// **Pass 1 — Transform and Scan**: The input text is transformed through the configured
 /// [`crate::ProcessType`] pipelines, producing the distinct text variants needed for this
 /// matcher. Those variants are scanned one by one. Each variant first goes through the
-/// bytewise engine, then through the charwise engine when the variant is not pure ASCII.
+/// ASCII engine, then through the charwise engine when the variant is not pure ASCII.
 /// Hits update per-rule state; simple rules stay on a bitmask fast path, while more complex
 /// rules fall back to a per-rule counter matrix.
 ///
@@ -105,13 +105,17 @@ pub struct SimpleResult<'a> {
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
-    /// ASCII-only patterns — scanned through the bytewise engine.
+    /// ASCII-only patterns — scanned through the ASCII matcher.
     /// Dedup indices are embedded directly in the automaton (DAAC value = dedup index) or
     /// stored inside the enum variant (AC DFA `to_dedup`), eliminating a top-level Vec lookup.
-    bytewise_matcher: Option<BytewiseMatcher>,
-    /// Patterns containing any non-ASCII byte — scanned through the charwise matcher.
-    /// Automaton value IS the global dedup index — no extra indirection.
-    charwise_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
+    ascii_matcher: Option<AsciiMatcher>,
+    /// Matcher used for non-ASCII text variants. When both ASCII and non-ASCII patterns
+    /// exist, this matcher is compiled over the full deduplicated pattern set so one
+    /// charwise scan can replace the former ASCII+charwise double scan.
+    non_ascii_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
+    /// `Some(pt_index)` when all rules share one composite process type. In that common
+    /// case, the hot hit path can skip per-entry process-type filtering entirely.
+    single_pt_index: Option<u8>,
     ac_dedup_entries: Vec<PatternEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
     rule_hot: Vec<RuleHot>,
@@ -165,16 +169,9 @@ impl SimpleMatcher {
             }
             let generation = state.generation;
             let result = state.touched_indices.iter().any(|&rule_idx| {
-                if state.word_states[rule_idx].not_generation == generation {
-                    return false;
-                }
-                Self::is_rule_satisfied(
-                    &self.rule_hot[rule_idx],
-                    &state.word_states,
-                    &state.matrix,
-                    rule_idx,
-                    max_pt,
-                )
+                let word_state = &state.word_states[rule_idx];
+                word_state.positive_generation == generation
+                    && word_state.not_generation != generation
             });
             return_processed_string_to_pool(text_masks);
             result

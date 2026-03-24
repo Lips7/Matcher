@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use tinyvec::TinyVec;
 
-use crate::process::process_matcher::get_process_matcher;
+use crate::process::process_matcher::{ProcessMatcher, get_process_matcher};
 use crate::process::process_type::ProcessType;
 use crate::process::string_pool::{
     ProcessedTextMasks, TRANSFORM_STATE, TextVariant, return_string_to_pool,
@@ -24,7 +24,7 @@ use crate::process::string_pool::{
 /// variants with the correct bitmask. `children` holds flat-array indices of the next steps.
 /// `folded_mask` is the pre-computed OR of `1u64 << pt.bits()` for all entries in
 /// `process_type_list`, avoiding the per-call fold in the hot traversal loop.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct ProcessTypeBitNode {
     /// The composite [`ProcessType`] values whose decomposed bit-path terminates at this node.
     /// A non-empty list means that one or more rules emit a text variant here.
@@ -34,6 +34,9 @@ pub struct ProcessTypeBitNode {
     pub(crate) process_type_bit: ProcessType,
     /// Flat-array indices of child nodes (the next transformation steps reachable from here).
     pub(crate) children: Vec<usize>,
+    /// Cached single-step matcher for this node's process bit, avoiding a lookup in the
+    /// hot traversal loop. The root node leaves this as `None`.
+    pub(crate) matcher: Option<&'static ProcessMatcher>,
     /// Pre-computed OR of `1u64 << pt.bits()` for every `pt` in `process_type_list`.
     /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop.
     pub(crate) folded_mask: u64,
@@ -74,6 +77,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         children: Vec::new(),
+        matcher: None,
         folded_mask: 0,
     };
     if process_type_set.contains(&ProcessType::None) {
@@ -106,6 +110,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                     process_type_list: Vec::new(),
                     process_type_bit,
                     children: Vec::new(),
+                    matcher: Some(get_process_matcher(process_type_bit)),
                     folded_mask: 0,
                 };
                 child.process_type_list.push(process_type);
@@ -133,7 +138,6 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 ///
 /// This keeps `walk_process_tree` in "unique string" space even when different trie paths
 /// converge onto the same transformed text.
-#[inline(always)]
 fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
@@ -262,7 +266,9 @@ where
 
             for &child_node_index in &current_node.children {
                 let child_node = &process_type_tree[child_node_index];
-                let pm = get_process_matcher(child_node.process_type_bit);
+                let pm = child_node
+                    .matcher
+                    .expect("non-root process tree nodes always cache a matcher");
 
                 // Compute (changed_text, is_ascii_of_result) for this transformation step.
                 // - PinYin/PinYinChar output is always ASCII (romanized).

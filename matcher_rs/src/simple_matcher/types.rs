@@ -50,13 +50,13 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 
 /// Maximum number of ASCII patterns to route through AC DFA before switching
-/// to the DAAC bytewise matcher when the `dfa` feature is enabled.
+/// to the DAAC ASCII matcher when the `dfa` feature is enabled.
 ///
-/// The threshold is benchmark-driven and intentionally conservative.
+/// The threshold is benchmark-driven and optimized for search throughput.
 #[cfg(feature = "dfa")]
-pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
+pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 2_000;
 
-/// Bytewise automaton engine for ASCII-only patterns.
+/// ASCII automaton engine for ASCII-only patterns.
 ///
 /// When the `dfa` feature is enabled and the ASCII pattern count is below
 /// [`AC_DFA_PATTERN_THRESHOLD`], the `AcDfa` variant is used. Otherwise
@@ -67,7 +67,7 @@ pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
 /// `aho_corasick` assigns sequential pattern IDs that differ from dedup
 /// indices, so a compact `to_dedup` map is kept inside the enum variant.
 #[derive(Clone)]
-pub(super) enum BytewiseMatcher {
+pub(super) enum AsciiMatcher {
     #[cfg(feature = "dfa")]
     AcDfa {
         matcher: aho_corasick::AhoCorasick,
@@ -88,14 +88,16 @@ pub(super) enum BytewiseMatcher {
 pub(super) struct WordState {
     /// Set to the current generation when this rule is first touched.
     pub(super) matrix_generation: u32,
+    /// Set to the current generation when all required AND segments are satisfied,
+    /// even if a NOT segment may still veto the rule later in the scan.
+    pub(super) positive_generation: u32,
     /// Set to the current generation when a NOT sub-pattern fires, permanently
     /// disqualifying this rule for the remainder of the search.
     pub(super) not_generation: u32,
-    /// Set to the current generation when a rule is fully satisfied on the simple
-    /// bitmask path, allowing later hits in the same search to skip extra work.
-    pub(super) satisfied_generation: u32,
     /// Bitmask of AND sub-patterns (up to 64) satisfied so far this generation.
     pub(super) satisfied_mask: u64,
+    /// Number of AND segments still unsatisfied for the matrix path.
+    pub(super) remaining_and: u16,
 }
 
 /// Reusable per-thread scratch space for a single [`super::SimpleMatcher`] search.
@@ -108,6 +110,9 @@ pub(super) struct SimpleMatchState {
     /// Fallback counter storage for rules with >64 AND-splits or repeated sub-patterns;
     /// a flattened `(num_splits × num_text_variants)` counter matrix per rule.
     pub(super) matrix: Vec<TinyVec<[i32; 16]>>,
+    /// Per-segment status bits for the matrix path. A non-zero entry means the segment
+    /// already crossed its terminal threshold during this generation.
+    pub(super) matrix_status: Vec<TinyVec<[u8; 16]>>,
     /// Indices of rules written during the current generation; iterated in Pass 2 to avoid
     /// scanning the entire `word_states` array.
     pub(super) touched_indices: Vec<usize>,
@@ -122,6 +127,7 @@ impl SimpleMatchState {
         Self {
             word_states: Vec::new(),
             matrix: Vec::new(),
+            matrix_status: Vec::new(),
             touched_indices: Vec::new(),
             generation: 0,
         }
@@ -135,8 +141,8 @@ impl SimpleMatchState {
         if self.generation == u32::MAX {
             for state in self.word_states.iter_mut() {
                 state.matrix_generation = 0;
+                state.positive_generation = 0;
                 state.not_generation = 0;
-                state.satisfied_generation = 0;
             }
             self.generation = 1;
         } else {
@@ -146,6 +152,7 @@ impl SimpleMatchState {
         if self.word_states.len() < size {
             self.word_states.resize(size, WordState::default());
             self.matrix.resize(size, TinyVec::new());
+            self.matrix_status.resize(size, TinyVec::new());
         }
 
         self.touched_indices.clear();
@@ -169,7 +176,7 @@ pub(super) struct ScanContext {
     pub(super) num_variants: usize,
     /// If `true`, halt scanning as soon as any rule is fully satisfied.
     pub(super) exit_early: bool,
-    /// Whether the scanned text is entirely ASCII; selects the bytewise automaton path.
+    /// Whether the scanned text is entirely ASCII; selects the ASCII automaton path.
     pub(super) is_ascii: bool,
 }
 
@@ -186,14 +193,11 @@ pub(super) struct RuleHot {
     pub(super) segment_counts: Vec<i32>,
     /// Boundary in `segment_counts` separating AND segment indices from NOT segment indices.
     pub(super) and_count: usize,
-    /// Bitmask of AND segments that must all reach ≤0. Non-zero when `and_count > 0` and
-    /// `and_count ≤ 64`; zero otherwise (more than 64 AND segments or no AND segments).
-    pub(super) expected_mask: u64,
     /// `true` when the rule requires the full counter matrix instead of the simple
     /// bitmask path.
     pub(super) use_matrix: bool,
-    /// `segment_counts.len()`, cached to avoid pointer chasing in the hot loop.
-    pub(super) num_splits: u16,
+    /// `true` when the rule contains one or more NOT segments.
+    pub(super) has_not: bool,
 }
 
 /// Cold result-construction fields for a single rule, accessed only in Pass 2.

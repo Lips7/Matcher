@@ -9,10 +9,7 @@ use tinyvec::TinyVec;
 
 use crate::process::ProcessedTextMasks;
 
-use super::types::{
-    BITMASK_CAPACITY, BytewiseMatcher, PatternEntry, RuleHot, SIMPLE_MATCH_STATE, ScanContext,
-    SimpleMatchState, WordState,
-};
+use super::types::{AsciiMatcher, PatternEntry, SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
 use super::{SimpleMatcher, SimpleResult};
 
 impl SimpleMatcher {
@@ -29,19 +26,12 @@ impl SimpleMatcher {
             self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
 
             let generation = state.generation;
-            let num_variants = processed_text_process_type_masks.len();
 
             for &rule_idx in &state.touched_indices {
-                if state.word_states[rule_idx].not_generation == generation {
-                    continue;
-                }
-                if Self::is_rule_satisfied(
-                    &self.rule_hot[rule_idx],
-                    &state.word_states,
-                    &state.matrix,
-                    rule_idx,
-                    num_variants,
-                ) {
+                let word_state = &state.word_states[rule_idx];
+                if word_state.positive_generation == generation
+                    && word_state.not_generation != generation
+                {
                     let cold = &self.rule_cold[rule_idx];
                     results.push(SimpleResult {
                         word_id: cold.word_id,
@@ -55,7 +45,7 @@ impl SimpleMatcher {
     /// Pass 1: scans all text variants, updating [`SimpleMatchState`].
     ///
     /// For each text variant in `processed_text_process_type_masks`, the matcher scans the
-    /// bytewise engine first and then, when needed, the charwise engine. Each hit is
+    /// ASCII engine first and then, when needed, the charwise engine. Each hit is
     /// dispatched to [`Self::process_match`], which updates the affected rule's counters.
     /// If `exit_early` is `true`, scanning halts as soon as a rule becomes fully satisfied
     /// on a path where early exit is sound (used by `is_match`).
@@ -110,42 +100,53 @@ impl SimpleMatcher {
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
-        // Bytewise engine handles all ASCII-only patterns. Scan every variant.
-        if let Some(ref bytewise) = self.bytewise_matcher {
-            match bytewise {
+        if ctx.is_ascii {
+            if let Some(ref ascii_matcher) = self.ascii_matcher {
+                match ascii_matcher {
+                    #[cfg(feature = "dfa")]
+                    AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                        for hit in matcher.find_overlapping_iter(processed_text) {
+                            let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
+                            if self.process_match(dedup_idx, ctx, state) {
+                                return true;
+                            }
+                        }
+                    }
+                    AsciiMatcher::DaacBytewise(daac_matcher) => {
+                        for hit in daac_matcher.find_overlapping_iter(processed_text) {
+                            let dedup_idx = hit.value() as usize;
+                            if self.process_match(dedup_idx, ctx, state) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if let Some(ref ac_matcher) = self.non_ascii_matcher {
+            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
+                let dedup_idx = ac_dedup_result.value() as usize;
+                if self.process_match(dedup_idx, ctx, state) {
+                    return true;
+                }
+            }
+        } else if let Some(ref ascii_matcher) = self.ascii_matcher {
+            match ascii_matcher {
                 #[cfg(feature = "dfa")]
-                BytewiseMatcher::AcDfa { matcher, to_dedup } => {
+                AsciiMatcher::AcDfa { matcher, to_dedup } => {
                     for hit in matcher.find_overlapping_iter(processed_text) {
-                        // AC DFA assigns sequential IDs; translate to global dedup index.
                         let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
                         if self.process_match(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
                 }
-                BytewiseMatcher::DaacBytewise(daac_matcher) => {
+                AsciiMatcher::DaacBytewise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                        // DAAC value IS the global dedup index — no indirection needed.
                         let dedup_idx = hit.value() as usize;
                         if self.process_match(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
-                }
-            }
-        }
-
-        // Charwise DAAC handles non-ASCII (CJK, etc.) patterns. Non-ASCII patterns can never
-        // match pure-ASCII text, so skip the scan entirely when the text is all ASCII.
-        // `is_ascii` is pre-computed by walk_process_tree to avoid a redundant byte scan here.
-        if !ctx.is_ascii
-            && let Some(ref ac_matcher) = self.charwise_matcher
-        {
-            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                // DAAC value IS the global dedup index — no indirection needed.
-                let dedup_idx = ac_dedup_result.value() as usize;
-                if self.process_match(dedup_idx, ctx, state) {
-                    return true;
                 }
             }
         }
@@ -187,32 +188,36 @@ impl SimpleMatcher {
             let rule_idx = rule_idx as usize;
             let offset = offset as usize;
 
-            // Check that this text variant was produced by the pattern entry's process type.
-            // Sequential pt_index encodes the same information as the former u64 mask field,
-            // but using 1 byte instead of 8, halving PatternEntry size.
-            if ctx.process_type_mask & (1u64 << pt_index) == 0
-                || state.word_states[rule_idx].not_generation == generation
-            {
+            if self.single_pt_index.is_none() && ctx.process_type_mask & (1u64 << pt_index) == 0 {
                 continue;
             }
 
             let rule = &self.rule_hot[rule_idx];
-
-            if state.word_states[rule_idx].satisfied_generation == generation {
+            let word_state = &mut state.word_states[rule_idx];
+            if word_state.not_generation == generation {
+                continue;
+            }
+            if !rule.has_not && word_state.positive_generation == generation {
                 if ctx.exit_early {
                     return true;
                 }
                 continue;
             }
+            if offset < rule.and_count && word_state.positive_generation == generation {
+                continue;
+            }
 
-            if state.word_states[rule_idx].matrix_generation != generation {
-                state.word_states[rule_idx].matrix_generation = generation;
+            if word_state.matrix_generation != generation {
+                word_state.matrix_generation = generation;
+                word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
+                word_state.remaining_and = rule.and_count as u16;
+                word_state.satisfied_mask = 0;
                 state.touched_indices.push(rule_idx);
-                state.word_states[rule_idx].satisfied_mask = 0;
 
                 if rule.use_matrix {
                     Self::init_matrix(
                         &mut state.matrix[rule_idx],
+                        &mut state.matrix_status[rule_idx],
                         &rule.segment_counts,
                         ctx.num_variants,
                     );
@@ -221,82 +226,53 @@ impl SimpleMatcher {
 
             let is_satisfied = if rule.use_matrix {
                 let flat_matrix = &mut state.matrix[rule_idx];
+                let flat_status = &mut state.matrix_status[rule_idx];
                 let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                 if offset < rule.and_count {
-                    *counter -= 1; // AND segment: counts down toward satisfaction (≤0 = satisfied)
-                } else {
-                    *counter += 1; // NOT segment: counts up toward disqualification (>0 = fired)
-                }
-
-                if offset < rule.and_count {
-                    if *counter <= 0 && offset < BITMASK_CAPACITY {
-                        state.word_states[rule_idx].satisfied_mask |= 1u64 << offset;
+                    *counter -= 1;
+                    if flat_status[offset] == 0 && *counter <= 0 {
+                        flat_status[offset] = 1;
+                        word_state.remaining_and -= 1;
+                        if word_state.remaining_and == 0 {
+                            word_state.positive_generation = generation;
+                        }
                     }
-                } else if *counter > 0 {
-                    state.word_states[rule_idx].not_generation = generation;
+                } else {
+                    *counter += 1;
+                    if flat_status[offset] == 0 && *counter > 0 {
+                        flat_status[offset] = 1;
+                        word_state.not_generation = generation;
+                    }
                 }
-
-                Self::is_rule_satisfied(
-                    rule,
-                    &state.word_states,
-                    &state.matrix,
-                    rule_idx,
-                    ctx.num_variants,
-                )
+                word_state.positive_generation == generation
             } else if offset < rule.and_count {
-                if offset < BITMASK_CAPACITY {
-                    state.word_states[rule_idx].satisfied_mask |= 1u64 << offset;
+                if rule.and_count == 1 {
+                    word_state.positive_generation = generation;
+                } else {
+                    let bit = 1u64 << offset;
+                    if word_state.satisfied_mask & bit == 0 {
+                        word_state.satisfied_mask |= bit;
+                        word_state.remaining_and -= 1;
+                        if word_state.remaining_and == 0 {
+                            word_state.positive_generation = generation;
+                        }
+                    }
                 }
-                let expected_mask = rule.expected_mask;
-                let satisfied = state.word_states[rule_idx].satisfied_mask == expected_mask;
-                if satisfied && rule.and_count == rule.num_splits as usize {
-                    state.word_states[rule_idx].satisfied_generation = generation;
-                }
-                satisfied
+                word_state.positive_generation == generation
             } else {
-                state.word_states[rule_idx].not_generation = generation;
+                word_state.not_generation = generation;
                 false
             };
 
             if ctx.exit_early
                 && is_satisfied
-                && rule.and_count == rule.num_splits as usize
-                && state.word_states[rule_idx].not_generation != generation
+                && !rule.has_not
+                && word_state.not_generation != generation
             {
                 return true;
             }
         }
         false
-    }
-
-    /// Returns `true` if `rule` is fully satisfied for this generation.
-    ///
-    /// Uses the bitmask fast-path when `expected_mask > 0` (rules with at most 64 distinct
-    /// AND segments): every required bit must be set in `satisfied_mask`.
-    ///
-    /// Falls back to the counter matrix when `expected_mask == 0`, iterating all segments.
-    /// For AND segments the counter must be ≤0 in at least one variant. For NOT segments
-    /// the counter must stay ≤0 in every variant. Callers in Pass 2 typically pre-filter
-    /// disqualified rules via `not_generation` before reaching this check.
-    #[inline(always)]
-    pub(super) fn is_rule_satisfied(
-        rule: &RuleHot,
-        word_states: &[WordState],
-        matrix: &[TinyVec<[i32; 16]>],
-        rule_idx: usize,
-        num_variants: usize,
-    ) -> bool {
-        let expected_mask = rule.expected_mask;
-        if expected_mask > 0 {
-            return word_states[rule_idx].satisfied_mask == expected_mask;
-        }
-        let num_splits = rule.num_splits as usize;
-        let flat_matrix = &matrix[rule_idx];
-        (0..num_splits).all(|s| {
-            flat_matrix[s * num_variants..(s + 1) * num_variants]
-                .iter()
-                .any(|&bit| bit <= 0)
-        })
     }
 
     /// Initializes the flat counter matrix for a rule on its first touch in a generation.
@@ -307,12 +283,15 @@ impl SimpleMatcher {
     #[inline(never)]
     pub(super) fn init_matrix(
         flat_matrix: &mut TinyVec<[i32; 16]>,
+        flat_status: &mut TinyVec<[u8; 16]>,
         segment_counts: &[i32],
         num_variants: usize,
     ) {
         let num_splits = segment_counts.len();
         flat_matrix.clear();
         flat_matrix.resize(num_splits * num_variants, 0i32);
+        flat_status.clear();
+        flat_status.resize(num_splits, 0u8);
         for (s, &bit) in segment_counts.iter().enumerate() {
             let row_start = s * num_variants;
             flat_matrix[row_start..row_start + num_variants].fill(bit);

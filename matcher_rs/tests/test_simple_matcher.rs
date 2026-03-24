@@ -166,6 +166,36 @@ fn test_not_logic_ordering() {
 }
 
 #[test]
+fn test_not_can_veto_after_positive_completion() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello~world")
+        .build();
+
+    assert!(
+        !matcher.is_match("hello hello world"),
+        "world should still veto after hello satisfied the positive side"
+    );
+    assert_eq!(matcher.process("hello hello world").len(), 0);
+}
+
+#[test]
+fn test_mixed_ascii_and_cjk_rules_on_non_ascii_text() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "abc")
+        .add_word(ProcessType::None, 2, "你好")
+        .build();
+
+    let mut ids: Vec<u32> = matcher
+        .process("你好 abc")
+        .into_iter()
+        .map(|result| result.word_id)
+        .collect();
+    ids.sort_unstable();
+
+    assert_eq!(ids, vec![1, 2]);
+}
+
+#[test]
 fn test_overlapping_words() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")

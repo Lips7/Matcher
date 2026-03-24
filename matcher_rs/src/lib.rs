@@ -17,7 +17,7 @@
 //!   ([`ProcessType::Delete`]), replacement-table normalization ([`ProcessType::Normalize`]),
 //!   and Pinyin transliteration ([`ProcessType::PinYin`] / [`ProcessType::PinYinChar`]).
 //! - **Two-pass evaluation** — Construction deduplicates emitted patterns and partitions them
-//!   into bytewise and charwise matcher engines. Search walks the needed transform tree once,
+//!   into ASCII and charwise matcher engines. Search walks the needed transform tree once,
 //!   scans each produced text variant, then evaluates only touched rules.
 //!
 //! # Quick Start

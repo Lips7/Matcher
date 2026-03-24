@@ -22,7 +22,7 @@ use super::SimpleMatcher;
 #[cfg(feature = "dfa")]
 use super::types::AC_DFA_PATTERN_THRESHOLD;
 use super::types::{
-    BITMASK_CAPACITY, BytewiseMatcher, PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
+    AsciiMatcher, BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
 };
 
 /// Intermediate outputs of [`SimpleMatcher::parse_rules`], bundling all data
@@ -47,7 +47,7 @@ impl SimpleMatcher {
     ///    [`reduce_text_process_emit`].
     /// 3. Deduplicate all variants across all rules and process types into a single
     ///    pattern set.
-    /// 4. Partition that pattern set into bytewise and charwise buckets, then compile the
+    /// 4. Partition that pattern set into ASCII and charwise buckets, then compile the
     ///    corresponding matcher engines.
     /// 5. Build the transformation trie (`ProcessTypeBitNode` tree) for fast text
     ///    pre-processing at match time.
@@ -74,10 +74,18 @@ impl SimpleMatcher {
 
         let process_type_set: HashSet<ProcessType> =
             process_type_word_map.keys().copied().collect();
+        let single_pt_index = if process_type_set.len() == 1 {
+            process_type_set
+                .iter()
+                .next()
+                .map(|pt| pt_index_table[pt.bits() as usize])
+        } else {
+            None
+        };
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
-        let (bytewise_matcher, charwise_matcher) = Self::compile_automata(&parsed.dedup_patterns);
+        let (ascii_matcher, non_ascii_matcher) = Self::compile_automata(&parsed.dedup_patterns);
 
         let (ac_dedup_entries, ac_dedup_ranges) = Self::flatten_dedup_entries(parsed.dedup_entries);
 
@@ -88,8 +96,9 @@ impl SimpleMatcher {
 
         SimpleMatcher {
             process_type_tree,
-            bytewise_matcher,
-            charwise_matcher,
+            ascii_matcher,
+            non_ascii_matcher,
+            single_pt_index,
             ac_dedup_entries,
             ac_dedup_ranges,
             rule_hot: parsed.rule_hot,
@@ -190,17 +199,11 @@ impl SimpleMatcher {
                     .chain(not_splits.values().copied())
                     .collect::<Vec<i32>>();
 
-                let expected_mask = if and_count > 0 && and_count <= BITMASK_CAPACITY {
-                    u64::MAX >> (BITMASK_CAPACITY - and_count)
-                } else {
-                    0
-                };
-
-                let num_splits = segment_counts.len() as u16;
                 let use_matrix = and_count > BITMASK_CAPACITY
                     || segment_counts.len() > BITMASK_CAPACITY
                     || segment_counts[..and_count].iter().any(|&v| v != 1)
                     || segment_counts[and_count..].iter().any(|&v| v != 0);
+                let has_not = and_count != segment_counts.len();
 
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
@@ -208,9 +211,8 @@ impl SimpleMatcher {
                     rule_hot[existing_idx] = RuleHot {
                         segment_counts,
                         and_count,
-                        expected_mask,
                         use_matrix,
-                        num_splits,
+                        has_not,
                     };
                     rule_cold[existing_idx] = RuleCold {
                         word_id: simple_word_id,
@@ -223,9 +225,8 @@ impl SimpleMatcher {
                     rule_hot.push(RuleHot {
                         segment_counts,
                         and_count,
-                        expected_mask,
                         use_matrix,
-                        num_splits,
+                        has_not,
                     });
                     rule_cold.push(RuleCold {
                         word_id: simple_word_id,
@@ -269,53 +270,70 @@ impl SimpleMatcher {
 
     /// Partitions deduplicated patterns by character content and compiles the scan engines.
     ///
-    /// ASCII-only patterns go to the bytewise engine. Patterns with any non-ASCII byte go
-    /// to the charwise matcher. With the `dfa` feature, small ASCII sets use AC DFA and
-    /// larger ones use the DAAC bytewise matcher.
+    /// ASCII-only patterns go to the ASCII matcher. The non-ASCII matcher is compiled
+    /// over:
+    /// - the non-ASCII subset when there are no ASCII patterns, or
+    /// - the full pattern set when both ASCII and non-ASCII patterns exist, so non-ASCII
+    ///   text needs only one charwise scan.
+    ///
+    /// With the `dfa` feature, small ASCII sets use AC DFA and larger ones use the DAAC
+    /// ASCII matcher.
     fn compile_automata(
         dedup_patterns: &[Cow<'_, str>],
     ) -> (
-        Option<BytewiseMatcher>,
+        Option<AsciiMatcher>,
         Option<CharwiseDoubleArrayAhoCorasick<u32>>,
     ) {
-        let mut bytewise_patvals: Vec<(&str, u32)> = Vec::new();
+        let mut ascii_patvals: Vec<(&str, u32)> = Vec::new();
         let mut charwise_patvals: Vec<(&str, u32)> = Vec::new();
         #[cfg(feature = "dfa")]
-        let mut bytewise_ac_to_dedup: Vec<u32> = Vec::new();
+        let mut ascii_ac_to_dedup: Vec<u32> = Vec::new();
 
         for (dedup_id, pattern) in dedup_patterns.iter().enumerate() {
             if pattern.as_ref().is_ascii() {
                 #[cfg(feature = "dfa")]
-                bytewise_ac_to_dedup.push(dedup_id as u32);
-                bytewise_patvals.push((pattern.as_ref(), dedup_id as u32));
+                ascii_ac_to_dedup.push(dedup_id as u32);
+                ascii_patvals.push((pattern.as_ref(), dedup_id as u32));
             } else {
                 charwise_patvals.push((pattern.as_ref(), dedup_id as u32));
             }
         }
 
-        let bytewise_matcher = if !bytewise_patvals.is_empty() {
+        let full_charwise_patvals = if ascii_patvals.is_empty() || charwise_patvals.is_empty() {
+            None
+        } else {
+            Some(
+                dedup_patterns
+                    .iter()
+                    .enumerate()
+                    .map(|(dedup_id, pattern)| (pattern.as_ref(), dedup_id as u32))
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        let ascii_matcher = if !ascii_patvals.is_empty() {
             #[cfg(feature = "dfa")]
-            let engine = if bytewise_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
-                BytewiseMatcher::AcDfa {
+            let engine = if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+                AsciiMatcher::AcDfa {
                     matcher: AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
-                        .build(bytewise_patvals.iter().map(|(p, _)| p))
+                        .build(ascii_patvals.iter().map(|(p, _)| p))
                         .unwrap(),
-                    to_dedup: bytewise_ac_to_dedup,
+                    to_dedup: ascii_ac_to_dedup,
                 }
             } else {
-                BytewiseMatcher::DaacBytewise(
+                AsciiMatcher::DaacBytewise(
                     DoubleArrayAhoCorasickBuilder::new()
                         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                        .build_with_values(bytewise_patvals)
+                        .build_with_values(ascii_patvals)
                         .unwrap(),
                 )
             };
             #[cfg(not(feature = "dfa"))]
-            let engine = BytewiseMatcher::DaacBytewise(
+            let engine = AsciiMatcher::DaacBytewise(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build_with_values(bytewise_patvals)
+                    .build_with_values(ascii_patvals)
                     .unwrap(),
             );
             Some(engine)
@@ -323,18 +341,21 @@ impl SimpleMatcher {
             None
         };
 
-        let charwise_matcher = if !charwise_patvals.is_empty() {
+        let non_ascii_patvals = full_charwise_patvals
+            .as_deref()
+            .unwrap_or(charwise_patvals.as_slice());
+        let non_ascii_matcher = if !non_ascii_patvals.is_empty() {
             Some(
                 CharwiseDoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build_with_values(charwise_patvals)
+                    .build_with_values(non_ascii_patvals.iter().copied())
                     .unwrap(),
             )
         } else {
             None
         };
 
-        (bytewise_matcher, charwise_matcher)
+        (ascii_matcher, non_ascii_matcher)
     }
 
     /// Flattens `Vec<Vec<PatternEntry>>` into one contiguous entry array plus per-pattern ranges.
