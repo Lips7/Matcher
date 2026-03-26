@@ -1,156 +1,144 @@
-use jni::JNIEnv;
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jobjectArray, jsize, jstring};
+use jni::{
+    Env, EnvUnowned,
+    errors::{Error as JniError, Result as JniResult, ThrowRuntimeExAndDefault},
+    objects::{JByteArray, JClass, JObject},
+    sys::{jboolean, jint, jlong, jobjectArray, jstring},
+};
 use matcher_rs::{
     ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
 };
-use std::panic::{self, AssertUnwindSafe};
+
+fn decode_text(env: &Env<'_>, text_bytes: JByteArray<'_>) -> JniResult<String> {
+    String::from_utf8(env.convert_byte_array(text_bytes)?)
+        .map_err(|error| JniError::ParseFailed(error.to_string()))
+}
+
+fn parse_simple_table(simple_table_bytes: &[u8]) -> JniResult<SimpleTable<'_>> {
+    sonic_rs::from_slice(simple_table_bytes)
+        .map_err(|error| JniError::ParseFailed(error.to_string()))
+}
+
+fn serialize_results(results: &[matcher_rs::SimpleResult<'_>]) -> JniResult<String> {
+    sonic_rs::to_string(results).map_err(|error| JniError::ParseFailed(error.to_string()))
+}
+
+fn process_type_from_jint(process_type: jint) -> ProcessType {
+    ProcessType::from_bits_retain(process_type as u8)
+}
+
+fn matcher_from_ptr(matcher_ptr: jlong) -> Option<&'static SimpleMatcher> {
+    if matcher_ptr == 0 {
+        return None;
+    }
+
+    Some(unsafe { &*(matcher_ptr as *const SimpleMatcher) })
+}
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass,
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     process_type: jint,
-    text_bytes: JByteArray,
+    text_bytes: JByteArray<'local>,
 ) -> jstring {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(text_bytes).ok()?;
-        let text_str = std::str::from_utf8(&bytes).ok()?;
+    env.with_env(|env| -> JniResult<_> {
+        let text = decode_text(env, text_bytes)?;
+        let processed = text_process_rs(process_type_from_jint(process_type), &text);
 
-        let p_type = ProcessType::from_bits_retain(process_type as u8);
-
-        let res = text_process_rs(p_type, text_str);
-        let j_string: JString = env.new_string(res.as_ref()).ok()?;
-        Some(j_string.into_raw())
-    }));
-
-    result
-        .unwrap_or_else(|_| {
-            eprintln!("textProcess panicked");
-            None
-        })
-        .unwrap_or(std::ptr::null_mut())
+        Ok(env.new_string(processed.as_ref())?.into_raw())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local>(
-    mut env: JNIEnv<'local>,
-    _class: JClass,
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     process_type: jint,
-    text_bytes: JByteArray,
+    text_bytes: JByteArray<'local>,
 ) -> jobjectArray {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(text_bytes).ok()?;
-        let text_str = std::str::from_utf8(&bytes).ok()?;
+    env.with_env(|env| -> JniResult<_> {
+        let text = decode_text(env, text_bytes)?;
+        let variants = reduce_text_process_rs(process_type_from_jint(process_type), &text);
+        let array = env.new_object_array(
+            variants.len() as i32,
+            jni::jni_str!("java/lang/String"),
+            JObject::null(),
+        )?;
 
-        let p_type = ProcessType::from_bits_retain(process_type as u8);
-
-        let variants = reduce_text_process_rs(p_type, text_str);
-
-        let string_class = env.find_class("java/lang/String").ok()?;
-        let initial_string = env.new_string("").ok()?;
-        let obj_array = env
-            .new_object_array(variants.len() as jsize, &string_class, initial_string)
-            .ok()?;
-
-        for (i, variant) in variants.iter().enumerate() {
-            let j_str = env.new_string(variant.as_ref()).ok()?;
-            env.set_object_array_element(&obj_array, i as jsize, j_str)
-                .ok()?;
+        for (index, variant) in variants.iter().enumerate() {
+            let value = env.new_string(variant.as_ref())?;
+            array.set_element(env, index, &value)?;
         }
 
-        Some(obj_array.into_raw())
-    }));
-
-    result
-        .unwrap_or_else(|_| {
-            eprintln!("reduceTextProcess panicked");
-            None
-        })
-        .unwrap_or(std::ptr::null_mut())
+        Ok(array.into_raw())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher(
-    env: JNIEnv,
-    _class: JClass,
-    simple_table_bytes: JByteArray,
+pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    simple_table_bytes: JByteArray<'local>,
 ) -> jlong {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let bytes = env.convert_byte_array(simple_table_bytes).ok()?;
-        let simple_table: SimpleTable = sonic_rs::from_slice(&bytes).ok()?;
+    env.with_env(|env| -> JniResult<_> {
+        let bytes = env.convert_byte_array(simple_table_bytes)?;
+        let simple_table = parse_simple_table(&bytes)?;
         let matcher = Box::new(SimpleMatcher::new(&simple_table));
-        Some(Box::into_raw(matcher) as jlong)
-    }));
-    result
-        .unwrap_or_else(|_| {
-            eprintln!("initSimpleMatcher panicked");
-            None
-        })
-        .unwrap_or(0)
+
+        Ok(Box::into_raw(matcher) as jlong)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch(
-    env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     matcher_ptr: jlong,
-    text_bytes: JByteArray,
+    text_bytes: JByteArray<'local>,
 ) -> jboolean {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        if matcher_ptr == 0 {
-            return Some(false);
-        }
-        let matcher = unsafe { &*(matcher_ptr as *const SimpleMatcher) };
-        let bytes = env.convert_byte_array(text_bytes).ok()?;
-        let text_str = std::str::from_utf8(&bytes).ok()?;
-        Some(matcher.is_match(text_str))
-    }));
-    result
-        .unwrap_or_else(|_| {
-            eprintln!("simpleMatcherIsMatch panicked");
-            None
-        })
-        .map_or(0, |b| b as jboolean)
+    env.with_env(|env| -> JniResult<_> {
+        let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
+            return Ok(false);
+        };
+
+        let text = decode_text(env, text_bytes)?;
+        Ok(matcher.is_match(&text))
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsString<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass,
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     matcher_ptr: jlong,
-    text_bytes: JByteArray,
+    text_bytes: JByteArray<'local>,
 ) -> jstring {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        if matcher_ptr == 0 {
-            return None;
-        }
-        let matcher = unsafe { &*(matcher_ptr as *const SimpleMatcher) };
-        let bytes = env.convert_byte_array(text_bytes).ok()?;
-        let text_str = std::str::from_utf8(&bytes).ok()?;
-        let res = matcher.process(text_str);
-        let res_json = sonic_rs::to_string(&res).ok()?;
-        let j_string: JString = env.new_string(res_json).ok()?;
-        Some(j_string.into_raw())
-    }));
-    result
-        .unwrap_or_else(|_| {
-            eprintln!("simpleMatcherProcessAsString panicked");
-            None
-        })
-        .unwrap_or(std::ptr::null_mut())
+    env.with_env(|env| -> JniResult<_> {
+        let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
+            return Ok(std::ptr::null_mut());
+        };
+
+        let text = decode_text(env, text_bytes)?;
+        let results = matcher.process(&text);
+        let json = serialize_results(&results)?;
+
+        Ok(env.new_string(json)?.into_raw())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_matcherjava_MatcherJava_dropSimpleMatcher(
-    _env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_com_matcherjava_MatcherJava_dropSimpleMatcher<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     matcher_ptr: jlong,
 ) {
     if matcher_ptr != 0 {
-        let _ = panic::catch_unwind(AssertUnwindSafe(|| {
-            unsafe { drop(Box::from_raw(matcher_ptr as *mut SimpleMatcher)) };
-        }));
+        unsafe { drop(Box::from_raw(matcher_ptr as *mut SimpleMatcher)) };
     }
 }

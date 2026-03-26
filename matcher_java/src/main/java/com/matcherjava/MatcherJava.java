@@ -1,19 +1,17 @@
 package com.matcherjava;
 
-/**
- * Access to native Rust library.
- */
-public class MatcherJava {
+/** Native entry points backed by the Rust matcher library. */
+public final class MatcherJava {
 
   static {
     try {
-      // First try loading from java.library.path
       System.loadLibrary("matcher_java");
     } catch (UnsatisfiedLinkError e) {
-      System.err.println("Could not load matcher_java lib. Check java.library.path.");
-      throw e;
+      throw new ExceptionInInitializerError(e);
     }
   }
+
+  private MatcherJava() {}
 
   public static native String textProcess(int processType, byte[] textBytes);
 
