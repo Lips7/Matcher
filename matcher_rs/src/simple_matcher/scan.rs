@@ -10,8 +10,8 @@ use tinyvec::TinyVec;
 use crate::process::ProcessedTextMasks;
 
 use super::types::{
-    AsciiMatcher, NonAsciiMatcher, PATTERN_SIMPLE_LITERAL, PatternEntry, SIMPLE_MATCH_STATE,
-    ScanContext, SimpleMatchState,
+    AsciiMatcher, NonAsciiMatcher, PatternEntry, PatternKind, SIMPLE_MATCH_STATE, ScanContext,
+    SimpleMatchState,
 };
 use super::{SimpleMatcher, SimpleResult};
 
@@ -194,7 +194,7 @@ impl SimpleMatcher {
                 rule_idx,
                 offset,
                 pt_index,
-                flags,
+                kind,
             } = entry;
 
             let rule_idx = rule_idx as usize;
@@ -203,106 +203,133 @@ impl SimpleMatcher {
                 continue;
             }
 
-            // Fast path for simple literal rules (and_count==1, no NOT, no matrix).
-            // Skips all counter/bitmask logic — just mark the rule as satisfied.
-            if flags & PATTERN_SIMPLE_LITERAL != 0 {
-                let word_state = &mut state.word_states[rule_idx];
-                if word_state.positive_generation == generation {
-                    if ctx.exit_early {
-                        return true;
+            match kind {
+                PatternKind::Simple => {
+                    let word_state = &mut state.word_states[rule_idx];
+                    if word_state.positive_generation == generation {
+                        if ctx.exit_early {
+                            return true;
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                if word_state.matrix_generation != generation {
-                    word_state.matrix_generation = generation;
-                    word_state.positive_generation = generation;
-                    state.touched_indices.push(rule_idx);
-                    if ctx.exit_early {
-                        return true;
-                    }
-                }
-                continue;
-            }
-
-            let offset = offset as usize;
-            let rule = &self.rule_hot[rule_idx];
-            let word_state = &mut state.word_states[rule_idx];
-            if word_state.not_generation == generation {
-                continue;
-            }
-            if !rule.has_not && word_state.positive_generation == generation {
-                if ctx.exit_early {
-                    return true;
-                }
-                continue;
-            }
-            if offset < rule.and_count && word_state.positive_generation == generation {
-                continue;
-            }
-
-            if word_state.matrix_generation != generation {
-                word_state.matrix_generation = generation;
-                word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
-                word_state.remaining_and = rule.and_count as u16;
-                word_state.satisfied_mask = 0;
-                state.touched_indices.push(rule_idx);
-
-                if rule.use_matrix {
-                    Self::init_matrix(
-                        &mut state.matrix[rule_idx],
-                        &mut state.matrix_status[rule_idx],
-                        &rule.segment_counts,
-                        ctx.num_variants,
-                    );
-                }
-            }
-
-            let is_satisfied = if rule.use_matrix {
-                let flat_matrix = &mut state.matrix[rule_idx];
-                let flat_status = &mut state.matrix_status[rule_idx];
-                let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
-                if offset < rule.and_count {
-                    *counter -= 1;
-                    if flat_status[offset] == 0 && *counter <= 0 {
-                        flat_status[offset] = 1;
-                        word_state.remaining_and -= 1;
-                        if word_state.remaining_and == 0 {
-                            word_state.positive_generation = generation;
+                    if word_state.matrix_generation != generation {
+                        word_state.matrix_generation = generation;
+                        word_state.positive_generation = generation;
+                        state.touched_indices.push(rule_idx);
+                        if ctx.exit_early {
+                            return true;
                         }
                     }
-                } else {
-                    *counter += 1;
-                    if flat_status[offset] == 0 && *counter > 0 {
-                        flat_status[offset] = 1;
+                }
+                PatternKind::And => {
+                    let offset = offset as usize;
+                    let rule = &self.rule_hot[rule_idx];
+                    let word_state = &mut state.word_states[rule_idx];
+
+                    if word_state.not_generation == generation {
+                        continue;
+                    }
+                    if word_state.positive_generation == generation {
+                        if !rule.has_not && ctx.exit_early {
+                            return true;
+                        }
+                        continue;
+                    }
+
+                    if word_state.matrix_generation != generation {
+                        word_state.matrix_generation = generation;
+                        word_state.positive_generation =
+                            if rule.and_count == 0 { generation } else { 0 };
+                        word_state.remaining_and = rule.and_count as u16;
+                        word_state.satisfied_mask = 0;
+                        state.touched_indices.push(rule_idx);
+
+                        if rule.use_matrix {
+                            Self::init_matrix(
+                                &mut state.matrix[rule_idx],
+                                &mut state.matrix_status[rule_idx],
+                                &rule.segment_counts,
+                                ctx.num_variants,
+                            );
+                        }
+                    }
+
+                    let is_satisfied = if rule.use_matrix {
+                        let flat_matrix = &mut state.matrix[rule_idx];
+                        let flat_status = &mut state.matrix_status[rule_idx];
+                        let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
+                        *counter -= 1;
+                        if flat_status[offset] == 0 && *counter <= 0 {
+                            flat_status[offset] = 1;
+                            word_state.remaining_and -= 1;
+                            if word_state.remaining_and == 0 {
+                                word_state.positive_generation = generation;
+                            }
+                        }
+                        word_state.positive_generation == generation
+                    } else if rule.and_count == 1 {
+                        word_state.positive_generation = generation;
+                        true
+                    } else {
+                        let bit = 1u64 << offset;
+                        if word_state.satisfied_mask & bit == 0 {
+                            word_state.satisfied_mask |= bit;
+                            word_state.remaining_and -= 1;
+                            if word_state.remaining_and == 0 {
+                                word_state.positive_generation = generation;
+                            }
+                        }
+                        word_state.positive_generation == generation
+                    };
+
+                    if ctx.exit_early
+                        && is_satisfied
+                        && !rule.has_not
+                        && word_state.not_generation != generation
+                    {
+                        return true;
+                    }
+                }
+                PatternKind::Not => {
+                    let offset = offset as usize;
+                    let rule = &self.rule_hot[rule_idx];
+                    let word_state = &mut state.word_states[rule_idx];
+
+                    if word_state.not_generation == generation {
+                        continue;
+                    }
+
+                    if word_state.matrix_generation != generation {
+                        word_state.matrix_generation = generation;
+                        word_state.positive_generation =
+                            if rule.and_count == 0 { generation } else { 0 };
+                        word_state.remaining_and = rule.and_count as u16;
+                        word_state.satisfied_mask = 0;
+                        state.touched_indices.push(rule_idx);
+
+                        if rule.use_matrix {
+                            Self::init_matrix(
+                                &mut state.matrix[rule_idx],
+                                &mut state.matrix_status[rule_idx],
+                                &rule.segment_counts,
+                                ctx.num_variants,
+                            );
+                        }
+                    }
+
+                    if rule.use_matrix {
+                        let flat_matrix = &mut state.matrix[rule_idx];
+                        let flat_status = &mut state.matrix_status[rule_idx];
+                        let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
+                        *counter += 1;
+                        if flat_status[offset] == 0 && *counter > 0 {
+                            flat_status[offset] = 1;
+                            word_state.not_generation = generation;
+                        }
+                    } else {
                         word_state.not_generation = generation;
                     }
                 }
-                word_state.positive_generation == generation
-            } else if offset < rule.and_count {
-                if rule.and_count == 1 {
-                    word_state.positive_generation = generation;
-                } else {
-                    let bit = 1u64 << offset;
-                    if word_state.satisfied_mask & bit == 0 {
-                        word_state.satisfied_mask |= bit;
-                        word_state.remaining_and -= 1;
-                        if word_state.remaining_and == 0 {
-                            word_state.positive_generation = generation;
-                        }
-                    }
-                }
-                word_state.positive_generation == generation
-            } else {
-                word_state.not_generation = generation;
-                false
-            };
-
-            if ctx.exit_early
-                && is_satisfied
-                && !rule.has_not
-                && word_state.not_generation != generation
-            {
-                return true;
             }
         }
         false

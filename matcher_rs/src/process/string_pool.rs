@@ -43,7 +43,7 @@ pub(crate) struct TransformThreadState {
 }
 
 impl TransformThreadState {
-    /// Creates empty reusable traversal state for `walk_process_tree`.
+    /// Creates empty reusable traversal state for [`super::process_tree::walk_process_tree`].
     ///
     /// `tree_node_indices` is resized per traversal to map trie node index → text variant
     /// index, while `masks_pool` stores emptied `ProcessedTextMasks` buffers for reuse.
@@ -63,7 +63,7 @@ impl TransformThreadState {
 #[thread_local]
 pub(crate) static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::new());
 
-/// Combined per-thread traversal state for [`walk_process_tree`]: the trie-node index map
+/// Combined per-thread traversal state for [`super::process_tree::walk_process_tree`]: the trie-node index map
 /// and the [`ProcessedTextMasks`] pool, merged into one TLS slot to save a lookup.
 #[thread_local]
 pub(crate) static TRANSFORM_STATE: RefCell<TransformThreadState> =

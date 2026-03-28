@@ -22,8 +22,8 @@ use super::SimpleMatcher;
 #[cfg(feature = "dfa")]
 use super::types::AC_DFA_PATTERN_THRESHOLD;
 use super::types::{
-    AsciiMatcher, BITMASK_CAPACITY, NonAsciiMatcher, PATTERN_SIMPLE_LITERAL,
-    PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
+    AsciiMatcher, BITMASK_CAPACITY, NonAsciiMatcher, PROCESS_TYPE_TABLE_SIZE, PatternEntry,
+    PatternKind, RuleCold, RuleHot,
 };
 
 /// Intermediate outputs of [`SimpleMatcher::parse_rules`], bundling all data
@@ -236,14 +236,18 @@ impl SimpleMatcher {
                     idx
                 };
 
-                let entry_flags = if and_count == 1 && !has_not && !use_matrix {
-                    PATTERN_SIMPLE_LITERAL
-                } else {
-                    0
-                };
+                let is_simple = and_count == 1 && !has_not && !use_matrix;
 
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
+                    let kind = if is_simple {
+                        PatternKind::Simple
+                    } else if offset < and_count {
+                        PatternKind::And
+                    } else {
+                        PatternKind::Not
+                    };
+
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
                         let pt_index = pt_index_table[process_type.bits() as usize];
                         let Some(&existing_dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
@@ -252,7 +256,7 @@ impl SimpleMatcher {
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u16,
                                 pt_index,
-                                flags: entry_flags,
+                                kind,
                             }]);
                             dedup_patterns.push(ac_word);
                             next_pattern_id += 1;
@@ -262,7 +266,7 @@ impl SimpleMatcher {
                             rule_idx: rule_idx as u32,
                             offset: offset as u16,
                             pt_index,
-                            flags: entry_flags,
+                            kind,
                         });
                     }
                 }

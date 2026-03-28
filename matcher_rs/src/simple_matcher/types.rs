@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+#[cfg(feature = "dfa")]
 use aho_corasick::AhoCorasick;
 use daachorse::{DoubleArrayAhoCorasick, charwise::CharwiseDoubleArrayAhoCorasick};
 use tinyvec::TinyVec;
@@ -58,9 +59,24 @@ pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 #[cfg(feature = "dfa")]
 pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 2_000;
 
-/// Flag indicating a simple literal rule (and_count==1, no NOT, no matrix).
-/// Enables a fast path in `process_match` that skips counter/bitmask logic.
-pub(super) const PATTERN_SIMPLE_LITERAL: u8 = 1;
+/// Classifies a [`PatternEntry`] by its role in rule evaluation.
+///
+/// Determined once at construction time so that `process_match` can branch
+/// on a single `match` instead of re-deriving the category from `offset`
+/// and `RuleHot` fields on every automaton hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(super) enum PatternKind {
+    /// Simple literal rule (and_count==1, no NOT, no matrix).
+    /// Skips all counter/bitmask logic — just mark the rule as satisfied.
+    Simple = 0,
+    /// AND sub-pattern: offset < and_count. Decrements a counter or sets
+    /// a bitmask bit; rule is satisfied when all AND segments fire.
+    And = 1,
+    /// NOT sub-pattern: offset >= and_count. Any hit permanently
+    /// disqualifies the owning rule for this generation.
+    Not = 2,
+}
 
 /// ASCII automaton engine for ASCII-only patterns.
 ///
@@ -245,8 +261,7 @@ pub(super) struct PatternEntry {
     /// Sequential process-type table index built during [`super::SimpleMatcher::new`];
     /// used as `1u64 << pt_index` to filter hits from the wrong pipeline.
     pub(super) pt_index: u8,
-    /// Bit flags. [`PATTERN_SIMPLE_LITERAL`] marks entries whose owning rule is a
-    /// simple literal (and_count==1, no NOT, no matrix), enabling a fast path in
-    /// `process_match`. The struct is 8 bytes regardless (padding was here before).
-    pub(super) flags: u8,
+    /// Classifies this entry for dispatch in `process_match`.
+    /// The struct is 8 bytes regardless (padding was here before).
+    pub(super) kind: PatternKind,
 }
