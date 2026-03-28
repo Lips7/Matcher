@@ -146,9 +146,10 @@ fn dedup_insert(
 ) -> usize {
     match changed {
         Some(processed) => {
+            let plen = processed.len();
             if let Some(pos) = text_masks
                 .iter()
-                .position(|tv| tv.text.as_ref() == processed.as_str())
+                .position(|tv| tv.text.len() == plen && tv.text.as_ref() == processed.as_str())
             {
                 return_string_to_pool(processed);
                 pos

@@ -106,21 +106,16 @@ pub struct SimpleResult<'a> {
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process_type_tree: Vec<ProcessTypeBitNode>,
-    /// ASCII-only patterns — scanned through the ASCII matcher.
-    /// Dedup indices are embedded directly in the automaton (DAAC value = dedup index) or
-    /// stored inside the enum variant (AC DFA `to_dedup`), eliminating a top-level Vec lookup.
     ascii_matcher: Option<AsciiMatcher>,
-    /// Matcher used for non-ASCII text variants. When both ASCII and non-ASCII patterns
-    /// exist, this matcher is compiled over the full deduplicated pattern set so one
-    /// bytewise scan can replace the former ASCII+charwise double scan.
     non_ascii_matcher: Option<NonAsciiMatcher>,
-    /// `Some(pt_index)` when all rules share one composite process type. In that common
-    /// case, the hot hit path can skip per-entry process-type filtering entirely.
     single_pt_index: Option<u8>,
     ac_dedup_entries: Vec<PatternEntry>,
     ac_dedup_ranges: Vec<(usize, usize)>,
     rule_hot: Vec<RuleHot>,
     rule_cold: Vec<RuleCold>,
+    /// `true` when the tree has only the root node (ProcessType::None only) and every
+    /// pattern entry is `PatternKind::Simple`. Enables a zero-overhead `is_match` fast path.
+    all_simple: bool,
 }
 
 impl SimpleMatcher {
@@ -148,6 +143,44 @@ impl SimpleMatcher {
         if text.is_empty() {
             return false;
         }
+        if self.all_simple {
+            return self.is_match_simple(text);
+        }
+        if self.single_pt_index.is_some() {
+            self.is_match_inner::<true>(text)
+        } else {
+            self.is_match_inner::<false>(text)
+        }
+    }
+
+    /// Fast path for `is_match` when all patterns are simple literals under a single
+    /// process type with no tree walk needed. Avoids TLS state, generation counters,
+    /// and overlapping iteration entirely.
+    fn is_match_simple(&self, text: &str) -> bool {
+        if text.is_ascii() {
+            if let Some(ref m) = self.ascii_matcher {
+                return match m {
+                    #[cfg(feature = "dfa")]
+                    AsciiMatcher::AcDfa { matcher, .. } => matcher.is_match(text),
+                    AsciiMatcher::DaacBytewise(d) => d.find_iter(text).next().is_some(),
+                };
+            }
+        } else if let Some(ref m) = self.non_ascii_matcher {
+            return match m {
+                NonAsciiMatcher::DaacCharwise(d) => d.find_iter(text).next().is_some(),
+            };
+        } else if let Some(ref m) = self.ascii_matcher {
+            return match m {
+                #[cfg(feature = "dfa")]
+                AsciiMatcher::AcDfa { matcher, .. } => matcher.is_match(text),
+                AsciiMatcher::DaacBytewise(d) => d.find_iter(text).next().is_some(),
+            };
+        }
+        false
+    }
+
+    #[inline(always)]
+    fn is_match_inner<const SINGLE_PT: bool>(&self, text: &str) -> bool {
         let tree = &self.process_type_tree;
         let max_pt = tree.len();
         let mut state = SIMPLE_MATCH_STATE.borrow_mut();
@@ -161,7 +194,7 @@ impl SimpleMatcher {
                     exit_early: true,
                     is_ascii,
                 };
-                self.scan_variant(txt, ctx, &mut state)
+                self.scan_variant::<SINGLE_PT>(txt, ctx, &mut state)
             });
         if stopped {
             return_processed_string_to_pool(text_masks);

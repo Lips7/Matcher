@@ -95,6 +95,11 @@ impl SimpleMatcher {
             node.recompute_mask_with_index(&pt_index_table);
         }
 
+        let all_simple = process_type_tree[0].children.is_empty()
+            && ac_dedup_entries
+                .iter()
+                .all(|e| e.kind == PatternKind::Simple);
+
         SimpleMatcher {
             process_type_tree,
             ascii_matcher,
@@ -104,6 +109,7 @@ impl SimpleMatcher {
             ac_dedup_ranges,
             rule_hot: parsed.rule_hot,
             rule_cold: parsed.rule_cold,
+            all_simple,
         }
     }
 

@@ -45,14 +45,34 @@ impl SimpleMatcher {
 
     /// Pass 1: scans all text variants, updating [`SimpleMatchState`].
     ///
-    /// For each text variant in `processed_text_process_type_masks`, the matcher scans the
-    /// ASCII engine first and then, when needed, the charwise engine. Each hit is
-    /// dispatched to [`Self::process_match`], which updates the affected rule's counters.
-    /// If `exit_early` is `true`, scanning halts as soon as a rule becomes fully satisfied
-    /// on a path where early exit is sound (used by `is_match`).
+    /// Dispatches to the const-generic inner function based on whether all rules share
+    /// a single process type. When `SINGLE_PT=true`, the per-entry process-type mask
+    /// check is eliminated at compile time.
     ///
     /// Returns `true` only when `exit_early` is `true` and at least one rule fired early.
     pub(super) fn scan_all_variants<'a>(
+        &'a self,
+        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
+        state: &mut SimpleMatchState,
+        exit_early: bool,
+    ) -> bool {
+        if self.single_pt_index.is_some() {
+            self.scan_all_variants_inner::<true>(
+                processed_text_process_type_masks,
+                state,
+                exit_early,
+            )
+        } else {
+            self.scan_all_variants_inner::<false>(
+                processed_text_process_type_masks,
+                state,
+                exit_early,
+            )
+        }
+    }
+
+    #[inline(always)]
+    fn scan_all_variants_inner<'a, const SINGLE_PT: bool>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         state: &mut SimpleMatchState,
@@ -75,7 +95,7 @@ impl SimpleMatcher {
                 exit_early,
                 is_ascii: tv.is_ascii,
             };
-            if self.scan_variant(tv.text.as_ref(), ctx, state) {
+            if self.scan_variant::<SINGLE_PT>(tv.text.as_ref(), ctx, state) {
                 return true;
             }
         }
@@ -84,32 +104,25 @@ impl SimpleMatcher {
 
     /// Scans one pre-processed text variant through the relevant matcher engines.
     ///
-    /// This is the inner loop of Pass 1 for a single text variant produced by the
-    /// transformation pipeline.
-    ///
-    /// # Arguments
-    /// * `processed_text` — the transformed text variant to scan.
-    /// * `ctx` — scan context bundling the variant index, process-type mask, variant count,
-    ///   early-exit flag, and ASCII flag (see [`ScanContext`]).
-    /// * `state` — mutable per-call match state (word states, counters, touched list).
+    /// Generic over `SINGLE_PT`: when `true`, the per-entry process-type mask check
+    /// in `process_match` is dead code and the compiler eliminates it entirely.
     ///
     /// Returns `true` if a rule was fully satisfied and `ctx.exit_early` is set; `false` otherwise.
     #[inline(always)]
-    pub(super) fn scan_variant(
+    pub(super) fn scan_variant<const SINGLE_PT: bool>(
         &self,
         processed_text: &str,
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
         if ctx.is_ascii {
-            // ASCII text: bytewise matcher is optimal (1 transition per byte).
             if let Some(ref ascii_matcher) = self.ascii_matcher {
                 match ascii_matcher {
                     #[cfg(feature = "dfa")]
                     AsciiMatcher::AcDfa { matcher, to_dedup } => {
                         for hit in matcher.find_overlapping_iter(processed_text) {
                             let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
-                            if self.process_match(dedup_idx, ctx, state) {
+                            if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
                                 return true;
                             }
                         }
@@ -117,7 +130,7 @@ impl SimpleMatcher {
                     AsciiMatcher::DaacBytewise(daac_matcher) => {
                         for hit in daac_matcher.find_overlapping_iter(processed_text) {
                             let dedup_idx = hit.value() as usize;
-                            if self.process_match(dedup_idx, ctx, state) {
+                            if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
                                 return true;
                             }
                         }
@@ -125,28 +138,23 @@ impl SimpleMatcher {
                 }
             }
         } else if let Some(ref non_ascii_matcher) = self.non_ascii_matcher {
-            // Non-ASCII text: charwise DAAC does 1 transition per Unicode codepoint.
-            // When both ASCII and non-ASCII patterns exist, this matcher contains
-            // the full pattern set, so one scan covers everything.
             match non_ascii_matcher {
                 NonAsciiMatcher::DaacCharwise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
                         let dedup_idx = hit.value() as usize;
-                        if self.process_match(dedup_idx, ctx, state) {
+                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
                 }
             }
         } else if let Some(ref ascii_matcher) = self.ascii_matcher {
-            // Fallback: no non-ASCII patterns exist, but ASCII patterns can still
-            // appear in non-ASCII text. Bytewise scan works on UTF-8 directly.
             match ascii_matcher {
                 #[cfg(feature = "dfa")]
                 AsciiMatcher::AcDfa { matcher, to_dedup } => {
                     for hit in matcher.find_overlapping_iter(processed_text) {
                         let dedup_idx = to_dedup[hit.pattern().as_usize()] as usize;
-                        if self.process_match(dedup_idx, ctx, state) {
+                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
@@ -154,7 +162,7 @@ impl SimpleMatcher {
                 AsciiMatcher::DaacBytewise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
                         let dedup_idx = hit.value() as usize;
-                        if self.process_match(dedup_idx, ctx, state) {
+                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
                             return true;
                         }
                     }
@@ -167,21 +175,10 @@ impl SimpleMatcher {
 
     /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
-    /// Looks up all [`PatternEntry`] records for `pattern_idx`, skipping any rule whose
-    /// process-type mask does not include the current text variant or that has already been
-    /// disqualified in this generation.
-    ///
-    /// For an AND sub-pattern hit: decrements the counter and sets the bit in `satisfied_mask`
-    /// when the counter reaches ≤0. For a NOT sub-pattern hit: sets `not_generation` to
-    /// permanently disqualify the rule. Returns `true` if `exit_early` and a rule just became
-    /// fully satisfied.
-    ///
-    /// Repeated sub-patterns such as `a&a&a` are represented as counters rather than booleans,
-    /// so the rule is satisfied only after enough hits arrive. Rules that do not fit the
-    /// simple bitmask path fall back to the per-rule matrix, which tracks counts per text
-    /// variant.
+    /// Generic over `SINGLE_PT`: when `true`, all rules share the same process type,
+    /// so the per-entry `pt_index` mask check is compiled away.
     #[inline(always)]
-    pub(super) fn process_match(
+    pub(super) fn process_match<const SINGLE_PT: bool>(
         &self,
         pattern_idx: usize,
         ctx: ScanContext,
@@ -199,7 +196,7 @@ impl SimpleMatcher {
 
             let rule_idx = rule_idx as usize;
 
-            if self.single_pt_index.is_none() && ctx.process_type_mask & (1u64 << pt_index) == 0 {
+            if !SINGLE_PT && ctx.process_type_mask & (1u64 << pt_index) == 0 {
                 continue;
             }
 
@@ -336,9 +333,6 @@ impl SimpleMatcher {
     }
 
     /// Initializes the flat counter matrix for a rule on its first touch in a generation.
-    ///
-    /// Marked `#[cold]` because the matrix path is uncommon. Extracting it helps the
-    /// compiler keep the simple bitmask path compact.
     #[cold]
     #[inline(never)]
     pub(super) fn init_matrix(
