@@ -10,8 +10,8 @@ use tinyvec::TinyVec;
 use crate::process::{ProcessedTextMasks, return_processed_string_to_pool, walk_process_tree};
 
 use super::types::{
-    AsciiMatcher, NonAsciiMatcher, PatternEntry, PatternKind, SIMPLE_MATCH_STATE, ScanContext,
-    SimpleMatchState,
+    AsciiMatcher, DIRECT_RULE_BIT, NonAsciiMatcher, PatternEntry, PatternKind, SIMPLE_MATCH_STATE,
+    ScanContext, SimpleMatchState,
 };
 use super::{SimpleMatcher, SimpleResult};
 
@@ -89,7 +89,23 @@ impl SimpleMatcher {
         let generation = state.generation;
 
         // Shared emit logic for each automaton hit.
-        let mut emit = |dedup_idx: usize| {
+        let mut emit = |raw_value: u32| {
+            if raw_value & DIRECT_RULE_BIT != 0 {
+                let rule_idx = (raw_value & !DIRECT_RULE_BIT) as usize;
+                debug_assert!(rule_idx < state.word_states.len());
+                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                if word_state.positive_generation != generation {
+                    word_state.positive_generation = generation;
+                    debug_assert!(rule_idx < self.rule_cold.len());
+                    let cold = unsafe { self.rule_cold.get_unchecked(rule_idx) };
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+                return;
+            }
+            let dedup_idx = raw_value as usize;
             debug_assert!(dedup_idx < self.ac_dedup_ranges.len());
             let &(start, len) = unsafe { self.ac_dedup_ranges.get_unchecked(dedup_idx) };
             debug_assert!(start + len <= self.ac_dedup_entries.len());
@@ -114,17 +130,16 @@ impl SimpleMatcher {
             if let Some(ref m) = self.ascii_matcher {
                 match m {
                     #[cfg(feature = "dfa")]
-                    AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                    AsciiMatcher::AcDfa { matcher, to_value } => {
                         for hit in matcher.find_overlapping_iter(text) {
-                            let dedup_idx =
-                                unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) }
-                                    as usize;
-                            emit(dedup_idx);
+                            let raw_value =
+                                unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
+                            emit(raw_value);
                         }
                     }
                     AsciiMatcher::DaacBytewise(d) => {
                         for hit in d.find_overlapping_iter(text) {
-                            emit(hit.value() as usize);
+                            emit(hit.value());
                         }
                     }
                 }
@@ -133,23 +148,23 @@ impl SimpleMatcher {
             match m {
                 NonAsciiMatcher::DaacCharwise(d) => {
                     for hit in d.find_overlapping_iter(text) {
-                        emit(hit.value() as usize);
+                        emit(hit.value());
                     }
                 }
             }
         } else if let Some(ref m) = self.ascii_matcher {
             match m {
                 #[cfg(feature = "dfa")]
-                AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                AsciiMatcher::AcDfa { matcher, to_value } => {
                     for hit in matcher.find_overlapping_iter(text) {
-                        let dedup_idx =
-                            unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) } as usize;
-                        emit(dedup_idx);
+                        let raw_value =
+                            unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
+                        emit(raw_value);
                     }
                 }
                 AsciiMatcher::DaacBytewise(d) => {
                     for hit in d.find_overlapping_iter(text) {
-                        emit(hit.value() as usize);
+                        emit(hit.value());
                     }
                 }
             }
@@ -264,20 +279,18 @@ impl SimpleMatcher {
             if let Some(ref ascii_matcher) = self.ascii_matcher {
                 match ascii_matcher {
                     #[cfg(feature = "dfa")]
-                    AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                    AsciiMatcher::AcDfa { matcher, to_value } => {
                         for hit in matcher.find_overlapping_iter(processed_text) {
-                            let dedup_idx =
-                                unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) }
-                                    as usize;
-                            if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
+                            let raw_value =
+                                unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
+                            if self.process_match::<SINGLE_PT>(raw_value, ctx, state) {
                                 return true;
                             }
                         }
                     }
                     AsciiMatcher::DaacBytewise(daac_matcher) => {
                         for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                            let dedup_idx = hit.value() as usize;
-                            if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
+                            if self.process_match::<SINGLE_PT>(hit.value(), ctx, state) {
                                 return true;
                             }
                         }
@@ -288,8 +301,7 @@ impl SimpleMatcher {
             match non_ascii_matcher {
                 NonAsciiMatcher::DaacCharwise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                        let dedup_idx = hit.value() as usize;
-                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
+                        if self.process_match::<SINGLE_PT>(hit.value(), ctx, state) {
                             return true;
                         }
                     }
@@ -298,19 +310,18 @@ impl SimpleMatcher {
         } else if let Some(ref ascii_matcher) = self.ascii_matcher {
             match ascii_matcher {
                 #[cfg(feature = "dfa")]
-                AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                AsciiMatcher::AcDfa { matcher, to_value } => {
                     for hit in matcher.find_overlapping_iter(processed_text) {
-                        let dedup_idx =
-                            unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) } as usize;
-                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
+                        let raw_value =
+                            unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
+                        if self.process_match::<SINGLE_PT>(raw_value, ctx, state) {
                             return true;
                         }
                     }
                 }
                 AsciiMatcher::DaacBytewise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                        let dedup_idx = hit.value() as usize;
-                        if self.process_match::<SINGLE_PT>(dedup_idx, ctx, state) {
+                        if self.process_match::<SINGLE_PT>(hit.value(), ctx, state) {
                             return true;
                         }
                     }
@@ -324,17 +335,32 @@ impl SimpleMatcher {
     /// Updates rule counters for a single automaton hit (called from Pass 1).
     ///
     /// Generic over `SINGLE_PT`: when `true`, all rules share the same process type,
-    /// so the per-entry `pt_index` mask check is compiled away.
-    ///
-    /// Branches on `len == 1` to avoid loop overhead for the common single-entry case.
+    /// so the per-entry `pt_index` mask check is compiled away, and values with
+    /// [`DIRECT_RULE_BIT`] set bypass the dedup indirection chain entirely.
     #[inline(always)]
     pub(super) fn process_match<const SINGLE_PT: bool>(
         &self,
-        pattern_idx: usize,
+        raw_value: u32,
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
-        // SAFETY: pattern_idx is an automaton value assigned during construction, always < ac_dedup_ranges.len().
+        // Direct path: single-entry Simple pattern with rule_idx encoded in the value.
+        // When SINGLE_PT=false, the compiler eliminates this entire branch.
+        if SINGLE_PT && raw_value & DIRECT_RULE_BIT != 0 {
+            let rule_idx = (raw_value & !DIRECT_RULE_BIT) as usize;
+            let generation = state.generation;
+            debug_assert!(rule_idx < state.word_states.len());
+            let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+            if word_state.positive_generation != generation {
+                word_state.matrix_generation = generation;
+                word_state.positive_generation = generation;
+                state.touched_indices.push(rule_idx);
+            }
+            return ctx.exit_early;
+        }
+
+        // Indirect path: look up dedup_ranges → entries.
+        let pattern_idx = raw_value as usize;
         debug_assert!(pattern_idx < self.ac_dedup_ranges.len());
         let &(start, len) = unsafe { self.ac_dedup_ranges.get_unchecked(pattern_idx) };
         debug_assert!(start + len <= self.ac_dedup_entries.len());

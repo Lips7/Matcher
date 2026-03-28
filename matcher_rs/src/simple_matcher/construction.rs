@@ -22,8 +22,8 @@ use super::SimpleMatcher;
 #[cfg(feature = "dfa")]
 use super::types::AC_DFA_PATTERN_THRESHOLD;
 use super::types::{
-    AsciiMatcher, BITMASK_CAPACITY, NonAsciiMatcher, PROCESS_TYPE_TABLE_SIZE, PatternEntry,
-    PatternKind, RuleCold, RuleHot,
+    AsciiMatcher, BITMASK_CAPACITY, DIRECT_RULE_BIT, NonAsciiMatcher, PROCESS_TYPE_TABLE_SIZE,
+    PatternEntry, PatternKind, RuleCold, RuleHot,
 };
 
 /// Intermediate outputs of [`SimpleMatcher::parse_rules`], bundling all data
@@ -86,9 +86,12 @@ impl SimpleMatcher {
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
-        let (ascii_matcher, non_ascii_matcher) = Self::compile_automata(&parsed.dedup_patterns);
-
         let (ac_dedup_entries, ac_dedup_ranges) = Self::flatten_dedup_entries(parsed.dedup_entries);
+
+        let value_map = Self::build_value_map(&ac_dedup_entries, &ac_dedup_ranges, single_pt_index);
+
+        let (ascii_matcher, non_ascii_matcher) =
+            Self::compile_automata(&parsed.dedup_patterns, &value_map);
 
         let mut process_type_tree = build_process_type_tree(&process_type_set);
         for node in &mut process_type_tree {
@@ -299,19 +302,21 @@ impl SimpleMatcher {
     /// ASCII matcher.
     fn compile_automata(
         dedup_patterns: &[Cow<'_, str>],
+        value_map: &[u32],
     ) -> (Option<AsciiMatcher>, Option<NonAsciiMatcher>) {
         let mut ascii_patvals: Vec<(&str, u32)> = Vec::new();
         let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::new();
         #[cfg(feature = "dfa")]
-        let mut ascii_ac_to_dedup: Vec<u32> = Vec::new();
+        let mut ascii_ac_to_value: Vec<u32> = Vec::new();
 
         for (dedup_id, pattern) in dedup_patterns.iter().enumerate() {
+            let value = value_map[dedup_id];
             if pattern.as_ref().is_ascii() {
                 #[cfg(feature = "dfa")]
-                ascii_ac_to_dedup.push(dedup_id as u32);
-                ascii_patvals.push((pattern.as_ref(), dedup_id as u32));
+                ascii_ac_to_value.push(value);
+                ascii_patvals.push((pattern.as_ref(), value));
             } else {
-                non_ascii_patvals.push((pattern.as_ref(), dedup_id as u32));
+                non_ascii_patvals.push((pattern.as_ref(), value));
             }
         }
 
@@ -324,7 +329,7 @@ impl SimpleMatcher {
                 dedup_patterns
                     .iter()
                     .enumerate()
-                    .map(|(dedup_id, pattern)| (pattern.as_ref(), dedup_id as u32))
+                    .map(|(dedup_id, pattern)| (pattern.as_ref(), value_map[dedup_id]))
                     .collect::<Vec<_>>(),
             )
         };
@@ -338,7 +343,7 @@ impl SimpleMatcher {
                         .match_kind(AhoCorasickMatchKind::Standard)
                         .build(ascii_patvals.iter().map(|(p, _)| p))
                         .unwrap(),
-                    to_dedup: ascii_ac_to_dedup,
+                    to_value: ascii_ac_to_value,
                 }
             } else {
                 AsciiMatcher::DaacBytewise(
@@ -393,5 +398,32 @@ impl SimpleMatcher {
             ac_dedup_ranges.push((start, len));
         }
         (ac_dedup_entries, ac_dedup_ranges)
+    }
+
+    /// Builds the automaton value map, encoding `rule_idx | DIRECT_RULE_BIT` for eligible patterns.
+    ///
+    /// A pattern is eligible for direct encoding when all three conditions hold:
+    /// - `single_pt_index.is_some()` (all rules share one process type)
+    /// - the dedup entry has exactly one [`PatternEntry`]
+    /// - that entry is [`PatternKind::Simple`]
+    ///
+    /// Ineligible patterns keep their dedup index as the automaton value.
+    fn build_value_map(
+        ac_dedup_entries: &[PatternEntry],
+        ac_dedup_ranges: &[(usize, usize)],
+        single_pt_index: Option<u8>,
+    ) -> Vec<u32> {
+        let mut value_map = Vec::with_capacity(ac_dedup_ranges.len());
+        for (dedup_idx, &(start, len)) in ac_dedup_ranges.iter().enumerate() {
+            if single_pt_index.is_some() && len == 1 {
+                let entry = &ac_dedup_entries[start];
+                if entry.kind == PatternKind::Simple {
+                    value_map.push(entry.rule_idx | DIRECT_RULE_BIT);
+                    continue;
+                }
+            }
+            value_map.push(dedup_idx as u32);
+        }
+        value_map
     }
 }

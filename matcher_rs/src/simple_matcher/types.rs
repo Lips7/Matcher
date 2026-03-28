@@ -39,6 +39,13 @@ pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 /// owned `String` values.
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
+/// Bit flag in automaton values indicating a direct-encoded `rule_idx`.
+///
+/// When set, the lower 31 bits are a `rule_idx` for a single-entry `PatternKind::Simple`
+/// pattern, bypassing the `ac_dedup_ranges` → `ac_dedup_entries` indirection chain.
+/// Only used when `single_pt_index.is_some()` (all rules share one process type).
+pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
+
 /// Threshold for selecting the bitmask fast-path over the matrix fallback.
 ///
 /// Rules with ≤ 64 AND/NOT segments use a `u64` bitmask to track satisfaction;
@@ -93,8 +100,8 @@ pub(super) enum AsciiMatcher {
     #[cfg(feature = "dfa")]
     AcDfa {
         matcher: AhoCorasick,
-        /// Maps sequential AC pattern ID → global dedup index.
-        to_dedup: Vec<u32>,
+        /// Maps sequential AC pattern ID → automaton value (direct-encoded rule_idx or dedup index).
+        to_value: Vec<u32>,
     },
     /// DAAC value IS the global dedup index — no extra indirection.
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
