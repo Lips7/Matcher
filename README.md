@@ -29,9 +29,9 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
-  - **PinYin**: Convert Chinese characters to Pinyin for fuzzy matching.
+  - **PinYin**: Convert Chinese characters to space-separated Pinyin for fuzzy matching.
     Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
-  - **PinYinChar**: Convert Chinese characters to Pinyin.
+  - **PinYinChar**: Convert Chinese characters to Pinyin without boundary spaces.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
@@ -56,11 +56,14 @@ We provide dynamic library to link. See the [C README](./matcher_c/README.md) an
 
 ```shell
 git clone https://github.com/Lips7/Matcher.git
+cd Matcher
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
-cargo build --release
+make build
 ```
 
-Then you should find the `libmatcher_c.so`/`libmatcher_c.dylib`/`matcher_c.dll` in the `target/release` directory.
+This builds all packages and copies the dynamic libraries to the right locations. You can also run `cargo build --release` directly — the C and Java libraries will be in `target/release/`:
+- `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll`
+- `libmatcher_java.so` / `libmatcher_java.dylib` / `matcher_java.dll`
 
 ## Benchmarks
 
