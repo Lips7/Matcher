@@ -73,7 +73,7 @@ Each single-bit `ProcessType` maps to a `ProcessMatcher` enum, either `SingleCha
 |---|---|---|---|
 | `Fanjian` | `SingleCharMatcher::Fanjian` | 2-stage page table. L1: `u16[4352]` (one per 256-codepoint block). L2: dense `u32` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
 | `PinYin` / `PinYinChar` | `SingleCharMatcher::Pinyin` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer. `PinYinChar` trims leading/trailing spaces from each packed entry at construction time. | O(1) per codepoint |
-| `Delete` | `SingleCharMatcher::Delete` | 139 KB flat BitSet covering U+0000 to U+10FFFF. A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. | O(1) per codepoint, branchless |
+| `Delete` | `SingleCharMatcher::Delete` | 139 KB flat BitSet covering U+0000 to U+10FFFF. A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. Uses a specialized `delete_direct` single-pass scan (no iterator protocol) with SIMD bulk-skip of non-deletable ASCII. | O(1) per codepoint, branchless |
 | `Normalize` | `MultiCharMatcher` | `daachorse` charwise Aho-Corasick (leftmost-longest, non-`dfa`) or `aho-corasick` DFA (`dfa` feature). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. | O(N) per text |
 | `None` | `MultiCharMatcher` (empty) | An empty Aho-Corasick automaton; no-op. | - |
 
@@ -87,12 +87,12 @@ if value == 0 → no mapping
 
 #### SIMD-Accelerated Skip Functions
 
-The `SingleCharMatcher` iterators use SIMD to skip over bytes that cannot produce a match, avoiding per-byte branching:
+The `SingleCharMatcher` iterators and `delete_direct` use SIMD to skip over bytes that cannot produce a match, avoiding per-byte branching:
 
-| Iterator | Skip Function | What It Skips |
-|----------|--------------|---------------|
+| Caller | Skip Function | What It Skips |
+|--------|--------------|---------------|
 | `FanjianFindIter` | `skip_ascii_simd` | All ASCII bytes (Fanjian only maps non-ASCII CJK codepoints) |
-| `DeleteFindIter` | `skip_ascii_non_delete_simd` | ASCII bytes that are NOT in the delete bitset (probes the 16-byte `ascii_lut` via SIMD table lookup) |
+| `delete_direct` | `skip_ascii_non_delete_simd` | ASCII bytes that are NOT in the delete bitset (probes the 16-byte `ascii_lut` via SIMD table lookup) |
 | `PinYinFindIter` | `skip_non_digit_ascii_simd` | Non-digit ASCII bytes (the Pinyin table only has entries for ASCII digits and non-ASCII codepoints) |
 
 Each skip function dispatches to the best available kernel:
@@ -139,11 +139,11 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `fold
 
 `walk_process_tree<const LAZY: bool, F>` traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-For each child node, the parent's text variant is transformed by the child's cached `ProcessMatcher`. The `is_ascii` flag is propagated intelligently per step:
-- **Fanjian**: maps CJK to CJK, so the result is always non-ASCII if changed.
-- **PinYin/PinYinChar**: output is romanized text, so always ASCII if changed.
-- **Delete**: can only remove characters. If the parent was ASCII, the result stays ASCII. Otherwise, check the shorter result.
-- **Normalize**: requires checking the result string.
+For each child node, the parent's text variant is transformed by the child's cached `ProcessMatcher`. Both `replace_all` and `delete_all` return `Option<(String, bool)>` where the `bool` is an `is_ascii` flag for the result, avoiding a redundant post-hoc scan. The flag is determined per step using static knowledge:
+- **Fanjian**: maps CJK to CJK, so the result is always non-ASCII if changed (`false`).
+- **PinYin/PinYinChar**: output is romanized text, so always ASCII if changed (`true`).
+- **Delete**: can only remove characters. If the parent was ASCII, the result stays ASCII. Otherwise, post-hoc SIMD `is_ascii()` check on the shorter result.
+- **Normalize**: post-hoc SIMD `is_ascii()` check on the result (replacements can be ASCII or not).
 
 A `dedup_insert` function prevents duplicate text variants: if two trie paths converge on the same string, the existing entry is reused and its `mask` is OR'd with the new type's mask. Duplicate strings are returned to the pool.
 
@@ -250,7 +250,9 @@ This three-way dispatch avoids running both engines when one suffices.
 
 `scan_variant` runs the selected engine's `find_overlapping_iter`. For each hit, it obtains the dedup index (directly from the DAAC value, or via the `to_dedup` table for AcDfa) and calls `process_match`.
 
-`process_match` looks up the `PatternEntry` slice for the dedup index and processes each entry. The per-entry check `ctx.process_type_mask & (1u64 << pt_index) == 0` filters hits from a text variant that does not match the entry's pipeline. When `SINGLE_PT=true`, this check compiles away entirely.
+`process_match` looks up the `PatternEntry` slice for the dedup index via `ac_dedup_ranges`. When the slice has exactly one entry (`len == 1`), it calls `process_entry` directly on the single entry, avoiding loop setup overhead. For multi-entry slices, it iterates and calls `process_entry` for each. This single-entry fast path benefits the common case where most deduplicated patterns map to exactly one rule.
+
+`process_entry` handles the per-entry logic. The check `ctx.process_type_mask & (1u64 << pt_index) == 0` filters hits from a text variant that does not match the entry's pipeline. When `SINGLE_PT=true`, this check compiles away entirely. All array accesses in the hot path (`ac_dedup_ranges`, `ac_dedup_entries`, `word_states`, `rule_hot`, `matrix`, `matrix_status`) use `get_unchecked` with `debug_assert!` guards, since all indices are construction-time invariants.
 
 ### Pass 2: Logical Evaluation
 
@@ -329,10 +331,10 @@ Rules exceeding bitmask capacity use a flat `TinyVec<[i32; 16]>` counter matrix,
 
 ### all_simple Fast Path
 
-When `all_simple` is `true` (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), `is_match` calls `is_match_simple` which:
-- Checks `text.is_ascii()` and dispatches to the appropriate engine.
-- Uses `find_iter(...).next().is_some()` or `is_match(...)` directly.
-- Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration. This is the zero-overhead path for the common case of "just check if any keyword appears."
+When `all_simple` is `true` (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_process_tree` and `TRANSFORM_STATE` entirely:
+
+- **`is_match`** calls `is_match_simple`, which checks `text.is_ascii()`, dispatches to the appropriate engine, and uses `find_iter(...).next().is_some()` or `is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
+- **`process_into`** calls `process_simple`, which scans the automaton directly and uses generation-based deduplication from `SIMPLE_MATCH_STATE` to collect all matching rules. This avoids the `walk_process_tree` overhead, `TRANSFORM_STATE` TLS access, and `ProcessedTextMasks` allocation/deallocation, while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ### Const-Generic SINGLE_PT Dispatch
 
@@ -356,9 +358,11 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 
 | Slot | Type | Purpose |
 |------|------|---------|
-| `SIMPLE_MATCH_STATE` | `RefCell<SimpleMatchState>` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
-| `STRING_POOL` | `RefCell<Vec<String>>` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
-| `TRANSFORM_STATE` | `RefCell<TransformThreadState>` | Node-index-to-text-index scratch buffer (`tree_node_indices`) + recycled `ProcessedTextMasks` vectors (`masks_pool`, bounded to 16). Bundled into one slot to save a TLS lookup per call. |
+| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
+| `STRING_POOL` | `UnsafeCell<Vec<String>>` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
+| `TRANSFORM_STATE` | `UnsafeCell<TransformThreadState>` | Node-index-to-text-index scratch buffer (`tree_node_indices`) + recycled `ProcessedTextMasks` vectors (`masks_pool`, bounded to 16). Bundled into one slot to save a TLS lookup per call. |
+
+`UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.
 
 ### String Pool
 
