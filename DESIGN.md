@@ -1,279 +1,397 @@
 # Design
 
-## Transformation
+This document describes the internal architecture of `matcher_rs` as it exists in the codebase today. It is intended for contributors and anyone integrating the library at a low level. Where the code has a non-obvious reason for doing something a particular way, this document explains the reasoning.
 
-* `FANJIAN` (used in `Fanjian`): built from [Unihan_Variants.txt](./data/str_conv/Unihan_Variants.txt) and [EquivalentUnifiedIdeograph.txt](./data/str_conv/EquivalentUnifiedIdeograph.txt).
-* `NUM-NORM` (used in `Normalize`): built from [DerivedNumericValues.txt](./data/str_conv/DerivedNumericValues.txt).
-* `TEXT-DELETE` (used in `Delete`): built from [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt) (contains symbols and punctuation characters for removal).
-* `WHITE-SPACE` (used in `Delete`): a hardcoded list of 27 Unicode whitespace codepoints.
-* `PINYIN` and `PINYIN-CHAR` (used in `PinYin` and `PinYinChar`): built from [Unihan_Readings.txt](./data/str_conv/Unihan_Readings.txt).
-* `NORM` (used in `Normalize`): built from [NormalizationTest.txt](./data/str_conv/NormalizationTest.txt) and [DerivedGeneralCategory.txt](./data/str_conv/DerivedGeneralCategory.txt) (contains alphanumeric and general symbol variations).
+## Table of Contents
 
-Shorthand bitmasks exist for frequently combined pipelines:
-* `DeleteNormalize` (0b00001100): Equivalent to `Delete | Normalize`.
-* `FanjianDeleteNormalize` (0b00001110): Equivalent to `Fanjian | Delete | Normalize`.
+- [Text Transformation Pipeline](#text-transformation-pipeline)
+  - [ProcessType Bitflags](#processtype-bitflags)
+  - [Transformation Backends](#transformation-backends)
+  - [Transformation DAG (ProcessTypeBitNode Tree)](#transformation-dag-processtypebitnode-tree)
+  - [walk_process_tree](#walk_process_tree)
+- [SimpleMatcher](#simplematcher)
+  - [Input Format](#input-format)
+  - [Pattern Syntax](#pattern-syntax)
+  - [Construction](#construction)
+  - [Two-Pass Matching](#two-pass-matching)
+  - [Scan Engine Selection](#scan-engine-selection)
+  - [Pass 1: Pattern Scanning](#pass-1-pattern-scanning)
+  - [Pass 2: Logical Evaluation](#pass-2-logical-evaluation)
+- [State Management](#state-management)
+  - [Per-Rule State: RuleHot, RuleCold, WordState](#per-rule-state-rulehot-rulecold-wordstate)
+  - [Generation-Based State Reuse](#generation-based-state-reuse)
+  - [Sparse Set: touched_indices](#sparse-set-touched_indices)
+  - [PatternKind Dispatch](#patternkind-dispatch)
+  - [Bitmask Fast Path](#bitmask-fast-path)
+  - [Matrix Fallback](#matrix-fallback)
+  - [all_simple Fast Path](#all_simple-fast-path)
+  - [Const-Generic SINGLE_PT Dispatch](#const-generic-single_pt-dispatch)
+- [Memory and Resource Efficiency](#memory-and-resource-efficiency)
+  - [Thread-Local Storage](#thread-local-storage)
+  - [String Pool](#string-pool)
+  - [ProcessedTextMasks Pool](#processedtextmasks-pool)
+  - [Static ProcessMatcher Cache](#static-processmatcher-cache)
+  - [Global Allocator](#global-allocator)
+- [Feature Flags](#feature-flags)
+- [Compiled vs. Runtime Transformation Tables](#compiled-vs-runtime-transformation-tables)
+
+---
+
+## Text Transformation Pipeline
+
+### ProcessType Bitflags
+
+`ProcessType` is a `u8` bitflags type (via the `bitflags` crate) where each bit selects one transformation step. Flags compose freely with `|`:
+
+| Flag | Bit | Description |
+|------|-----|-------------|
+| `None` | `0b00000001` | No transformation; match against the raw input. |
+| `Fanjian` | `0b00000010` | Traditional Chinese to Simplified Chinese conversion. |
+| `Delete` | `0b00000100` | Remove symbols, punctuation, and whitespace from the configured delete tables. |
+| `Normalize` | `0b00001000` | Multi-character replacement via normalization tables (full-width forms, digit-like variants, etc.). |
+| `PinYin` | `0b00010000` | Chinese characters to space-separated Pinyin syllables. |
+| `PinYinChar` | `0b00100000` | Chinese characters to Pinyin with inter-syllable spaces stripped. |
+
+Named aliases exist for common combinations: `DeleteNormalize` (0b00001100) and `FanjianDeleteNormalize` (0b00001110). These are the same as composing the individual flags with `|`.
+
+Source data for each transformation:
+
+| Map | Source Files | Used By |
+|-----|-------------|---------|
+| `FANJIAN` | `Unihan_Variants.txt`, `EquivalentUnifiedIdeograph.txt` | `Fanjian` |
+| `TEXT-DELETE` | `DerivedGeneralCategory.txt` (symbols + punctuation) | `Delete` |
+| `WHITE-SPACE` | Hardcoded 27 Unicode whitespace codepoints | `Delete` |
+| `NORM` | `NormalizationTest.txt`, `DerivedGeneralCategory.txt` (alphanumeric + symbol variations) | `Normalize` |
+| `NUM-NORM` | `DerivedNumericValues.txt` | `Normalize` |
+| `PINYIN` / `PINYIN-CHAR` | `Unihan_Readings.txt` | `PinYin`, `PinYinChar` |
+
+### Transformation Backends
+
+Each single-bit `ProcessType` maps to a `ProcessMatcher` enum, either `SingleChar` (per-codepoint lookup) or `MultiChar` (Aho-Corasick multi-character substitution). The data structures are chosen to match the access pattern of each step:
+
+| ProcessType | Backend | Data Structure | Complexity |
+|---|---|---|---|
+| `Fanjian` | `SingleCharMatcher::Fanjian` | 2-stage page table. L1: `u16[4352]` (one per 256-codepoint block). L2: dense `u32` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
+| `PinYin` / `PinYinChar` | `SingleCharMatcher::Pinyin` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer. `PinYinChar` trims leading/trailing spaces from each packed entry at construction time. | O(1) per codepoint |
+| `Delete` | `SingleCharMatcher::Delete` | 139 KB flat BitSet covering U+0000 to U+10FFFF. A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. | O(1) per codepoint, branchless |
+| `Normalize` | `MultiCharMatcher` | `daachorse` charwise Aho-Corasick (leftmost-longest, non-`dfa`) or `aho-corasick` DFA (`dfa` feature). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. | O(N) per text |
+| `None` | `MultiCharMatcher` (empty) | An empty Aho-Corasick automaton; no-op. | - |
+
+The page-table lookup for Fanjian and Pinyin is:
+```
+page = l1[cp >> 8]       // which 256-codepoint block?
+if page == 0 → no mapping
+value = l2[page * 256 + (cp & 0xFF)]
+if value == 0 → no mapping
+```
+
+#### SIMD-Accelerated Skip Functions
+
+The `SingleCharMatcher` iterators use SIMD to skip over bytes that cannot produce a match, avoiding per-byte branching:
+
+| Iterator | Skip Function | What It Skips |
+|----------|--------------|---------------|
+| `FanjianFindIter` | `skip_ascii_simd` | All ASCII bytes (Fanjian only maps non-ASCII CJK codepoints) |
+| `DeleteFindIter` | `skip_ascii_non_delete_simd` | ASCII bytes that are NOT in the delete bitset (probes the 16-byte `ascii_lut` via SIMD table lookup) |
+| `PinYinFindIter` | `skip_non_digit_ascii_simd` | Non-digit ASCII bytes (the Pinyin table only has entries for ASCII digits and non-ASCII codepoints) |
+
+Each skip function dispatches to the best available kernel:
+
+- **x86-64 with `simd_runtime_dispatch`**: Runtime detection via `is_x86_feature_detected!("avx2")`. A `SimdDispatch` struct holds function pointers initialized once (via `OnceLock`), so subsequent calls are a single pointer comparison. AVX2 paths use 32-byte chunks with `_mm256_movemask_epi8` for non-ASCII detection and `_mm256_shuffle_epi8` for bitset probing. Falls back to portable `std::simd`.
+- **aarch64 with `simd_runtime_dispatch`**: Compile-time NEON intrinsics. 16-byte chunks using `vmaxvq_u8` for fast any-non-ASCII tests and `vqtbl1q_u8` for bitset probing.
+- **Portable fallback**: `std::simd` with 32-lane (or 16-lane for tail) operations. Uses `swizzle_dyn` for the bitset lookup, which the compiler lowers to the appropriate target instructions.
+
+All paths fall through to a scalar byte-at-a-time loop for the tail.
+
+#### In-Place Fanjian Optimization
+
+The `replace_all_fanjian` path exploits a property of the Fanjian mapping: 99%+ of Traditional-to-Simplified mappings produce a replacement character with the same UTF-8 byte length. When all replacements in a text are same-length, the method clones the input string once and overwrites the mapped spans directly via `unsafe { c.encode_utf8(&mut buf.as_bytes_mut()[start..end]) }`, avoiding the scan-and-rebuild allocations of the generic `replace_scan` path. On the rare byte-length mismatch, it abandons the in-place buffer and falls back to the standard path.
+
+### Transformation DAG (ProcessTypeBitNode Tree)
+
+When a `SimpleMatcher` is configured with multiple composite `ProcessType` values, their decomposed single-bit steps often share prefixes. For example, `Fanjian | Delete` and `Fanjian | Normalize` both start with a Fanjian step. Naively applying every composite pipeline independently would re-derive the Fanjian result twice.
+
+`build_process_type_tree` constructs a flat-array trie that makes shared prefixes explicit:
+
+```
+Root (None)
+├── Fanjian
+│   ├── Delete            ← Fanjian | Delete terminates here
+│   │   └── Normalize     ← Fanjian | Delete | Normalize terminates here
+│   └── Normalize         ← Fanjian | Normalize terminates here
+├── Delete
+│   └── Normalize         ← Delete | Normalize terminates here
+└── Normalize             ← Normalize terminates here
+```
+
+Each node (`ProcessTypeBitNode`) stores:
+- `process_type_bit` — the single-bit transformation step this edge represents.
+- `process_type_list` — which composite `ProcessType` values terminate at this node.
+- `children` — flat-array indices of the next transformation steps reachable from here.
+- `matcher` — a cached `&'static ProcessMatcher` for this step (avoids a hash lookup in the hot traversal loop). The root stores `None`.
+- `folded_mask` — pre-computed OR of `1u64 << pt_index` for every composite type in `process_type_list`. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
+
+The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits()` values can use bits up to position 5, and composite types produce values up to 0b00111111 = 63. Storing a full `u64` mask per `PatternEntry` would waste space. Instead, `build_pt_index_table` assigns each composite type used in the current matcher a sequential index 0, 1, 2, ... (with `ProcessType::None` always at 0). These compact indices let `PatternEntry.pt_index` fit in a `u8` while `folded_mask` stays a `u64` with small bit positions.
+
+After tree construction, `recompute_mask_with_index` rewrites every node's `folded_mask` from raw-bit encoding to sequential-index encoding so it matches the `pt_index` stored in `PatternEntry`.
+
+### walk_process_tree
+
+`walk_process_tree<const LAZY: bool, F>` traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
+
+For each child node, the parent's text variant is transformed by the child's cached `ProcessMatcher`. The `is_ascii` flag is propagated intelligently per step:
+- **Fanjian**: maps CJK to CJK, so the result is always non-ASCII if changed.
+- **PinYin/PinYinChar**: output is romanized text, so always ASCII if changed.
+- **Delete**: can only remove characters. If the parent was ASCII, the result stays ASCII. Otherwise, check the shorter result.
+- **Normalize**: requires checking the result string.
+
+A `dedup_insert` function prevents duplicate text variants: if two trie paths converge on the same string, the existing entry is reused and its `mask` is OR'd with the new type's mask. Duplicate strings are returned to the pool.
+
+**`LAZY=true` mode** (used by `is_match`): Calls `on_variant(text, index, mask, is_ascii)` as soon as each new unique variant is produced. If the callback returns `true`, the walk stops early. A "delta phase" at the end re-invokes the callback for any entry whose mask grew after its initial callback (due to dedup merging), passing only the delta bits.
+
+**`LAZY=false` mode** (used by `process`/`process_into`): The callback is never called. The function simply returns all text variants with their final masks. Dead code for the callback is eliminated by the compiler.
+
+A thread-local `TRANSFORM_STATE` provides the scratch buffer (`tree_node_indices: Vec<usize>`) that maps trie node index to text variant index, plus a pool of recycled `ProcessedTextMasks` vectors. Both are bundled into one TLS slot to avoid two lookups per call.
+
+---
 
 ## SimpleMatcher
 
-### Overview
+### Input Format
 
-The `SimpleMatcher` is the core component, designed to be fast, efficient, and easy to use. It handles large amounts of data and identifies words based on predefined types. It supports complex logical operations within a single pattern entry:
-- **AND (`&`)**: All sub-patterns separated by `&` must match for the rule to trigger.
-- **NOT (`~`)**: If any sub-pattern preceded by `~` matches, the rule is disqualified.
+Rules are provided as a nested map: `HashMap<ProcessType, HashMap<u32, &str>>` (aliased as `SimpleTable`). The outer key selects the normalization pipeline. The inner key is a `word_id` (caller-assigned, returned in match results). The inner value is the pattern string.
 
-### Key Concepts
+`SimpleTableSerde` is the same structure with `Cow<'a, str>` values for deserialization from owned strings.
 
-1. **WordID**: Represents a unique identifier for a word in the `SimpleMatcher`.
+`SimpleMatcherBuilder` provides a fluent API wrapping this map.
 
-### Structure
+### Pattern Syntax
 
-The `SimpleMatcher` uses a mapping structure to define words and their IDs based on different match types. Below is an example configuration:
+Each pattern string supports two operators:
 
-```json
-{
-    "1": {
-        "1": "hello&world",
-        "2": "你好"
-    }
-}
+| Operator | Meaning |
+|----------|---------|
+| `&` | All adjacent sub-patterns must appear (order-independent AND) |
+| `~` | The following sub-pattern must be **absent** (NOT) |
+
+```
+"apple&pie"      → fires when both "apple" and "pie" appear
+"banana~peel"    → fires when "banana" appears but "peel" does not
+"a&b~c"          → fires when "a" and "b" appear and "c" does not
+"a&a~b~b"        → fires when "a" appears at least twice and "b" appears fewer than twice
 ```
 
-The outer key is the `ProcessType` as a serialized `u8`. The inner keys (`1`, `2`) are `WordID`s.
+The `&`/`~` operators split the string into sub-patterns, each independently matched as a substring. The operators themselves are not part of the sub-pattern text. Empty sub-patterns (e.g., from leading `&`) are silently dropped.
 
-### Real-world Application
+Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tracked via `segment_counts` — the AND counter starts at the required count and decrements per hit. Similarly, `"a~b~b"` allows one occurrence of `"b"` but not two.
 
-In real-world scenarios, `word_id` is used to uniquely identify a word in the database, allowing for easy updates to the word and its variants.
+### Construction
 
-### Logical Operations
+`SimpleMatcher::new` follows these steps:
 
-- **OR Logic (between different `process_type` and words in the same `process_type`)**: The `simple_matcher` is considered matched if any word in the map is matched.
-- **AND Logic (between words separated by `&` within a `WordID`)**: All words separated by `&` must be matched for the word to be considered as matched.
-- **NOT Logic (between words separated by `~` within a `WordID`)**: All words separated by `~` must not be matched for the word to be considered as matched.
+1. **Build sequential ProcessType index table.** `build_pt_index_table` assigns compact 0..N indices to each composite `ProcessType` used in the rule map. `ProcessType::None` always gets index 0.
 
-### Usage Cases
+2. **Parse rules.** `parse_rules` iterates the rule map. For each pattern:
+   - Splits on `&` and `~` into AND and NOT sub-patterns.
+   - De-duplicates sub-patterns within the rule, counting occurrences. AND patterns accumulate a positive count; NOT patterns accumulate a negative count. The resulting `segment_counts` vector has AND segments at `[0..and_count)` (initial values like `+1`, `+2` for repeated patterns) and NOT segments at `[and_count..)` (initial values like `0`, `-1`).
+   - Generates all normalized text variants for each sub-pattern via `reduce_text_process_emit`, which applies `process_type - ProcessType::Delete` to the sub-pattern. The subtraction of `Delete` is deliberate: input text is Delete-transformed before scanning, so the sub-patterns must *not* be Delete-transformed themselves or they would be double-processed. They are stored verbatim and matched against the already-deleted text.
+   - De-duplicates emitted pattern strings across all rules into a flat `dedup_patterns` list. Each unique pattern is assigned a dedup index. A `PatternEntry` links each dedup index back to its `(rule_idx, offset, pt_index, kind)`.
+   - Determines `use_matrix` (whether the rule requires the matrix fallback) and `has_not` (whether the rule has any NOT segments).
 
-#### Word1 AND Word2 match
-```json
-Input:
-{
-    "1": {
-        "1": "word1&word2"
-    }
-}
+3. **Compile scan engines.** `compile_automata` partitions deduplicated patterns into ASCII-only and non-ASCII buckets, then builds separate matchers:
+   - **ASCII matcher**: With the `dfa` feature and `<=2000` patterns, uses `aho-corasick` DFA (`AcDfa` variant with a `to_dedup` remapping table). Above the threshold or without `dfa`, uses `daachorse` bytewise DAAC where the automaton value directly encodes the dedup index.
+   - **Non-ASCII matcher**: `daachorse` charwise DAAC. When both ASCII and non-ASCII patterns exist, the charwise matcher is compiled over *all* patterns (not just the non-ASCII subset), so a single charwise scan covers everything for non-ASCII input text.
 
-Output: Check if `word_id` 1 is matched.
+4. **Flatten dedup entries.** The per-pattern `Vec<PatternEntry>` lists are flattened into one contiguous `ac_dedup_entries` array, with a parallel `ac_dedup_ranges` array where `ranges[i] = (start, len)` maps dedup pattern index `i` to its slice.
+
+5. **Build transformation tree and recompute masks.** `build_process_type_tree` produces the trie, then `recompute_mask_with_index` re-encodes every node's `folded_mask` to use the sequential indices matching `PatternEntry.pt_index`.
+
+6. **Compute `all_simple`.** If the tree has only the root node (no transformations needed) and every `PatternEntry` has `kind == PatternKind::Simple`, this flag enables a zero-overhead `is_match` fast path.
+
+### Two-Pass Matching
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Input text                                                       │
+│   ↓                                                              │
+│ walk_process_tree → [TextVariant₀, TextVariant₁, ...]           │
+│   ↓                                                              │
+│ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐  │
+│ │ For each text variant:                                      │  │
+│ │   Select ASCII or charwise engine based on is_ascii flag    │  │
+│ │   For each overlapping hit:                                 │  │
+│ │     Look up PatternEntry slice via ac_dedup_ranges          │  │
+│ │     For each entry: process_match updates WordState         │  │
+│ │     (Early exit if exit_early && rule fully satisfied)       │  │
+│ └─────────────────────────────────────────────────────────────┘  │
+│   ↓                                                              │
+│ ┌─── Pass 2: Logical Evaluation ─────────────────────────────┐  │
+│ │ For each rule_idx in touched_indices:                        │  │
+│ │   Check positive_generation == generation (all ANDs met)     │  │
+│ │   Check not_generation != generation (no NOT vetoed)         │  │
+│ │   If both: emit SimpleResult { word_id, word }               │  │
+│ └─────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-#### Word1 OR Word2 match
-```json
-Input:
-{
-    "1": {
-        "1": "word1",
-        "2": "word2"
-    }
-}
+### Scan Engine Selection
 
-Output: Check if `word_id` 1 or 2 is matched.
-```
+For each text variant, the scan dispatches based on the variant's `is_ascii` flag:
 
-#### Word1 NOT Word2 match
-```json
-Input:
-{
-    "1": {
-        "1": "word1~word2"
-    }
-}
+1. **ASCII text + ASCII matcher exists**: Use the ASCII matcher only. This avoids the per-character overhead of the charwise engine on pure ASCII input.
+2. **Non-ASCII text + non-ASCII matcher exists**: Use the charwise matcher only. Since it was compiled over all patterns (when both ASCII and non-ASCII patterns exist), one scan covers everything.
+3. **Non-ASCII text + no non-ASCII matcher (only ASCII patterns)**: Fall through to the ASCII matcher. This handles the case where all patterns are ASCII but the input contains non-ASCII characters.
 
-Output: Check if `word_id` 1 is matched.
-```
+This three-way dispatch avoids running both engines when one suffices.
 
-## Architecture & Optimization
+### Pass 1: Pattern Scanning
 
-To achieve extremely high throughput and robust latency across thousands of simultaneous matching rules, `matcher_rs` incorporates several advanced architectural optimizations beneath its logical API.
+`scan_all_variants` iterates all text variants. For each variant whose `mask != 0`, it constructs a `ScanContext` bundling the variant's index, process-type mask, total variant count, early-exit flag, and ASCII flag, then calls `scan_variant`.
 
-### 1. Text Transformation Pipeline (DAG-based Reduction)
+`scan_variant` runs the selected engine's `find_overlapping_iter`. For each hit, it obtains the dedup index (directly from the DAAC value, or via the `to_dedup` table for AcDfa) and calls `process_match`.
 
-Real-world text matching often requires matching across multiple variations (Traditional/Simplified Chinese, symbol removal, Pinyin, etc.). Naively applying these transformations sequentially would lead to exponential work and redundant string allocations.
+`process_match` looks up the `PatternEntry` slice for the dedup index and processes each entry. The per-entry check `ctx.process_type_mask & (1u64 << pt_index) == 0` filters hits from a text variant that does not match the entry's pipeline. When `SINGLE_PT=true`, this check compiles away entirely.
 
-#### `ProcessType` Bitmask & Trie Optimization
+### Pass 2: Logical Evaluation
 
-`matcher_rs` uses an 8-bit `ProcessType` bitmask to represent combinations of transformations. At initialization, it constructs a Directed Acyclic Graph (DAG) in the form of a Trie via `build_process_type_tree`. Each node in this tree (`ProcessTypeBitNode`) represents a unique single-bit transformation step (`Fanjian`, `Delete`, `Normalize`, `PinYin`, etc.) and holds the list of composite `ProcessType`s that pass through it.
+After all variants are scanned, Pass 2 iterates `touched_indices` and checks each rule:
+- `positive_generation == generation` → all AND segments were satisfied.
+- `not_generation != generation` → no NOT segment vetoed the rule.
 
-```mermaid
-graph TD
-    Raw["Raw Input String"] --> Root["Root (None)"]
-    Root -- "Fanjian" --> F["Fanjian"]
-    Root -- "Delete" --> D["Delete"]
-    Root -- "Normalize" --> N["Normalize"]
+Rules that pass both checks emit a `SimpleResult` with the rule's `word_id` and original pattern string (borrowed from `RuleCold`).
 
-    F -- "Delete" --> FD["Fanjian | Delete"]
-    D -- "Normalize" --> DN["Delete | Normalize"]
-    FD -- "Normalize" --> FDN["Fanjian | Delete | Normalize"]
+---
 
-    subgraph "Processing Logic"
-    Root
-    F
-    D
-    N
-    FD
-    DN
-    FDN
-    end
+## State Management
 
-    style Raw fill:#f9f,stroke:#333,stroke-width:4px
-    style Root fill:#fff,stroke:#333,stroke-dasharray: 5 5
-```
+### Per-Rule State: RuleHot, RuleCold, WordState
 
-*   **Breadth-First Traversal**: `walk_process_tree` traverses this DAG. For each node, it applies its specific transformation to the output of its parent node.
-*   **Shared Prefixes**: If multiple rules require transformation chains that share a prefix (e.g., `Fanjian | Delete` and `Fanjian | Normalize`), the `Fanjian` step is performed only once and its result reused.
-*   **Lazy Transformations (`Cow<'a, str>`)**: If a transformation step finds no characters to modify, it returns `Cow::Borrowed` — no allocation occurs. Only actual changes produce `Cow::Owned`.
-*   **Bitmask Aggregation**: Each generated text variant is tagged with a `u64` bitmask representing all `ProcessType` combinations that produced that variant. Each `ProcessTypeBitNode` pre-computes a `folded_mask` (OR of all `ProcessType` bitmasks terminating at that node) so mask accumulation during traversal is a single bitwise OR. A single scan satisfies multiple rule configurations simultaneously.
-*   **Lazy Walk Mode**: `walk_process_tree<const LAZY: bool>` — when `LAZY=true` (used by `is_match`), it invokes a callback per new unique variant and supports early exit on first full match. `LAZY=false` (used by `process`) skips all callbacks entirely; dead-code-eliminated by the compiler.
-*   **Traversal Scratch Buffer**: A thread-local `TRANSFORM_STATE` bundles the node-index-to-text-index mapping (`tree_node_indices: Vec<usize>`) and the `masks_pool` (recycled `ProcessedTextMasks` vectors) into a single TLS lookup per call, avoiding repeated TLS overhead.
+Rules are split into hot and cold structs to keep cache lines tight during Pass 1:
 
-#### Transformation Backends
+**`RuleHot`** (accessed for every pattern hit in Pass 1):
+- `segment_counts: Vec<i32>` — per-segment initial counters. AND segments `[0..and_count)` start at their required occurrence count (typically `+1`). NOT segments `[and_count..)` start at their allowance (typically `0`; `-1` if one occurrence is tolerated).
+- `and_count: usize` — boundary between AND and NOT segments.
+- `use_matrix: bool` — `true` when `and_count > 64`, total segments > 64, any AND segment repeats, or any NOT segment has a non-zero allowance.
+- `has_not: bool` — `true` when `and_count != segment_counts.len()`.
 
-Each `ProcessType` bit is backed by a data structure optimized for its access pattern:
+**`RuleCold`** (accessed only in Pass 2):
+- `word_id: u32` — caller-assigned identifier.
+- `word: String` — original pattern string.
 
-| `ProcessType` | Backend | Complexity |
-|---|---|---|
-| `Fanjian` | 2-stage page table (L1: 4352 × u16, L2: dense u32 blocks) | O(1) per codepoint |
-| `PinYin` / `PinYinChar` | 2-stage page table mapping codepoint → packed `(offset << 8 \| length)` into a concatenated UTF-8 string buffer | O(1) per codepoint |
-| `Delete` | 139 KB flat BitSet covering all Unicode codepoints; cached 16-byte ASCII LUT. Highly optimized **SIMD fast-skip** (`simd_runtime_dispatch`) leveraging 32-lane AVX2 on x86_64 or NEON on aarch64 to skip ASCII and non-digit sequences. | O(1) per codepoint, branchless |
-| `Normalize` | `daachorse` `CharwiseDoubleArrayAhoCorasick<u32>` (leftmost-longest). Used because it supports multi-character overlaps and replacements effectively. | O(N) per text |
+**`WordState`** (per-rule mutable state, one per rule in `SimpleMatchState.word_states`):
+- `matrix_generation: u32` — set on first touch; enables lazy initialization.
+- `positive_generation: u32` — set when all AND segments are satisfied.
+- `not_generation: u32` — set when any NOT segment fires; permanently disqualifies the rule for this query.
+- `satisfied_mask: u64` — bitmask tracking which AND segments have fired (bitmask fast path).
+- `remaining_and: u16` — count of AND segments still unsatisfied; reaching 0 means satisfaction.
 
-### 2. High-Performance Matching Engine (Two-Pass)
+### Generation-Based State Reuse
 
-The matching process is divided into two distinct phases to decouple substring search from complex logical evaluation.
+`SimpleMatchState` avoids clearing its arrays between queries using a monotonic `generation: u32` counter. A `WordState` field is considered unset if it does not match the current generation — an O(1) check that replaces the O(N) zero-fill that would otherwise be needed.
 
-#### Pass 1: Pattern Scanning (Deduplicated)
+On `u32::MAX` overflow, all generation fields in `word_states` are explicitly reset to 0 before incrementing to 1. This happens once every ~4 billion queries, so it has negligible amortized cost.
 
-All unique sub-patterns (segments separated by `&` or `~`) from all rules and all `ProcessType` variants are deduplicated and compiled into a single automaton. Each automaton pattern maps back to one or more rule segments via two parallel arrays:
+### Sparse Set: touched_indices
 
-*   `ac_dedup_ranges: Vec<(usize, usize)>` — `(start, length)` slice of `ac_dedup_entries` for each pattern index.
-*   `ac_dedup_entries: Vec<PatternEntry>` — each entry holds `(process_type_mask, rule_idx, offset)` identifying which rule segment this pattern hit satisfies. The `process_type_mask` prevents hits on text variants that do not match the rule's specified pipeline.
+`touched_indices: Vec<usize>` records which rules were first-touched during Pass 1. Pass 2 iterates only these entries instead of the full `word_states` array. This keeps evaluation cost proportional to the number of rules that received hits, not the total rule count.
 
-**Subtle Offset Logic:** When indexing sub-patterns, the system maps them under `process_type - ProcessType::Delete`. Because the `Delete` step is universally applied to the input text variants *before* scanning, the sub-patterns themselves are processed without the `Delete` flag to ensure they remain in the exact deleted-text coordinate space and are not doubly processed.
+### PatternKind Dispatch
 
-Two backend options are supported for the scan engine:
-*   **`ContiguousNFA`** (default, `!dfa`): Compact, memory-efficient NFA. Overlapping search.
-*   **`DFA`** (`dfa` feature): ~10× more memory, faster throughput. Overlapping search.
+Each `PatternEntry` carries a `PatternKind` enum determined at construction time:
 
-#### Pass 2: Logical Evaluation
+| Kind | Condition | Behavior in `process_match` |
+|------|-----------|----------------------------|
+| `Simple` | `and_count == 1`, no NOT, no matrix | Skips all counter/bitmask logic. First touch sets `positive_generation` immediately. Subsequent hits for the same rule are a single generation comparison. |
+| `And` | `offset < and_count` | Decrements a counter or sets a bitmask bit. Checks for full satisfaction. |
+| `Not` | `offset >= and_count` | Increments a counter or sets `not_generation`. Permanently disqualifies the rule. |
 
-```mermaid
-flowchart TD
-    Input([Input Text]) --> Prepare[SimpleMatchState::prepare<br>Increment Generation ID]
-    Prepare --> WalkTree[walk_process_tree<br>Generate Text Variants]
-    
-    subgraph Pass 1: Pattern Scanning
-        WalkTree --> ScanVariant[Scan variant with Aho-Corasick]
-        ScanVariant -->|Yield Overlapping Hits| Hit[Hit: pattern_idx, process_type_mask]
-        
-        Hit --> MapEntry[Lookup PatternEntry<br>rule_idx, offset]
-        MapEntry --> CheckVeto{Has NOT fired?<br>not_generation == gen}
-        
-        CheckVeto -->|Yes| DiscardHit[Discard Hit]
-        CheckVeto -->|No| CheckMatrix{Rule uses matrix?}
-        
-        CheckMatrix -->|No: ≤64 unique ANDs| FastPath[Bitmask Fast-Path]
-        FastPath --> UpdateMask[satisfied_mask |= 1 << offset]
-        
-        CheckMatrix -->|Yes: >64 or repeats| SlowPath[Counter Matrix Fallback]
-        SlowPath --> UpdateCounter[AND: cell -= 1 <br/>NOT: cell += 1<br>if NOT > 0, set not_generation]
-        
-        UpdateMask --> CheckEarlyExit{Early Exit Enabled?}
-        UpdateCounter --> CheckEarlyExit
-        
-        CheckEarlyExit -->|Yes & fully satisfied| ReturnTrue([Short-Circuit: Return True])
-        CheckEarlyExit -->|No| ContinueScan[Continue Scanning]
-    end
-    
-    ContinueScan -.-> ScanVariant
-    
-    subgraph Pass 2: Logical Evaluation
-        Pass1Done(All Variants Scanned) --> IterateTouched[Iterate state.touched_indices]
-        IterateTouched --> CheckVeto2{Has NOT fired?}
-        
-        CheckVeto2 -->|Yes| SkipRule[Skip Rule]
-        CheckVeto2 -->|No| VerifyAnds{is_rule_satisfied}
-        
-        VerifyAnds -->|Yes| Collect[Add to SimpleResult List]
-        VerifyAnds -->|No| SkipRule
-    end
-    
-    ScanVariant -.->|End of Text| Pass1Done
-    Collect --> Output([Return Matches])
-```
+Dispatching on a pre-computed enum avoids re-deriving the category from `offset` and `RuleHot` fields on every hit.
 
-### 3. State Management & Evaluation Optimizations
+### Bitmask Fast Path
 
-#### Per-Rule State: `RuleHot`, `RuleCold`, and `WordState`
+Rules with all of: `and_count <= 64`, total segments `<= 64`, no repeated AND sub-pattern, and no repeated NOT sub-pattern, use the bitmask fast path:
 
-Rules are split into hot and cold structs for cache efficiency.
+- Each AND hit sets bit `offset` in `satisfied_mask` and decrements `remaining_and` (only on the first set for that bit).
+- `remaining_and == 0` marks the rule as satisfied by setting `positive_generation = generation`.
+- NOT hits immediately set `not_generation = generation`.
+- `and_count == 1` is special-cased to skip the bitmask entirely and set `positive_generation` directly.
 
-`RuleHot` — accessed during Pass 1 for every pattern hit:
-*   `segment_counts: Vec<i32>` — per-sub-pattern counters. AND segments `[0..and_count)` are initialized to **+1** and decremented toward ≤0 for satisfaction; NOT segments `[and_count..)` are initialized to **0** and incremented toward >0 for disqualification.
-*   `and_count: usize` — boundary separating AND from NOT segments in `segment_counts`.
-*   `expected_mask: u64` — precomputed bitmask `u64::MAX >> (64 - and_count)` used by the bitmask fast-path; zero when `use_matrix = true`.
-*   `use_matrix: bool` — `true` if `and_count > 64`, any segment appears >1 time, or any NOT segment appears >1 time.
-*   `num_splits: u16` — cached `segment_counts.len()` to avoid pointer chasing.
+### Matrix Fallback
 
-`RuleCold` — accessed only in Pass 2 for result construction:
-*   `word_id: u32` — caller-assigned identifier returned in `SimpleResult`.
-*   `word: String` — original pattern string (including operators).
+Rules exceeding bitmask capacity use a flat `TinyVec<[i32; 16]>` counter matrix, lazily initialized on first touch via `init_matrix`:
 
-Per-query mutable state per rule is stored in `WordState`:
-*   `satisfied_mask: u64` — accumulates which AND segments have been hit (bitmask fast-path).
-*   `matrix_generation: u32` — generation ID; set on first touch, enables lazy matrix initialization.
-*   `not_generation: u32` — set to the current generation if any NOT segment fires, permanently disqualifying the rule for this query.
-*   `satisfied_generation: u32` — set to the current generation when the rule is fully satisfied under the bitmask fast-path, enabling a single-comparison skip for subsequent hits.
+- Layout: `[num_segments * num_text_variants]`. Row `s`, variant `t` is at index `s * num_variants + t`.
+- AND cells start at their `segment_counts` value (e.g. `+1`). A hit decrements the cell. When any variant's cell reaches `<= 0` (tracked by `matrix_status[segment]`), the segment is satisfied and `remaining_and` decrements.
+- NOT cells start at their `segment_counts` value (e.g. `0`). A hit increments the cell. When any variant's cell exceeds `0`, the NOT fires and `not_generation` is set.
+- `matrix_status: TinyVec<[u8; 16]>` tracks per-segment terminal state to avoid re-crossing the threshold on duplicate hits.
+- `TinyVec<[i32; 16]>` stores up to 16 elements inline (covering rules with up to 16 segments * 1 variant), heap-allocating only for larger rules.
+- `init_matrix` is marked `#[cold] #[inline(never)]` because it is rarely called (only on first touch of a matrix-path rule) and keeping it out-of-line improves instruction cache density on the hot path.
 
-#### Generation-based State Re-use
+### all_simple Fast Path
 
-`SimpleMatchState` avoids clearing state between queries using a **monotonic generation counter** (`generation: u32`):
-*   An entry is "empty" if its generation ID doesn't match the current one — an O(1) check.
-*   On `u32::MAX` overflow, all generation IDs are explicitly reset to avoid stale matches.
+When `all_simple` is `true` (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), `is_match` calls `is_match_simple` which:
+- Checks `text.is_ascii()` and dispatches to the appropriate engine.
+- Uses `find_iter(...).next().is_some()` or `is_match(...)` directly.
+- Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration. This is the zero-overhead path for the common case of "just check if any keyword appears."
 
-#### Sparse-Set: `touched_indices`
+### Const-Generic SINGLE_PT Dispatch
 
-`SimpleMatchState.touched_indices: Vec<usize>` records which rules were touched during Pass 1. Pass 2 only evaluates those entries, not the full `rule_hot` list. This keeps evaluation cost proportional to the number of rule hits, not total rule count.
+When all rules share a single `ProcessType`, `single_pt_index` is `Some(idx)`. The scan functions are monomorphized over `const SINGLE_PT: bool`:
 
-#### Bitmask Fast-Path
+- `scan_all_variants` calls `scan_all_variants_inner::<true>` or `::<false>`.
+- `is_match` calls `is_match_inner::<true>` or `::<false>`.
+- `process_match::<true>` compiles away the `ctx.process_type_mask & (1u64 << pt_index) == 0` check entirely, since there is only one process type and every hit is guaranteed to match.
 
-Rules with ≤64 AND segments where every segment appears exactly once skip matrix allocation:
-*   **O(1) verification**: `satisfied_mask == expected_mask`.
-*   **NOT short-circuit**: the first NOT hit sets `not_generation = generation`, immediately disqualifying the rule for all subsequent pattern hits in the same query.
+This eliminates a branch and a shift+AND per `PatternEntry` in the inner loop.
 
-#### Matrix-based Fallback
+---
 
-Rules with >64 segments or repeated sub-patterns use a flat `Vec<TinyVec<[i32; 16]>>` matrix, lazily initialized on first touch:
-*   Layout: `[segment × num_text_variants]` — row `s`, variant `t` at index `s * num_variants + t`.
-*   AND cells start at **1**; a hit decrements toward ≤0. A segment is satisfied when any variant's cell reaches ≤0.
-*   NOT cells start at **0**; a hit increments toward >0. A NOT fires when any variant's cell exceeds 0.
-*   `TinyVec<[i32; 16]>` stores up to 16 elements inline, heap-allocating only for larger rules.
+## Memory and Resource Efficiency
 
-### 4. Memory & Resource Efficiency
+### Thread-Local Storage
 
-*   **String Pooling**: A thread-local `STRING_POOL: RefCell<Vec<String>>` (capped at 128 entries) caches and reuses `String` allocations produced during transformations, reducing pressure on the global allocator.
-*   **Zero-Copy Logic**: Heavy use of `Cow<'a, str>` during transformation and zero-copy deserialization (`include_bytes!`) for static transformation tables ensures minimal memory overhead.
-*   **Static Automata**: Core transformation tables (Fanjian, Pinyin, Delete, Normalize) are pre-compiled into binary artifacts at library compile-time via `build.rs` using `daachorse` and raw byte arrays. At runtime, they are loaded via zero-copy byte-slice casts for **instant startup**.
-*   **Thread-Local Storage (TLS)**: All mutable matching state is stored in `thread_local!` buffers — `SIMPLE_MATCH_STATE` (`SimpleMatchState`), `STRING_POOL` (recycled `String` allocations), and `TRANSFORM_STATE` (node-index scratch + recycled `ProcessedTextMasks` vectors). `SimpleMatcher` itself is `Send + Sync` and can be shared across threads via `Arc` with zero lock contention.
-*   **Static `ProcessMatcher` Cache**: A `PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is lazily initialized once per process and shared across all `SimpleMatcher` instances and threads.
-*   **MiMalloc v3**: The global allocator is replaced with `mimalloc` (v3) for improved multi-threaded allocation performance.
+All mutable state is thread-local. `SimpleMatcher` itself is `Send + Sync` and can be shared via `Arc` with zero lock contention.
 
-### 5. Feature Flags
+Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribute that compiles to a direct TLS segment-register read on x86/aarch64, eliminating the `thread_local!` macro's `.with()` closure overhead):
+
+| Slot | Type | Purpose |
+|------|------|---------|
+| `SIMPLE_MATCH_STATE` | `RefCell<SimpleMatchState>` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
+| `STRING_POOL` | `RefCell<Vec<String>>` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
+| `TRANSFORM_STATE` | `RefCell<TransformThreadState>` | Node-index-to-text-index scratch buffer (`tree_node_indices`) + recycled `ProcessedTextMasks` vectors (`masks_pool`, bounded to 16). Bundled into one slot to save a TLS lookup per call. |
+
+### String Pool
+
+`get_string_from_pool(capacity)` pops a `String` from the thread-local pool (clearing it and reserving to the requested capacity), or allocates a new one if the pool is empty. `return_string_to_pool(s)` pushes a `String` back, bounded at 128 entries so thread-local memory stays predictable.
+
+The pool is used throughout the transformation pipeline. When a `Cow::Owned` result is replaced by a new transformation step, the old owned string is returned to the pool. `return_processed_string_to_pool` drains a `ProcessedTextMasks` vector, returning all owned strings to the pool and recycling the empty vector itself into `TRANSFORM_STATE.masks_pool`.
+
+### ProcessedTextMasks Pool
+
+`walk_process_tree` pops a recycled `ProcessedTextMasks` vector from `TRANSFORM_STATE.masks_pool` at the start of each call. After the caller finishes with the variants, `return_processed_string_to_pool` recycles both the individual strings and the vector itself. The transmute from `ProcessedTextMasks<'static>` to `ProcessedTextMasks<'a>` is sound because the pooled vectors are always empty (all `Cow<'_, str>` elements have been drained).
+
+### Static ProcessMatcher Cache
+
+`PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is lazily initialized on first access and shared as `&'static` across all `SimpleMatcher` instances and threads. The `OnceLock` ensures initialization happens exactly once with no subsequent lock contention.
+
+### Global Allocator
+
+The crate replaces the system allocator with `mimalloc` (v3) globally for improved multi-threaded allocation throughput and reduced fragmentation.
+
+---
+
+## Feature Flags
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `dfa` | on | Aho-Corasick DFA backend — faster scan, ~10× memory vs `ContiguousNFA`. |
-| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set (e.g., AVX2, NEON) at runtime for ASCII deletion scanning. |
-| `runtime_build` | off | Build transformation tables at runtime from source text files — slower init, enables dynamic rules. |
+| `dfa` | on | Enables `aho-corasick` DFA mode for: (1) the ASCII scan engine when pattern count is `<= 2000`, and (2) the Normalize multi-character matcher. Other paths still use `daachorse`. ~10x more memory than NFA/DAAC equivalents, but higher throughput. |
+| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set at runtime for the transformation skip functions (AVX2 on x86-64, NEON on aarch64, portable `std::simd` fallback). Without this flag, only the portable path is compiled. |
+| `runtime_build` | off | Builds transformation tables at runtime from source text files in `process_map/` instead of loading precompiled binary artifacts from `build.rs`. Slower initialization but allows custom or updated transformation data without recompiling the library. |
 
-### 6. Compiled vs. Runtime Transformation Tables
+---
 
-**Static (default):** `build.rs` pre-compiles all transformation tables into binary artifacts embedded in the library via `include_bytes!`. Zero startup cost.
+## Compiled vs. Runtime Transformation Tables
 
-**Runtime (`runtime_build` feature):** Tables are built from the raw source text files at process startup. Slower initialization but allows custom or updated transformation data without recompiling the library.
+**Static (default):** `build.rs` pre-compiles all transformation tables into binary artifacts embedded in the library via `include_bytes!`. At runtime, they are decoded lazily on first access (byte-slice casts for page tables, deserialization for the DAAC Normalize matcher). Zero startup cost beyond the first-use initialization.
+
+**Runtime (`runtime_build` feature):** Tables are parsed from the raw source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) in `process_map/` at process startup. Slower initialization but allows dynamic rules or updated Unicode data without recompiling.
