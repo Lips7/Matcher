@@ -20,6 +20,19 @@ impl SimpleMatcher {
     /// process type with no tree walk needed. Avoids TLS state, generation counters,
     /// and overlapping iteration entirely.
     pub(super) fn is_match_simple(&self, text: &str) -> bool {
+        // When all patterns are ASCII, the bytewise engine handles any text without
+        // an O(N) is_ascii scan.
+        if self.non_ascii_matcher.is_none() {
+            return if let Some(ref m) = self.ascii_matcher {
+                match m {
+                    #[cfg(feature = "dfa")]
+                    AsciiMatcher::AcDfa { matcher, .. } => matcher.is_match(text),
+                    AsciiMatcher::DaacBytewise(d) => d.find_iter(text).next().is_some(),
+                }
+            } else {
+                false
+            };
+        }
         if text.is_ascii() {
             if let Some(ref m) = self.ascii_matcher {
                 return match m {
@@ -31,12 +44,6 @@ impl SimpleMatcher {
         } else if let Some(ref m) = self.non_ascii_matcher {
             return match m {
                 NonAsciiMatcher::DaacCharwise(d) => d.find_iter(text).next().is_some(),
-            };
-        } else if let Some(ref m) = self.ascii_matcher {
-            return match m {
-                #[cfg(feature = "dfa")]
-                AsciiMatcher::AcDfa { matcher, .. } => matcher.is_match(text),
-                AsciiMatcher::DaacBytewise(d) => d.find_iter(text).next().is_some(),
             };
         }
         false
@@ -126,7 +133,9 @@ impl SimpleMatcher {
             }
         };
 
-        if text.is_ascii() {
+        // When all patterns are ASCII, the bytewise engine handles any text without
+        // an O(N) is_ascii scan.
+        if self.non_ascii_matcher.is_none() || text.is_ascii() {
             if let Some(ref m) = self.ascii_matcher {
                 match m {
                     #[cfg(feature = "dfa")]
@@ -147,22 +156,6 @@ impl SimpleMatcher {
         } else if let Some(ref m) = self.non_ascii_matcher {
             match m {
                 NonAsciiMatcher::DaacCharwise(d) => {
-                    for hit in d.find_overlapping_iter(text) {
-                        emit(hit.value());
-                    }
-                }
-            }
-        } else if let Some(ref m) = self.ascii_matcher {
-            match m {
-                #[cfg(feature = "dfa")]
-                AsciiMatcher::AcDfa { matcher, to_value } => {
-                    for hit in matcher.find_overlapping_iter(text) {
-                        let raw_value =
-                            unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
-                        emit(raw_value);
-                    }
-                }
-                AsciiMatcher::DaacBytewise(d) => {
                     for hit in d.find_overlapping_iter(text) {
                         emit(hit.value());
                     }
@@ -275,7 +268,10 @@ impl SimpleMatcher {
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
-        if ctx.is_ascii {
+        // When all patterns are ASCII, the bytewise engine handles any text, so
+        // skip the is_ascii branch and avoid the third fallback arm entirely.
+        let use_ascii = self.non_ascii_matcher.is_none() || ctx.is_ascii;
+        if use_ascii {
             if let Some(ref ascii_matcher) = self.ascii_matcher {
                 match ascii_matcher {
                     #[cfg(feature = "dfa")]
@@ -300,26 +296,6 @@ impl SimpleMatcher {
         } else if let Some(ref non_ascii_matcher) = self.non_ascii_matcher {
             match non_ascii_matcher {
                 NonAsciiMatcher::DaacCharwise(daac_matcher) => {
-                    for hit in daac_matcher.find_overlapping_iter(processed_text) {
-                        if self.process_match::<SINGLE_PT>(hit.value(), ctx, state) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        } else if let Some(ref ascii_matcher) = self.ascii_matcher {
-            match ascii_matcher {
-                #[cfg(feature = "dfa")]
-                AsciiMatcher::AcDfa { matcher, to_value } => {
-                    for hit in matcher.find_overlapping_iter(processed_text) {
-                        let raw_value =
-                            unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
-                        if self.process_match::<SINGLE_PT>(raw_value, ctx, state) {
-                            return true;
-                        }
-                    }
-                }
-                AsciiMatcher::DaacBytewise(daac_matcher) => {
                     for hit in daac_matcher.find_overlapping_iter(processed_text) {
                         if self.process_match::<SINGLE_PT>(hit.value(), ctx, state) {
                             return true;
