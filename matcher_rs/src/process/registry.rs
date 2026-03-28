@@ -1,4 +1,13 @@
 //! Lazy registry for compiled single-bit transformation steps.
+//!
+//! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
+//! [`ProcessType`]. On first access the corresponding [`TransformStep`] is compiled
+//! (either from build-time artifacts or from source maps when `runtime_build` is enabled)
+//! and cached for the lifetime of the process.
+//!
+//! All [`crate::SimpleMatcher`] instances share the same compiled steps, so the heavy
+//! initialization cost (Aho-Corasick compilation, page-table construction) is paid at
+//! most once per step per process.
 
 #[cfg(feature = "runtime_build")]
 use std::collections::HashMap;
@@ -11,6 +20,11 @@ use crate::process::transform::constants::*;
 use crate::process::transform::delete::DeleteMatcher;
 use crate::process::transform::normalize::NormalizeMatcher;
 
+/// Lazily initialized cache keyed by the bit position of a single-bit [`ProcessType`].
+///
+/// The array has 8 slots — one for each possible bit in the `u8` bitflags. Slots are
+/// initialized on first access via [`OnceLock::get_or_init`] and live for the duration
+/// of the process. All [`crate::SimpleMatcher`] instances share these compiled steps.
 static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
     OnceLock::new(),
     OnceLock::new(),
@@ -23,6 +37,17 @@ static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
 ];
 
 /// Returns the cached compiled step for a single-bit [`ProcessType`].
+///
+/// The bit position of `process_type_bit` (via `trailing_zeros()`) is used as the array
+/// index into [`TRANSFORM_STEP_CACHE`]. If the slot has not been initialized yet, the
+/// step is compiled from either build-time artifacts or source maps (depending on the
+/// `runtime_build` feature flag).
+///
+/// # Panics
+///
+/// Debug-asserts that `process_type_bit` has exactly one bit set and that the resulting
+/// index is within the cache bounds. In release mode, passing a multi-bit or out-of-range
+/// value is undefined behavior (array out-of-bounds).
 pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static TransformStep {
     let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(
@@ -33,6 +58,16 @@ pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static Tran
     TRANSFORM_STEP_CACHE[index].get_or_init(|| build_transform_step(process_type_bit))
 }
 
+/// Builds one compiled step by parsing the raw source maps shipped in `process_map/`.
+///
+/// This implementation is used when the `runtime_build` feature is enabled, allowing
+/// transformation tables to be loaded dynamically rather than from build-time artifacts.
+///
+/// # Panics
+///
+/// Panics (via `.unwrap()`) if any line in the source map files is malformed (missing
+/// tab separator or empty key/value). This is acceptable because the source maps are
+/// shipped with the crate and validated at development time.
 #[cfg(feature = "runtime_build")]
 fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     match process_type_bit {
@@ -85,6 +120,15 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     }
 }
 
+/// Builds one compiled step from the build-time artifacts emitted by `build.rs`.
+///
+/// This is the default (non-`runtime_build`) path. The artifacts are `include_bytes!` /
+/// `include_str!` constants defined in [`super::transform::constants`], so initialization
+/// is a deserialization rather than a full compilation.
+///
+/// # Panics
+///
+/// Panics (via `unreachable!`) if `process_type_bit` is not a recognized single-bit value.
 #[cfg(not(feature = "runtime_build"))]
 fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     match process_type_bit {

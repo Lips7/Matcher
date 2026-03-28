@@ -1,4 +1,31 @@
 //! Hot-path scan and rule evaluation for [`super::SimpleMatcher`].
+//!
+//! This module implements the runtime half of the two-pass matching pipeline. Given a
+//! compiled [`SimpleMatcher`], it:
+//!
+//! 1. Obtains a `&mut` reference to the thread-local [`SIMPLE_MATCH_STATE`].
+//! 2. Transforms the input text through the process-type tree (or skips transformation
+//!    for [`SearchMode::AllSimple`](super::SearchMode::AllSimple) matchers).
+//! 3. Scans each text variant through the automata ([`ScanPlan`](super::engine::ScanPlan)).
+//! 4. Dispatches each raw match value into the rule state machine
+//!    ([`RuleSet::process_entry`](super::rule::RuleSet::process_entry)).
+//! 5. Collects or checks results depending on the caller (`is_match` vs `process`).
+//!
+//! # Fast paths
+//!
+//! - **`is_match_simple`** — all rules are single-literal, no transforms. Delegates
+//!   directly to the automaton's `is_match`.
+//! - **`is_match_inner<true>`** — single process type. The `SINGLE_PT` const generic
+//!   compiles out the process-type mask check in `process_entry`.
+//! - **`process_simple`** — all-simple matchers collecting results. Each hit is a
+//!   completed rule; no need for the full state machine.
+//!
+//! # Safety
+//!
+//! All functions in this module obtain `&mut SimpleMatchState` from
+//! [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`. This is safe because the static is
+//! `#[thread_local]` (no cross-thread sharing) and the functions are not re-entrant.
+//! See [`SIMPLE_MATCH_STATE`] for the full safety argument.
 
 use crate::process::{ProcessedTextMasks, return_processed_string_to_pool, walk_process_tree};
 
@@ -6,11 +33,34 @@ use super::rule::PatternDispatch;
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
 use super::{SimpleMatcher, SimpleResult};
 
+/// Hot-path search helpers layered on top of the compiled scan engines.
 impl SimpleMatcher {
+    /// Fast path for matchers that contain only direct simple literal rules.
+    ///
+    /// No state machine, no thread-local state, no transform tree — just a single
+    /// automaton `is_match` call. Used when [`SearchMode::AllSimple`](super::SearchMode::AllSimple)
+    /// is active.
     pub(super) fn is_match_simple(&self, text: &str) -> bool {
         self.scan.is_match(text)
     }
 
+    /// General `is_match` path for matchers that need transform traversal or rule state.
+    ///
+    /// Walks the process-type tree with [`walk_process_tree`], scanning each transformed
+    /// variant as it is produced. If any variant scan requests early exit (a rule is
+    /// already satisfied), the tree walk stops and returns `true` immediately. Otherwise,
+    /// after all variants are scanned, the touched rules are checked via
+    /// [`RuleSet::has_match`](super::rule::RuleSet::has_match).
+    ///
+    /// # Const generic `SINGLE_PT`
+    ///
+    /// When `true`, the process-type mask check inside
+    /// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) is compiled out.
+    ///
+    /// # Safety
+    ///
+    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
+    /// See module-level safety documentation.
     #[inline(always)]
     pub(super) fn is_match_inner<const SINGLE_PT: bool>(&self, text: &str) -> bool {
         let tree = self.process.tree();
@@ -37,6 +87,19 @@ impl SimpleMatcher {
         result
     }
 
+    /// Collects matches for an all-simple matcher without building transformed variants.
+    ///
+    /// Every automaton hit is a completed rule, so results are emitted immediately
+    /// via [`RuleSet::push_result_if_new`](super::rule::RuleSet::push_result_if_new).
+    /// Deduplication is handled by the generation stamp in [`SimpleMatchState::mark_positive`].
+    ///
+    /// Uses `dispatch::<true>` because all-simple matchers always have the
+    /// [`DIRECT_RULE_BIT`](super::rule::DIRECT_RULE_BIT) encoding available.
+    ///
+    /// # Safety
+    ///
+    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
+    /// See module-level safety documentation.
     pub(super) fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
@@ -63,6 +126,16 @@ impl SimpleMatcher {
             });
     }
 
+    /// Collects matches from a precomputed list of transformed text variants.
+    ///
+    /// Used by [`SimpleMatcher::process_into`](super::SimpleMatcher::process_into) after
+    /// the process-type tree has been walked and all variants are available. Scans every
+    /// variant, then collects all satisfied rules into `results`.
+    ///
+    /// # Safety
+    ///
+    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
+    /// See module-level safety documentation.
     pub(super) fn process_preprocessed_into<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -75,6 +148,12 @@ impl SimpleMatcher {
         self.rules.collect_matches(state, results);
     }
 
+    /// Scans every transformed variant, selecting the single-process-type fast path when possible.
+    ///
+    /// Dispatches to [`scan_all_variants_inner`](Self::scan_all_variants_inner) with the
+    /// appropriate `SINGLE_PT` const generic based on the matcher's [`SearchMode`](super::SearchMode).
+    ///
+    /// Returns `true` if early exit was triggered (only possible when `exit_early` is `true`).
     pub(super) fn scan_all_variants<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
@@ -96,6 +175,13 @@ impl SimpleMatcher {
         }
     }
 
+    /// Shared variant-scan loop for both general and single-process-type modes.
+    ///
+    /// Iterates over each text variant in `processed_text_process_type_masks`, skipping
+    /// variants with a zero mask (unused process-type slots). For each variant, constructs
+    /// a [`ScanContext`] and calls [`scan_variant`](Self::scan_variant).
+    ///
+    /// Returns `true` if any variant scan triggered early exit.
     #[inline(always)]
     fn scan_all_variants_inner<'a, const SINGLE_PT: bool>(
         &'a self,
@@ -128,6 +214,11 @@ impl SimpleMatcher {
         false
     }
 
+    /// Scans one processed text variant and forwards each raw hit into rule evaluation.
+    ///
+    /// Delegates to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
+    /// with [`process_match`](Self::process_match) as the callback. Returns `true` if
+    /// the callback triggered early exit.
     #[inline(always)]
     pub(super) fn scan_variant<const SINGLE_PT: bool>(
         &self,
@@ -141,6 +232,19 @@ impl SimpleMatcher {
             })
     }
 
+    /// Processes one raw match value reported by the scan engine.
+    ///
+    /// Dispatches the raw value through [`PatternIndex::dispatch`](super::rule::PatternIndex::dispatch)
+    /// and handles each [`PatternDispatch`] variant:
+    ///
+    /// - [`DirectRule`](PatternDispatch::DirectRule) — marks the rule positive immediately
+    ///   and returns `exit_early` (no state machine needed).
+    /// - [`SingleEntry`](PatternDispatch::SingleEntry) — feeds the single entry into
+    ///   [`RuleSet::process_entry`](super::rule::RuleSet::process_entry).
+    /// - [`Entries`](PatternDispatch::Entries) — iterates all entries, short-circuiting
+    ///   if any one triggers early exit.
+    ///
+    /// Returns `true` when the caller should stop scanning (early exit satisfied).
     #[inline(always)]
     pub(super) fn process_match<const SINGLE_PT: bool>(
         &self,

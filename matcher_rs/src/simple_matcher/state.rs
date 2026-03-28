@@ -1,40 +1,165 @@
+//! Thread-local scan state for [`super::SimpleMatcher`].
+//!
+//! All mutable state needed during a scan is kept in a single [`SimpleMatchState`] instance
+//! per thread, accessed through the `#[thread_local]` static [`SIMPLE_MATCH_STATE`]. This
+//! avoids per-call allocation: the backing storage grows monotonically and is reused across
+//! matchers and across calls.
+//!
+//! # Generation-based state reset
+//!
+//! Instead of zeroing every [`WordState`] between calls, a monotonic `generation` counter
+//! is bumped in [`SimpleMatchState::prepare`]. A rule's state is "live" only when its
+//! stored generation stamp matches the current generation. Stale entries are effectively
+//! invisible, giving O(1) amortized reset cost.
+//!
+//! When `generation` wraps to `u32::MAX`, all stamps are reset to 0 and the counter
+//! restarts at 1. This happens at most once every ~4 billion calls per thread.
+
 use std::cell::UnsafeCell;
 
 use tinyvec::TinyVec;
 
 use super::rule::RuleHot;
 
+/// Per-rule mutable state reused across scans.
+///
+/// Each rule has one `WordState` slot in [`SimpleMatchState::word_states`], indexed by
+/// `rule_idx`. Fields use generation stamps rather than boolean flags so the entire
+/// vector can be "reset" by incrementing the global generation counter.
+///
+/// # Layout
+///
+/// The three `*_generation` fields track whether the rule has been touched / satisfied /
+/// vetoed in the current scan. `satisfied_mask` and `remaining_and` are only meaningful
+/// when `matrix_generation == current_generation` (i.e., the rule has been initialized
+/// for this scan).
 #[derive(Default, Clone, Copy)]
 pub(super) struct WordState {
+    /// Generation in which the rule's matrix/bitmask state was initialized.
+    ///
+    /// Set to the current generation on first touch. If it does not match the current
+    /// generation, the rest of this struct's fields are stale.
     pub(super) matrix_generation: u32,
+    /// Generation in which all positive (AND) requirements became satisfied.
+    ///
+    /// Set to the current generation when `remaining_and` reaches zero or on a
+    /// [`PatternKind::Simple`](super::rule::PatternKind::Simple) hit. A rule is
+    /// considered "satisfied" when `positive_generation == current_generation` and
+    /// `not_generation != current_generation`.
     pub(super) positive_generation: u32,
+    /// Generation in which a NOT segment vetoed the rule.
+    ///
+    /// Once set, the rule cannot fire regardless of how many AND segments match.
     pub(super) not_generation: u32,
+    /// Bitset fast path for tracking which AND segments have been satisfied.
+    ///
+    /// Bit `i` is set when segment `i` has been observed at least once. Only used
+    /// when [`RuleHot::use_matrix`](super::rule::RuleHot::use_matrix) is `false`
+    /// and the rule has more than one AND segment.
     pub(super) satisfied_mask: u64,
+    /// Remaining AND segments still needed before the rule can fire.
+    ///
+    /// Initialized to [`RuleHot::and_count`](super::rule::RuleHot::and_count) and
+    /// decremented as segments are satisfied. The rule becomes positive when this
+    /// reaches zero.
     pub(super) remaining_and: u16,
 }
 
+/// Thread-local state reused by every [`super::SimpleMatcher`] call on one thread.
+///
+/// Backing storage grows monotonically to accommodate the largest rule set seen on this
+/// thread. Between calls, only [`prepare`](Self::prepare) is needed — it bumps the
+/// generation and clears the touched-indices list without touching the bulk arrays.
+///
+/// # Matrix layout
+///
+/// For rules with [`RuleHot::use_matrix`](super::rule::RuleHot::use_matrix) = `true`,
+/// `matrix[rule_idx]` is a flat 2-D array of shape `[num_segments × num_variants]`
+/// stored in row-major order. Each cell starts at the segment's required count and is
+/// decremented (AND) or incremented (NOT) on each hit. `matrix_status[rule_idx]` is a
+/// parallel 1-D array of per-segment completion flags.
 pub(super) struct SimpleMatchState {
+    /// Per-rule state slots indexed by rule id.
     pub(super) word_states: Vec<WordState>,
+    /// Per-variant counter matrix for complex rules (one `TinyVec` per rule index).
+    ///
+    /// `matrix[rule_idx][segment * num_variants + variant_idx]` holds the remaining
+    /// count for that segment in that variant. Initialized lazily on first touch.
     pub(super) matrix: Vec<TinyVec<[i32; 16]>>,
+    /// Per-segment completion flags for complex rules (one `TinyVec` per rule index).
+    ///
+    /// `matrix_status[rule_idx][segment]` is 0 if the segment is still pending, 1 if
+    /// it has been satisfied (AND) or triggered (NOT).
     pub(super) matrix_status: Vec<TinyVec<[u8; 16]>>,
+    /// Rule indices touched during the current scan generation.
+    ///
+    /// Cleared at the start of each scan in [`prepare`](Self::prepare). Used by
+    /// [`RuleSet::collect_matches`](super::rule::RuleSet::collect_matches) and
+    /// [`RuleSet::has_match`](super::rule::RuleSet::has_match) to iterate only over
+    /// rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
+    /// Monotonic generation id used to avoid clearing full state between calls.
     generation: u32,
 }
 
+/// Thread-local reusable scan state shared by all matchers on the current thread.
+///
+/// # Safety
+///
+/// The `UnsafeCell` is safe to use here because:
+///
+/// 1. `#[thread_local]` guarantees that each thread has its own instance — no cross-thread
+///    sharing occurs.
+/// 2. The scan functions that access this static (`is_match_inner`, `process_simple`,
+///    `process_preprocessed_into`) are not re-entrant: they obtain a `&mut` reference via
+///    `SIMPLE_MATCH_STATE.get()` at the top of the call and hold it for the entire
+///    duration. No callback or nested call re-enters the same path.
+///
+/// This pattern avoids the overhead of `RefCell` on the scan hot path.
 #[thread_local]
 pub(super) static SIMPLE_MATCH_STATE: UnsafeCell<SimpleMatchState> =
     UnsafeCell::new(SimpleMatchState::new());
 
+/// Scan metadata passed through the hot match-processing path.
+///
+/// One `ScanContext` is constructed per text variant and threaded through
+/// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) for every hit in
+/// that variant. Kept `Copy` to avoid reference overhead in tight loops.
 #[derive(Clone, Copy)]
 pub(super) struct ScanContext {
+    /// Index of the current transformed text variant within the
+    /// [`ProcessedTextMasks`](crate::process::ProcessedTextMasks) array.
+    ///
+    /// Used as the column index into [`SimpleMatchState::matrix`] for matrix-mode rules.
     pub(super) text_index: usize,
+    /// Bitmask of compact process-type indices that contributed to this variant.
+    ///
+    /// Bit `i` is set if the variant was produced by (or is reachable from) the process
+    /// type whose compact index is `i`. Checked against
+    /// [`PatternEntry::pt_index`](super::rule::PatternEntry::pt_index) to filter hits
+    /// from irrelevant variants (skipped when `SINGLE_PT` is `true`).
     pub(super) process_type_mask: u64,
+    /// Total number of transformed variants participating in this scan.
+    ///
+    /// Determines the number of columns in the matrix for matrix-mode rules.
     pub(super) num_variants: usize,
+    /// Whether the caller may stop on the first satisfied rule.
+    ///
+    /// `true` for `is_match` calls; `false` for `process` calls that must collect all
+    /// matching rules.
     pub(super) exit_early: bool,
+    /// Whether the current variant is pure ASCII.
+    ///
+    /// Passed through to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
+    /// to select the ASCII or charwise automaton.
     pub(super) is_ascii: bool,
 }
 
+/// Lifecycle helpers for the thread-local scan state.
 impl SimpleMatchState {
+    /// Creates an empty reusable state container with generation 0.
+    ///
+    /// All backing vectors start empty and grow on the first call to [`prepare`](Self::prepare).
     pub(super) const fn new() -> Self {
         Self {
             word_states: Vec::new(),
@@ -45,6 +170,11 @@ impl SimpleMatchState {
         }
     }
 
+    /// Advances the generation and grows backing storage for at least `size` rules.
+    ///
+    /// Must be called exactly once at the start of every scan before any state is read.
+    /// On `u32::MAX` overflow, all generation stamps are bulk-reset to 0 and the
+    /// counter restarts at 1.
     pub(super) fn prepare(&mut self, size: usize) {
         if self.generation == u32::MAX {
             for state in self.word_states.iter_mut() {
@@ -66,16 +196,31 @@ impl SimpleMatchState {
         self.touched_indices.clear();
     }
 
+    /// Returns the current scan generation id.
     #[inline(always)]
     pub(super) fn generation(&self) -> u32 {
         self.generation
     }
 
+    /// Returns the rules touched during the current generation.
     #[inline(always)]
     pub(super) fn touched_indices(&self) -> &[usize] {
         &self.touched_indices
     }
 
+    /// Returns whether `rule_idx` is satisfied in the current generation.
+    ///
+    /// A rule is satisfied when all its AND segments have been observed
+    /// (`positive_generation == generation`) and no NOT segment has vetoed it
+    /// (`not_generation != generation`).
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked` on `self.word_states`. Guarded by a preceding `debug_assert!`.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that `rule_idx < self.word_states.len()`.
     #[inline(always)]
     pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
         debug_assert!(rule_idx < self.word_states.len());
@@ -84,6 +229,21 @@ impl SimpleMatchState {
             && word_state.not_generation != self.generation
     }
 
+    /// Marks a simple rule as positive for the current generation.
+    ///
+    /// Returns `true` only when this is the first positive hit for the rule in the current
+    /// generation — used by the all-simple fast path to deduplicate results.
+    ///
+    /// If the rule has not been touched at all in this generation, it is also added to
+    /// `touched_indices`.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked_mut` on `self.word_states`. Guarded by a preceding `debug_assert!`.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that `rule_idx < self.word_states.len()`.
     #[inline(always)]
     pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
         let generation = self.generation;
@@ -100,6 +260,20 @@ impl SimpleMatchState {
         true
     }
 
+    /// Initializes one complex rule the first time it is touched in a generation.
+    ///
+    /// Sets up the generation stamp, resets the remaining-AND counter and bitmask, adds
+    /// the rule to `touched_indices`, and — for matrix-mode rules — initializes the
+    /// per-variant counter matrix via [`init_matrix`].
+    ///
+    /// If the rule has zero AND segments (pure NOT rule), it is immediately marked
+    /// positive since there is nothing to satisfy.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked_mut` on `self.word_states`, `self.matrix`, and
+    /// `self.matrix_status`. All accesses are for `rule_idx` which was bounds-checked
+    /// by the caller.
     #[inline(always)]
     pub(super) fn init_rule(&mut self, rule: &RuleHot, rule_idx: usize, ctx: ScanContext) {
         let generation = self.generation;
@@ -121,6 +295,14 @@ impl SimpleMatchState {
     }
 }
 
+/// Initializes the per-variant counter matrix for a complex rule.
+///
+/// Allocates (or re-sizes) `flat_matrix` to `num_segments × num_variants` cells and
+/// fills each row with the segment's required count from `segment_counts`. Resets
+/// `flat_status` to all-zero (no segment satisfied yet).
+///
+/// Marked `#[cold]` because matrix-mode rules are rare — most rules use the bitmask
+/// fast path.
 #[cold]
 #[inline(never)]
 fn init_matrix(

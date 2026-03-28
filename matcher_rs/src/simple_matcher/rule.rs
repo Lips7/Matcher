@@ -1,3 +1,17 @@
+//! Rule metadata, pattern dispatch, and rule-state transition logic.
+//!
+//! This module contains the types that bind deduplicated scan-engine patterns back to the
+//! logical rules they came from. During construction ([`super::build`]), each user-supplied
+//! rule string is split on `&`/`~` operators into sub-patterns. Those sub-patterns are
+//! deduplicated across all rules, and each unique string receives a single automaton entry.
+//! The [`PatternEntry`] records how every automaton hit maps back to a specific rule and
+//! segment offset.
+//!
+//! At scan time the hot path reads raw match values from the automaton, dispatches them
+//! through [`PatternIndex::dispatch`] into [`PatternDispatch`] variants, and feeds each
+//! hit into [`RuleSet::process_entry`] — the core state machine that tracks bitmasks,
+//! matrix counters, and generation stamps in the thread-local [`super::state::SimpleMatchState`].
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -6,71 +20,215 @@ use crate::process::ProcessType;
 use super::state::{ScanContext, SimpleMatchState};
 use super::{SearchMode, SimpleResult};
 
+/// Public table format accepted by [`super::SimpleMatcher::new`].
+///
+/// Outer key is the [`ProcessType`] that governs text transformation; inner key is a
+/// caller-chosen rule id (`word_id`); inner value is the pattern string (may contain
+/// `&` and `~` operators).
 pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
+
+/// Serde-friendly table format that stores rule strings as [`Cow`].
+///
+/// Identical semantics to [`SimpleTable`] but allows owned or borrowed pattern strings,
+/// which is useful when deserializing from external sources.
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
+/// High bit used to encode the direct-rule fast path in raw scan values.
+///
+/// When a deduplicated pattern is attached to exactly one [`PatternKind::Simple`] rule,
+/// the automaton stores `rule_idx | DIRECT_RULE_BIT` as the raw value so that
+/// [`PatternIndex::dispatch`] can skip the indirection through the entry table entirely.
 pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
+
+/// Maximum number of segments handled by the bitmask fast path.
+///
+/// Rules with up to 64 AND/NOT segments track per-segment satisfaction in a single `u64`
+/// bitmask (`WordState::satisfied_mask`). Rules exceeding this threshold fall back to
+/// the per-variant counter matrix (`SimpleMatchState::matrix`).
 pub(super) const BITMASK_CAPACITY: usize = 64;
+
+/// Size of the compact process-type lookup table indexed by raw [`ProcessType`] bits.
+///
+/// [`ProcessType`] is a 6-bit bitflag, so `2^6 = 64` covers every possible combination.
+/// The table maps each bitflag value to a dense sequential index used in the scan masks.
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 
+/// Logical role of one emitted pattern inside a rule.
+///
+/// Determined at construction time by the operator that precedes the sub-pattern
+/// in the original rule string:
+///
+/// - No operator or the first segment of a single-segment rule → [`Simple`](Self::Simple)
+/// - `&` operator → [`And`](Self::And)
+/// - `~` operator → [`Not`](Self::Not)
+///
+/// `repr(u8)` keeps this type small for dense storage in [`PatternEntry`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub(super) enum PatternKind {
+    /// Single-fragment rule that can complete on one hit.
+    ///
+    /// Only used when the rule has exactly one positive segment, no NOT segments,
+    /// and does not need the matrix fallback.
     Simple = 0,
+    /// Positive segment that must be observed.
+    ///
+    /// All AND segments in a rule must be satisfied (across any text variant)
+    /// before the rule can fire.
     And = 1,
+    /// Negative segment that vetoes the rule when observed.
+    ///
+    /// If any NOT segment is matched in any variant, the rule is permanently
+    /// vetoed for the current scan generation.
     Not = 2,
 }
 
+/// Hot-path per-rule metadata used during scanning.
+///
+/// Stored in a contiguous `Vec` inside [`RuleSet`] and accessed by rule index on every
+/// pattern hit. Fields are ordered to keep the most frequently read data together.
+///
+/// The `segment_counts` layout is:
+/// ```text
+/// [ and_0, and_1, …, and_{and_count-1}, not_0, not_1, … ]
+///   ╰──── positive (AND) segments ────╯  ╰── negative (NOT) ──╯
+/// ```
+/// Positive counts start at the required number of hits (usually 1); negative counts
+/// start at 0 and veto the rule when they go above 0 (for matrix mode) or on first hit
+/// (for bitmask mode).
 #[derive(Debug, Clone)]
 pub(super) struct RuleHot {
+    /// Required counts for every positive and negative segment in rule order.
+    ///
+    /// AND entries hold the required hit count (decremented toward zero);
+    /// NOT entries hold a starting value of 0 (incremented on hit; any positive value
+    /// means the veto segment was observed). Only read when `use_matrix` is true.
     pub(super) segment_counts: Vec<i32>,
+    /// Number of positive (AND) segments at the front of `segment_counts`.
     pub(super) and_count: usize,
+    /// Whether the rule needs the per-variant counter matrix instead of the `u64` bitmask.
+    ///
+    /// True when any segment requires a count other than 1, or when the total number
+    /// of segments exceeds [`BITMASK_CAPACITY`].
     pub(super) use_matrix: bool,
+    /// Whether the rule contains any NOT (`~`) segments.
+    ///
+    /// When false, the scan can short-circuit as soon as all AND segments are satisfied
+    /// without waiting to check for vetoes.
     pub(super) has_not: bool,
 }
 
+/// Cold rule metadata only needed when returning results.
+///
+/// Separated from [`RuleHot`] so the scan hot path never touches this data. Only
+/// accessed when a rule is confirmed satisfied and a [`SimpleResult`]
+/// must be produced.
 #[derive(Debug, Clone)]
 pub(super) struct RuleCold {
+    /// Caller-supplied rule identifier returned in match results.
     pub(super) word_id: u32,
+    /// Original rule string stored for borrowed result output.
+    ///
+    /// Owned here so that [`SimpleResult::word`](super::SimpleResult::word) can borrow
+    /// it as `Cow::Borrowed`.
     pub(super) word: String,
 }
 
+/// One deduplicated pattern's attachment to a concrete rule segment.
+///
+/// Multiple rules may share the same deduplicated pattern string (e.g., two rules both
+/// contain the sub-pattern `"hello"`). Each such binding is stored as a separate
+/// `PatternEntry` in the same bucket of the [`PatternIndex`].
+///
+/// Size: 8 bytes (u32 + u16 + u8 + u8 repr).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {
+    /// Rule index inside [`RuleSet`] (indexes into the hot/cold `Vec`s).
     pub(super) rule_idx: u32,
+    /// Segment offset within the rule's [`RuleHot::segment_counts`] array.
+    ///
+    /// For AND segments this is `0..and_count`; for NOT segments it is `and_count..`.
     pub(super) offset: u16,
+    /// Compact process-type index assigned by `SimpleMatcher::build_pt_index_table`.
+    ///
+    /// Used to filter pattern hits by comparing against the current variant's
+    /// [`ScanContext::process_type_mask`].
     pub(super) pt_index: u8,
+    /// Logical role of this segment hit.
     pub(super) kind: PatternKind,
 }
 
+/// All hot and cold metadata for the compiled rule set.
+///
+/// `hot` and `cold` are parallel `Vec`s indexed by rule index. [`RuleHot`] is read on
+/// every pattern hit (scan hot path); [`RuleCold`] is read only when producing output
+/// results, keeping the scan loop's working set small.
 #[derive(Clone)]
 pub(super) struct RuleSet {
     hot: Vec<RuleHot>,
     cold: Vec<RuleCold>,
 }
 
+/// Flat storage for deduplicated pattern entries plus their original bucket ranges.
+///
+/// During construction, each unique pattern string may be attached to one or more
+/// [`PatternEntry`] values (one per rule segment that uses that string). Those per-pattern
+/// buckets are flattened into a single contiguous `entries` vec, and `ranges` records the
+/// `(start, len)` slice for each deduplicated pattern id.
+///
+/// The automaton raw value for a given pattern is either:
+/// - A deduplicated index into `ranges` (general case), or
+/// - A direct rule index with [`DIRECT_RULE_BIT`] set (fast path for simple single-entry
+///   patterns).
 #[derive(Clone)]
 pub(super) struct PatternIndex {
+    /// Contiguous storage of all pattern entries across all deduplicated patterns.
     entries: Vec<PatternEntry>,
+    /// `(start_offset, length)` into `entries` for each deduplicated pattern id.
     ranges: Vec<(usize, usize)>,
 }
 
+/// Dispatch result for one raw scan value.
+///
+/// Returned by [`PatternIndex::dispatch`] to tell the caller how to interpret an
+/// automaton hit. The three variants are ordered by decreasing fast-path likelihood:
+///
+/// 1. [`DirectRule`](Self::DirectRule) — the automaton value already encodes the rule index
+///    (only possible for single-entry [`PatternKind::Simple`] patterns in
+///    [`SearchMode::AllSimple`] or
+///    [`SearchMode::SingleProcessType`] mode).
+/// 2. [`SingleEntry`](Self::SingleEntry) — one entry to process.
+/// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
 pub(super) enum PatternDispatch<'a> {
+    /// Direct simple-rule fast path — the `usize` is the rule index.
     DirectRule(usize),
+    /// Exactly one attached pattern entry.
     SingleEntry(&'a PatternEntry),
+    /// Multiple attached entries sharing the same deduplicated pattern string.
     Entries(&'a [PatternEntry]),
 }
 
+/// Rule-evaluation helpers used by the scan hot path.
 impl RuleSet {
+    /// Creates the compiled rule set from parallel hot and cold metadata vectors.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that `hot.len() == cold.len()`.
     pub(super) fn new(hot: Vec<RuleHot>, cold: Vec<RuleCold>) -> Self {
         Self { hot, cold }
     }
 
+    /// Returns the number of compiled rules.
     #[inline(always)]
     pub(super) fn len(&self) -> usize {
         self.hot.len()
     }
 
+    /// Returns whether any touched rule is satisfied in the current generation.
+    ///
+    /// Iterates only over rule indices that were touched (had at least one pattern hit),
+    /// not over the full rule set.
     #[inline(always)]
     pub(super) fn has_match(&self, state: &SimpleMatchState) -> bool {
         state
@@ -79,6 +237,11 @@ impl RuleSet {
             .any(|&rule_idx| state.rule_is_satisfied(rule_idx))
     }
 
+    /// Pushes one result when `rule_idx` becomes positive for the first time in this generation.
+    ///
+    /// Used by the all-simple fast path where every hit is immediately a completed rule.
+    /// Deduplication is handled by [`SimpleMatchState::mark_positive`]: if the rule was
+    /// already marked positive in this generation, no result is emitted.
     #[inline(always)]
     pub(super) fn push_result_if_new<'a>(
         &'a self,
@@ -91,6 +254,10 @@ impl RuleSet {
         }
     }
 
+    /// Appends every satisfied touched rule to `results`.
+    ///
+    /// Called after all variants have been scanned (Pass 2). Only rules whose AND
+    /// segments are all satisfied and whose NOT segments were never triggered are emitted.
     pub(super) fn collect_matches<'a>(
         &'a self,
         state: &SimpleMatchState,
@@ -103,6 +270,33 @@ impl RuleSet {
         }
     }
 
+    /// Applies one pattern hit to the rule state machine.
+    ///
+    /// This is the core state-transition function for the two-pass matcher. Given a
+    /// [`PatternEntry`] produced by automaton dispatch, it updates the corresponding
+    /// rule's [`WordState`](super::state::WordState) and returns `true` only when the
+    /// caller may stop early because a non-vetoed rule is already satisfied.
+    ///
+    /// # Const generic `SINGLE_PT`
+    ///
+    /// When `true`, all rules belong to a single process type and the process-type mask
+    /// check is compiled out. When `false`, the entry's `pt_index` is tested against
+    /// `ctx.process_type_mask` to filter hits from irrelevant text variants.
+    ///
+    /// # State transitions by [`PatternKind`]
+    ///
+    /// - **Simple**: Marks the rule satisfied on first touch. Idempotent on repeat hits.
+    /// - **And**: Decrements the remaining-AND counter (bitmask path) or the matrix
+    ///   counter (matrix path). When the counter reaches zero the rule becomes satisfied.
+    /// - **Not**: Sets `not_generation` to veto the rule. With the matrix path, the
+    ///   per-segment counter is incremented and the veto fires only when the count goes
+    ///   positive.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked` / `get_unchecked_mut` on `state.word_states`, `self.hot`,
+    /// `state.matrix`, and `state.matrix_status`. All accesses are guarded by preceding
+    /// `debug_assert!` bounds checks.
     #[inline(always)]
     pub(super) fn process_entry<const SINGLE_PT: bool>(
         &self,
@@ -228,6 +422,16 @@ impl RuleSet {
         false
     }
 
+    /// Pushes the borrowed public result for `rule_idx`.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked` on `self.cold`. Guarded by a preceding `debug_assert!`
+    /// bounds check.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that `rule_idx < self.cold.len()`.
     #[inline(always)]
     fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
         debug_assert!(rule_idx < self.cold.len());
@@ -239,7 +443,13 @@ impl RuleSet {
     }
 }
 
+/// Pattern-dispatch helpers for the compiled deduplicated index.
 impl PatternIndex {
+    /// Flattens per-pattern entry buckets into contiguous storage and records their ranges.
+    ///
+    /// Each element of `dedup_entries` is the set of [`PatternEntry`] values attached to
+    /// one unique pattern string. After flattening, `ranges[dedup_id]` gives the
+    /// `(start, len)` slice into the flat `entries` vec.
     pub(super) fn new(dedup_entries: Vec<Vec<PatternEntry>>) -> Self {
         let mut entries = Vec::with_capacity(dedup_entries.iter().map(|bucket| bucket.len()).sum());
         let mut ranges = Vec::with_capacity(dedup_entries.len());
@@ -254,11 +464,16 @@ impl PatternIndex {
         Self { entries, ranges }
     }
 
+    /// Returns whether there are no deduplicated patterns to scan.
     #[inline(always)]
     pub(super) fn is_empty(&self) -> bool {
         self.ranges.is_empty()
     }
 
+    /// Returns whether every entry across all patterns is a [`PatternKind::Simple`] segment.
+    ///
+    /// When true, the matcher can use [`SearchMode::AllSimple`]
+    /// which skips the full state machine and processes every hit as a completed rule.
     #[inline(always)]
     pub(super) fn all_simple(&self) -> bool {
         self.entries
@@ -266,6 +481,20 @@ impl PatternIndex {
             .all(|entry| entry.kind == PatternKind::Simple)
     }
 
+    /// Builds the raw scan-value mapping used by the automata.
+    ///
+    /// For each deduplicated pattern, produces the `u32` value that the automaton will
+    /// report on a hit. In [`SearchMode::AllSimple`] and
+    /// [`SearchMode::SingleProcessType`] modes, a
+    /// pattern with exactly one [`PatternKind::Simple`] entry is encoded as
+    /// `rule_idx | DIRECT_RULE_BIT` so the hot path can skip the indirection through the
+    /// entry table. All other patterns store the deduplicated index directly.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked` on `self.entries` when checking the single-entry fast path.
+    /// The index `start` comes from `self.ranges` which was built by [`Self::new`] and
+    /// is always in bounds.
     pub(super) fn build_value_map(&self, mode: SearchMode) -> Vec<u32> {
         let use_direct_rule = matches!(
             mode,
@@ -287,6 +516,22 @@ impl PatternIndex {
         value_map
     }
 
+    /// Resolves one raw scan value back into rule-attachment metadata.
+    ///
+    /// # Const generic `SINGLE_PT`
+    ///
+    /// When `true`, the [`DIRECT_RULE_BIT`] encoding is checked first. When `false`, the
+    /// direct-rule encoding is never used, so the check is compiled out.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked` on `self.ranges` and `self.entries`. All accesses are guarded
+    /// by preceding `debug_assert!` bounds checks.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that the pattern index is within `self.ranges` and that the resulting
+    /// entry slice is within `self.entries`.
     #[inline(always)]
     pub(super) fn dispatch<const SINGLE_PT: bool>(&self, raw_value: u32) -> PatternDispatch<'_> {
         if SINGLE_PT && raw_value & DIRECT_RULE_BIT != 0 {

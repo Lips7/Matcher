@@ -1,8 +1,25 @@
 //! Transformation graph construction and traversal.
 //!
-//! [`build_process_type_tree`] builds a flat-array trie from a set of [`ProcessType`] bitmasks.
-//! [`walk_process_tree`] then walks that flat array in parent-before-child order, applying
-//! each transformation step once per reachable prefix so shared intermediates are reused.
+//! The "graph" is a flat-array trie where each node represents one single-bit
+//! [`ProcessType`] step. [`build_process_type_tree`] constructs the trie from a set of
+//! composite bitmasks, merging shared prefixes so that intermediate results are computed
+//! once. [`walk_process_tree`] then traverses the array in parent-before-child order,
+//! applying each transformation step exactly once per reachable prefix and collecting
+//! the resulting [`TextVariant`]s.
+//!
+//! # Example trie
+//!
+//! Given the set `{Fanjian, Fanjian|Delete, Fanjian|Delete|Normalize}`, the trie is:
+//!
+//! ```text
+//!   [0] root (None)
+//!    └─[1] Fanjian          ← terminates: {Fanjian}
+//!       └─[2] Delete        ← terminates: {Fanjian|Delete}
+//!          └─[3] Normalize  ← terminates: {Fanjian|Delete|Normalize}
+//! ```
+//!
+//! Walking this trie for input `"妳！好Ａ"` computes Fanjian once, then Delete on the
+//! Fanjian output, then Normalize on the Delete output — reusing each intermediate.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -18,42 +35,76 @@ use crate::process::variant::{
 
 /// A node in the flat-array transformation trie used by [`walk_process_tree`].
 ///
-/// The trie is built once by [`build_process_type_tree`] and stored inside `SimpleMatcher`.
-/// Each node represents a single transformation step (`process_type_bit`) reachable from
-/// its parent. The `process_type_list` records which composite [`ProcessType`] values
-/// "arrive" at this node (i.e. terminate here), so the traversal can tag output text
-/// variants with the correct bitmask. `children` holds flat-array indices of the next steps.
-/// `folded_mask` is the pre-computed OR of `1u64 << pt.bits()` for all entries in
-/// `process_type_list`, avoiding the per-call fold in the hot traversal loop.
+/// The trie is built once by [`build_process_type_tree`] and stored inside
+/// [`SimpleMatcher`](crate::SimpleMatcher). Each node represents a single transformation
+/// step (`process_type_bit`) reachable from its parent. Nodes form a tree:
+///
+/// - **Root** (index 0) always has `process_type_bit = ProcessType::None` and no `step`.
+/// - **Inner / leaf nodes** each carry a cached `&'static TransformStep` so the hot
+///   traversal loop avoids a registry lookup.
+/// - **`process_type_list`** records which composite [`ProcessType`] values terminate at
+///   this node, so the traversal can tag output text variants with the correct bitmask.
+/// - **`folded_mask`** is the pre-computed OR of `1u64 << pt.bits()` for all entries in
+///   `process_type_list`, avoiding a per-call fold in the hot loop.
+///
+/// All fields are `pub(crate)` or private; users obtain instances exclusively through
+/// [`build_process_type_tree`].
+///
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashSet;
+/// use matcher_rs::{ProcessType, build_process_type_tree};
+///
+/// let types = HashSet::from([ProcessType::None, ProcessType::Fanjian]);
+/// let tree = build_process_type_tree(&types);
+///
+/// // Root node is always at index 0; at least one child for Fanjian.
+/// assert!(tree.len() >= 2);
+/// ```
 #[derive(Clone)]
 pub struct ProcessTypeBitNode {
-    /// The composite [`ProcessType`] values whose decomposed bit-path terminates at this node.
-    /// A non-empty list means that one or more rules emit a text variant here.
+    /// Composite [`ProcessType`] values whose decomposed bit-path terminates at this node.
+    ///
+    /// A non-empty list means that one or more rules emit a text variant here. For example,
+    /// if both `Fanjian` and `Fanjian|Delete` are in the set, the Fanjian node's list
+    /// contains `Fanjian`, and the Delete child's list contains `Fanjian|Delete`.
     process_type_list: Vec<ProcessType>,
-    /// The single-bit [`ProcessType`] step that this node represents (i.e., the edge label
-    /// from the parent). For the root node this is [`ProcessType::None`].
+    /// The single-bit [`ProcessType`] step this node represents (the edge label from parent).
+    ///
+    /// For the root node this is [`ProcessType::None`].
     pub(crate) process_type_bit: ProcessType,
     /// Flat-array indices of child nodes (the next transformation steps reachable from here).
     pub(crate) children: Vec<usize>,
-    /// Cached single-step transform for this node's process bit, avoiding a lookup in the
-    /// hot traversal loop. The root node leaves this as `None`.
+    /// Cached reference to the compiled transform step for this node's `process_type_bit`.
+    ///
+    /// [`None`] only for the root node. All other nodes cache their step at construction
+    /// time to avoid a registry lookup in the hot [`walk_process_tree`] loop.
     pub(crate) step: Option<&'static TransformStep>,
     /// Pre-computed OR of `1u64 << pt.bits()` for every `pt` in `process_type_list`.
-    /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop.
+    ///
+    /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop. After
+    /// [`recompute_mask_with_index`](Self::recompute_mask_with_index) is called, the
+    /// encoding switches from raw bit positions to sequential indices.
     pub(crate) folded_mask: u64,
 }
 
+/// Post-construction helpers for [`ProcessTypeBitNode`].
 impl ProcessTypeBitNode {
-    /// Re-encodes `folded_mask` using a sequential index table.
+    /// Re-encodes [`folded_mask`](Self::folded_mask) using a sequential index table.
     ///
-    /// The default encoding stores `1u64 << pt.bits()`, which can use bits up to 63 for
-    /// composite [`ProcessType`] values. A sequential index keeps bit positions small (0..N
-    /// where N is the number of unique composite types) so `PatternEntry` can store the
-    /// index as a `u8` rather than a `u64`, halving the entry size.
+    /// The default encoding stores `1u64 << pt.bits()`, which can scatter bits across the
+    /// full `u64` range for composite [`ProcessType`] values. A sequential index keeps bit
+    /// positions small (`0..N` where `N` is the number of unique composite types) so that
+    /// downstream data structures (e.g. `PatternEntry`) can store the index as a `u8`
+    /// rather than a `u64`, halving entry size.
     ///
     /// `pt_index_table[pt.bits()]` must contain the sequential index for every composite
     /// [`ProcessType`] that terminates at any node (i.e. every type in the original
     /// `process_type_set` plus [`ProcessType::None`]).
+    ///
+    /// Called by [`SimpleMatcher::new()`](crate::SimpleMatcher) after
+    /// [`build_process_type_tree`] returns.
     pub(crate) fn recompute_mask_with_index(&mut self, pt_index_table: &[u8; 64]) {
         self.folded_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
             acc | (1u64 << pt_index_table[pt.bits() as usize])
@@ -66,12 +117,29 @@ impl ProcessTypeBitNode {
 /// The trie encodes every unique prefix path among the given composite types. A root node
 /// with `process_type_bit = ProcessType::None` is always present at index 0. For each
 /// composite type (e.g. `Fanjian | Delete`), the constructor walks its constituent bits in
-/// order, reusing existing child nodes where the path overlaps with previously inserted types
-/// and creating new child nodes when a path diverges.
+/// ascending order, reusing existing child nodes where the path overlaps with previously
+/// inserted types and creating new child nodes when a path diverges.
 ///
 /// The resulting flat `Vec<ProcessTypeBitNode>` is passed to [`walk_process_tree`], which
 /// scans the node array in parent-before-child order to compute all required text variants
 /// while reusing common prefixes.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashSet;
+/// use matcher_rs::{ProcessType, build_process_type_tree};
+///
+/// let types = HashSet::from([
+///     ProcessType::None,
+///     ProcessType::Fanjian,
+///     ProcessType::Fanjian | ProcessType::Delete,
+/// ]);
+/// let tree = build_process_type_tree(&types);
+///
+/// // Root (None) + Fanjian node + Delete node = at least 3 nodes.
+/// assert!(tree.len() >= 3);
+/// ```
 pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
     let mut process_type_tree = Vec::new();
     let mut root = ProcessTypeBitNode {
@@ -130,15 +198,18 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
 
 /// Inserts a transformed text into `text_masks`, deduplicating against existing entries.
 ///
-/// If `changed` is `Some(text)` and `text` already exists in `text_masks`, the string is
-/// returned to the pool and the existing index is returned. Otherwise `text` is appended.
-/// If `changed` is `None`, `current_index` is returned unchanged.
+/// If `changed` is `Some(text)` and an equal string already exists in `text_masks`, the
+/// duplicate is returned to the thread-local pool and the existing index is returned.
+/// Otherwise the new text is appended and the new index is returned. If `changed` is
+/// [`None`] (the step was a no-op), `current_index` is returned unchanged.
 ///
-/// `is_ascii` indicates whether `processed` contains only ASCII bytes; stored alongside
-/// the text so callers can skip the charwise automaton without a redundant byte scan.
+/// `is_ascii` indicates whether the transformed text consists entirely of ASCII bytes;
+/// it is stored alongside the text so callers can skip the charwise automaton without a
+/// redundant byte scan.
 ///
-/// This keeps `walk_process_tree` in "unique string" space even when different trie paths
-/// converge onto the same transformed text.
+/// This deduplication keeps [`walk_process_tree`] in "unique string" space even when
+/// different trie paths converge onto the same transformed text (e.g. when Fanjian and
+/// Normalize both produce the same output for a particular input).
 fn dedup_insert(
     text_masks: &mut ProcessedTextMasks<'_>,
     current_index: usize,
@@ -169,31 +240,61 @@ fn dedup_insert(
 
 /// Walks the transformation trie, producing all text variants needed for matching.
 ///
-/// This is the hot-path function called on every [`crate::SimpleMatcher::is_match`] /
-/// [`crate::SimpleMatcher::process`] invocation. It performs one forward pass over the
-/// flat tree, relying on the invariant that every parent node appears before its children.
-/// Common prefixes (for example the shared `Fanjian` step in both
-/// `Fanjian | Delete` and `Fanjian | Normalize`) are computed once and their result
-/// indices are reused for child nodes.
+/// This is the hot-path function called on every [`SimpleMatcher::is_match`](crate::SimpleMatcher::is_match) /
+/// [`SimpleMatcher::process`](crate::SimpleMatcher::process) invocation. It performs one
+/// forward pass over the flat tree built by [`build_process_type_tree`], relying on the
+/// invariant that every parent node appears before its children (guaranteed by construction).
+/// Common prefixes (for example the shared `Fanjian` step in both `Fanjian | Delete` and
+/// `Fanjian | Normalize`) are computed once and their result indices are reused for child
+/// nodes.
 ///
-/// Each [`TextVariant`] in the returned `Vec` carries the transformed text, the bitmask of
-/// [`ProcessType`] indices that produced it, and an `is_ascii` flag. Callers can use
-/// `is_ascii` to skip the charwise automaton without a redundant byte scan.
+/// Each [`TextVariant`] in the returned [`ProcessedTextMasks`] carries the transformed
+/// text, the bitmask of [`ProcessType`] indices that produced it, and an `is_ascii` flag.
+/// When different trie paths converge to the same string, they share a single entry with
+/// a merged mask.
 ///
-/// When `LAZY=true`, `on_variant(text, index, mask, is_ascii)` is called as soon as each
-/// new unique variant is produced. If it returns `true`, the walk stops early. A delta
-/// phase at the end replays any additional mask bits that were merged into an already-seen
-/// text through deduplication. When `LAZY=false`, `on_variant` is never called.
+/// # Const-generic `LAZY` parameter
 ///
-/// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY=true` and
-/// `on_variant` triggered early exit. Inside `matcher_rs`, owned strings are usually returned
-/// to a thread-local pool after use; external callers can simply let the returned vector drop.
+/// - **`LAZY = false`** — Produces all variants without callbacks; `on_variant` is never
+///   called. Use this when you need the complete set of variants (e.g. for
+///   [`SimpleMatcher::process`](crate::SimpleMatcher::process)).
+///
+/// - **`LAZY = true`** — Calls `on_variant(text, index, mask, is_ascii)` as soon as each
+///   new unique variant is produced. If `on_variant` returns `true`, the walk stops early.
+///   A "delta phase" at the end replays any additional mask bits that were merged into an
+///   already-seen text through deduplication. Use this for
+///   [`SimpleMatcher::is_match`](crate::SimpleMatcher::is_match) to short-circuit as soon
+///   as a rule is satisfied.
+///
+/// # Return value
+///
+/// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY = true` and
+/// `on_variant` triggered early exit.
+///
+/// Inside `matcher_rs`, owned strings in the returned vector are recycled via
+/// `return_processed_string_to_pool`.
+/// External callers can simply drop the vector — no manual cleanup is needed.
+///
+/// # Safety
+///
+/// Accesses `TRANSFORM_STATE` through `UnsafeCell::get()`.
+/// Safe because `#[thread_local]` guarantees single-threaded access and this function is
+/// never called re-entrantly.
+///
+/// Contains a `transmute` from `ProcessedTextMasks<'static>` to `ProcessedTextMasks<'a>`
+/// when recycling a pooled buffer. This is sound because the pooled buffer is always empty
+/// (drained before being returned to the pool), so no `Cow` borrows with the wrong lifetime
+/// exist, and `Vec` layout is lifetime-independent.
+///
+/// # Panics
+///
+/// Panics (via `.expect()`) if a non-root node has `step = None`, which indicates a
+/// construction bug in [`build_process_type_tree`].
 ///
 /// # Examples
 ///
 /// ```rust
 /// use std::collections::HashSet;
-///
 /// use matcher_rs::{ProcessType, build_process_type_tree, walk_process_tree};
 ///
 /// let process_types = HashSet::from([
@@ -204,19 +305,22 @@ fn dedup_insert(
 /// ]);
 /// let tree = build_process_type_tree(&process_types);
 ///
-/// let (variants, stopped) = walk_process_tree::<false, _>(&tree, "妳！好", &mut |_, _, _, _| false);
+/// // LAZY=false: produce all variants without early stopping.
+/// let (variants, stopped) = walk_process_tree::<false, _>(
+///     &tree, "妳！好", &mut |_, _, _, _| false,
+/// );
 /// assert!(!stopped);
 ///
-/// let texts = variants
+/// let texts: std::collections::HashSet<_> = variants
 ///     .into_iter()
 ///     .map(|tv| tv.text.into_owned())
-///     .collect::<std::collections::HashSet<_>>();
+///     .collect();
 ///
 /// assert_eq!(texts.len(), 4);
-/// assert!(texts.contains("妳！好"));
-/// assert!(texts.contains("你！好"));
-/// assert!(texts.contains("妳好"));
-/// assert!(texts.contains("你好"));
+/// assert!(texts.contains("妳！好"));  // raw (None)
+/// assert!(texts.contains("你！好"));  // Fanjian
+/// assert!(texts.contains("妳好"));    // Delete
+/// assert!(texts.contains("你好"));    // Fanjian | Delete
 /// ```
 #[inline(always)]
 pub fn walk_process_tree<'a, const LAZY: bool, F>(

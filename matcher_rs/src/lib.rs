@@ -57,7 +57,13 @@
 //! | `simd_runtime_dispatch` | on | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
 //! | `runtime_build` | off | Parses the source transform maps at runtime instead of loading build-time artifacts lazily on first use |
 
-/// Use mimalloc as the global allocator for reduced fragmentation and better multi-threaded throughput.
+/// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
+///
+/// `mimalloc` was chosen because `SimpleMatcher` scanning relies heavily on thread-local
+/// buffer pools and short-lived allocations during text transformation. `mimalloc`
+/// provides lower fragmentation under these allocation patterns and significantly better
+/// multi-threaded throughput compared to the system allocator, especially on workloads
+/// where many threads match concurrently.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

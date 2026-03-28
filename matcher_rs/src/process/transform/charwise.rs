@@ -1,4 +1,25 @@
 //! Charwise lookup engines for Fanjian and Pinyin transformations.
+//!
+//! Both engines share a **two-stage page table** for O(1) codepoint lookup:
+//!
+//! - **L1** (`&[u16]`): indexed by `codepoint >> 8` (the "page index"). A non-zero
+//!   value is the 1-based page number in L2; zero means the entire 256-codepoint
+//!   page has no mappings.
+//! - **L2** (`&[u32]`): indexed by `page * 256 + (codepoint & 0xFF)`. The
+//!   interpretation of the stored `u32` depends on the engine:
+//!   - **Fanjian**: the simplified codepoint value. `0` = unmapped.
+//!   - **Pinyin**: packed `(byte_offset << 8) | byte_length` into a shared
+//!     string buffer. `0` = unmapped.
+//!
+//! Scan loops use [`skip_ascii_simd`] and [`skip_non_digit_ascii_simd`] to
+//! fast-forward over ASCII bytes that cannot produce hits, falling through to
+//! the page-table probe only for multi-byte (non-ASCII) codepoints.
+//!
+//! [`FanjianMatcher::replace`] has a **same-length fast path**: when the
+//! simplified codepoint has the same UTF-8 byte width as the traditional one,
+//! it overwrites the bytes in-place via `as_bytes_mut()` without rebuilding the
+//! string. Only when a byte-length mismatch is encountered does it fall back to
+//! the full scan-and-rebuild path through [`replace_scan`].
 
 use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
@@ -7,11 +28,27 @@ use std::collections::{HashMap, HashSet};
 use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
 use crate::process::variant::{get_string_from_pool, return_string_to_pool};
 
+/// Replacement payload yielded by the charwise iterators.
+///
+/// Each variant corresponds to one type of replacement output:
+/// [`FanjianFindIter`] always yields [`Replacement::Char`], while
+/// [`PinyinFindIter`] always yields [`Replacement::Str`].
 enum Replacement<'a> {
+    /// Replace the matched span with a single Unicode scalar value (Fanjian).
     Char(char),
+    /// Replace the matched span with a borrowed string slice (Pinyin).
     Str(&'a str),
 }
 
+/// Shared scan-and-rebuild helper for iterators that yield non-overlapping replacement spans.
+///
+/// Pulls the first item from `iter`; if `None`, returns `None` (no replacements needed).
+/// Otherwise allocates a [`String`] from the thread-local pool, copies unchanged text
+/// between replacement spans, and calls `push` for each replacement payload.
+///
+/// The caller is responsible for ensuring the iterator yields spans in strictly
+/// ascending, non-overlapping byte-offset order; otherwise the interleaved
+/// `push_str` calls will produce garbled output.
 #[inline(always)]
 fn replace_scan<'a, I, F>(text: &str, mut iter: I, mut push: F) -> Option<String>
 where
@@ -35,6 +72,27 @@ where
     }
 }
 
+/// Looks up one codepoint in a two-stage page table.
+///
+/// Returns `Some(value)` when the codepoint has a non-zero entry in L2, or
+/// `None` when the page is unmapped (L1 entry is zero), the page index is out
+/// of range, or the L2 value is zero.
+///
+/// # Safety
+///
+/// Uses `get_unchecked` in two places:
+///
+/// - **L1 access** (`l1[page_idx]`): guarded by the `page_idx >= l1.len()`
+///   bounds check immediately above.
+/// - **L2 access** (`l2[page * 256 + char_idx]`): `page` is non-zero (checked
+///   above) and was assigned during table construction, so `page * 256 +
+///   char_idx` is always within the allocated L2 extent. A `debug_assert!`
+///   verifies this in debug builds.
+///
+/// # Panics
+///
+/// Debug builds panic if `page * 256 + char_idx >= l2.len()`, which would
+/// indicate a corrupt or mismatched table pair.
 #[inline(always)]
 fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     let page_idx = (cp >> 8) as usize;
@@ -52,6 +110,14 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
 }
 
 #[cfg(not(feature = "runtime_build"))]
+/// Decodes a little-endian `u16` table emitted by `build.rs`.
+///
+/// Each consecutive pair of bytes is interpreted as one `u16` in little-endian
+/// order. The input length must be a multiple of 2.
+///
+/// # Panics
+///
+/// Debug builds panic if `bytes.len() % 2 != 0`.
 #[inline]
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
@@ -63,6 +129,14 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
 }
 
 #[cfg(not(feature = "runtime_build"))]
+/// Decodes a little-endian `u32` table emitted by `build.rs`.
+///
+/// Each consecutive group of 4 bytes is interpreted as one `u32` in
+/// little-endian order. The input length must be a multiple of 4.
+///
+/// # Panics
+///
+/// Debug builds panic if `bytes.len() % 4 != 0`.
 #[inline]
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
@@ -73,6 +147,15 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
         .into_boxed_slice()
 }
 
+/// Trims leading and trailing spaces from one packed Pinyin `(offset, len)` entry.
+///
+/// The raw Pinyin string buffer may include surrounding spaces around each
+/// syllable (e.g., `" zhong "`) for the full-word `PinYin` variant. The
+/// `PinYinChar` variant calls this function to strip those spaces so that
+/// individual characters produce bare syllables (e.g., `"zhong"`).
+///
+/// The return value is a new packed `(offset << 8) | length` with the
+/// trimmed boundaries. Returns `0` unchanged if the input is `0` (unmapped).
 #[inline]
 fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
@@ -90,6 +173,23 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     ((start as u32) << 8) | ((end - start) as u32)
 }
 
+/// Decodes one non-ASCII UTF-8 codepoint from `bytes[offset..]`.
+///
+/// Returns `(codepoint, byte_length)` where `byte_length` is 2, 3, or 4.
+/// This function handles only multi-byte sequences (lead byte >= 0xC0); it
+/// must not be called on ASCII bytes.
+///
+/// # Safety
+///
+/// - `offset` must point at a valid UTF-8 continuation-sequence start (lead
+///   byte >= 0xC0). Callers guarantee this by only invoking after confirming
+///   `bytes[offset] >= 0x80`, inside a `&str` (which is always valid UTF-8).
+/// - `bytes[offset .. offset + char_len]` must be in bounds. This is guaranteed
+///   because the input originates from a `&str` whose total length covers the
+///   full multi-byte sequence.
+/// - Each `get_unchecked` reads a continuation byte at a known offset (1, 2,
+///   or 3 past the lead byte). The lead byte's high bits determine how many
+///   continuation bytes exist, and valid UTF-8 guarantees they are present.
 #[inline(always)]
 unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
     let b0 = unsafe { *bytes.get_unchecked(offset) };
@@ -117,6 +217,12 @@ unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
     }
 }
 
+/// Iterator over Traditional Chinese codepoints that have Simplified replacements.
+///
+/// Scans `text` byte-by-byte (with [`skip_ascii_simd`] acceleration), decodes
+/// each non-ASCII codepoint via [`decode_utf8_raw`], and probes the two-stage
+/// page table. Yields `(start, end, Replacement::Char(simplified))` for every
+/// codepoint that maps to a *different* Simplified form.
 struct FanjianFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -127,6 +233,17 @@ struct FanjianFindIter<'a> {
 impl<'a> Iterator for FanjianFindIter<'a> {
     type Item = (usize, usize, Replacement<'a>);
 
+    /// Advances to the next Traditional codepoint that has a Simplified replacement.
+    ///
+    /// # Safety (internal)
+    ///
+    /// - [`decode_utf8_raw`] is called only after [`skip_ascii_simd`] has
+    ///   positioned `byte_offset` at a non-ASCII byte, which is always a valid
+    ///   UTF-8 lead byte inside a `&str`.
+    /// - [`char::from_u32_unchecked`] is called on the L2 value. The page
+    ///   table is generated from valid Unicode codepoints at build time, so
+    ///   every non-zero L2 entry is a valid scalar value. A `debug_assert!`
+    ///   verifies this in debug builds.
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
@@ -153,9 +270,16 @@ impl<'a> Iterator for FanjianFindIter<'a> {
     }
 }
 
+/// Iterator over codepoints that have Pinyin replacements.
+///
+/// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
+/// instead of [`skip_ascii_simd`], because ASCII digits may appear in the
+/// Pinyin tables and must not be skipped. Yields
+/// `(start, end, Replacement::Str(pinyin_slice))` for each matched codepoint.
 struct PinyinFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
+    /// Shared string buffer containing all Pinyin syllables concatenated.
     strings: &'a str,
     text: &'a str,
     byte_offset: usize,
@@ -164,6 +288,14 @@ struct PinyinFindIter<'a> {
 impl<'a> Iterator for PinyinFindIter<'a> {
     type Item = (usize, usize, Replacement<'a>);
 
+    /// Advances to the next codepoint that has a Pinyin replacement.
+    ///
+    /// # Safety (internal)
+    ///
+    /// - [`decode_utf8_raw`] is called only when the current byte is non-ASCII
+    ///   (`>= 0x80`), guaranteeing a valid UTF-8 lead byte.
+    /// - The `offset + str_len <= self.strings.len()` bounds check ensures the
+    ///   slice into the Pinyin string buffer is in range.
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
@@ -199,13 +331,28 @@ impl<'a> Iterator for PinyinFindIter<'a> {
     }
 }
 
+/// Two-stage page-table matcher for Traditional-to-Simplified Chinese replacement.
+///
+/// Stores a pair of decoded page tables (`l1` and `l2`) whose layout is
+/// described in the [module documentation](self). Each non-zero L2 entry is
+/// the Unicode codepoint of the Simplified equivalent.
+///
+/// Construction is feature-gated:
+/// - **Default**: [`FanjianMatcher::new`] decodes the binary tables emitted by
+///   `build.rs`.
+/// - **`runtime_build`**: `FanjianMatcher::from_map` builds the tables from a
+///   `HashMap<u32, u32>` parsed from source text at startup.
 #[derive(Clone)]
 pub(crate) struct FanjianMatcher {
+    /// L1 page index: `codepoint >> 8` -> 1-based page number (0 = unmapped).
     l1: Box<[u16]>,
+    /// L2 data pages: `page * 256 + (codepoint & 0xFF)` -> simplified codepoint (0 = unmapped).
     l2: Box<[u32]>,
 }
 
 impl FanjianMatcher {
+    /// Returns an iterator over all codepoints in `text` whose Simplified form
+    /// differs from the original.
     #[inline(always)]
     fn iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
         FanjianFindIter {
@@ -216,6 +363,30 @@ impl FanjianMatcher {
         }
     }
 
+    /// Replaces every Traditional Chinese codepoint in `text` that has a Simplified mapping.
+    ///
+    /// Returns `None` when no replacements were needed (the text contains no
+    /// Traditional characters in the table), allowing callers to continue
+    /// borrowing the original input.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. **Same-length fast path**: On first hit, clones `text` into a pooled
+    ///    `String` and overwrites the matched span in place via
+    ///    `char::encode_utf8` on `as_bytes_mut()`. This avoids a full rebuild
+    ///    when all replacements have the same UTF-8 byte width as their source.
+    /// 2. **Byte-length mismatch fallback**: If any replacement has a different
+    ///    byte width, the in-place buffer is returned to the pool and the entire
+    ///    text is re-scanned through [`replace_scan`], which builds a new
+    ///    `String` by copying unchanged spans and pushing replacement chars.
+    ///
+    /// # Safety (internal)
+    ///
+    /// The `as_bytes_mut()` + `encode_utf8` write is safe because:
+    /// - The span `[start..end]` is exactly `span_len` bytes (one UTF-8 char).
+    /// - `mapped.len_utf8() == span_len` is checked before the write.
+    /// - `encode_utf8` writes exactly `span_len` bytes of valid UTF-8, so the
+    ///   `String` invariant (valid UTF-8) is preserved at every step.
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         let mut result: Option<String> = None;
 
@@ -247,6 +418,12 @@ impl FanjianMatcher {
         result
     }
 
+    /// Builds a matcher from the precompiled build-time page tables.
+    ///
+    /// `l1` and `l2` are raw little-endian byte slices embedded at compile time
+    /// by `build.rs` (see `constants::FANJIAN_L1_BYTES` and
+    /// `constants::FANJIAN_L2_BYTES`). They are decoded into boxed `u16` /
+    /// `u32` slices via [`decode_u16_table`] and [`decode_u32_table`].
     #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(l1: &'static [u8], l2: &'static [u8]) -> Self {
         Self {
@@ -255,6 +432,10 @@ impl FanjianMatcher {
         }
     }
 
+    /// Builds a matcher from a runtime-parsed codepoint map.
+    ///
+    /// `map` keys are Traditional codepoints; values are Simplified codepoints.
+    /// Delegates to [`build_2_stage_table`] to produce the L1/L2 arrays.
     #[cfg(feature = "runtime_build")]
     pub(crate) fn from_map(map: HashMap<u32, u32>) -> Self {
         let (l1, l2) = build_2_stage_table(&map);
@@ -265,14 +446,32 @@ impl FanjianMatcher {
     }
 }
 
+/// Two-stage page-table matcher for CJK-to-Pinyin replacement.
+///
+/// Uses the same two-stage page table as [`FanjianMatcher`], but each non-zero
+/// L2 entry encodes `(byte_offset << 8) | byte_length` into a shared string
+/// buffer (`strings`) that contains all Pinyin syllables concatenated.
+///
+/// Two construction modes mirror those of `FanjianMatcher`:
+/// - **Default**: [`PinyinMatcher::new`] decodes build-time binary tables.
+/// - **`runtime_build`**: `PinyinMatcher::from_map` builds tables from a
+///   `HashMap<u32, &str>`.
+///
+/// When `trim_space` is `true` (used by the `PinYinChar` variant), each L2
+/// entry is adjusted by [`trim_pinyin_packed`] to exclude surrounding spaces.
 #[derive(Clone)]
 pub(crate) struct PinyinMatcher {
+    /// L1 page index: `codepoint >> 8` -> 1-based page number (0 = unmapped).
     l1: Box<[u16]>,
+    /// L2 data pages: `page * 256 + (codepoint & 0xFF)` -> packed `(offset << 8) | length`.
     l2: Box<[u32]>,
+    /// Concatenated Pinyin syllable strings. Borrowed from a `&'static str`
+    /// constant in the default build; owned when using `runtime_build`.
     strings: Cow<'static, str>,
 }
 
 impl PinyinMatcher {
+    /// Returns an iterator over all codepoints in `text` that have Pinyin output.
     #[inline(always)]
     fn iter<'a>(&'a self, text: &'a str) -> PinyinFindIter<'a> {
         PinyinFindIter {
@@ -284,6 +483,10 @@ impl PinyinMatcher {
         }
     }
 
+    /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
+    ///
+    /// Returns `None` when no codepoint in `text` has a Pinyin mapping,
+    /// allowing callers to continue borrowing the original input.
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         replace_scan(text, self.iter(text), |result, replacement| {
             let Replacement::Str(mapped) = replacement else {
@@ -293,6 +496,16 @@ impl PinyinMatcher {
         })
     }
 
+    /// Builds a matcher from the precompiled build-time tables and string storage.
+    ///
+    /// `l1` and `l2` are raw little-endian byte slices (see
+    /// `constants::PINYIN_L1_BYTES`, `constants::PINYIN_L2_BYTES`).
+    /// `strings` is the concatenated Pinyin buffer
+    /// (`constants::PINYIN_STR_BYTES`).
+    ///
+    /// When `trim_space` is `true`, every L2 entry is post-processed through
+    /// [`trim_pinyin_packed`] to strip surrounding spaces from the syllable
+    /// boundaries. This is used by the `PinYinChar` process type.
     #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(
         l1: &'static [u8],
@@ -314,6 +527,12 @@ impl PinyinMatcher {
         }
     }
 
+    /// Builds a matcher from a runtime-parsed codepoint-to-string map.
+    ///
+    /// Concatenates all replacement strings into a single owned buffer, packs
+    /// each entry as `(offset << 8) | length`, and delegates to
+    /// [`build_2_stage_table`]. If `trim_space` is `true`, entries are
+    /// post-processed through [`trim_pinyin_packed`].
     #[cfg(feature = "runtime_build")]
     pub(crate) fn from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
         let mut strings = String::new();
@@ -342,6 +561,16 @@ impl PinyinMatcher {
     }
 }
 
+/// Converts a sparse codepoint map into the shared two-stage page-table layout.
+///
+/// Groups all keys by their high bits (`key >> 8`) to determine which 256-entry
+/// pages are needed. L1 has `(0x10FFFF >> 8) + 1` entries covering the entire
+/// Unicode range; each non-empty page gets a 1-based index into L2.
+///
+/// L2 is laid out as `(num_pages + 1) * 256` entries: page 0 is a dummy
+/// (all zeros) so that an L1 value of `0` naturally maps to the zero page.
+///
+/// Returns `(l1, l2)` ready to be boxed into slices.
 #[cfg(feature = "runtime_build")]
 fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
     let mut pages: HashSet<u32> = map.keys().map(|&key| key >> 8).collect();
