@@ -8,6 +8,8 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 
 **Toolchain:** nightly Rust (see `rust-toolchain.toml`). Nightly is required — do not change this.
 
+**Prerequisites:** `cargo-all-features` (`cargo install cargo-all-features`), `uv` (Python env manager), `prek` (pre-commit runner).
+
 ## Commands
 
 ```bash
@@ -33,42 +35,42 @@ cargo all-features clippy --workspace --all-targets -- -D warnings
 cd matcher_py && uv sync && uv run pytest
 cd matcher_py && uv run ruff check --fix && uv run ty check
 
-# Benchmarks
-cargo bench -p matcher_rs                      # Rust only (avoids Python linker errors)
+# Benchmarks (two targets: bench, bench_engine)
+cargo bench -p matcher_rs                      # All benchmarks (avoids Python linker errors)
+cargo bench -p matcher_rs --bench bench        # Main benchmark suite only
 cargo bench -p matcher_rs -- text_process      # Specific benchmark group
 cargo bench -p matcher_rs > baseline.txt       # save baseline
 cargo bench -p matcher_rs > new.txt            # run new benchmark
 python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # compare results
+
+# Profiling (uses release + debug symbols)
+cargo build --profile profiling -p matcher_rs
 ```
 
 **Pre-commit:** `.pre-commit-config.yaml` exists — run `prek run` before committing.
 
 ## Architecture
 
+For exhaustive internal documentation, see [DESIGN.md](./DESIGN.md). Below is the essential mental model.
+
 ### Two-Pass Matching
 
-All matching is two-pass:
-
-1. **Pattern Scan** — All unique sub-patterns across all rules are deduplicated and compiled into a single automaton (Aho-Corasick via `daachorse`, optional `dfa`). O(N) text scan.
-2. **Logical Evaluation** — Only rules that had ≥1 hit in Pass 1 are evaluated. Sparse-set via generation IDs for O(1) state reset. Bitmask fast-path for rules with ≤64 segments; matrix fallback otherwise.
+1. **Pattern Scan** — All unique sub-patterns across all rules are deduplicated and compiled into a single automaton (Aho-Corasick via `daachorse`, optional `dfa`). O(N) text scan. ASCII-only patterns get a separate engine for fast dispatch when input is ASCII.
+2. **Logical Evaluation** — Only rules that had ≥1 hit in Pass 1 are evaluated. Sparse-set via generation IDs for O(1) state reset. Bitmask fast-path for rules with ≤64 segments; matrix fallback otherwise. `all_simple` fast-path bypasses all state machinery for pure-literal matchers.
 
 ### Text Transformation Pipeline
 
-Before matching, text is transformed through a DAG of `ProcessType` steps:
+Before matching, text is transformed through a DAG of `ProcessType` steps (bitflags composable with `|`):
 
 ```
 None | Fanjian | Delete | Normalize | DeleteNormalize | FanjianDeleteNormalize | PinYin | PinYinChar
 ```
 
-The DAG is a Trie — intermediate results are reused across combinations. Each text variant is tagged with a bitmask of all `ProcessType`s that produced it. Transformations use `Cow<'_, str>` to avoid allocations when no change occurs.
+The DAG is a Trie — intermediate results are reused across combinations. Transformations use `Cow<'_, str>` to avoid allocations when no change occurs. Transformation tables are compiled at build time (`build.rs`) from source files in `matcher_rs/process_map/`.
 
-### Build-time Compilation (`build.rs`)
+### Construction subtlety: Delete and AC pattern indexing
 
-Transformation tables in `matcher_rs/process_map/` are compiled into binary artifacts at build time:
-- **Fanjian** (Traditional→Simplified): 2-stage page table, O(1) codepoint lookup
-- **Normalize/Num-Norm**: Daachorse Aho-Corasick for leftmost-longest multi-char substitution
-- **Pinyin**: 2-stage page table mapping codepoint → packed (offset, length) into concatenated string buffer
-- **Delete**: 139KB BitSet covering all Unicode codepoints — branchless filtering
+During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - ProcessType::Delete` rather than the full `ProcessType`. Delete-normalized text is what the automaton scans, so patterns must NOT themselves be Delete-transformed before indexing — they are stored verbatim and matched against the already-deleted text variants.
 
 ### Feature Flags
 
@@ -87,13 +89,24 @@ Transformation tables in `matcher_rs/process_map/` are compiled into binary arti
 
 ### Key Source Files
 
-- `matcher_rs/src/simple_matcher.rs` — Core `SimpleMatcher` struct and match logic
+**`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module):
+- `simple_matcher.rs` — Module root: `SimpleMatcher` struct, public API (`is_match`, `process`, `process_into`)
+- `types.rs` — Internal types: `AsciiMatcher`, `NonAsciiMatcher`, `WordState`, `SimpleMatchState`, `ScanContext`, `RuleHot`, `RuleCold`, `PatternEntry`, `PatternKind`, TLS `SIMPLE_MATCH_STATE`
+- `construction.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`, `compile_automata`, `flatten_dedup_entries`)
+- `scan.rs` — Hot-path: `process_preprocessed_into`, `scan_all_variants`, `scan_variant`, `process_match`, `is_rule_satisfied`, `init_matrix`
+
+**`matcher_rs/src/process/`** — Text normalization pipeline:
+- `process_type.rs` — `ProcessType` bitflags + serde/display
+- `string_pool.rs` — `TextVariant`, `ProcessedTextMasks`, thread-local `STRING_POOL`/`TRANSFORM_STATE`, pool functions
+- `process_tree.rs` — `ProcessTypeBitNode`, `build_process_type_tree`, `walk_process_tree`
+- `process_matcher.rs` — `ProcessMatcher` enum, `get_process_matcher`, `text_process`, `reduce_text_process*`; re-exports from siblings
+- `transform/constants.rs` — Precompiled transformation tables (generated by `build.rs`)
+- `transform/single_char_matcher.rs` — Fanjian/Delete/Pinyin (page-table + BitSet)
+- `transform/multi_char_matcher.rs` — Normalize (Aho-Corasick)
+- `transform/simd_utils.rs` — `portable_simd` helpers: `skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`
+
+**Other:**
 - `matcher_rs/src/builder.rs` — `SimpleMatcherBuilder` fluent API
-- `matcher_rs/src/process/process_matcher.rs` — `ProcessType` bitflags + transformation impl
-- `matcher_rs/src/process/single_char_matcher.rs` — Fanjian/Pinyin/Delete transformations (page-table and BitSet backends)
-- `matcher_rs/src/process/multi_char_matcher.rs` — Normalize/Num-Norm transformations (Aho-Corasick backend)
-- `matcher_rs/src/process/constants.rs` — Precompiled transformation tables (generated by `build.rs`)
-- `matcher_rs/src/process/simd_utils.rs` — `portable_simd` helpers: `skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`
 - `matcher_rs/process_map/` — Source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs` and `runtime_build`
 
 ### Threading
@@ -106,10 +119,6 @@ Transformation tables in `matcher_rs/process_map/` are compiled into binary arti
 `PROCESS_MATCHER_CACHE` is a static `[OnceLock<ProcessMatcher>; 8]` — each single-bit `ProcessType` initializes its matcher once per process and shares it across all `SimpleMatcher` instances.
 
 **Allocator:** `mimalloc` (v3) replaces the system allocator globally for improved multi-threaded allocation throughput.
-
-### Construction subtlety: Delete and AC pattern indexing
-
-During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - ProcessType::Delete` rather than the full `ProcessType`. Delete-normalized text is what the automaton scans, so patterns must NOT themselves be Delete-transformed before indexing — they are stored verbatim and matched against the already-deleted text variants.
 
 ## Important Notes
 
