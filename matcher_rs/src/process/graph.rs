@@ -1,4 +1,4 @@
-//! Transformation tree construction and traversal.
+//! Transformation graph construction and traversal.
 //!
 //! [`build_process_type_tree`] builds a flat-array trie from a set of [`ProcessType`] bitmasks.
 //! [`walk_process_tree`] then walks that flat array in parent-before-child order, applying
@@ -9,9 +9,10 @@ use std::collections::HashSet;
 
 use tinyvec::TinyVec;
 
-use crate::process::process_matcher::{ProcessMatcher, get_process_matcher};
 use crate::process::process_type::ProcessType;
-use crate::process::string_pool::{
+use crate::process::registry::get_transform_step;
+use crate::process::step::TransformStep;
+use crate::process::variant::{
     ProcessedTextMasks, TRANSFORM_STATE, TextVariant, return_string_to_pool,
 };
 
@@ -34,9 +35,9 @@ pub struct ProcessTypeBitNode {
     pub(crate) process_type_bit: ProcessType,
     /// Flat-array indices of child nodes (the next transformation steps reachable from here).
     pub(crate) children: Vec<usize>,
-    /// Cached single-step matcher for this node's process bit, avoiding a lookup in the
+    /// Cached single-step transform for this node's process bit, avoiding a lookup in the
     /// hot traversal loop. The root node leaves this as `None`.
-    pub(crate) matcher: Option<&'static ProcessMatcher>,
+    pub(crate) step: Option<&'static TransformStep>,
     /// Pre-computed OR of `1u64 << pt.bits()` for every `pt` in `process_type_list`.
     /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop.
     pub(crate) folded_mask: u64,
@@ -77,7 +78,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
         process_type_list: Vec::new(),
         process_type_bit: ProcessType::None,
         children: Vec::new(),
-        matcher: None,
+        step: None,
         folded_mask: 0,
     };
     if process_type_set.contains(&ProcessType::None) {
@@ -110,7 +111,7 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                     process_type_list: Vec::new(),
                     process_type_bit,
                     children: Vec::new(),
-                    matcher: Some(get_process_matcher(process_type_bit)),
+                    step: Some(get_transform_step(process_type_bit)),
                     folded_mask: 0,
                 };
                 child.process_type_list.push(process_type);
@@ -269,62 +270,19 @@ where
 
             for &child_node_index in &current_node.children {
                 let child_node = &process_type_tree[child_node_index];
-                let pm = child_node
-                    .matcher
-                    .expect("non-root process tree nodes always cache a matcher");
-
-                // Compute (changed_text, is_ascii_of_result) for this transformation step.
-                // - PinYin/PinYinChar output is always ASCII (romanized).
-                // - Fanjian maps CJK→CJK: if changed, result is non-ASCII.
-                // - Delete can only remove chars: if parent is ASCII, result is still ASCII;
-                //   if parent is non-ASCII, check the shorter result directly.
-                // - Normalize: check the result string.
-                // - None: no transformation, inherit parent.
-                // When unchanged (None returned), child inherits parent's flag (O(1)).
-                let (changed, child_is_ascii) = match child_node.process_type_bit {
-                    ProcessType::None => (None, parent_is_ascii),
-                    ProcessType::PinYin | ProcessType::PinYinChar => {
-                        let current_text = text_masks[current_index].text.as_ref();
-                        if let Some((processed, _ia)) = pm.replace_all(current_text) {
-                            // Pinyin output is always ASCII; replace_all already returns true.
-                            (Some(processed), true)
-                        } else {
-                            (None, parent_is_ascii)
-                        }
-                    }
-                    ProcessType::Fanjian => {
-                        let current_text = text_masks[current_index].text.as_ref();
-                        if let Some((processed, _ia)) = pm.replace_all(current_text) {
-                            // Fanjian output is always non-ASCII; replace_all already returns false.
-                            (Some(processed), false)
-                        } else {
-                            (None, parent_is_ascii)
-                        }
-                    }
-                    ProcessType::Delete => {
-                        let current_text = text_masks[current_index].text.as_ref();
-                        if let Some((processed, ia)) = pm.delete_all(current_text) {
-                            // If parent was ASCII, result is trivially ASCII.
-                            // Otherwise use the is_ascii tracked during the delete scan.
-                            (Some(processed), parent_is_ascii || ia)
-                        } else {
-                            (None, parent_is_ascii)
-                        }
-                    }
-                    _ => {
-                        let current_text = text_masks[current_index].text.as_ref();
-                        if let Some((processed, ia)) = pm.replace_all(current_text) {
-                            // Normalize: use the is_ascii tracked during replace_scan.
-                            (Some(processed), ia)
-                        } else {
-                            (None, parent_is_ascii)
-                        }
-                    }
-                };
+                let step = child_node
+                    .step
+                    .expect("non-root process tree nodes always cache a transform step");
+                let current_text = text_masks[current_index].text.as_ref();
+                let output = step.apply(current_text, parent_is_ascii);
 
                 let old_len = if LAZY { text_masks.len() } else { 0 };
-                let child_index =
-                    dedup_insert(&mut text_masks, current_index, changed, child_is_ascii);
+                let child_index = dedup_insert(
+                    &mut text_masks,
+                    current_index,
+                    output.changed,
+                    output.is_ascii,
+                );
 
                 if LAZY {
                     while scanned_masks.len() < text_masks.len() {

@@ -1,7 +1,7 @@
-//! Thread-local string pool and text variant types for the transformation pipeline.
+//! Thread-local storage and text variant types for the transformation pipeline.
 //!
 //! [`TextVariant`] and [`ProcessedTextMasks`] are the output types of
-//! [`super::process_tree::walk_process_tree`]. The string pool and [`TransformThreadState`]
+//! [`super::graph::walk_process_tree`]. The string pool and [`TransformThreadState`]
 //! reduce allocation churn by recycling buffers across matcher calls.
 
 use std::borrow::Cow;
@@ -36,14 +36,14 @@ pub type ProcessedTextMasks<'a> = Vec<TextVariant<'a>>;
 /// Keeping both in one `thread_local!` avoids a second TLS lookup in the transform walk.
 pub(crate) struct TransformThreadState {
     /// Maps trie node index → text variant index; resized at the start of each
-    /// [`super::process_tree::walk_process_tree`] call.
+    /// [`super::graph::walk_process_tree`] call.
     pub(crate) tree_node_indices: Vec<usize>,
     /// Recycled empty [`ProcessedTextMasks`] buffers; bounded by `MASKS_POOL_MAX`.
     pub(crate) masks_pool: Vec<ProcessedTextMasks<'static>>,
 }
 
 impl TransformThreadState {
-    /// Creates empty reusable traversal state for [`super::process_tree::walk_process_tree`].
+    /// Creates empty reusable traversal state for [`super::graph::walk_process_tree`].
     ///
     /// `tree_node_indices` is resized per traversal to map trie node index → text variant
     /// index, while `masks_pool` stores emptied `ProcessedTextMasks` buffers for reuse.
@@ -63,7 +63,7 @@ impl TransformThreadState {
 #[thread_local]
 pub(crate) static STRING_POOL: UnsafeCell<Vec<String>> = UnsafeCell::new(Vec::new());
 
-/// Combined per-thread traversal state for [`super::process_tree::walk_process_tree`]: the trie-node index map
+/// Combined per-thread traversal state for [`super::graph::walk_process_tree`]: the trie-node index map
 /// and the [`ProcessedTextMasks`] pool, merged into one TLS slot to save a lookup.
 #[thread_local]
 pub(crate) static TRANSFORM_STATE: UnsafeCell<TransformThreadState> =

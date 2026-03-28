@@ -249,7 +249,7 @@ fn test_process_map_normalize_exhaustive() {
     use std::collections::HashMap;
     let mut merged_map = HashMap::new();
 
-    // Merging logic matches process_matcher.rs: NORM then NUM_NORM overwrites
+    // Merging logic matches the step registry: NORM then NUM_NORM overwrites
     for data in [NORM_TEST_DATA, NUM_NORM_TEST_DATA] {
         for line in data.trim().lines() {
             let mut split = line.split('\t');

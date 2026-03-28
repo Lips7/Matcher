@@ -30,7 +30,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
   - [Thread-Local Storage](#thread-local-storage)
   - [String Pool](#string-pool)
   - [ProcessedTextMasks Pool](#processedtextmasks-pool)
-  - [Static ProcessMatcher Cache](#static-processmatcher-cache)
+  - [Static Transform Step Cache](#static-transform-step-cache)
   - [Global Allocator](#global-allocator)
 - [Feature Flags](#feature-flags)
 - [Compiled vs. Runtime Transformation Tables](#compiled-vs-runtime-transformation-tables)
@@ -67,15 +67,15 @@ Source data for each transformation:
 
 ### Transformation Backends
 
-Each single-bit `ProcessType` maps to a `ProcessMatcher` enum, either `SingleChar` (per-codepoint lookup) or `MultiChar` (Aho-Corasick multi-character substitution). The data structures are chosen to match the access pattern of each step:
+Each single-bit `ProcessType` maps to a cached `TransformStep`. The step owns one low-level backend chosen to match that transform's access pattern:
 
 | ProcessType | Backend | Data Structure | Complexity |
 |---|---|---|---|
-| `Fanjian` | `SingleCharMatcher::Fanjian` | 2-stage page table. L1: `u16[4352]` (one per 256-codepoint block). L2: dense `u32` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
-| `PinYin` / `PinYinChar` | `SingleCharMatcher::Pinyin` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer. `PinYinChar` trims leading/trailing spaces from each packed entry at construction time. | O(1) per codepoint |
-| `Delete` | `SingleCharMatcher::Delete` | 139 KB flat BitSet covering U+0000 to U+10FFFF. A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. Uses a specialized `delete_direct` single-pass scan (no iterator protocol) with SIMD bulk-skip of non-deletable ASCII. | O(1) per codepoint, branchless |
-| `Normalize` | `MultiCharMatcher` | `daachorse` charwise Aho-Corasick (leftmost-longest, non-`dfa`) or `aho-corasick` DFA (`dfa` feature). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. | O(N) per text |
-| `None` | `MultiCharMatcher` (empty) | An empty Aho-Corasick automaton; no-op. | - |
+| `Fanjian` | `FanjianMatcher` | 2-stage page table. L1: `u16[4352]` (one per 256-codepoint block). L2: dense `u32` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
+| `PinYin` / `PinYinChar` | `PinyinMatcher` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer. `PinYinChar` trims leading/trailing spaces from each packed entry at construction time. | O(1) per codepoint |
+| `Delete` | `DeleteMatcher` | 139 KB flat BitSet covering U+0000 to U+10FFFF. A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. Uses a specialized single-pass delete scan with SIMD bulk-skip of non-deletable ASCII. | O(1) per codepoint, branchless |
+| `Normalize` | `NormalizeMatcher` | `daachorse` charwise Aho-Corasick (leftmost-longest, non-`dfa`) or `aho-corasick` DFA (`dfa` feature). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. | O(N) per text |
+| `None` | `TransformStep::None` | No-op step that preserves the input variant. | - |
 
 The page-table lookup for Fanjian and Pinyin is:
 ```
@@ -87,7 +87,7 @@ if value == 0 → no mapping
 
 #### SIMD-Accelerated Skip Functions
 
-The `SingleCharMatcher` iterators and `delete_direct` use SIMD to skip over bytes that cannot produce a match, avoiding per-byte branching:
+The charwise iterators and delete scan use SIMD to skip over bytes that cannot produce a match, avoiding per-byte branching:
 
 | Caller | Skip Function | What It Skips |
 |--------|--------------|---------------|
@@ -128,7 +128,7 @@ Each node (`ProcessTypeBitNode`) stores:
 - `process_type_bit` — the single-bit transformation step this edge represents.
 - `process_type_list` — which composite `ProcessType` values terminate at this node.
 - `children` — flat-array indices of the next transformation steps reachable from here.
-- `matcher` — a cached `&'static ProcessMatcher` for this step (avoids a hash lookup in the hot traversal loop). The root stores `None`.
+- `step` — a cached `&'static TransformStep` for this step (avoids a hash lookup in the hot traversal loop). The root stores `None`.
 - `folded_mask` — pre-computed OR of `1u64 << pt_index` for every composite type in `process_type_list`. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
 
 The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits()` values can use bits up to position 5, and composite types produce values up to 0b00111111 = 63. Storing a full `u64` mask per `PatternEntry` would waste space. Instead, `build_pt_index_table` assigns each composite type used in the current matcher a sequential index 0, 1, 2, ... (with `ProcessType::None` always at 0). These compact indices let `PatternEntry.pt_index` fit in a `u8` while `folded_mask` stays a `u64` with small bit positions.
@@ -139,7 +139,7 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `fold
 
 `walk_process_tree<const LAZY: bool, F>` traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-For each child node, the parent's text variant is transformed by the child's cached `ProcessMatcher`. Both `replace_all` and `delete_all` return `Option<(String, bool)>` where the `bool` is an `is_ascii` flag for the result, avoiding a redundant post-hoc scan. The flag is determined per step using static knowledge:
+For each child node, the parent's text variant is transformed by the child's cached `TransformStep`. The traversal only handles deduplication and mask propagation; per-step behavior lives behind `TransformStep::apply`, which returns the changed string when any and the resulting `is_ascii` flag.
 - **Fanjian**: maps CJK to CJK, so the result is always non-ASCII if changed (`false`).
 - **PinYin/PinYinChar**: output is romanized text, so always ASCII if changed (`true`).
 - **Delete**: can only remove characters. If the parent was ASCII, the result stays ASCII. Otherwise, post-hoc SIMD `is_ascii()` check on the shorter result.
@@ -374,9 +374,9 @@ The pool is used throughout the transformation pipeline. When a `Cow::Owned` res
 
 `walk_process_tree` pops a recycled `ProcessedTextMasks` vector from `TRANSFORM_STATE.masks_pool` at the start of each call. After the caller finishes with the variants, `return_processed_string_to_pool` recycles both the individual strings and the vector itself. The transmute from `ProcessedTextMasks<'static>` to `ProcessedTextMasks<'a>` is sound because the pooled vectors are always empty (all `Cow<'_, str>` elements have been drained).
 
-### Static ProcessMatcher Cache
+### Static Transform Step Cache
 
-`PROCESS_MATCHER_CACHE: [OnceLock<ProcessMatcher>; 8]` holds one compiled matcher per single-bit `ProcessType`. Each entry is lazily initialized on first access and shared as `&'static` across all `SimpleMatcher` instances and threads. The `OnceLock` ensures initialization happens exactly once with no subsequent lock contention.
+`TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8]` holds one compiled step per single-bit `ProcessType`. Each entry is lazily initialized on first access and shared as `&'static` across all `SimpleMatcher` instances and threads. The `OnceLock` ensures initialization happens exactly once with no subsequent lock contention.
 
 ### Global Allocator
 

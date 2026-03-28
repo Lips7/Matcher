@@ -12,7 +12,7 @@
 
 /// Tab-separated `(traditional, simplified)` codepoint pairs, one per line.
 ///
-/// Used by [`get_process_matcher`](crate::get_process_matcher) under `runtime_build` to
+/// Used by the step registry under `runtime_build` to
 /// build the Fanjian 2-stage page table at startup.
 #[cfg(feature = "runtime_build")]
 pub(crate) const FANJIAN: &str = include_str!("../../../process_map/FANJIAN.txt");
@@ -91,7 +91,7 @@ pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!
 
 /// L1 index for the Fanjian 2-stage page table (`u16[4352]`, little-endian).
 ///
-/// See `SingleCharMatcher::Fanjian` in `process/transform/single_char_matcher.rs`
+/// See [`crate::process::transform::charwise::FanjianMatcher`]
 /// for the table layout.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const FANJIAN_L1_BYTES: &[u8] =

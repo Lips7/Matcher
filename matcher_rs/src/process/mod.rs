@@ -1,16 +1,20 @@
-//! Text normalization pipeline for standardizing input before pattern matching.
+//! Text transformation pipeline for standardizing input before pattern matching.
 //!
-//! Exposes the [`ProcessType`] bitflags together with the helpers that execute those
-//! transformation steps. The public surface is small: use the one-shot processing
-//! helpers for a single composite pipeline, or build a transform tree when multiple
-//! pipelines should share work.
-pub(crate) mod process_matcher;
-pub(crate) mod process_tree;
+//! The public surface is intentionally small:
+//! [`text_process`], [`reduce_text_process`], [`reduce_text_process_emit`],
+//! [`build_process_type_tree`], and [`walk_process_tree`].
+//! Internally the module is split into a step registry, a traversal graph, and
+//! low-level transform engines.
+pub(crate) mod api;
+pub(crate) mod graph;
 pub(crate) mod process_type;
-pub(crate) mod string_pool;
+pub(crate) mod registry;
+pub(crate) mod step;
 pub(crate) mod transform;
+pub(crate) mod variant;
 
-pub use process_tree::{ProcessTypeBitNode, build_process_type_tree, walk_process_tree};
+pub use api::{reduce_text_process, reduce_text_process_emit, text_process};
+pub use graph::{ProcessTypeBitNode, build_process_type_tree, walk_process_tree};
 pub use process_type::ProcessType;
-pub(crate) use string_pool::return_processed_string_to_pool;
-pub use string_pool::{ProcessedTextMasks, TextVariant};
+pub(crate) use variant::return_processed_string_to_pool;
+pub use variant::{ProcessedTextMasks, TextVariant};
