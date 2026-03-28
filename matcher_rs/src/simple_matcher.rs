@@ -6,7 +6,6 @@
 
 use std::borrow::Cow;
 
-use daachorse::CharwiseDoubleArrayAhoCorasick;
 use serde::Serialize;
 
 use crate::process::{ProcessTypeBitNode, return_processed_string_to_pool, walk_process_tree};
@@ -15,7 +14,9 @@ mod construction;
 mod scan;
 mod types;
 
-use types::{AsciiMatcher, PatternEntry, RuleCold, RuleHot, SIMPLE_MATCH_STATE, ScanContext};
+use types::{
+    AsciiMatcher, NonAsciiMatcher, PatternEntry, RuleCold, RuleHot, SIMPLE_MATCH_STATE, ScanContext,
+};
 pub use types::{SimpleTable, SimpleTableSerde};
 
 /// A single match returned by [`SimpleMatcher::process`].
@@ -111,8 +112,8 @@ pub struct SimpleMatcher {
     ascii_matcher: Option<AsciiMatcher>,
     /// Matcher used for non-ASCII text variants. When both ASCII and non-ASCII patterns
     /// exist, this matcher is compiled over the full deduplicated pattern set so one
-    /// charwise scan can replace the former ASCII+charwise double scan.
-    non_ascii_matcher: Option<CharwiseDoubleArrayAhoCorasick<u32>>,
+    /// bytewise scan can replace the former ASCII+charwise double scan.
+    non_ascii_matcher: Option<NonAsciiMatcher>,
     /// `Some(pt_index)` when all rules share one composite process type. In that common
     /// case, the hot hit path can skip per-entry process-type filtering entirely.
     single_pt_index: Option<u8>,
@@ -149,33 +150,30 @@ impl SimpleMatcher {
         }
         let tree = &self.process_type_tree;
         let max_pt = tree.len();
-        SIMPLE_MATCH_STATE.with(|state_cell| {
-            let mut state = state_cell.borrow_mut();
-            state.prepare(self.rule_hot.len());
-            let (text_masks, stopped) =
-                walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
-                    let ctx = ScanContext {
-                        text_index: idx,
-                        process_type_mask: mask,
-                        num_variants: max_pt,
-                        exit_early: true,
-                        is_ascii,
-                    };
-                    self.scan_variant(txt, ctx, &mut state)
-                });
-            if stopped {
-                return_processed_string_to_pool(text_masks);
-                return true;
-            }
-            let generation = state.generation;
-            let result = state.touched_indices.iter().any(|&rule_idx| {
-                let word_state = &state.word_states[rule_idx];
-                word_state.positive_generation == generation
-                    && word_state.not_generation != generation
+        let mut state = SIMPLE_MATCH_STATE.borrow_mut();
+        state.prepare(self.rule_hot.len());
+        let (text_masks, stopped) =
+            walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
+                let ctx = ScanContext {
+                    text_index: idx,
+                    process_type_mask: mask,
+                    num_variants: max_pt,
+                    exit_early: true,
+                    is_ascii,
+                };
+                self.scan_variant(txt, ctx, &mut state)
             });
+        if stopped {
             return_processed_string_to_pool(text_masks);
-            result
-        })
+            return true;
+        }
+        let generation = state.generation;
+        let result = state.touched_indices.iter().any(|&rule_idx| {
+            let word_state = &state.word_states[rule_idx];
+            word_state.positive_generation == generation && word_state.not_generation != generation
+        });
+        return_processed_string_to_pool(text_masks);
+        result
     }
 
     /// Returns all patterns that match `text`.

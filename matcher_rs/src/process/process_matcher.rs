@@ -91,13 +91,7 @@ impl ProcessMatcher {
     pub(crate) fn replace_all(&self, text: &str) -> Option<String> {
         match self {
             ProcessMatcher::SingleChar(matcher) => match matcher {
-                SingleCharMatcher::Fanjian { .. } => {
-                    Self::replace_scan(text, matcher.fanjian_iter(text), |result, m| {
-                        if let SingleCharMatch::Char(c) = m {
-                            result.push(c);
-                        }
-                    })
-                }
+                SingleCharMatcher::Fanjian { .. } => Self::replace_all_fanjian(matcher, text),
                 SingleCharMatcher::Pinyin { .. } => {
                     Self::replace_scan(text, matcher.pinyin_iter(text), |result, m| {
                         if let SingleCharMatch::Str(s) = m {
@@ -117,6 +111,44 @@ impl ProcessMatcher {
                 })
             }
         }
+    }
+
+    /// Optimized Fanjian replacement using in-place mutation.
+    ///
+    /// Clones the text and overwrites mapped codepoints directly when the replacement
+    /// has the same UTF-8 byte length (99% of Fanjian mappings). Falls back to the
+    /// standard `replace_scan` path on the rare byte-length mismatch.
+    fn replace_all_fanjian(matcher: &SingleCharMatcher, text: &str) -> Option<String> {
+        let mut result: Option<String> = None;
+
+        for (start, end, m) in matcher.fanjian_iter(text) {
+            if let SingleCharMatch::Char(c) = m {
+                let span_len = end - start;
+                if c.len_utf8() == span_len {
+                    // Defer allocation until the first actual match.
+                    let buf = result.get_or_insert_with(|| {
+                        let mut s = get_string_from_pool(text.len());
+                        s.push_str(text);
+                        s
+                    });
+                    // SAFETY: overwriting at valid char boundaries with same-length
+                    // UTF-8 sequences preserves validity.
+                    unsafe { c.encode_utf8(&mut buf.as_bytes_mut()[start..end]) };
+                } else {
+                    // Rare: byte-length mismatch. Abandon in-place and fall back.
+                    if let Some(s) = result.take() {
+                        return_string_to_pool(s);
+                    }
+                    return Self::replace_scan(text, matcher.fanjian_iter(text), |r, m| {
+                        if let SingleCharMatch::Char(c) = m {
+                            r.push(c);
+                        }
+                    });
+                }
+            }
+        }
+
+        result
     }
 
     /// Removes all matched patterns from `text`.

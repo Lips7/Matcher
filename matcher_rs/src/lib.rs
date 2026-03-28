@@ -1,3 +1,4 @@
+#![feature(thread_local)]
 #![cfg_attr(
     not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
     feature(portable_simd)

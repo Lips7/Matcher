@@ -7,6 +7,8 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use aho_corasick::AhoCorasick;
+use daachorse::{DoubleArrayAhoCorasick, charwise::CharwiseDoubleArrayAhoCorasick};
 use tinyvec::TinyVec;
 
 use crate::process::ProcessType;
@@ -56,6 +58,10 @@ pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 #[cfg(feature = "dfa")]
 pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 2_000;
 
+/// Flag indicating a simple literal rule (and_count==1, no NOT, no matrix).
+/// Enables a fast path in `process_match` that skips counter/bitmask logic.
+pub(super) const PATTERN_SIMPLE_LITERAL: u8 = 1;
+
 /// ASCII automaton engine for ASCII-only patterns.
 ///
 /// When the `dfa` feature is enabled and the ASCII pattern count is below
@@ -70,12 +76,23 @@ pub(super) const AC_DFA_PATTERN_THRESHOLD: usize = 2_000;
 pub(super) enum AsciiMatcher {
     #[cfg(feature = "dfa")]
     AcDfa {
-        matcher: aho_corasick::AhoCorasick,
+        matcher: AhoCorasick,
         /// Maps sequential AC pattern ID → global dedup index.
         to_dedup: Vec<u32>,
     },
     /// DAAC value IS the global dedup index — no extra indirection.
-    DaacBytewise(daachorse::DoubleArrayAhoCorasick<u32>),
+    DaacBytewise(DoubleArrayAhoCorasick<u32>),
+}
+
+/// Non-ASCII automaton engine for patterns containing multi-byte characters.
+///
+/// Uses `daachorse` charwise double-array Aho-Corasick, which does one state
+/// transition per Unicode character rather than per UTF-8 byte. This is faster
+/// for CJK-heavy text where characters are 3 bytes each.
+#[derive(Clone)]
+pub(super) enum NonAsciiMatcher {
+    /// Charwise DAAC — the automaton value IS the global dedup index.
+    DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
 }
 
 /// Per-rule match state for a single search, keyed by generation ID.
@@ -123,7 +140,7 @@ pub(super) struct SimpleMatchState {
 
 impl SimpleMatchState {
     /// Creates an empty `SimpleMatchState` ready for its first search.
-    pub(super) fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             word_states: Vec::new(),
             matrix: Vec::new(),
@@ -159,10 +176,13 @@ impl SimpleMatchState {
     }
 }
 
-thread_local! {
-    /// Thread-local cache for `SimpleMatchState` to avoid repeated allocations.
-    pub(super) static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> = RefCell::new(SimpleMatchState::new());
-}
+/// Thread-local cache for `SimpleMatchState` to avoid repeated allocations.
+///
+/// Uses `#[thread_local]` to eliminate the `thread_local!` macro's `.with()` closure
+/// overhead. Access is a direct TLS segment-register read on x86/aarch64.
+#[thread_local]
+pub(super) static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> =
+    RefCell::new(SimpleMatchState::new());
 
 /// Context for a single text variant scan, bundling parameters shared between
 /// `scan_variant` and `process_match`.
@@ -225,4 +245,8 @@ pub(super) struct PatternEntry {
     /// Sequential process-type table index built during [`super::SimpleMatcher::new`];
     /// used as `1u64 << pt_index` to filter hits from the wrong pipeline.
     pub(super) pt_index: u8,
+    /// Bit flags. [`PATTERN_SIMPLE_LITERAL`] marks entries whose owning rule is a
+    /// simple literal (and_count==1, no NOT, no matrix), enabling a fast path in
+    /// `process_match`. The struct is 8 bytes regardless (padding was here before).
+    pub(super) flags: u8,
 }

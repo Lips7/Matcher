@@ -225,8 +225,8 @@ pub fn walk_process_tree<'a, const LAZY: bool, F>(
 where
     F: FnMut(&str, usize, u64, bool) -> bool,
 {
-    TRANSFORM_STATE.with(|state| {
-        let mut ts = state.borrow_mut();
+    {
+        let mut ts = TRANSFORM_STATE.borrow_mut();
 
         let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
         // Safety: pool holds empty Vecs with no live borrows; transmuting from
@@ -374,5 +374,5 @@ where
         }
 
         (text_masks, false)
-    })
+    }
 }

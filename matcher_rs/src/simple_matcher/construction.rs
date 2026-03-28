@@ -9,10 +9,10 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "dfa")]
-use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind};
+use aho_corasick::{AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind};
 use daachorse::{
-    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
     DoubleArrayAhoCorasickBuilder, MatchKind as DoubleArrayAhoCorasickMatchKind,
+    charwise::CharwiseDoubleArrayAhoCorasickBuilder,
 };
 
 use crate::process::process_matcher::reduce_text_process_emit;
@@ -22,7 +22,8 @@ use super::SimpleMatcher;
 #[cfg(feature = "dfa")]
 use super::types::AC_DFA_PATTERN_THRESHOLD;
 use super::types::{
-    AsciiMatcher, BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
+    AsciiMatcher, BITMASK_CAPACITY, NonAsciiMatcher, PATTERN_SIMPLE_LITERAL,
+    PROCESS_TYPE_TABLE_SIZE, PatternEntry, RuleCold, RuleHot,
 };
 
 /// Intermediate outputs of [`SimpleMatcher::parse_rules`], bundling all data
@@ -235,6 +236,12 @@ impl SimpleMatcher {
                     idx
                 };
 
+                let entry_flags = if and_count == 1 && !has_not && !use_matrix {
+                    PATTERN_SIMPLE_LITERAL
+                } else {
+                    0
+                };
+
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
                     for ac_word in reduce_text_process_emit(word_process_type, split_word) {
@@ -245,6 +252,7 @@ impl SimpleMatcher {
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u16,
                                 pt_index,
+                                flags: entry_flags,
                             }]);
                             dedup_patterns.push(ac_word);
                             next_pattern_id += 1;
@@ -254,6 +262,7 @@ impl SimpleMatcher {
                             rule_idx: rule_idx as u32,
                             offset: offset as u16,
                             pt_index,
+                            flags: entry_flags,
                         });
                     }
                 }
@@ -280,12 +289,9 @@ impl SimpleMatcher {
     /// ASCII matcher.
     fn compile_automata(
         dedup_patterns: &[Cow<'_, str>],
-    ) -> (
-        Option<AsciiMatcher>,
-        Option<CharwiseDoubleArrayAhoCorasick<u32>>,
-    ) {
+    ) -> (Option<AsciiMatcher>, Option<NonAsciiMatcher>) {
         let mut ascii_patvals: Vec<(&str, u32)> = Vec::new();
-        let mut charwise_patvals: Vec<(&str, u32)> = Vec::new();
+        let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::new();
         #[cfg(feature = "dfa")]
         let mut ascii_ac_to_dedup: Vec<u32> = Vec::new();
 
@@ -295,11 +301,13 @@ impl SimpleMatcher {
                 ascii_ac_to_dedup.push(dedup_id as u32);
                 ascii_patvals.push((pattern.as_ref(), dedup_id as u32));
             } else {
-                charwise_patvals.push((pattern.as_ref(), dedup_id as u32));
+                non_ascii_patvals.push((pattern.as_ref(), dedup_id as u32));
             }
         }
 
-        let full_charwise_patvals = if ascii_patvals.is_empty() || charwise_patvals.is_empty() {
+        // When both ASCII and non-ASCII patterns exist, the charwise matcher
+        // must contain all patterns so one scan covers everything for non-ASCII text.
+        let full_charwise_patvals = if ascii_patvals.is_empty() || non_ascii_patvals.is_empty() {
             None
         } else {
             Some(
@@ -317,6 +325,7 @@ impl SimpleMatcher {
                 AsciiMatcher::AcDfa {
                     matcher: AhoCorasickBuilder::new()
                         .kind(Some(AhoCorasickKind::DFA))
+                        .match_kind(AhoCorasickMatchKind::Standard)
                         .build(ascii_patvals.iter().map(|(p, _)| p))
                         .unwrap(),
                     to_dedup: ascii_ac_to_dedup,
@@ -343,14 +352,14 @@ impl SimpleMatcher {
 
         let non_ascii_patvals = full_charwise_patvals
             .as_deref()
-            .unwrap_or(charwise_patvals.as_slice());
+            .unwrap_or(non_ascii_patvals.as_slice());
         let non_ascii_matcher = if !non_ascii_patvals.is_empty() {
-            Some(
+            Some(NonAsciiMatcher::DaacCharwise(
                 CharwiseDoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                     .build_with_values(non_ascii_patvals.iter().copied())
                     .unwrap(),
-            )
+            ))
         } else {
             None
         };

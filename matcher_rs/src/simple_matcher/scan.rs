@@ -9,7 +9,10 @@ use tinyvec::TinyVec;
 
 use crate::process::ProcessedTextMasks;
 
-use super::types::{AsciiMatcher, PatternEntry, SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
+use super::types::{
+    AsciiMatcher, NonAsciiMatcher, PATTERN_SIMPLE_LITERAL, PatternEntry, SIMPLE_MATCH_STATE,
+    ScanContext, SimpleMatchState,
+};
 use super::{SimpleMatcher, SimpleResult};
 
 impl SimpleMatcher {
@@ -19,27 +22,25 @@ impl SimpleMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         results: &mut Vec<SimpleResult<'a>>,
     ) {
-        SIMPLE_MATCH_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            state.prepare(self.rule_hot.len());
+        let mut state = SIMPLE_MATCH_STATE.borrow_mut();
+        state.prepare(self.rule_hot.len());
 
-            self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
+        self.scan_all_variants(processed_text_process_type_masks, &mut state, false);
 
-            let generation = state.generation;
+        let generation = state.generation;
 
-            for &rule_idx in &state.touched_indices {
-                let word_state = &state.word_states[rule_idx];
-                if word_state.positive_generation == generation
-                    && word_state.not_generation != generation
-                {
-                    let cold = &self.rule_cold[rule_idx];
-                    results.push(SimpleResult {
-                        word_id: cold.word_id,
-                        word: Cow::Borrowed(&cold.word),
-                    });
-                }
+        for &rule_idx in &state.touched_indices {
+            let word_state = &state.word_states[rule_idx];
+            if word_state.positive_generation == generation
+                && word_state.not_generation != generation
+            {
+                let cold = &self.rule_cold[rule_idx];
+                results.push(SimpleResult {
+                    word_id: cold.word_id,
+                    word: Cow::Borrowed(&cold.word),
+                });
             }
-        });
+        }
     }
 
     /// Pass 1: scans all text variants, updating [`SimpleMatchState`].
@@ -101,6 +102,7 @@ impl SimpleMatcher {
         state: &mut SimpleMatchState,
     ) -> bool {
         if ctx.is_ascii {
+            // ASCII text: bytewise matcher is optimal (1 transition per byte).
             if let Some(ref ascii_matcher) = self.ascii_matcher {
                 match ascii_matcher {
                     #[cfg(feature = "dfa")]
@@ -122,14 +124,23 @@ impl SimpleMatcher {
                     }
                 }
             }
-        } else if let Some(ref ac_matcher) = self.non_ascii_matcher {
-            for ac_dedup_result in ac_matcher.find_overlapping_iter(processed_text) {
-                let dedup_idx = ac_dedup_result.value() as usize;
-                if self.process_match(dedup_idx, ctx, state) {
-                    return true;
+        } else if let Some(ref non_ascii_matcher) = self.non_ascii_matcher {
+            // Non-ASCII text: charwise DAAC does 1 transition per Unicode codepoint.
+            // When both ASCII and non-ASCII patterns exist, this matcher contains
+            // the full pattern set, so one scan covers everything.
+            match non_ascii_matcher {
+                NonAsciiMatcher::DaacCharwise(daac_matcher) => {
+                    for hit in daac_matcher.find_overlapping_iter(processed_text) {
+                        let dedup_idx = hit.value() as usize;
+                        if self.process_match(dedup_idx, ctx, state) {
+                            return true;
+                        }
+                    }
                 }
             }
         } else if let Some(ref ascii_matcher) = self.ascii_matcher {
+            // Fallback: no non-ASCII patterns exist, but ASCII patterns can still
+            // appear in non-ASCII text. Bytewise scan works on UTF-8 directly.
             match ascii_matcher {
                 #[cfg(feature = "dfa")]
                 AsciiMatcher::AcDfa { matcher, to_dedup } => {
@@ -183,15 +194,37 @@ impl SimpleMatcher {
                 rule_idx,
                 offset,
                 pt_index,
+                flags,
             } = entry;
 
             let rule_idx = rule_idx as usize;
-            let offset = offset as usize;
 
             if self.single_pt_index.is_none() && ctx.process_type_mask & (1u64 << pt_index) == 0 {
                 continue;
             }
 
+            // Fast path for simple literal rules (and_count==1, no NOT, no matrix).
+            // Skips all counter/bitmask logic — just mark the rule as satisfied.
+            if flags & PATTERN_SIMPLE_LITERAL != 0 {
+                let word_state = &mut state.word_states[rule_idx];
+                if word_state.positive_generation == generation {
+                    if ctx.exit_early {
+                        return true;
+                    }
+                    continue;
+                }
+                if word_state.matrix_generation != generation {
+                    word_state.matrix_generation = generation;
+                    word_state.positive_generation = generation;
+                    state.touched_indices.push(rule_idx);
+                    if ctx.exit_early {
+                        return true;
+                    }
+                }
+                continue;
+            }
+
+            let offset = offset as usize;
             let rule = &self.rule_hot[rule_idx];
             let word_state = &mut state.word_states[rule_idx];
             if word_state.not_generation == generation {
