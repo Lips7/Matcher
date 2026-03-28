@@ -7,6 +7,7 @@ use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
 use std::collections::{HashMap, HashSet};
 
+use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd_utils::{
     skip_ascii_non_delete_simd, skip_ascii_simd, skip_non_digit_ascii_simd,
 };
@@ -71,8 +72,6 @@ pub(crate) enum SingleCharMatch<'a> {
     Char(char),
     /// Replace the matched span with a borrowed string slice.
     Str(&'a str),
-    /// Remove the matched span entirely.
-    Delete,
 }
 
 /// Looks up a Unicode codepoint in a 2-stage page table, returning the packed value or `None`.
@@ -227,60 +226,6 @@ impl<'a> Iterator for FanjianFindIter<'a> {
     }
 }
 
-/// Monomorphized iterator for Delete (bitset-based character removal).
-///
-/// ASCII is handled from the hot `ascii_lut`/SIMD path first; non-ASCII falls back to the
-/// full Unicode bitset.
-pub(crate) struct DeleteFindIter<'a> {
-    /// The full 139 KB Unicode bitset; bit `cp % 8` of byte `cp / 8` is set if `cp` is deletable.
-    bitset: &'a [u8],
-    /// Cache-hot copy of `bitset[0..16]` covering ASCII codepoints 0–127.
-    ascii_lut: [u8; 16],
-    /// The text being iterated over.
-    text: &'a str,
-    /// Current byte position within `text`.
-    byte_offset: usize,
-}
-
-impl<'a> Iterator for DeleteFindIter<'a> {
-    type Item = (usize, usize, SingleCharMatch<'a>);
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let bytes = self.text.as_bytes();
-        let len = bytes.len();
-
-        loop {
-            if self.byte_offset >= len {
-                return None;
-            }
-            let b = bytes[self.byte_offset];
-            let start = self.byte_offset;
-            if b < 0x80 {
-                // ASCII: check ascii_lut (16 bytes, cache-hot) without touching 139 KB bitset.
-                let cp = b as usize;
-                self.byte_offset += 1;
-                if (self.ascii_lut[cp >> 3] & (1 << (cp & 7))) != 0 {
-                    return Some((start, self.byte_offset, SingleCharMatch::Delete));
-                }
-                self.byte_offset =
-                    skip_ascii_non_delete_simd(bytes, self.byte_offset, &self.ascii_lut);
-            } else {
-                // Non-ASCII: decode and check the full 139 KB bitset.
-                // SAFETY: byte_offset < len, bytes is valid UTF-8, bytes[byte_offset] >= 0x80.
-                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
-                self.byte_offset += char_len;
-                let cp_usize = cp as usize;
-                if cp_usize / 8 < self.bitset.len()
-                    && (self.bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
-                {
-                    return Some((start, self.byte_offset, SingleCharMatch::Delete));
-                }
-            }
-        }
-    }
-}
-
 /// Monomorphized iterator for Pinyin (codepoint→syllable) lookups.
 ///
 /// Non-digit ASCII is skipped aggressively because the current tables only map ASCII digits
@@ -356,20 +301,91 @@ impl SingleCharMatcher {
         }
     }
 
-    /// Returns an iterator over deletable spans in `text`.
+    /// Single-pass delete without the iterator/closure protocol of `replace_scan`.
     ///
-    /// Each yielded match identifies one codepoint that should be removed by the Delete step.
+    /// Scans `text` for deletable codepoints (via `ascii_lut` for ASCII and `bitset` for
+    /// non-ASCII), copies surviving spans directly into a pooled `String`. Uses SIMD to
+    /// skip non-deletable ASCII bytes in bulk. Returns `None` when nothing was deleted.
     #[inline(always)]
-    pub(crate) fn delete_iter<'a>(&'a self, text: &'a str) -> DeleteFindIter<'a> {
+    pub(crate) fn delete_direct(&self, text: &str) -> Option<(String, bool)> {
         let SingleCharMatcher::Delete { bitset, ascii_lut } = self else {
-            unreachable!("delete_iter called on non-Delete matcher");
+            debug_assert!(false, "delete_direct called on non-Delete matcher");
+            return None;
         };
-        DeleteFindIter {
-            bitset,
-            ascii_lut: *ascii_lut,
-            text,
-            byte_offset: 0,
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut offset = 0usize;
+
+        // Phase 1: find the first deletable character without allocating.
+        loop {
+            if offset >= len {
+                return None;
+            }
+            let b = unsafe { *bytes.get_unchecked(offset) };
+            if b < 0x80 {
+                if (ascii_lut[(b as usize) >> 3] & (1 << (b & 7))) != 0 {
+                    break;
+                }
+                offset += 1;
+                offset = skip_ascii_non_delete_simd(bytes, offset, ascii_lut);
+            } else {
+                // SAFETY: offset < len, bytes is valid UTF-8, bytes[offset] >= 0x80.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
+                let cp_usize = cp as usize;
+                if cp_usize / 8 < bitset.len()
+                    && (bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
+                {
+                    break;
+                }
+                offset += char_len;
+            }
         }
+
+        // Allocate and copy everything before the first deletion.
+        let mut result = get_string_from_pool(text.len());
+        result.push_str(&text[..offset]);
+
+        // Skip the first deletable codepoint.
+        let b = unsafe { *bytes.get_unchecked(offset) };
+        if b < 0x80 {
+            offset += 1;
+        } else {
+            let (_, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
+            offset += char_len;
+        }
+
+        // Phase 2: copy surviving spans, skipping deletable codepoints.
+        let mut gap_start = offset;
+        while offset < len {
+            let b = unsafe { *bytes.get_unchecked(offset) };
+            if b < 0x80 {
+                if (ascii_lut[(b as usize) >> 3] & (1 << (b & 7))) != 0 {
+                    result.push_str(&text[gap_start..offset]);
+                    offset += 1;
+                    gap_start = offset;
+                } else {
+                    offset += 1;
+                    offset = skip_ascii_non_delete_simd(bytes, offset, ascii_lut);
+                }
+            } else {
+                // SAFETY: offset < len, bytes is valid UTF-8, bytes[offset] >= 0x80.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
+                let cp_usize = cp as usize;
+                if cp_usize / 8 < bitset.len()
+                    && (bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
+                {
+                    result.push_str(&text[gap_start..offset]);
+                    offset += char_len;
+                    gap_start = offset;
+                } else {
+                    offset += char_len;
+                }
+            }
+        }
+
+        result.push_str(&text[gap_start..]);
+        let ia = result.is_ascii();
+        Some((result, ia))
     }
 
     /// Returns an iterator over Pinyin replacements in `text`.

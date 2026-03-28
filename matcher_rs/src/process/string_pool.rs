@@ -5,7 +5,7 @@
 //! reduce allocation churn by recycling buffers across matcher calls.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 
 /// Maximum number of `String` buffers retained in the pool between calls; excess are dropped.
 const STRING_POOL_MAX: usize = 128;
@@ -61,20 +61,23 @@ impl TransformThreadState {
 ///
 /// Uses `#[thread_local]` to eliminate the `thread_local!` macro's `.with()` closure overhead.
 #[thread_local]
-pub(crate) static STRING_POOL: RefCell<Vec<String>> = RefCell::new(Vec::new());
+pub(crate) static STRING_POOL: UnsafeCell<Vec<String>> = UnsafeCell::new(Vec::new());
 
 /// Combined per-thread traversal state for [`super::process_tree::walk_process_tree`]: the trie-node index map
 /// and the [`ProcessedTextMasks`] pool, merged into one TLS slot to save a lookup.
 #[thread_local]
-pub(crate) static TRANSFORM_STATE: RefCell<TransformThreadState> =
-    RefCell::new(TransformThreadState::new());
+pub(crate) static TRANSFORM_STATE: UnsafeCell<TransformThreadState> =
+    UnsafeCell::new(TransformThreadState::new());
 
 /// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
 ///
 /// The requested `capacity` is treated as a lower bound; a recycled string is reserved
 /// upward if needed so callers can append without repeated growth.
 pub(crate) fn get_string_from_pool(capacity: usize) -> String {
-    if let Some(mut s) = STRING_POOL.borrow_mut().pop() {
+    // SAFETY: #[thread_local] guarantees single-threaded access; no re-entrant calls
+    // into this function while the mutable reference is live.
+    let pool = unsafe { &mut *STRING_POOL.get() };
+    if let Some(mut s) = pool.pop() {
         s.clear();
         if s.capacity() < capacity {
             s.reserve(capacity - s.capacity());
@@ -90,7 +93,8 @@ pub(crate) fn get_string_from_pool(capacity: usize) -> String {
 /// The pool is intentionally bounded: large bursts can allocate temporarily, but only the
 /// hottest strings are retained to keep thread-local memory usage predictable.
 pub(crate) fn return_string_to_pool(s: String) {
-    let mut pool = STRING_POOL.borrow_mut();
+    // SAFETY: #[thread_local] guarantees single-threaded access; no re-entrant calls.
+    let pool = unsafe { &mut *STRING_POOL.get() };
     if pool.len() < STRING_POOL_MAX {
         pool.push(s);
     }
@@ -110,7 +114,8 @@ pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks
     // Transmuting the empty Vec's element lifetime to 'static is sound because an empty
     // Vec holds no values and the memory layout of Cow<'_, str> is lifetime-independent.
     let empty: ProcessedTextMasks<'static> = unsafe { std::mem::transmute(text_masks) };
-    let mut state = TRANSFORM_STATE.borrow_mut();
+    // SAFETY: #[thread_local] guarantees single-threaded access; no re-entrant calls.
+    let state = unsafe { &mut *TRANSFORM_STATE.get() };
     if state.masks_pool.len() < MASKS_POOL_MAX {
         state.masks_pool.push(empty);
     }

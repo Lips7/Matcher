@@ -88,7 +88,7 @@ impl ProcessMatcher {
     /// Returns `Some(result)` when at least one replacement was made, or `None` when the
     /// text is unchanged (zero allocations).
     #[inline(always)]
-    pub(crate) fn replace_all(&self, text: &str) -> Option<String> {
+    pub(crate) fn replace_all(&self, text: &str) -> Option<(String, bool)> {
         match self {
             ProcessMatcher::SingleChar(matcher) => match matcher {
                 SingleCharMatcher::Fanjian { .. } => Self::replace_all_fanjian(matcher, text),
@@ -98,6 +98,8 @@ impl ProcessMatcher {
                             result.push_str(s);
                         }
                     })
+                    // Pinyin output is always ASCII (romanized syllables).
+                    .map(|s| (s, true))
                 }
                 SingleCharMatcher::Delete { .. } => {
                     debug_assert!(false, "replace_all called on Delete matcher");
@@ -109,6 +111,11 @@ impl ProcessMatcher {
                 Self::replace_scan(text, mc.find_iter(text), |result, idx| {
                     result.push_str(replacements[idx]);
                 })
+                // Normalize: check result with std SIMD-accelerated is_ascii().
+                .map(|s| {
+                    let ia = s.is_ascii();
+                    (s, ia)
+                })
             }
         }
     }
@@ -118,14 +125,13 @@ impl ProcessMatcher {
     /// Clones the text and overwrites mapped codepoints directly when the replacement
     /// has the same UTF-8 byte length (99% of Fanjian mappings). Falls back to the
     /// standard `replace_scan` path on the rare byte-length mismatch.
-    fn replace_all_fanjian(matcher: &SingleCharMatcher, text: &str) -> Option<String> {
+    fn replace_all_fanjian(matcher: &SingleCharMatcher, text: &str) -> Option<(String, bool)> {
         let mut result: Option<String> = None;
 
         for (start, end, m) in matcher.fanjian_iter(text) {
             if let SingleCharMatch::Char(c) = m {
                 let span_len = end - start;
                 if c.len_utf8() == span_len {
-                    // Defer allocation until the first actual match.
                     let buf = result.get_or_insert_with(|| {
                         let mut s = get_string_from_pool(text.len());
                         s.push_str(text);
@@ -135,7 +141,6 @@ impl ProcessMatcher {
                     // UTF-8 sequences preserves validity.
                     unsafe { c.encode_utf8(&mut buf.as_bytes_mut()[start..end]) };
                 } else {
-                    // Rare: byte-length mismatch. Abandon in-place and fall back.
                     if let Some(s) = result.take() {
                         return_string_to_pool(s);
                     }
@@ -143,12 +148,15 @@ impl ProcessMatcher {
                         if let SingleCharMatch::Char(c) = m {
                             r.push(c);
                         }
-                    });
+                    })
+                    // Fanjian output is always non-ASCII (CJK→CJK).
+                    .map(|s| (s, false));
                 }
             }
         }
 
-        result
+        // Fanjian output is always non-ASCII (CJK→CJK).
+        result.map(|s| (s, false))
     }
 
     /// Removes all matched patterns from `text`.
@@ -156,12 +164,12 @@ impl ProcessMatcher {
     /// Returns `Some(result)` when at least one character or span was removed, or `None`
     /// when nothing matched (zero allocations).
     #[inline(always)]
-    pub(crate) fn delete_all(&self, text: &str) -> Option<String> {
+    pub(crate) fn delete_all(&self, text: &str) -> Option<(String, bool)> {
         let ProcessMatcher::SingleChar(matcher) = self else {
             debug_assert!(false, "delete_all called on non-Delete matcher");
             return None;
         };
-        Self::replace_scan(text, matcher.delete_iter(text), |_, _| {})
+        matcher.delete_direct(text)
     }
 }
 
@@ -312,14 +320,14 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
         match process_type_bit {
             ProcessType::None => continue,
             ProcessType::Delete => {
-                if let Some(processed) = pm.delete_all(result.as_ref())
+                if let Some((processed, _)) = pm.delete_all(result.as_ref())
                     && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
                 {
                     return_string_to_pool(old);
                 }
             }
             _ => {
-                if let Some(processed) = pm.replace_all(result.as_ref())
+                if let Some((processed, _)) = pm.replace_all(result.as_ref())
                     && let Cow::Owned(old) = std::mem::replace(&mut result, Cow::Owned(processed))
                 {
                     return_string_to_pool(old);
@@ -353,12 +361,12 @@ fn reduce_text_process_inner<'a>(
         match process_type_bit {
             ProcessType::None => continue,
             ProcessType::Delete => {
-                if let Some(processed) = pm.delete_all(current_text.as_ref()) {
+                if let Some((processed, _)) = pm.delete_all(current_text.as_ref()) {
                     text_list.push(Cow::Owned(processed));
                 }
             }
             _ => {
-                if let Some(processed) = pm.replace_all(current_text.as_ref()) {
+                if let Some((processed, _)) = pm.replace_all(current_text.as_ref()) {
                     if overwrite_replace {
                         *current_text = Cow::Owned(processed);
                     } else {

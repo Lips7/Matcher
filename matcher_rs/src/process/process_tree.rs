@@ -227,7 +227,9 @@ where
     F: FnMut(&str, usize, u64, bool) -> bool,
 {
     {
-        let mut ts = TRANSFORM_STATE.borrow_mut();
+        // SAFETY: #[thread_local] guarantees single-threaded access.
+        // walk_process_tree is never called re-entrantly.
+        let ts = unsafe { &mut *TRANSFORM_STATE.get() };
 
         let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
         // Safety: pool holds empty Vecs with no live borrows; transmuting from
@@ -283,7 +285,8 @@ where
                     ProcessType::None => (None, parent_is_ascii),
                     ProcessType::PinYin | ProcessType::PinYinChar => {
                         let current_text = text_masks[current_index].text.as_ref();
-                        if let Some(processed) = pm.replace_all(current_text) {
+                        if let Some((processed, _ia)) = pm.replace_all(current_text) {
+                            // Pinyin output is always ASCII; replace_all already returns true.
                             (Some(processed), true)
                         } else {
                             (None, parent_is_ascii)
@@ -291,7 +294,8 @@ where
                     }
                     ProcessType::Fanjian => {
                         let current_text = text_masks[current_index].text.as_ref();
-                        if let Some(processed) = pm.replace_all(current_text) {
+                        if let Some((processed, _ia)) = pm.replace_all(current_text) {
+                            // Fanjian output is always non-ASCII; replace_all already returns false.
                             (Some(processed), false)
                         } else {
                             (None, parent_is_ascii)
@@ -299,20 +303,18 @@ where
                     }
                     ProcessType::Delete => {
                         let current_text = text_masks[current_index].text.as_ref();
-                        if let Some(processed) = pm.delete_all(current_text) {
-                            // If parent was ASCII, result is still ASCII (only ASCII chars removed).
-                            // If parent was non-ASCII, some non-ASCII may have been deleted —
-                            // check the shorter result string.
-                            let ia = parent_is_ascii || processed.is_ascii();
-                            (Some(processed), ia)
+                        if let Some((processed, ia)) = pm.delete_all(current_text) {
+                            // If parent was ASCII, result is trivially ASCII.
+                            // Otherwise use the is_ascii tracked during the delete scan.
+                            (Some(processed), parent_is_ascii || ia)
                         } else {
                             (None, parent_is_ascii)
                         }
                     }
                     _ => {
                         let current_text = text_masks[current_index].text.as_ref();
-                        if let Some(processed) = pm.replace_all(current_text) {
-                            let ia = processed.is_ascii();
+                        if let Some((processed, ia)) = pm.replace_all(current_text) {
+                            // Normalize: use the is_ascii tracked during replace_scan.
                             (Some(processed), ia)
                         } else {
                             (None, parent_is_ascii)

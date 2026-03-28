@@ -183,7 +183,9 @@ impl SimpleMatcher {
     fn is_match_inner<const SINGLE_PT: bool>(&self, text: &str) -> bool {
         let tree = &self.process_type_tree;
         let max_pt = tree.len();
-        let mut state = SIMPLE_MATCH_STATE.borrow_mut();
+        // SAFETY: #[thread_local] guarantees single-threaded access.
+        // is_match_inner is never called re-entrantly.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rule_hot.len());
         let (text_masks, stopped) =
             walk_process_tree::<true, _>(tree, text, &mut |txt, idx, mask, is_ascii| {
@@ -194,7 +196,7 @@ impl SimpleMatcher {
                     exit_early: true,
                     is_ascii,
                 };
-                self.scan_variant::<SINGLE_PT>(txt, ctx, &mut state)
+                self.scan_variant::<SINGLE_PT>(txt, ctx, state)
             });
         if stopped {
             return_processed_string_to_pool(text_masks);
@@ -202,7 +204,9 @@ impl SimpleMatcher {
         }
         let generation = state.generation;
         let result = state.touched_indices.iter().any(|&rule_idx| {
-            let word_state = &state.word_states[rule_idx];
+            // SAFETY: rule_idx was pushed from a valid PatternEntry.rule_idx < rule count.
+            debug_assert!(rule_idx < state.word_states.len());
+            let word_state = unsafe { state.word_states.get_unchecked(rule_idx) };
             word_state.positive_generation == generation && word_state.not_generation != generation
         });
         return_processed_string_to_pool(text_masks);
@@ -258,9 +262,92 @@ impl SimpleMatcher {
         if text.is_empty() {
             return;
         }
+        if self.all_simple {
+            return self.process_simple(text, results);
+        }
         let (processed, _) =
             walk_process_tree::<false, _>(&self.process_type_tree, text, &mut |_, _, _, _| false);
         self.process_preprocessed_into(&processed, results);
         return_processed_string_to_pool(processed);
+    }
+
+    /// Fast path for `process`/`process_into` when all patterns are simple literals
+    /// under a single process type with no tree walk needed.
+    ///
+    /// Skips `walk_process_tree` and `TRANSFORM_STATE` entirely. Uses generation-based
+    /// deduplication from `SIMPLE_MATCH_STATE` to avoid emitting duplicate results when
+    /// the same pattern appears multiple times in the text.
+    fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
+        // SAFETY: #[thread_local] guarantees single-threaded access.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
+        state.prepare(self.rule_hot.len());
+        let generation = state.generation;
+
+        // Shared emit logic for each automaton hit.
+        let mut emit = |dedup_idx: usize| {
+            debug_assert!(dedup_idx < self.ac_dedup_ranges.len());
+            let &(start, len) = unsafe { self.ac_dedup_ranges.get_unchecked(dedup_idx) };
+            debug_assert!(start + len <= self.ac_dedup_entries.len());
+            let entries = unsafe { self.ac_dedup_entries.get_unchecked(start..start + len) };
+            for entry in entries {
+                let rule_idx = entry.rule_idx as usize;
+                debug_assert!(rule_idx < state.word_states.len());
+                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                if word_state.positive_generation != generation {
+                    word_state.positive_generation = generation;
+                    debug_assert!(rule_idx < self.rule_cold.len());
+                    let cold = unsafe { self.rule_cold.get_unchecked(rule_idx) };
+                    results.push(SimpleResult {
+                        word_id: cold.word_id,
+                        word: Cow::Borrowed(&cold.word),
+                    });
+                }
+            }
+        };
+
+        if text.is_ascii() {
+            if let Some(ref m) = self.ascii_matcher {
+                match m {
+                    #[cfg(feature = "dfa")]
+                    AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                        for hit in matcher.find_overlapping_iter(text) {
+                            let dedup_idx =
+                                unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) }
+                                    as usize;
+                            emit(dedup_idx);
+                        }
+                    }
+                    AsciiMatcher::DaacBytewise(d) => {
+                        for hit in d.find_overlapping_iter(text) {
+                            emit(hit.value() as usize);
+                        }
+                    }
+                }
+            }
+        } else if let Some(ref m) = self.non_ascii_matcher {
+            match m {
+                NonAsciiMatcher::DaacCharwise(d) => {
+                    for hit in d.find_overlapping_iter(text) {
+                        emit(hit.value() as usize);
+                    }
+                }
+            }
+        } else if let Some(ref m) = self.ascii_matcher {
+            match m {
+                #[cfg(feature = "dfa")]
+                AsciiMatcher::AcDfa { matcher, to_dedup } => {
+                    for hit in matcher.find_overlapping_iter(text) {
+                        let dedup_idx =
+                            unsafe { *to_dedup.get_unchecked(hit.pattern().as_usize()) } as usize;
+                        emit(dedup_idx);
+                    }
+                }
+                AsciiMatcher::DaacBytewise(d) => {
+                    for hit in d.find_overlapping_iter(text) {
+                        emit(hit.value() as usize);
+                    }
+                }
+            }
+        }
     }
 }

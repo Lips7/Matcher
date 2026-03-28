@@ -4,7 +4,7 @@
 //! Public-facing types ([`SimpleTable`], [`SimpleTableSerde`]) are the exception.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 
 #[cfg(feature = "dfa")]
@@ -197,8 +197,8 @@ impl SimpleMatchState {
 /// Uses `#[thread_local]` to eliminate the `thread_local!` macro's `.with()` closure
 /// overhead. Access is a direct TLS segment-register read on x86/aarch64.
 #[thread_local]
-pub(super) static SIMPLE_MATCH_STATE: RefCell<SimpleMatchState> =
-    RefCell::new(SimpleMatchState::new());
+pub(super) static SIMPLE_MATCH_STATE: UnsafeCell<SimpleMatchState> =
+    UnsafeCell::new(SimpleMatchState::new());
 
 /// Context for a single text variant scan, bundling parameters shared between
 /// `scan_variant` and `process_match`.
