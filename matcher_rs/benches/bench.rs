@@ -4,25 +4,7 @@ use matcher_rs::{ProcessType, SimpleMatcher, text_process};
 use std::collections::HashMap;
 use std::hint::black_box;
 
-const CN_PROCESS_TYPES: &[ProcessType] = &[
-    ProcessType::None,
-    ProcessType::Delete,
-    ProcessType::Fanjian,
-    ProcessType::FanjianDeleteNormalize,
-];
-
-const EN_PROCESS_TYPES: &[ProcessType] = &[
-    ProcessType::None,
-    ProcessType::Delete,
-    ProcessType::DeleteNormalize,
-];
-
-const SIMPLE_WORD_MAP_SIZE_LIST: &[usize] = &[1000, 10000, 50000, 100000];
-const COMBINED_TIMES_LIST: &[usize] = &[1, 2, 3, 4];
-
-const DEFAULT_PROCESS_TYPE: ProcessType = ProcessType::None;
-const DEFAULT_SIMPLE_WORD_MAP_SIZE: usize = 10000;
-const DEFAULT_COMBINED_TIMES: usize = 1;
+// ── Data ────────────────────────────────────────────────────────────────────────
 
 const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
 const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
@@ -30,310 +12,368 @@ const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
 const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
 const EN_HAYSTACK: &str = include_str!("../../data/text/en/sherlock.txt");
 
-/// Builds a simple word map deterministically.
-///
-/// * `en_or_cn`: "en" or "cn" dictating the vocabulary
-/// * `simple_word_map_size`: Target number of combinations to generate
-/// * `combined_times`: Target tokens per word (e.g., A & B & C)
-/// * `match_scenario`: If false, the generated words are mangled so they will *never* match the haystack.
-fn build_deterministic_map(
-    en_or_cn: &str,
-    simple_word_map_size: usize,
-    combined_times: usize,
-    match_scenario: bool,
-) -> HashMap<u32, String> {
-    let mut patterns: Vec<&str> = if en_or_cn == "cn" {
+// ── Parameters ──────────────────────────────────────────────────────────────────
+
+const RULE_COUNTS: &[usize] = &[1_000, 10_000, 50_000, 100_000];
+const DEFAULT_RULE_COUNT: usize = 10_000;
+
+const BUILD_PROCESS_TYPES: &[ProcessType] = &[
+    ProcessType::None,
+    ProcessType::Delete,
+    ProcessType::Fanjian,
+    ProcessType::FanjianDeleteNormalize,
+    ProcessType::PinYin,
+];
+
+// ── Helpers ─────────────────────────────────────────────────────────────────────
+
+fn word_list(lang: &str) -> Vec<&str> {
+    let mut words: Vec<&str> = if lang == "cn" {
         CN_WORD_LIST.lines().collect()
     } else {
         EN_WORD_LIST.lines().collect()
     };
-    patterns.sort_unstable();
-
-    let mut simple_word_map = HashMap::new();
-    let mut global_word_id = 0u32;
-    let operators = ["&", "~"];
-
-    for i in 0..simple_word_map_size {
-        global_word_id += 1;
-        let mut combined_word_list = Vec::with_capacity(combined_times);
-
-        for j in 0..combined_times {
-            // Deterministic word selection heavily distributed across the pattern list
-            let word_idx = (i * combined_times + j * 997) % patterns.len();
-            let mut word = patterns[word_idx].to_string();
-
-            if !match_scenario {
-                // Mangle the word so it cannot possibly match normal text.
-                // For CN, append a Unicode PUA suffix to a real CJK word so the automaton
-                // retains realistic CJK byte structure while the pattern is unachievable.
-                // For EN, use a fully ASCII sentinel string.
-                word = if en_or_cn == "cn" {
-                    format!("{word}\u{E000}{i}")
-                } else {
-                    format!("__impossible_{word_idx}_match_{i}__")
-                };
-            }
-
-            combined_word_list.push(word);
-        }
-
-        // Deterministic operator selection
-        let op = operators[i % operators.len()];
-        let combined_word = combined_word_list.join(op);
-        simple_word_map.insert(global_word_id, combined_word);
-    }
-    simple_word_map
+    words.sort_unstable();
+    words
 }
 
-fn build_rule_shape_map(
-    en_or_cn: &str,
-    simple_word_map_size: usize,
-    shape: &str,
-) -> HashMap<u32, String> {
-    let mut patterns: Vec<&str> = if en_or_cn == "cn" {
-        CN_WORD_LIST.lines().collect()
-    } else {
-        EN_WORD_LIST.lines().collect()
-    };
-    patterns.sort_unstable();
-
-    let mut simple_word_map = HashMap::with_capacity(simple_word_map_size);
-    for i in 0..simple_word_map_size {
+fn build_literal_map(lang: &str, size: usize, match_scenario: bool) -> HashMap<u32, String> {
+    let patterns = word_list(lang);
+    let mut map = HashMap::with_capacity(size);
+    for i in 0..size {
         let word_idx = (i * 997) % patterns.len();
-        let word = patterns[word_idx];
+        let word = if match_scenario {
+            patterns[word_idx].to_string()
+        } else if lang == "cn" {
+            format!("{}\u{E000}{i}", patterns[word_idx])
+        } else {
+            format!("__impossible_{word_idx}_match_{i}__")
+        };
+        map.insert((i + 1) as u32, word);
+    }
+    map
+}
+
+fn build_shaped_map(lang: &str, size: usize, shape: &str) -> HashMap<u32, String> {
+    let patterns = word_list(lang);
+    let mut map = HashMap::with_capacity(size);
+    for i in 0..size {
+        let idx = (i * 997) % patterns.len();
         let shaped = match shape {
-            "literal" => word.to_string(),
+            "literal" => patterns[idx].to_string(),
             "and" => {
-                let a = patterns[word_idx];
-                let b = patterns[(word_idx + 101) % patterns.len()];
-                let c = patterns[(word_idx + 211) % patterns.len()];
+                let a = patterns[idx];
+                let b = patterns[(idx + 101) % patterns.len()];
+                let c = patterns[(idx + 211) % patterns.len()];
                 format!("{a}&{b}&{c}")
             }
-            "not" => format!("{word}~__never_block_{i}__"),
+            "not" => format!("{}~__never_block_{i}__", patterns[idx]),
             _ => unreachable!("unknown rule shape: {shape}"),
         };
-        simple_word_map.insert((i + 1) as u32, shaped);
+        map.insert((i + 1) as u32, shaped);
     }
-    simple_word_map
+    map
 }
 
-fn build_mixed_script_map(simple_word_map_size: usize) -> HashMap<u32, String> {
-    let mut en_patterns: Vec<&str> = EN_WORD_LIST
+fn build_mixed_script_map(size: usize) -> HashMap<u32, String> {
+    let mut en: Vec<&str> = EN_WORD_LIST
         .lines()
-        .filter(|word| word.is_ascii() && !word.is_empty())
+        .filter(|w| w.is_ascii() && !w.is_empty())
         .collect();
-    let mut cn_patterns: Vec<&str> = CN_WORD_LIST
+    let mut cn: Vec<&str> = CN_WORD_LIST
         .lines()
-        .filter(|word| !word.is_ascii() && !word.is_empty())
+        .filter(|w| !w.is_ascii() && !w.is_empty())
         .collect();
-    en_patterns.sort_unstable();
-    cn_patterns.sort_unstable();
+    en.sort_unstable();
+    cn.sort_unstable();
 
-    let mut simple_word_map = HashMap::with_capacity(simple_word_map_size);
-    for i in 0..simple_word_map_size {
+    let mut map = HashMap::with_capacity(size);
+    for i in 0..size {
         let word = if i % 2 == 0 {
-            en_patterns[(i * 997) % en_patterns.len()]
+            en[(i * 997) % en.len()]
         } else {
-            cn_patterns[(i * 991) % cn_patterns.len()]
+            cn[(i * 991) % cn.len()]
         };
-        simple_word_map.insert((i + 1) as u32, word.to_string());
+        map.insert((i + 1) as u32, word.to_string());
     }
-    simple_word_map
+    map
 }
 
-fn build_multi_process_table(
-    simple_word_map_size: usize,
-) -> HashMap<ProcessType, HashMap<u32, String>> {
-    let slice = (simple_word_map_size / 4).max(1);
+fn build_multi_process_table(size: usize) -> HashMap<ProcessType, HashMap<u32, String>> {
+    let slice = (size / 4).max(1);
     HashMap::from([
-        (
-            ProcessType::None,
-            build_deterministic_map("en", slice, DEFAULT_COMBINED_TIMES, true),
-        ),
-        (
-            ProcessType::Delete,
-            build_deterministic_map("en", slice, DEFAULT_COMBINED_TIMES, true),
-        ),
-        (
-            ProcessType::Fanjian,
-            build_deterministic_map("cn", slice, DEFAULT_COMBINED_TIMES, true),
-        ),
+        (ProcessType::None, build_literal_map("en", slice, true)),
+        (ProcessType::Delete, build_literal_map("en", slice, true)),
+        (ProcessType::Fanjian, build_literal_map("cn", slice, true)),
         (
             ProcessType::FanjianDeleteNormalize,
-            build_deterministic_map(
-                "cn",
-                simple_word_map_size - slice * 3,
-                DEFAULT_COMBINED_TIMES,
-                true,
-            ),
+            build_literal_map("cn", size - slice * 3, true),
         ),
     ])
 }
 
+fn wrap_table(
+    pt: ProcessType,
+    map: HashMap<u32, String>,
+) -> HashMap<ProcessType, HashMap<u32, String>> {
+    HashMap::from([(pt, map)])
+}
+
+// ── 1. Build ────────────────────────────────────────────────────────────────────
+// Question: How fast is SimpleMatcher::new(), and what drives construction cost?
+
 mod build {
     use super::*;
 
-    macro_rules! define_build_bench {
-        ($lang:ident) => {
-            paste::item! {
-                #[divan::bench(args = [<$lang:upper _PROCESS_TYPES>], max_time = 5)]
-                fn [<$lang:lower _by_process_type>](bencher: Bencher, process_type: ProcessType) {
-                    let simple_word_map = build_deterministic_map(
-                        stringify!($lang).to_lowercase().as_str(),
-                        DEFAULT_SIMPLE_WORD_MAP_SIZE,
-                        DEFAULT_COMBINED_TIMES,
-                        true,
-                    );
-                    let simple_table = HashMap::from([(process_type, simple_word_map)]);
-                    bencher.bench_local(|| {
-                        let _ = black_box(SimpleMatcher::new(&simple_table));
-                    });
-                }
-
-                #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-                fn [<$lang:lower _by_size>](bencher: Bencher, size: usize) {
-                    let simple_word_map = build_deterministic_map(
-                        stringify!($lang).to_lowercase().as_str(),
-                        size,
-                        DEFAULT_COMBINED_TIMES,
-                        true,
-                    );
-                    let simple_table = HashMap::from([(DEFAULT_PROCESS_TYPE, simple_word_map)]);
-                    bencher.bench_local(|| {
-                        let _ = black_box(SimpleMatcher::new(&simple_table));
-                    });
-                }
-
-                #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
-                fn [<$lang:lower _by_combinations>](bencher: Bencher, combined_times: usize) {
-                    let simple_word_map = build_deterministic_map(
-                        stringify!($lang).to_lowercase().as_str(),
-                        DEFAULT_SIMPLE_WORD_MAP_SIZE,
-                        combined_times,
-                        true,
-                    );
-                    let simple_table = HashMap::from([(DEFAULT_PROCESS_TYPE, simple_word_map)]);
-                    bencher.bench_local(|| {
-                        let _ = black_box(SimpleMatcher::new(&simple_table));
-                    });
-                }
-            }
-        };
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn by_size(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
+        bencher.bench_local(|| {
+            let _ = black_box(SimpleMatcher::new(&table));
+        });
     }
 
-    define_build_bench!(CN);
-    define_build_bench!(EN);
+    #[divan::bench(args = BUILD_PROCESS_TYPES, max_time = 5)]
+    fn by_process_type(bencher: Bencher, pt: ProcessType) {
+        let table = wrap_table(pt, build_literal_map("cn", DEFAULT_RULE_COUNT, true));
+        bencher.bench_local(|| {
+            let _ = black_box(SimpleMatcher::new(&table));
+        });
+    }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn multi_process_type(bencher: Bencher, size: usize) {
+        let table = build_multi_process_table(size);
+        bencher.bench_local(|| {
+            let _ = black_box(SimpleMatcher::new(&table));
+        });
+    }
 }
 
-macro_rules! define_search_bench {
-    ($lang:ident, $match_scenario:expr, $method:ident) => {
-        paste::item! {
-            #[divan::bench(args = [<$lang:upper _PROCESS_TYPES>], max_time = 5)]
-            fn [<$lang:lower _by_process_type>](bencher: Bencher, process_type: ProcessType) {
-                let mut simple_table = HashMap::new();
-                let simple_word_map = build_deterministic_map(
-                    stringify!($lang).to_lowercase().as_str(),
-                    DEFAULT_SIMPLE_WORD_MAP_SIZE,
-                    DEFAULT_COMBINED_TIMES,
-                    $match_scenario,
-                );
-                simple_table.insert(process_type, simple_word_map);
-                let matcher = SimpleMatcher::new(&simple_table);
-                let haystack = [<$lang:upper _HAYSTACK>];
+// ── 2. Search Mode ──────────────────────────────────────────────────────────────
+// Question: How do the three SearchMode fast paths compare in throughput?
+//
+// AllSimple:        PT=None, all literals  (bypasses state tracking entirely)
+// SingleProcessType: PT=Delete, all literals (single PT with transform tree children)
+// General:          4 PTs via build_multi_process_table (full state machine)
 
-                let total_bytes = haystack.len();
+mod search_mode {
+    use super::*;
 
-                bencher
-                    .counter(BytesCount::new(total_bytes))
-                    .bench(|| {
-                        for line in haystack.lines() {
-                            let _ = black_box(matcher.$method(line));
-                        }
-                    });
-            }
+    mod all_simple {
+        use super::*;
 
-            #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-            fn [<$lang:lower _by_size>](bencher: Bencher, size: usize) {
-                let mut simple_table = HashMap::new();
-                let simple_word_map = build_deterministic_map(
-                    stringify!($lang).to_lowercase().as_str(),
-                    size,
-                    DEFAULT_COMBINED_TIMES,
-                    $match_scenario,
-                );
-                simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
-                let matcher = SimpleMatcher::new(&simple_table);
-                let haystack = [<$lang:upper _HAYSTACK>];
-
-                let total_bytes = haystack.len();
-
-                bencher
-                    .counter(BytesCount::new(total_bytes))
-                    .bench(|| {
-                        for line in haystack.lines() {
-                            let _ = black_box(matcher.$method(line));
-                        }
-                    });
-            }
-
-            #[divan::bench(args = COMBINED_TIMES_LIST, max_time = 5)]
-            fn [<$lang:lower _by_combinations>](bencher: Bencher, combined_times: usize) {
-                let mut simple_table = HashMap::new();
-                let simple_word_map = build_deterministic_map(
-                    stringify!($lang).to_lowercase().as_str(),
-                    DEFAULT_SIMPLE_WORD_MAP_SIZE,
-                    combined_times,
-                    $match_scenario,
-                );
-                simple_table.insert(DEFAULT_PROCESS_TYPE, simple_word_map);
-                let matcher = SimpleMatcher::new(&simple_table);
-                let haystack = [<$lang:upper _HAYSTACK>];
-
-                let total_bytes = haystack.len();
-
-                bencher
-                    .counter(BytesCount::new(total_bytes))
-                    .bench(|| {
-                        for line in haystack.lines() {
-                            let _ = black_box(matcher.$method(line));
-                        }
-                    });
-            }
+        #[divan::bench(max_time = 5)]
+        fn is_match(bencher: Bencher) {
+            let table = wrap_table(
+                ProcessType::None,
+                build_literal_map("en", DEFAULT_RULE_COUNT, true),
+            );
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.is_match(line));
+                }
+            });
         }
-    };
+
+        #[divan::bench(max_time = 5)]
+        fn process(bencher: Bencher) {
+            let table = wrap_table(
+                ProcessType::None,
+                build_literal_map("en", DEFAULT_RULE_COUNT, true),
+            );
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.process(line));
+                }
+            });
+        }
+    }
+
+    mod single_pt {
+        use super::*;
+
+        #[divan::bench(max_time = 5)]
+        fn is_match(bencher: Bencher) {
+            let table = wrap_table(
+                ProcessType::Delete,
+                build_literal_map("en", DEFAULT_RULE_COUNT, true),
+            );
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.is_match(line));
+                }
+            });
+        }
+
+        #[divan::bench(max_time = 5)]
+        fn process(bencher: Bencher) {
+            let table = wrap_table(
+                ProcessType::Delete,
+                build_literal_map("en", DEFAULT_RULE_COUNT, true),
+            );
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.process(line));
+                }
+            });
+        }
+    }
+
+    mod general {
+        use super::*;
+
+        #[divan::bench(max_time = 5)]
+        fn is_match(bencher: Bencher) {
+            let table = build_multi_process_table(DEFAULT_RULE_COUNT);
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.is_match(line));
+                }
+            });
+        }
+
+        #[divan::bench(max_time = 5)]
+        fn process(bencher: Bencher) {
+            let table = build_multi_process_table(DEFAULT_RULE_COUNT);
+            let matcher = SimpleMatcher::new(&table);
+            let haystack = EN_HAYSTACK;
+            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+                for line in haystack.lines() {
+                    let _ = black_box(matcher.process(line));
+                }
+            });
+        }
+    }
 }
 
-mod search_match {
+// ── 3. Match vs No-Match ────────────────────────────────────────────────────────
+// Question: What's the throughput difference when patterns match vs. don't match?
+
+mod match_vs_nomatch {
     use super::*;
 
-    define_search_bench!(CN, true, process);
-    define_search_bench!(EN, true, process);
+    #[divan::bench(max_time = 5)]
+    fn is_match_hit(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn is_match_miss(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, false),
+        );
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn process_hit(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
+            }
+        });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn process_miss(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, false),
+        );
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
+            }
+        });
+    }
 }
 
-mod search_no_match {
+// ── 4. Scaling ──────────────────────────────────────────────────────────────────
+// Question: How does throughput scale with rule count?
+
+mod scaling {
     use super::*;
 
-    define_search_bench!(CN, false, process);
-    define_search_bench!(EN, false, process);
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn is_match_en(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn is_match_cn(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map("cn", size, true));
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = CN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn process_en(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
+        let matcher = SimpleMatcher::new(&table);
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
+            }
+        });
+    }
 }
 
-mod is_match_match {
-    use super::*;
-    define_search_bench!(CN, true, is_match);
-    define_search_bench!(EN, true, is_match);
-}
+// ── 5. Text Transform ───────────────────────────────────────────────────────────
+// Question: How expensive is each text transformation step in isolation?
 
-mod is_match_no_match {
+mod text_transform {
     use super::*;
 
-    define_search_bench!(CN, false, is_match);
-    define_search_bench!(EN, false, is_match);
-}
-
-mod text_process {
-    use super::*;
-
-    const PROCESS_TYPES: &[ProcessType] = &[
+    const CN_TRANSFORMS: &[ProcessType] = &[
         ProcessType::Fanjian,
         ProcessType::Delete,
         ProcessType::Normalize,
@@ -341,142 +381,81 @@ mod text_process {
         ProcessType::PinYinChar,
     ];
 
-    #[divan::bench(args = PROCESS_TYPES, max_time = 5)]
-    fn cn(bencher: Bencher, process_type: ProcessType) {
+    const EN_TRANSFORMS: &[ProcessType] = &[ProcessType::Delete, ProcessType::Normalize];
+
+    #[divan::bench(args = CN_TRANSFORMS, max_time = 5)]
+    fn cn(bencher: Bencher, pt: ProcessType) {
         let haystack = CN_HAYSTACK;
-        let total_bytes = haystack.len();
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
-                let _ = black_box(text_process(process_type, line));
+                let _ = black_box(text_process(pt, line));
             }
         });
     }
 
-    #[divan::bench(args = PROCESS_TYPES, max_time = 5)]
-    fn en(bencher: Bencher, process_type: ProcessType) {
+    #[divan::bench(args = EN_TRANSFORMS, max_time = 5)]
+    fn en(bencher: Bencher, pt: ProcessType) {
         let haystack = EN_HAYSTACK;
-        let total_bytes = haystack.len();
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
-                let _ = black_box(text_process(process_type, line));
+                let _ = black_box(text_process(pt, line));
             }
         });
     }
 }
 
-mod rule_shapes {
+// ── 6. Rule Complexity ──────────────────────────────────────────────────────────
+// Question: How do rule shape and mixed-script patterns affect throughput?
+
+mod rule_complexity {
     use super::*;
 
-    const RULE_SHAPES: &[&str] = &["literal", "and", "not"];
+    const SHAPES: &[&str] = &["literal", "and", "not"];
 
-    #[divan::bench(args = RULE_SHAPES, max_time = 5)]
-    fn is_match_en(bencher: Bencher, shape: &str) {
-        let simple_word_map = build_rule_shape_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, shape);
-        let matcher = SimpleMatcher::new(&HashMap::from([(ProcessType::None, simple_word_map)]));
+    #[divan::bench(args = SHAPES, max_time = 5)]
+    fn shape_is_match(bencher: Bencher, shape: &str) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_shaped_map("en", DEFAULT_RULE_COUNT, shape),
+        );
+        let matcher = SimpleMatcher::new(&table);
         let haystack = EN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(matcher.is_match(line));
             }
         });
     }
 
-    #[divan::bench(args = RULE_SHAPES, max_time = 5)]
-    fn process_en(bencher: Bencher, shape: &str) {
-        let simple_word_map = build_rule_shape_map("en", DEFAULT_SIMPLE_WORD_MAP_SIZE, shape);
-        let matcher = SimpleMatcher::new(&HashMap::from([(ProcessType::None, simple_word_map)]));
+    #[divan::bench(args = SHAPES, max_time = 5)]
+    fn shape_process(bencher: Bencher, shape: &str) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_shaped_map("en", DEFAULT_RULE_COUNT, shape),
+        );
+        let matcher = SimpleMatcher::new(&table);
         let haystack = EN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(matcher.process(line));
             }
         });
     }
-}
 
-mod mixed_scripts {
-    use super::*;
-
-    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-    fn is_match_cn(bencher: Bencher, size: usize) {
-        let matcher = SimpleMatcher::new(&HashMap::from([(
-            ProcessType::None,
-            build_mixed_script_map(size),
-        )]));
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn mixed_scripts(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_mixed_script_map(size));
+        let matcher = SimpleMatcher::new(&table);
         let haystack = CN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(matcher.is_match(line));
-            }
-        });
-    }
-
-    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-    fn is_match_en(bencher: Bencher, size: usize) {
-        let matcher = SimpleMatcher::new(&HashMap::from([(
-            ProcessType::None,
-            build_mixed_script_map(size),
-        )]));
-        let haystack = EN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
-            for line in haystack.lines() {
-                let _ = black_box(matcher.is_match(line));
-            }
-        });
-    }
-}
-
-mod process_heavy {
-    use super::*;
-
-    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-    fn is_match_cn(bencher: Bencher, size: usize) {
-        let matcher = SimpleMatcher::new(&build_multi_process_table(size));
-        let haystack = CN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
-            for line in haystack.lines() {
-                let _ = black_box(matcher.is_match(line));
-            }
-        });
-    }
-
-    #[divan::bench(args = SIMPLE_WORD_MAP_SIZE_LIST, max_time = 5)]
-    fn process_cn(bencher: Bencher, size: usize) {
-        let matcher = SimpleMatcher::new(&build_multi_process_table(size));
-        let haystack = CN_HAYSTACK;
-        let total_bytes = haystack.len();
-
-        bencher.counter(BytesCount::new(total_bytes)).bench(|| {
-            for line in haystack.lines() {
-                let _ = black_box(matcher.process(line));
             }
         });
     }
 }
 
 fn main() {
-    println!(
-        "Current default simple match type: {:?}",
-        DEFAULT_PROCESS_TYPE
-    );
-    println!(
-        "Current default simple word map size: {:?}",
-        DEFAULT_SIMPLE_WORD_MAP_SIZE
-    );
-    println!(
-        "Current default combined times: {:?}",
-        DEFAULT_COMBINED_TIMES
-    );
-
+    println!("Default rule count: {DEFAULT_RULE_COUNT}");
     divan::main()
 }
