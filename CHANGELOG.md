@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.0 - 2026-03-28
+
+### Performance
+- Const-generic `SINGLE_PT` scan dispatch — eliminates a branch and shift+AND per `PatternEntry` when all rules share one `ProcessType`.
+- `all_simple` fast path for `is_match` — bypasses TLS state, generation counters, and overlapping iteration for pure-literal matchers.
+- Dedup length pre-filter to skip redundant pattern entries during construction.
+- Thread-local `TRANSFORM_STATE` bundles scratch buffers into a single TLS lookup per call; literal fast path avoids TLS entirely for simple cases.
+- In-place Fanjian optimization — exploits same-byte-length property of 99%+ Traditional-to-Simplified mappings to avoid scan-and-rebuild allocations.
+- Shrink `PatternEntry` from 16 to 8 bytes via sequential process-type indexing.
+- Embed dedup indices directly in DAAC automaton values, eliminating one indirection per hit.
+- Track `is_ascii` flag through the transform pipeline to skip redundant charwise scans on ASCII-only text.
+- Auto-select DAAC bytewise engine over AC DFA when ASCII pattern count exceeds 2000.
+
+### Refactor
+- Replace `PatternEntry` boolean flags with `PatternKind` enum for clearer dispatch in `process_match`.
+- Reorganize `matcher_rs` into focused single-responsibility modules: `simple_matcher/` split into `types.rs`, `construction.rs`, `scan.rs`; `process/` split into `process_type.rs`, `string_pool.rs`, `process_tree.rs`, `transform/`.
+- Improve code clarity via named structs (`ScanContext`, `RuleHot`, `RuleCold`) and bundled TLS parameters.
+
+### Dependencies
+- Bump `sonic-rs` to 0.5.8, `tinyvec` to 1.11.0, `proptest` to 1.11.0.
+- Migrate `matcher_java` JNI bindings to `jni` 0.22.4.
+
+### Documentation
+- Rewrite `DESIGN.md` to reflect current implementation with detailed sections on state management, SIMD dispatch, and const-generic optimizations.
+- Update all READMEs to match current package APIs: document `text_process`/`reduce_text_process` in C and Java bindings, add ProcessType reference tables, fix paths, improve build instructions.
+
 ## 0.11.0 - 2026-03-12
 
 ### Breaking Changes

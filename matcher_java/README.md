@@ -31,7 +31,7 @@ Or use `make build` from the repository root, which handles the copy step automa
 ```xml
 <groupId>com.matcher_java</groupId>
 <artifactId>matcher_java</artifactId>
-<version>0.11.0</version>
+<version>0.12.0</version>
 ```
 
 ## Usage
