@@ -36,6 +36,7 @@ daachorse = "1.0.0"
 divan = "0.1.21"
 paste = "1.0"
 proptest = "1.11.0"
+serde_json = "1.0"
 
 [features]
 default = ["dfa", "simd_runtime_dispatch"]

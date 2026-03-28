@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 
 use matcher_rs::{
-    ProcessType, build_process_type_tree, reduce_text_process, reduce_text_process_emit,
-    text_process, walk_process_tree,
+    ProcessType, SimpleMatcherBuilder, build_process_type_tree, reduce_text_process,
+    reduce_text_process_emit, text_process, walk_process_tree,
 };
+
+// ===========================================================================
+// Standalone transform API: text_process, reduce_text_process, etc.
+// ===========================================================================
 
 #[test]
 fn test_text_process() {
@@ -57,6 +61,34 @@ fn test_reduce_text_process_emit() {
 }
 
 #[test]
+fn test_reduce_text_process_all_combined() {
+    let text = reduce_text_process(
+        ProcessType::Fanjian
+            | ProcessType::Delete
+            | ProcessType::Normalize
+            | ProcessType::PinYin
+            | ProcessType::PinYinChar,
+        "~ᗩ~躶~𝚩~軆~Ⲉ~ 漢語西安",
+    );
+
+    // Final result should be fully normalized pinyin
+    assert_eq!(text.last().unwrap(), "a luob tic han yu xi an");
+}
+
+#[test]
+fn test_dag_specific_outputs() {
+    let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "妳！好");
+    assert_eq!(processed, "你好");
+
+    let processed = text_process(ProcessType::Normalize, "ℋЀ⒈㈠Õ");
+    assert_eq!(processed, "he11o");
+}
+
+// ===========================================================================
+// DAG tree construction and walking
+// ===========================================================================
+
+#[test]
 fn test_build_process_type_tree() {
     let process_type_set = HashSet::from_iter([
         ProcessType::Fanjian,
@@ -86,15 +118,13 @@ fn test_reduce_text_process_with_tree() {
     let (results, _) =
         walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _, _| false);
 
-    // Verify specific expected variants and their masks
     let find_variant = |target: &str| results.iter().find(|tv| tv.text == target);
 
-    // No `ProcessType::None` rules are registered here, so the untouched root text carries no mask.
+    // No ProcessType::None rules registered, so untouched root text carries no mask.
     assert!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").is_some());
     assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().mask, 0);
 
     // mask 16388 = (1 << (Fanjian | Delete | Normalize).bits()) | (1 << Fanjian.bits())
-    // bits: (1 << 14) | (1 << 2) = 16384 | 4 = 16388
     assert!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").is_some());
     assert_eq!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").unwrap().mask, 16388);
 }
@@ -118,31 +148,6 @@ fn test_reduce_text_process_with_set() {
 
     assert!(results.iter().any(|tv| tv.text == "a裸b軆c"));
     assert!(results.iter().any(|tv| tv.text == "ᗩ裸𝚩軆Ⲉ"));
-}
-
-#[test]
-fn test_reduce_text_process_all_combined() {
-    let text = reduce_text_process(
-        ProcessType::Fanjian
-            | ProcessType::Delete
-            | ProcessType::Normalize
-            | ProcessType::PinYin
-            | ProcessType::PinYinChar,
-        "~ᗩ~躶~𝚩~軆~Ⲉ~ 漢語西安",
-    );
-
-    // Final result should be fully normalized pinyin
-    // "~ᗩ~躶~𝚩~軆~Ⲉ~ 漢語西安" -> ... -> "a luob tic han yu xi an"
-    assert_eq!(text.last().unwrap(), "a luob tic han yu xi an");
-}
-
-#[test]
-fn test_dag_specific_outputs() {
-    let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "妳！好");
-    assert_eq!(processed, "你好");
-
-    let processed = text_process(ProcessType::Normalize, "ℋЀ⒈㈠Õ");
-    assert_eq!(processed, "he11o");
 }
 
 #[test]
@@ -186,6 +191,10 @@ fn test_reduce_text_process_empty_text() {
     );
     assert!(processed_text.iter().all(|tv| tv.text.is_empty()));
 }
+
+// ===========================================================================
+// Exhaustive process-map validation
+// ===========================================================================
 
 const FANJIAN_TEST_DATA: &str = include_str!("../process_map/FANJIAN.txt");
 const DELETE_TEST_DATA: &str = include_str!("../process_map/TEXT-DELETE.txt");
@@ -301,4 +310,241 @@ fn test_process_map_pinyin_char_exhaustive() {
             k
         );
     }
+}
+
+// ===========================================================================
+// Individual ProcessTypes through SimpleMatcher
+// ===========================================================================
+
+#[test]
+fn test_fanjian() {
+    use matcher_rs::SimpleMatcher;
+    use std::collections::HashMap;
+
+    let simple_matcher = SimpleMatcher::new(&std::collections::HashMap::from([(
+        ProcessType::Fanjian,
+        HashMap::from([(1, "你好")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("妳好"),
+        "Fanjian should match traditional variant of 你好"
+    );
+
+    let simple_matcher = SimpleMatcher::new(&std::collections::HashMap::from([(
+        ProcessType::Fanjian,
+        HashMap::from([(1, "妳好")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("你好"),
+        "Fanjian should match simplified variant of 妳好"
+    );
+}
+
+#[test]
+fn test_delete() {
+    use matcher_rs::SimpleMatcher;
+    use std::collections::HashMap;
+
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::Delete,
+        HashMap::from([(1, "你好")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("你！好"),
+        "Delete should strip noise char '！'"
+    );
+}
+
+#[test]
+fn test_normalize() {
+    use matcher_rs::SimpleMatcher;
+    use std::collections::HashMap;
+
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::Normalize,
+        HashMap::from([(1, "he11o")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("ℋЀ⒈㈠Õ"),
+        "Normalize should map fancy chars to 'he11o'"
+    );
+}
+
+#[test]
+fn test_pinyin() {
+    use matcher_rs::SimpleMatcher;
+    use std::collections::HashMap;
+
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::PinYin,
+        HashMap::from([(1, "西安")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("洗按"),
+        "PinYin xi an should match 洗按 (xi an)"
+    );
+    assert!(
+        !simple_matcher.is_match("现"),
+        "PinYin xi an should not match 现 (xian without space)"
+    );
+}
+
+#[test]
+fn test_pinyinchar() {
+    use matcher_rs::SimpleMatcher;
+    use std::collections::HashMap;
+
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::PinYinChar,
+        HashMap::from([(1, "西安")]),
+    )]));
+    assert!(
+        simple_matcher.is_match("洗按"),
+        "PinYinChar xi an should match 洗按"
+    );
+    assert!(
+        simple_matcher.is_match("现"),
+        "PinYinChar xi an should match 现 (xian without space)"
+    );
+    assert!(
+        simple_matcher.is_match("xian"),
+        "PinYinChar should match literal xian"
+    );
+}
+
+// ===========================================================================
+// Composite ProcessTypes through SimpleMatcher
+// ===========================================================================
+
+#[test]
+fn test_cross_variant_matching() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::PinYin, 1, "apple&西安")
+        .build();
+
+    assert!(
+        matcher.is_match("apple 洗按"),
+        "Cross-variant matching should work: 'apple' (None) and '西安' (Pinyin)"
+    );
+}
+
+#[test]
+fn test_not_disqualification_across_variants() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::Delete, 1, "apple~pie")
+        .build();
+
+    assert!(
+        !matcher.is_match("apple p.i.e"),
+        "NOT disqualification should be global across variants"
+    );
+}
+
+#[test]
+fn test_complex_dag_transformations() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(
+            ProcessType::Fanjian | ProcessType::Delete | ProcessType::Normalize,
+            1,
+            "你好",
+        )
+        .build();
+
+    assert!(
+        matcher.is_match("妳！好"),
+        "Should match with Fanjian and Delete combined"
+    );
+}
+
+#[test]
+fn test_complex_process_type_interactions() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Fanjian | ProcessType::PinYin, 1, "apple&西安")
+        .build();
+
+    assert!(!matcher.is_match("妳 洗按"));
+    assert!(matcher.is_match("apple 妳 洗按"));
+}
+
+#[test]
+fn test_process_type_none_with_delete() {
+    // Composite None|Delete matches both raw text and delete-stripped text.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::Delete, 1, "hello")
+        .build();
+
+    assert!(matcher.is_match("hello"), "raw match via None");
+    assert!(matcher.is_match("h.e.l.l.o"), "stripped match via Delete");
+    assert!(!matcher.is_match("hallo"));
+}
+
+#[test]
+fn test_process_type_fanjian_pinyin() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Fanjian | ProcessType::PinYin, 1, "你好")
+        .build();
+
+    assert!(matcher.is_match("你好"), "simplified direct");
+    assert!(matcher.is_match("妳好"), "traditional variant via Fanjian");
+    // PinYin path: different CJK chars with same pinyin syllables
+    assert!(
+        matcher.is_match("尼号"),
+        "different chars with same pinyin 'ni hao'"
+    );
+}
+
+// ===========================================================================
+// Unicode robustness
+// ===========================================================================
+
+#[test]
+fn test_unicode_emoji_passthrough() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::FanjianDeleteNormalize, 1, "test")
+        .build();
+
+    // Emoji and ZWJ sequences should not crash or corrupt matching
+    let text = "test 👨\u{200D}👩\u{200D}👧\u{200D}👦 🎉";
+    assert!(matcher.is_match(text));
+    let results = matcher.process(text);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
+}
+
+#[test]
+fn test_unicode_combining_marks() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "cafe")
+        .build();
+
+    // "cafe\u{0301}" = "café" with combining acute accent (5 codepoints, but "cafe" is a prefix)
+    assert!(
+        matcher.is_match("cafe\u{0301}"),
+        "cafe should match as byte-prefix of cafe + combining accent"
+    );
+    let results = matcher.process("cafe\u{0301}");
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn test_process_into_with_transforms() {
+    // process_into under Delete (currently only tested under ProcessType::None)
+    let delete_matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "hello&world")
+        .build();
+
+    let mut results = Vec::new();
+    delete_matcher.process_into("h.e.l.l.o w.o.r.l.d", &mut results);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
+
+    // process_into under Fanjian
+    let fanjian_matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Fanjian, 1, "你好")
+        .build();
+
+    results.clear();
+    fanjian_matcher.process_into("妳好", &mut results);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
 }

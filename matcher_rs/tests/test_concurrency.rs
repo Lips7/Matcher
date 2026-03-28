@@ -38,7 +38,6 @@ fn test_multithreaded_matching() {
 
 #[test]
 fn test_concurrent_same_state_matrix() {
-    // This test targets the thread_local state matrix.
     // Each thread should have its own state and not interfere with others.
     let matcher = Arc::new(
         SimpleMatcherBuilder::new()
@@ -62,6 +61,52 @@ fn test_concurrent_same_state_matrix() {
             // This thread sees both "a" and "b", so it SHOULD match "a&b"
             for _ in 0..1000 {
                 assert!(matcher.is_match("a b"));
+            }
+        }
+    });
+
+    h1.join().unwrap();
+    h2.join().unwrap();
+}
+
+#[test]
+fn test_concurrent_different_matchers() {
+    // Two matchers of very different sizes on different threads.
+    let small = Arc::new(
+        SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, "alpha")
+            .add_word(ProcessType::None, 2, "beta")
+            .build(),
+    );
+
+    let mut large_builder = SimpleMatcherBuilder::new();
+    let mut large_words = Vec::new();
+    for i in 0..500u32 {
+        large_words.push(format!("pattern{i}"));
+    }
+    for (i, w) in large_words.iter().enumerate() {
+        large_builder = large_builder.add_word(ProcessType::None, i as u32, w);
+    }
+    let large = Arc::new(large_builder.build());
+
+    let h1 = thread::spawn({
+        let m = Arc::clone(&small);
+        move || {
+            for _ in 0..500 {
+                assert!(m.is_match("alpha"));
+                assert!(!m.is_match("gamma"));
+                assert_eq!(m.process("alpha beta").len(), 2);
+            }
+        }
+    });
+
+    let h2 = thread::spawn({
+        let m = Arc::clone(&large);
+        move || {
+            for _ in 0..500 {
+                assert!(m.is_match("pattern0"));
+                assert!(m.is_match("pattern499"));
+                assert!(!m.is_match("patternXXX"));
             }
         }
     });
