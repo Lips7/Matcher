@@ -10,12 +10,15 @@ use serde::Serialize;
 
 use crate::process::{ProcessTypeBitNode, return_processed_string_to_pool, walk_process_tree};
 
-mod construction;
-mod scan;
-mod types;
+mod build;
+mod engine;
+mod rule;
+mod search;
+mod state;
 
-use types::{AsciiMatcher, NonAsciiMatcher, PatternEntry, RuleCold, RuleHot};
-pub use types::{SimpleTable, SimpleTableSerde};
+use engine::ScanPlan;
+use rule::RuleSet;
+pub use rule::{SimpleTable, SimpleTableSerde};
 
 /// A single match returned by [`SimpleMatcher::process`].
 ///
@@ -34,9 +37,7 @@ pub use types::{SimpleTable, SimpleTableSerde};
 /// ```
 #[derive(Serialize, Debug)]
 pub struct SimpleResult<'a> {
-    /// Caller-assigned identifier from the input [`SimpleTable`].
     pub word_id: u32,
-    /// The original pattern string, borrowed from the compiled rule.
     pub word: Cow<'a, str>,
 }
 
@@ -103,48 +104,66 @@ pub struct SimpleResult<'a> {
 /// ```
 #[derive(Clone)]
 pub struct SimpleMatcher {
-    process_type_tree: Vec<ProcessTypeBitNode>,
-    ascii_matcher: Option<AsciiMatcher>,
-    non_ascii_matcher: Option<NonAsciiMatcher>,
-    single_pt_index: Option<u8>,
-    ac_dedup_entries: Vec<PatternEntry>,
-    ac_dedup_ranges: Vec<(usize, usize)>,
-    rule_hot: Vec<RuleHot>,
-    rule_cold: Vec<RuleCold>,
-    /// `true` when the tree has only the root node (ProcessType::None only) and every
-    /// pattern entry is `PatternKind::Simple`. Enables a zero-overhead `is_match` fast path.
-    all_simple: bool,
+    process: ProcessPlan,
+    scan: ScanPlan,
+    rules: RuleSet,
+}
+
+#[derive(Clone)]
+pub(super) struct ProcessPlan {
+    tree: Vec<ProcessTypeBitNode>,
+    mode: SearchMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SearchMode {
+    AllSimple,
+    SingleProcessType { pt_index: u8 },
+    General,
+}
+
+impl ProcessPlan {
+    #[inline(always)]
+    pub(super) fn new(tree: Vec<ProcessTypeBitNode>, mode: SearchMode) -> Self {
+        Self { tree, mode }
+    }
+
+    #[inline(always)]
+    pub(super) fn tree(&self) -> &[ProcessTypeBitNode] {
+        &self.tree
+    }
+
+    #[inline(always)]
+    pub(super) fn mode(&self) -> SearchMode {
+        self.mode
+    }
+
+    #[inline(always)]
+    pub(super) fn is_all_simple(&self) -> bool {
+        matches!(self.mode, SearchMode::AllSimple)
+    }
+}
+
+impl SearchMode {
+    #[inline(always)]
+    pub(super) fn single_pt_index(self) -> Option<u8> {
+        match self {
+            Self::SingleProcessType { pt_index } => Some(pt_index),
+            Self::AllSimple | Self::General => None,
+        }
+    }
 }
 
 impl SimpleMatcher {
     /// Returns `true` if `text` satisfies at least one registered pattern.
-    ///
-    /// Equivalent to `!self.process(text).is_empty()`, but it can stop scanning as soon as
-    /// one rule is confirmed.
-    /// Returns `false` immediately for empty input.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "hello")
-    ///     .add_word(ProcessType::None, 2, "world")
-    ///     .build();
-    ///
-    /// assert!(matcher.is_match("hello there"));
-    /// assert!(matcher.is_match("beautiful world"));
-    /// assert!(!matcher.is_match("hi planet!"));
-    /// ```
     pub fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
         }
-        if self.all_simple {
+        if self.process.is_all_simple() {
             return self.is_match_simple(text);
         }
-        if self.single_pt_index.is_some() {
+        if self.process.mode().single_pt_index().is_some() {
             self.is_match_inner::<true>(text)
         } else {
             self.is_match_inner::<false>(text)
@@ -152,25 +171,6 @@ impl SimpleMatcher {
     }
 
     /// Returns all patterns that match `text`.
-    ///
-    /// Unlike [`is_match`](Self::is_match), this always completes the full two-pass scan
-    /// and collects every satisfied rule. Returns an empty `Vec` for empty input.
-    /// Results are appended in the matcher's discovery order. That order is deterministic
-    /// for one constructed matcher, but it is not a public sorting guarantee.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "apple")
-    ///     .add_word(ProcessType::None, 2, "banana")
-    ///     .build();
-    ///
-    /// let results = matcher.process("I have an apple and a banana");
-    /// assert_eq!(results.len(), 2);
-    /// ```
     pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         let mut results = Vec::new();
         self.process_into(text, &mut results);
@@ -178,33 +178,15 @@ impl SimpleMatcher {
     }
 
     /// Appends all patterns that match `text` to `results`.
-    ///
-    /// Like [`process`](Self::process) but reuses a caller-supplied buffer, avoiding a
-    /// `Vec` allocation per call. Useful in high-throughput loops where the caller can
-    /// clear and reuse the same `Vec` across iterations.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, SimpleResult};
-    ///
-    /// let matcher = SimpleMatcherBuilder::new()
-    ///     .add_word(ProcessType::None, 1, "apple")
-    ///     .build();
-    ///
-    /// let mut results: Vec<SimpleResult> = Vec::new();
-    /// matcher.process_into("I have an apple", &mut results);
-    /// assert_eq!(results.len(), 1);
-    /// ```
     pub fn process_into<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
         if text.is_empty() {
             return;
         }
-        if self.all_simple {
+        if self.process.is_all_simple() {
             return self.process_simple(text, results);
         }
         let (processed, _) =
-            walk_process_tree::<false, _>(&self.process_type_tree, text, &mut |_, _, _, _| false);
+            walk_process_tree::<false, _>(self.process.tree(), text, &mut |_, _, _, _| false);
         self.process_preprocessed_into(&processed, results);
         return_processed_string_to_pool(processed);
     }
