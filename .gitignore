@@ -44,3 +44,6 @@ matcher_java/src/main/resources/*
 matcher_java/*.class
 matcher_java/.classpath
 matcher_java/.project
+
+# Local benchmark run sets
+matcher_rs/bench_records/*/

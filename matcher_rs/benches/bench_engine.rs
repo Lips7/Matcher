@@ -15,6 +15,7 @@ use daachorse::{
 use divan::Bencher;
 use divan::counter::BytesCount;
 use std::collections::HashSet;
+use std::env;
 use std::hint::black_box;
 
 const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
@@ -241,6 +242,9 @@ define_search_bench!(search_mixed_en, mixed_patterns, EN_HAYSTACK);
 define_search_bench!(search_mixed_cn, mixed_patterns, CN_HAYSTACK);
 
 fn main() {
-    print_memory_report();
+    if env::args().any(|arg| arg == "--memory-report") {
+        print_memory_report();
+        return;
+    }
     divan::main();
 }

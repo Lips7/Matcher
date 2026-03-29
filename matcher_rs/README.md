@@ -108,15 +108,42 @@ Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) again
 
 Full records are stored in [bench_records/](./bench_records/). Latest: [latest.txt](./bench_records/latest.txt).
 
-To compare two benchmark records:
+For local benchmarking, use the helper script or the matching `Makefile` target instead of ad hoc `cargo bench` runs:
 
 ```shell
-python matcher_rs/scripts/compare_benchmarks.py \
+python3 matcher_rs/scripts/run_benchmarks.py --preset search
+make bench-build
+make bench-engine-search
+```
+
+The local protocol is:
+
+* run benchmarks serially only
+* benchmark only the preset affected by your change
+* let the script warm the binary and collect repeated runs
+* compare aggregated run sets, not a single median from one output file
+* prefer plugged-in power, a warm build cache, and low background load
+* treat rows marked noisy as informational rather than regression signals
+
+Each run creates a timestamped directory under `matcher_rs/bench_records/` with raw outputs, `aggregate.json`, and `summary.txt`.
+
+To compare two aggregated run sets:
+
+```shell
+python3 matcher_rs/scripts/compare_benchmark_runs.py \
+  "matcher_rs/bench_records/2026-03-29_17-00-00_search" \
+  "matcher_rs/bench_records/2026-03-29_17-20-00_search"
+```
+
+If you need a direct comparison between two single raw benchmark outputs, keep using:
+
+```shell
+python3 matcher_rs/scripts/compare_benchmarks.py \
   "matcher_rs/bench_records/2026-03-10 12:22:24.txt" \
   "matcher_rs/bench_records/2026-03-11 23:16:38.txt"
 ```
 
-The script treats the first file as the baseline and prints two sections: `Regression` and `Improvement`, using median latency by default.
+The single-file script treats the first file as the baseline and prints `Regression` and `Improvement`. The run-set script suppresses noisy rows by default and compares aggregate medians across repeats.
 
 ## Contributing
 

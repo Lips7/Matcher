@@ -4,7 +4,8 @@ EXT := $(shell \
 	elif [ "$(OS)" = "linux" ]; then echo "so"; \
 	else echo "dll"; fi)
 
-.PHONY: build update lint lint-rs lint-py lint-java test test-rs test-py test-java test-c
+.PHONY: build update lint lint-rs lint-py lint-java test test-rs test-py test-java test-c \
+	bench-search bench-build bench-engine-search bench-engine-build bench-compare
 
 # -- Build ---------------------------------------------------------------------
 
@@ -55,3 +56,22 @@ test-c:
 	$(CC) -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
 		matcher_c/tests/test_matcher.c -o matcher_c/tests/test_matcher
 	./matcher_c/tests/test_matcher
+
+# -- Bench ---------------------------------------------------------------------
+
+bench-search:
+	python3 matcher_rs/scripts/run_benchmarks.py --preset search
+
+bench-build:
+	python3 matcher_rs/scripts/run_benchmarks.py --preset build
+
+bench-engine-search:
+	python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search
+
+bench-engine-build:
+	python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build
+
+bench-compare:
+	@test -n "$(BASELINE)" || (echo "BASELINE is required"; exit 1)
+	@test -n "$(CANDIDATE)" || (echo "CANDIDATE is required"; exit 1)
+	python3 matcher_rs/scripts/compare_benchmark_runs.py "$(BASELINE)" "$(CANDIDATE)"

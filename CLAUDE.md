@@ -36,12 +36,12 @@ cd matcher_py && uv sync && uv run pytest
 cd matcher_py && uv run ruff check --fix && uv run ty check
 
 # Benchmarks (two targets: bench, bench_engine)
-cargo bench -p matcher_rs                      # All benchmarks (avoids Python linker errors)
-cargo bench -p matcher_rs --bench bench        # Main benchmark suite only
-cargo bench -p matcher_rs -- text_process      # Specific benchmark group
-cargo bench -p matcher_rs > baseline.txt       # save baseline
-cargo bench -p matcher_rs > new.txt            # run new benchmark
-python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # compare results
+python3 matcher_rs/scripts/run_benchmarks.py --preset search         # Main throughput workflow
+python3 matcher_rs/scripts/run_benchmarks.py --preset build          # Matcher construction workflow
+python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search  # Raw engine throughput workflow
+python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build   # Raw engine build workflow
+python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>
+python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # Raw file-to-file fallback
 
 # Profiling (uses release + debug symbols)
 cargo build --profile profiling -p matcher_rs
@@ -127,4 +127,4 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 ## Important Notes
 
-- ALWAYS run benchmarks to measure baseline performance before making optimizations, run it again after changes. Use `cargo bench -p matcher_rs` and the provided comparison script.
+- ALWAYS run benchmarks to measure baseline performance before making optimizations, run them again after changes, and compare repeated-run aggregates with `run_benchmarks.py` plus `compare_benchmark_runs.py`.
