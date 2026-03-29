@@ -100,7 +100,7 @@ fn main() {
     let mut table = HashMap::new();
     table.insert(pt, map);
 
-    let matcher = SimpleMatcher::new(&table);
+    let matcher = SimpleMatcher::new(&table).unwrap();
     let haystack = if lang == "cn" {
         CN_HAYSTACK
     } else {

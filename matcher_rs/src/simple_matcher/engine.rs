@@ -33,6 +33,8 @@ use daachorse::{
     },
 };
 
+use crate::MatcherError;
+
 use super::SearchMode;
 use super::rule::{PatternEntry, PatternIndex};
 
@@ -135,16 +137,16 @@ impl ScanPlan {
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
         mode: SearchMode,
-    ) -> Self {
+    ) -> Result<Self, MatcherError> {
         let patterns = PatternIndex::new(dedup_entries);
         let value_map = patterns.build_value_map(mode);
-        let (ascii_matcher, non_ascii_matcher) = compile_automata(dedup_patterns, &value_map);
+        let (ascii_matcher, non_ascii_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
-        Self {
+        Ok(Self {
             ascii_matcher,
             non_ascii_matcher,
             patterns,
-        }
+        })
     }
 
     /// Returns the pattern metadata referenced by the compiled scan engines.
@@ -309,15 +311,14 @@ impl NonAsciiMatcher {
 /// set (ASCII + non-ASCII) so that a single charwise scan on non-ASCII input covers
 /// everything without needing the bytewise engine.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics (via `.unwrap()`) if automaton construction fails. This can only happen if the
-/// `daachorse` or `aho-corasick` builders encounter an internal error, which should not
-/// occur with well-formed pattern strings.
+/// Returns [`MatcherError`] if the `daachorse` or `aho-corasick` automaton builders
+/// encounter an internal error during construction.
 fn compile_automata(
     dedup_patterns: &[Cow<'_, str>],
     value_map: &[u32],
-) -> (Option<AsciiMatcher>, Option<NonAsciiMatcher>) {
+) -> Result<(Option<AsciiMatcher>, Option<NonAsciiMatcher>), MatcherError> {
     let mut ascii_patvals: Vec<(&str, u32)> = Vec::new();
     let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::new();
     #[cfg(feature = "dfa")]
@@ -354,7 +355,7 @@ fn compile_automata(
                     .kind(Some(AhoCorasickKind::DFA))
                     .match_kind(AhoCorasickMatchKind::Standard)
                     .build(ascii_patvals.iter().map(|(pattern, _)| pattern))
-                    .unwrap(),
+                    .map_err(MatcherError::automaton_build)?,
                 to_value: ascii_ac_to_value,
             }
         } else {
@@ -362,7 +363,7 @@ fn compile_automata(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                     .build_with_values(ascii_patvals)
-                    .unwrap(),
+                    .map_err(MatcherError::automaton_build)?,
             )
         };
 
@@ -371,7 +372,7 @@ fn compile_automata(
             DoubleArrayAhoCorasickBuilder::new()
                 .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                 .build_with_values(ascii_patvals)
-                .unwrap(),
+                .map_err(MatcherError::automaton_build)?,
         );
 
         Some(engine)
@@ -387,11 +388,11 @@ fn compile_automata(
             CharwiseDoubleArrayAhoCorasickBuilder::new()
                 .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                 .build_with_values(non_ascii_patvals.iter().copied())
-                .unwrap(),
+                .map_err(MatcherError::automaton_build)?,
         ))
     } else {
         None
     };
 
-    (ascii_matcher, non_ascii_matcher)
+    Ok((ascii_matcher, non_ascii_matcher))
 }

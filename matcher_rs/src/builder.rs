@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::{ProcessType, SimpleMatcher};
+use crate::{MatcherError, ProcessType, SimpleMatcher};
 
 /// Builder for constructing a [`SimpleMatcher`].
 ///
@@ -22,7 +22,8 @@ use crate::{ProcessType, SimpleMatcher};
 ///     .add_word(ProcessType::None, 1, "hello")
 ///     .add_word(ProcessType::None, 2, "world")
 ///     .add_word(ProcessType::Fanjian, 3, "你好")
-///     .build();
+///     .build()
+///     .unwrap();
 ///
 /// assert!(matcher.is_match("hello world"));
 /// ```
@@ -43,7 +44,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     ///
     /// let builder = SimpleMatcherBuilder::new();
     /// // The builder starts with no registered patterns.
-    /// let matcher = builder.build();
+    /// let matcher = builder.build().unwrap();
     /// assert!(!matcher.is_match("anything"));
     /// ```
     pub fn new() -> Self {
@@ -79,7 +80,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// // AND: both "apple" and "pie" must appear
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "apple&pie")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// assert!(matcher.is_match("apple and pie"));
     /// assert!(!matcher.is_match("apple only"));
@@ -87,7 +89,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// // NOT: "banana" must appear, "peel" must be absent
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "banana~peel")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// assert!(matcher.is_match("banana split"));
     /// assert!(!matcher.is_match("banana peel"));
@@ -95,7 +98,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// // Combined: "fox" AND "jump" present, "lazy" absent
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "fox&jump~lazy")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// assert!(matcher.is_match("the fox can jump"));
     /// assert!(!matcher.is_match("the lazy fox can jump"));
@@ -111,7 +115,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     ///     .add_word(ProcessType::None | ProcessType::Fanjian, 1, "你好")
     ///     // Match after deleting noise characters and normalizing
     ///     .add_word(ProcessType::FanjianDeleteNormalize, 2, "测试")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// // Raw "你好" matches via the ProcessType::None path
     /// assert!(matcher.is_match("你好世界"));
@@ -139,14 +144,14 @@ impl<'a> SimpleMatcherBuilder<'a> {
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// // Reuse the matcher across many searches.
     /// assert!(matcher.is_match("hello world"));
     /// assert!(!matcher.is_match("goodbye"));
     /// ```
-    #[must_use = "building a matcher is expensive; discarding it wastes the compilation work"]
-    pub fn build(self) -> SimpleMatcher {
+    pub fn build(self) -> Result<SimpleMatcher, MatcherError> {
         SimpleMatcher::new(&self.word_map)
     }
 }

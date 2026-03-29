@@ -45,7 +45,8 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 42, "hello")
 ///     .add_word(ProcessType::None, 7, "world")
-///     .build();
+///     .build()
+///     .unwrap();
 ///
 /// let results = matcher.process("hello world");
 /// assert_eq!(results.len(), 2);
@@ -126,7 +127,8 @@ pub struct SimpleResult<'a> {
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "apple&pie")
 ///     .add_word(ProcessType::None, 2, "banana~peel")
-///     .build();
+///     .build()
+///     .unwrap();
 ///
 /// assert!(matcher.is_match("I like apple and pie"));
 /// assert!(!matcher.is_match("I like banana peel"));
@@ -236,7 +238,8 @@ impl SimpleMatcher {
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "foo&bar")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// assert!(matcher.is_match("hello world"));
     /// assert!(matcher.is_match("foo and bar"));
@@ -276,7 +279,8 @@ impl SimpleMatcher {
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "world")
     ///     .add_word(ProcessType::None, 3, "missing")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// let results = matcher.process("hello world");
     /// assert_eq!(results.len(), 2);
@@ -313,7 +317,8 @@ impl SimpleMatcher {
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "world")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// // Reuse the same buffer for multiple searches.
     /// let mut results: Vec<SimpleResult<'_>> = Vec::new();

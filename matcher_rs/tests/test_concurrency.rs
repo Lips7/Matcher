@@ -18,7 +18,8 @@ fn test_multithreaded_matching() {
             .add_word(ProcessType::None, 1, "apple")
             .add_word(ProcessType::None, 2, "banana")
             .add_word(ProcessType::Fanjian, 3, "你好")
-            .build(),
+            .build()
+            .unwrap(),
     );
 
     let mut handles = Vec::new();
@@ -51,7 +52,8 @@ fn test_concurrent_same_state_matrix() {
     let matcher = Arc::new(
         SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, "a&b")
-            .build(),
+            .build()
+            .unwrap(),
     );
 
     let h1 = thread::spawn({
@@ -85,7 +87,8 @@ fn test_concurrent_different_matchers() {
         SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, "alpha")
             .add_word(ProcessType::None, 2, "beta")
-            .build(),
+            .build()
+            .unwrap(),
     );
 
     let mut large_builder = SimpleMatcherBuilder::new();
@@ -96,7 +99,7 @@ fn test_concurrent_different_matchers() {
     for (i, w) in large_words.iter().enumerate() {
         large_builder = large_builder.add_word(ProcessType::None, i as u32, w);
     }
-    let large = Arc::new(large_builder.build());
+    let large = Arc::new(large_builder.build().unwrap());
 
     let h1 = thread::spawn({
         let m = Arc::clone(&small);

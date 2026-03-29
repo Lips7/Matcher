@@ -11,7 +11,8 @@ fn test_search_mode_all_simple() {
         .add_word(ProcessType::None, 1, "alpha")
         .add_word(ProcessType::None, 2, "beta")
         .add_word(ProcessType::None, 3, "gamma")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(!matcher.is_match(""), "empty text always false");
     assert!(matcher.is_match("alpha beta gamma"));
@@ -27,7 +28,8 @@ fn test_search_mode_single_process_type() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "hello&world")
         .add_word(ProcessType::Delete, 2, "foo")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(
         matcher.is_match("h.e.l.l.o w.o.r.l.d"),
@@ -43,7 +45,8 @@ fn test_search_mode_general() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::Fanjian, 2, "你好")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("hello"));
     assert!(matcher.is_match("妳好"));
@@ -60,19 +63,22 @@ fn test_search_mode_equivalence() {
     let all_simple = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "alpha")
         .add_word(ProcessType::None, 2, "beta")
-        .build();
+        .build()
+        .unwrap();
 
     // SingleProcessType: same literals under Delete (text already clean, no noise)
     let single_pt = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "alpha")
         .add_word(ProcessType::Delete, 2, "beta")
-        .build();
+        .build()
+        .unwrap();
 
     // General: split across two PTs
     let general = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "alpha")
         .add_word(ProcessType::Delete, 2, "beta")
-        .build();
+        .build()
+        .unwrap();
 
     let texts = ["alpha", "beta", "alpha beta", "gamma", ""];
     for text in texts {
@@ -126,7 +132,8 @@ fn test_direct_rule_bit_fast_path() {
     let simple = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "world")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(simple.is_match("hello world"));
     let results = simple.process("hello world");
@@ -137,7 +144,8 @@ fn test_direct_rule_bit_fast_path() {
     let mixed = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "hello&world")
-        .build();
+        .build()
+        .unwrap();
 
     let r1 = mixed.process("hello");
     assert_eq!(r1.len(), 1);
@@ -156,7 +164,8 @@ fn test_shared_subpattern_across_rules() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello&world")
         .add_word(ProcessType::None, 2, "hello&earth")
-        .build();
+        .build()
+        .unwrap();
 
     let r1 = matcher.process("hello world");
     assert_eq!(r1.len(), 1);
@@ -182,7 +191,8 @@ fn test_matrix_repeated_and_segments() {
     // "a&a&b&b&b" -> and_splits: {a:2, b:3} -> use_matrix because counts != 1
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "a&a&b&b&b")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("a a b b b"), "2a + 3b should match");
     assert!(!matcher.is_match("a b b b"), "1a + 3b should not match");
@@ -200,7 +210,8 @@ fn test_matrix_triggered_by_not_count() {
     // Veto fires only when "b" appears twice (counter goes from -1 -> 0 -> 1 > 0)
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "a~b~b")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("a"), "a without b should match");
     assert!(
@@ -225,7 +236,8 @@ fn test_matrix_combined_with_not_veto() {
 
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, &pattern)
-        .build();
+        .build()
+        .unwrap();
 
     let all_ands = and_parts.join(" ");
     assert!(
@@ -244,14 +256,16 @@ fn test_bitmask_boundary_64_vs_65() {
     let pattern_64 = parts_64.join("&");
     let matcher_64 = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, &pattern_64)
-        .build();
+        .build()
+        .unwrap();
 
     // 65 unique AND segments -> matrix fallback
     let parts_65: Vec<String> = (0..65).map(|i| format!("w{i}")).collect();
     let pattern_65 = parts_65.join("&");
     let matcher_65 = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, &pattern_65)
-        .build();
+        .build()
+        .unwrap();
 
     let text_64 = parts_64.join(" ");
     let text_65 = parts_65.join(" ");
@@ -287,7 +301,8 @@ fn test_and_count_one_not_matrix() {
 
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, &pattern)
-        .build();
+        .build()
+        .unwrap();
 
     let text_all = parts.join(" ");
     assert!(matcher.is_match(&text_all), "all present -> match");
@@ -320,7 +335,8 @@ fn test_delete_adjusted_pattern_indexing() {
     // Pattern "ab" under Delete: stored verbatim in AC, text is delete-stripped before scan.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "ab")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("ab"), "direct match");
     assert!(matcher.is_match("a*b"), "noise char stripped");
@@ -334,7 +350,8 @@ fn test_fanjian_delete_pattern_indexing() {
     // Fanjian|Delete: pattern is Fanjian-emitted (你好), text gets both Fanjian + Delete.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "你好")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("你好"), "simplified direct");
     assert!(matcher.is_match("妳好"), "traditional -> Fanjian path");
@@ -358,7 +375,8 @@ fn test_overlapping_words() {
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "hello world")
         .add_word(ProcessType::None, 3, "world")
-        .build();
+        .build()
+        .unwrap();
 
     let results = matcher.process("hello world");
     let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
@@ -372,7 +390,8 @@ fn test_mixed_ascii_and_cjk_rules_on_non_ascii_text() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "abc")
         .add_word(ProcessType::None, 2, "你好")
-        .build();
+        .build()
+        .unwrap();
 
     let mut ids: Vec<u32> = matcher
         .process("你好 abc")
@@ -394,7 +413,8 @@ fn test_ascii_only_text_routing() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "你好")
-        .build();
+        .build()
+        .unwrap();
 
     // Pure ASCII text: ASCII engine handles "hello", charwise engine handles "你好"
     let r1 = matcher.process("hello world");
@@ -420,7 +440,8 @@ fn test_ascii_engine_only_when_no_non_ascii_patterns() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "world")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(
         matcher.is_match("hello 世界"),

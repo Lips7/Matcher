@@ -26,7 +26,7 @@ proptest! {
             let mut map = HashMap::new();
             map.insert(ptype, inner_map.clone());
 
-            let matcher = SimpleMatcher::new(&map);
+            let matcher = SimpleMatcher::new(&map).unwrap();
             let _ = matcher.is_match(&text);
             let results = matcher.process(&text);
 
@@ -45,7 +45,7 @@ proptest! {
         for (i, word) in words.iter().enumerate() {
             builder = builder.add_word(ProcessType::None, i as u32, word);
         }
-        let matcher = builder.build();
+        let matcher = builder.build().unwrap();
 
         let is_match = matcher.is_match(&text);
         let results = matcher.process(&text);
@@ -64,7 +64,8 @@ proptest! {
     ) {
         let matcher = SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
-            .build();
+            .build()
+            .unwrap();
 
         let results = matcher.process(&text);
         let mut into_results = Vec::new();
@@ -84,9 +85,11 @@ proptest! {
     ) {
         let matcher = SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
-            .build();
+            .build()
+            .unwrap();
 
         let _ = matcher.is_match(&text);
         let _ = matcher.process(&text);
     }
+
 }

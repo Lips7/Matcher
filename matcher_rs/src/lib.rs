@@ -36,7 +36,8 @@
 //!     .add_word(ProcessType::None, 3, "apple&pie")
 //!     // "banana" matches only when "peel" is absent
 //!     .add_word(ProcessType::None, 4, "banana~peel")
-//!     .build();
+//!     .build()
+//!     .unwrap();
 //!
 //! assert!(matcher.is_match("hello world"));
 //! assert!(matcher.is_match("apple and pie"));
@@ -100,6 +101,35 @@
 /// where many threads match concurrently.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+use std::fmt;
+
+/// Error returned when [`SimpleMatcher`] construction fails.
+///
+/// Currently this only wraps automaton-build errors from the underlying
+/// Aho-Corasick libraries. The type is an opaque struct (not an enum) to
+/// avoid coupling the public API to third-party error types, and to allow
+/// adding new error variants in the future without breaking callers.
+#[derive(Debug, Clone)]
+pub struct MatcherError {
+    message: String,
+}
+
+impl fmt::Display for MatcherError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for MatcherError {}
+
+impl MatcherError {
+    fn automaton_build(source: impl fmt::Display) -> Self {
+        Self {
+            message: format!("automaton build failed: {source}"),
+        }
+    }
+}
 
 mod builder;
 pub use builder::SimpleMatcherBuilder;

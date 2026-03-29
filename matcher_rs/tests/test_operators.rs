@@ -18,7 +18,8 @@ fn test_combination() {
             (5, "hello&world~word"),
             (6, "hello&world~word~word"),
         ]),
-    )]));
+    )]))
+    .unwrap();
     assert!(
         simple_matcher.is_match("hello world"),
         "hello&world should match when both present"
@@ -44,7 +45,8 @@ fn test_complex_logical_operators() {
         .add_word(ProcessType::None, 3, "a&b~c&d")
         // Overlapping sub-patterns
         .add_word(ProcessType::None, 4, "abc&bc&c")
-        .build();
+        .build()
+        .unwrap();
 
     // ID 1: "a&a&a"
     assert!(matcher.is_match("a a a"), "a&a&a should match 'a a a'");
@@ -74,7 +76,8 @@ fn test_complex_logical_operators() {
 fn test_count_based_and_logic() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "a&a&b")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(
         matcher.is_match("a a b"),
@@ -95,7 +98,7 @@ fn test_not_logic_ordering() {
     // NOT logic works even if the NOT token appears BEFORE the positive token.
     let mut builder = SimpleMatcherBuilder::new();
     builder = builder.add_word(ProcessType::None, 1, "hello~world");
-    let matcher = builder.build();
+    let matcher = builder.build().unwrap();
 
     // "world hello" -> "world" triggers NOT, "hello" triggers positive.
     assert_eq!(matcher.process("world hello").len(), 0);
@@ -106,7 +109,8 @@ fn test_not_logic_ordering() {
 fn test_not_can_veto_after_positive_completion() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello~world")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(
         !matcher.is_match("hello hello world"),
@@ -121,7 +125,8 @@ fn test_pure_not_rule_never_fires() {
     // If "bad" is absent, the rule is never touched. Either way, no match.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "~bad")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(
         !matcher.is_match("good text"),
@@ -145,7 +150,8 @@ fn test_operator_only_patterns() {
     let matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
-    )]));
+    )]))
+    .unwrap();
 
     assert!(!matcher.is_match("hello world"));
     assert!(!matcher.is_match("& ~ && ~~"));
@@ -166,7 +172,7 @@ fn test_large_overlapping_and_not_set() {
     for (i, s) in storage.iter().enumerate() {
         builder = builder.add_word(ProcessType::None, (i + 100) as u32, s);
     }
-    let matcher = builder.build();
+    let matcher = builder.build().unwrap();
 
     assert!(matcher.is_match("word110 word111"));
     assert!(!matcher.is_match("word110 word111 not110"));
@@ -185,7 +191,8 @@ fn test_large_overlapping_and_not_set() {
 fn test_and_not_segment_order_independence() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "x&y&z~a~b")
-        .build();
+        .build()
+        .unwrap();
 
     // All 6 permutations of {x, y, z} should match (no a/b present)
     let permutations = ["x y z", "x z y", "y x z", "y z x", "z x y", "z y x"];

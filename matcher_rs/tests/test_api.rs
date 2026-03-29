@@ -11,14 +11,16 @@ fn test_init() {
     let _ = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "")]),
-    )]));
+    )]))
+    .unwrap();
     let _ = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "hello"), (2, "world")]),
-    )]));
+    )]))
+    .unwrap();
     // Boundary conditions
     let empty_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
-    let empty_matcher = SimpleMatcher::new(&empty_map);
+    let empty_matcher = SimpleMatcher::new(&empty_map).unwrap();
     assert!(
         !empty_matcher.is_match("test"),
         "empty matcher should never match"
@@ -36,7 +38,8 @@ fn test_duplicate_word_id_same_process_type() {
     let matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "banana")]),
-    )]));
+    )]))
+    .unwrap();
 
     assert!(
         !matcher.is_match("apple"),
@@ -59,7 +62,8 @@ fn test_builder() {
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "world")
         .add_word(ProcessType::Delete, 3, "foo")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("hello"), "should match 'hello'");
     assert!(matcher.is_match("world"), "should match 'world'");
@@ -75,7 +79,7 @@ fn test_builder() {
 
 #[test]
 fn test_builder_zero_words() {
-    let matcher = SimpleMatcherBuilder::new().build();
+    let matcher = SimpleMatcherBuilder::new().build().unwrap();
 
     assert!(!matcher.is_match("anything"));
     assert!(!matcher.is_match(""));
@@ -92,7 +96,7 @@ fn test_builder_many_words() {
     for (i, word) in storage.iter().enumerate() {
         builder = builder.add_word(ProcessType::None, i as u32, word);
     }
-    let matcher = builder.build();
+    let matcher = builder.build().unwrap();
 
     assert!(matcher.is_match("word999"), "specific word matches");
     assert!(!matcher.is_match("wordXXX"), "absent word doesn't match");
@@ -111,7 +115,8 @@ fn test_builder_duplicate_overwrite() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "apple")
         .add_word(ProcessType::None, 1, "banana")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(!matcher.is_match("apple"), "overwritten");
     assert!(matcher.is_match("banana"), "final pattern active");
@@ -127,18 +132,21 @@ fn test_empty_text_matching() {
     // AllSimple
     let all_simple = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
-        .build();
+        .build()
+        .unwrap();
 
     // SingleProcessType (with operator)
     let single_pt = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "hello&world")
-        .build();
+        .build()
+        .unwrap();
 
     // General (multiple PTs)
     let general = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::Fanjian, 2, "你好")
-        .build();
+        .build()
+        .unwrap();
 
     for (name, m) in [
         ("AllSimple", &all_simple),
@@ -159,7 +167,8 @@ fn test_process_into_reuse() {
         .add_word(ProcessType::None, 1, "apple")
         .add_word(ProcessType::None, 2, "banana")
         .add_word(ProcessType::None, 3, "cherry")
-        .build();
+        .build()
+        .unwrap();
 
     // process_into on empty vec matches process
     let expected = matcher.process("apple banana");
@@ -196,7 +205,8 @@ fn test_result_word_field_correctness() {
         .add_word(ProcessType::None, 1, "apple&pie")
         .add_word(ProcessType::None, 2, "hello~world")
         .add_word(ProcessType::None, 3, "a&b~c")
-        .build();
+        .build()
+        .unwrap();
 
     // "apple&pie" match
     let r1 = matcher.process("apple pie");
@@ -222,7 +232,8 @@ fn test_same_word_id_different_process_types() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "apple")
         .add_word(ProcessType::Delete, 1, "banana")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match("apple"));
     assert!(matcher.is_match("b.a.n.a.n.a"));
@@ -270,7 +281,8 @@ fn test_whitespace_handling() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, " ")
         .add_word(ProcessType::None, 2, "hello ")
-        .build();
+        .build()
+        .unwrap();
 
     assert!(matcher.is_match(" "), "single space pattern should match");
     assert!(
@@ -287,7 +299,8 @@ fn test_whitespace_handling() {
 fn test_very_long_text() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "needle")
-        .build();
+        .build()
+        .unwrap();
 
     let long_text = "haystack ".repeat(10000) + "needle" + &" haystack".repeat(10000);
     assert!(matcher.is_match(&long_text));
@@ -300,7 +313,7 @@ fn test_process_result_order_stability() {
     for (i, w) in words.iter().enumerate() {
         builder = builder.add_word(ProcessType::None, i as u32, w);
     }
-    let matcher = builder.build();
+    let matcher = builder.build().unwrap();
 
     let text = words.join(" ");
     let baseline: Vec<u32> = matcher
