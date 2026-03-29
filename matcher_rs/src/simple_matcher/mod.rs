@@ -57,7 +57,7 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// // word is a Cow that borrows from the matcher — no extra allocation.
 /// assert!(results.iter().any(|r| r.word == "hello"));
 /// ```
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct SimpleResult<'a> {
     /// The caller-assigned identifier for the matched rule, as passed to
     /// [`SimpleMatcherBuilder::add_word`](crate::SimpleMatcherBuilder::add_word) or

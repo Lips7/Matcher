@@ -2,6 +2,15 @@ use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 use std::sync::Arc;
 use std::thread;
 
+const _: () = {
+    #[allow(dead_code)]
+    fn assert_send_sync<T: Send + Sync>() {}
+    #[allow(dead_code)]
+    fn check() {
+        assert_send_sync::<matcher_rs::SimpleMatcher>();
+    }
+};
+
 #[test]
 fn test_multithreaded_matching() {
     let matcher = Arc::new(
