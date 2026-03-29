@@ -68,6 +68,9 @@ pub(crate) struct NormalizeMatcher {
     /// Replacement strings parallel to the automaton's pattern indices.
     /// `replace_list[match.pattern_index]` is the output for a given match.
     replace_list: Vec<&'static str>,
+    /// Pre-computed: true when every entry in `replace_list` is pure ASCII.
+    /// Allows skipping per-replacement ASCII checks during the hot-path replace loop.
+    all_replacements_ascii: bool,
 }
 
 /// Iterator adapter over normalization matches, yielding `(start, end, pattern_index)` tuples.
@@ -129,21 +132,29 @@ impl NormalizeMatcher {
     /// appends the replacement string from `replace_list[pattern_index]`.
     ///
     /// Returns `None` when no pattern matched, so callers can preserve
-    /// borrowed input without allocation.
-    pub(crate) fn replace(&self, text: &str) -> Option<String> {
+    /// borrowed input without allocation. The `bool` indicates whether the
+    /// output is pure ASCII, tracked incrementally to avoid a redundant scan.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
         let mut iter = self.find_iter(text);
         if let Some((start, end, index)) = iter.next() {
             let mut result = crate::process::variant::get_string_from_pool(text.len());
-            result.push_str(&text[..start]);
+            let mut is_ascii = self.all_replacements_ascii;
+            let prefix = &text[..start];
+            is_ascii = is_ascii && prefix.is_ascii();
+            result.push_str(prefix);
             result.push_str(self.replace_list[index]);
             let mut last_end = end;
             for (start, end, index) in iter {
-                result.push_str(&text[last_end..start]);
+                let gap = &text[last_end..start];
+                is_ascii = is_ascii && gap.is_ascii();
+                result.push_str(gap);
                 result.push_str(self.replace_list[index]);
                 last_end = end;
             }
-            result.push_str(&text[last_end..]);
-            Some(result)
+            let suffix = &text[last_end..];
+            is_ascii = is_ascii && suffix.is_ascii();
+            result.push_str(suffix);
+            Some((result, is_ascii))
         } else {
             None
         }
@@ -175,6 +186,7 @@ impl NormalizeMatcher {
                         .unwrap(),
                 ),
                 replace_list: Vec::new(),
+                all_replacements_ascii: true,
             }
         }
         #[cfg(feature = "dfa")]
@@ -188,6 +200,7 @@ impl NormalizeMatcher {
                         .unwrap(),
                 ),
                 replace_list: Vec::new(),
+                all_replacements_ascii: true,
             }
         }
     }
@@ -197,6 +210,7 @@ impl NormalizeMatcher {
     /// `replace_list[i]` must be the replacement for pattern `i` in the
     /// automaton. Consumes and returns `self` for builder-style chaining.
     pub(crate) fn with_replacements(mut self, replace_list: Vec<&'static str>) -> Self {
+        self.all_replacements_ascii = replace_list.iter().all(|s| s.is_ascii());
         self.replace_list = replace_list;
         self
     }
@@ -220,6 +234,7 @@ impl NormalizeMatcher {
                 CharwiseDoubleArrayAhoCorasick::<u32>::deserialize_unchecked(bytes).0
             }),
             replace_list: Vec::new(),
+            all_replacements_ascii: true,
         }
     }
 

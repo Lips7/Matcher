@@ -83,7 +83,7 @@ impl TransformStep {
     /// - **Fanjian** — always sets `is_ascii = false` (output may contain CJK).
     /// - **Delete** — ORs the parent flag with its own scan (deletion can only remove
     ///   non-ASCII chars, so if parent was ASCII the output is too).
-    /// - **Normalize** — rescans the output with `str::is_ascii()`.
+    /// - **Normalize** — tracked incrementally during the replacement loop.
     /// - **PinYin / PinYinChar** — always sets `is_ascii = true` (Pinyin is ASCII).
     #[inline(always)]
     pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput {
@@ -99,10 +99,7 @@ impl TransformStep {
             ),
             Self::Normalize(matcher) => matcher.replace(text).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),
-                |changed| {
-                    let is_ascii = changed.is_ascii();
-                    StepOutput::changed(changed, is_ascii)
-                },
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
             Self::PinYin(matcher) | Self::PinYinChar(matcher) => matcher.replace(text).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),

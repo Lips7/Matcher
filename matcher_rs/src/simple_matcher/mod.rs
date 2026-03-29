@@ -255,6 +255,9 @@ impl SimpleMatcher {
             return self.is_match_simple(text);
         }
         if self.process.mode().single_pt_index().is_some() {
+            if self.process.tree().len() == 2 {
+                return self.is_match_single_step(text);
+            }
             self.is_match_inner::<true>(text)
         } else {
             self.is_match_inner::<false>(text)

@@ -27,6 +27,7 @@
 //! `#[thread_local]` (no cross-thread sharing) and the functions are not re-entrant.
 //! See [`SIMPLE_MATCH_STATE`] for the full safety argument.
 
+use crate::process::variant::return_string_to_pool;
 use crate::process::{ProcessedTextMasks, return_processed_string_to_pool, walk_process_tree};
 
 use super::rule::PatternDispatch;
@@ -42,6 +43,89 @@ impl SimpleMatcher {
     /// is active.
     pub(super) fn is_match_simple(&self, text: &str) -> bool {
         self.scan.is_match(text)
+    }
+
+    /// Specialized `is_match` for matchers with a single-bit ProcessType (tree = [root, child]).
+    ///
+    /// Bypasses the full `walk_process_tree` machinery: no `TRANSFORM_STATE` TLS access,
+    /// no masks pool, no `scanned_masks` tracking, no `dedup_insert`. Instead, applies the
+    /// single transform step directly and scans at most two texts.
+    ///
+    /// # Safety
+    ///
+    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
+    /// See module-level safety documentation.
+    #[inline(always)]
+    pub(super) fn is_match_single_step(&self, text: &str) -> bool {
+        let tree = self.process.tree();
+        debug_assert!(
+            tree.len() == 2,
+            "is_match_single_step requires exactly 2 tree nodes"
+        );
+
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
+        state.prepare(self.rules.len());
+
+        let root_is_ascii = text.is_ascii();
+        let root_mask = tree[0].folded_mask;
+        let child_node = &tree[1];
+        let child_mask = child_node.folded_mask;
+
+        // Apply the single transform step.
+        let step = child_node
+            .step
+            .expect("non-root process tree nodes always cache a transform step");
+        let output = step.apply(text, root_is_ascii);
+
+        match output.changed {
+            None => {
+                // Transform was a no-op — single unique text with merged mask.
+                let merged_mask = root_mask | child_mask;
+                if merged_mask != 0 {
+                    let ctx = ScanContext {
+                        text_index: 0,
+                        process_type_mask: merged_mask,
+                        num_variants: 1,
+                        exit_early: true,
+                        is_ascii: root_is_ascii,
+                    };
+                    if self.scan_variant::<true>(text, ctx, state) {
+                        return true;
+                    }
+                }
+            }
+            Some(transformed) => {
+                // Two distinct variants: root (original) and child (transformed).
+                if root_mask != 0 {
+                    let ctx = ScanContext {
+                        text_index: 0,
+                        process_type_mask: root_mask,
+                        num_variants: 2,
+                        exit_early: true,
+                        is_ascii: root_is_ascii,
+                    };
+                    if self.scan_variant::<true>(text, ctx, state) {
+                        return_string_to_pool(transformed);
+                        return true;
+                    }
+                }
+                let ctx = ScanContext {
+                    text_index: 1,
+                    process_type_mask: child_mask,
+                    num_variants: 2,
+                    exit_early: true,
+                    is_ascii: output.is_ascii,
+                };
+                let matched = self.scan_variant::<true>(&transformed, ctx, state);
+                return_string_to_pool(transformed);
+                if matched {
+                    return true;
+                }
+            }
+        }
+
+        self.rules.has_match(state)
     }
 
     /// General `is_match` path for matchers that need transform traversal or rule state.
