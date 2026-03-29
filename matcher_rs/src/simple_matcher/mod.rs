@@ -15,6 +15,7 @@
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 
 use std::borrow::Cow;
+use std::fmt;
 
 use serde::Serialize;
 
@@ -141,6 +142,15 @@ pub struct SimpleMatcher {
     process: ProcessPlan,
     scan: ScanPlan,
     rules: RuleSet,
+}
+
+impl fmt::Debug for SimpleMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimpleMatcher")
+            .field("search_mode", &self.process.mode())
+            .field("rule_count", &self.rules.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Immutable process-type traversal plan cached inside a [`SimpleMatcher`].
