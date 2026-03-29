@@ -365,6 +365,18 @@ mod scaling {
             }
         });
     }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn process_cn(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map("cn", size, true));
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let haystack = CN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
+            }
+        });
+    }
 }
 
 // ── 5. Text Transform ───────────────────────────────────────────────────────────
