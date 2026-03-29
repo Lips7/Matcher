@@ -1,4 +1,4 @@
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
+use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
 use proptest::prelude::*;
 use std::collections::HashMap;
 
@@ -92,4 +92,160 @@ proptest! {
         let _ = matcher.process(&text);
     }
 
+    #[test]
+    fn prop_is_match_process_consistent_all_ptypes(
+        word in "[a-z]{1,30}",
+        text in "[a-z ]{0,100}"
+    ) {
+        for ptype in [
+            ProcessType::None,
+            ProcessType::Fanjian,
+            ProcessType::Delete,
+            ProcessType::Normalize,
+            ProcessType::PinYin,
+            ProcessType::PinYinChar,
+            ProcessType::DeleteNormalize,
+            ProcessType::FanjianDeleteNormalize,
+        ] {
+            let matcher = SimpleMatcherBuilder::new()
+                .add_word(ptype, 1, &word)
+                .build()
+                .unwrap();
+
+            let is_match = matcher.is_match(&text);
+            let results = matcher.process(&text);
+            prop_assert_eq!(
+                is_match,
+                !results.is_empty(),
+                "is_match/process mismatch for {:?}", ptype
+            );
+        }
+    }
+
+    #[test]
+    fn prop_search_mode_equivalence(
+        word in "[a-z]{1,30}",
+        text in "[a-z ]{0,100}"
+    ) {
+        // AllSimple path: single ProcessType::None, pure literal
+        let simple = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &word)
+            .build()
+            .unwrap();
+
+        // General path: add a second ProcessType to force General mode
+        let general = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &word)
+            .add_word(ProcessType::Fanjian, 2, &word)
+            .build()
+            .unwrap();
+
+        prop_assert_eq!(
+            simple.is_match(&text),
+            general.is_match(&text),
+            "AllSimple vs General is_match disagree"
+        );
+
+        // Both should find word_id=1 if the word appears
+        let simple_ids: Vec<u32> = simple.process(&text).iter().map(|r| r.word_id).collect();
+        let general_ids: Vec<u32> = general.process(&text).iter().map(|r| r.word_id).collect();
+        if simple_ids.contains(&1) {
+            prop_assert!(
+                general_ids.contains(&1),
+                "General path missed word_id=1 that AllSimple found"
+            );
+        }
+    }
+
+    #[test]
+    fn prop_deterministic(
+        word in "[a-z]{1,30}",
+        text in "[a-z ]{0,100}"
+    ) {
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &word)
+            .build()
+            .unwrap();
+
+        let r1 = matcher.process(&text);
+        let r2 = matcher.process(&text);
+        prop_assert_eq!(r1, r2, "process() must be deterministic");
+    }
+
+    #[test]
+    fn prop_not_veto_consistent(
+        positive in "[a-z]{1,20}",
+        negative in "[a-z]{1,20}",
+        prefix in "[a-z ]{0,30}",
+        suffix in "[a-z ]{0,30}"
+    ) {
+        let pattern = format!("{}~{}", positive, negative);
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &pattern)
+            .build()
+            .unwrap();
+
+        // Text that contains the negative substring must not fire
+        let text_with_neg = format!("{}{}{}{}", prefix, positive, negative, suffix);
+        if text_with_neg.contains(&negative) && text_with_neg.contains(&positive) {
+            prop_assert!(
+                !matcher.is_match(&text_with_neg),
+                "NOT veto should prevent match when negative present"
+            );
+        }
+    }
+
+    #[test]
+    fn prop_builder_vs_hashmap_equivalent(
+        word in "[a-z]{1,30}",
+        text in "[a-z ]{0,100}"
+    ) {
+        let from_builder = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &word)
+            .build()
+            .unwrap();
+
+        let from_map = SimpleMatcher::new(&HashMap::from([(
+            ProcessType::None,
+            HashMap::from([(1u32, word.as_str())]),
+        )]))
+        .unwrap();
+
+        prop_assert_eq!(
+            from_builder.is_match(&text),
+            from_map.is_match(&text),
+            "builder vs hashmap is_match disagree"
+        );
+        prop_assert_eq!(
+            from_builder.process(&text),
+            from_map.process(&text),
+            "builder vs hashmap process disagree"
+        );
+    }
+
+    #[test]
+    fn prop_process_into_appends(
+        word in "[a-z]{1,30}",
+        text in "[a-z ]{0,100}"
+    ) {
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, &word)
+            .build()
+            .unwrap();
+
+        // Pre-seed with a sentinel result
+        let sentinel = SimpleResult {
+            word_id: 9999,
+            word: std::borrow::Cow::Borrowed("sentinel"),
+        };
+        let mut results: Vec<SimpleResult<'_>> = vec![sentinel];
+        matcher.process_into(&text, &mut results);
+
+        let expected = matcher.process(&text);
+        // First element should be the sentinel
+        prop_assert_eq!(results[0].word_id, 9999);
+        prop_assert_eq!(&*results[0].word, "sentinel");
+        // Remaining elements should match process() output
+        prop_assert_eq!(&results[1..], expected.as_slice());
+    }
 }
