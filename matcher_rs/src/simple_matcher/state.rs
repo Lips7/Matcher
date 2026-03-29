@@ -224,6 +224,7 @@ impl SimpleMatchState {
     #[inline(always)]
     pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
         debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
         let word_state = unsafe { self.word_states.get_unchecked(rule_idx) };
         word_state.positive_generation == self.generation
             && word_state.not_generation != self.generation
@@ -248,6 +249,7 @@ impl SimpleMatchState {
     pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
         let generation = self.generation;
         debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
         let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
         if word_state.positive_generation == generation {
             return false;
@@ -277,6 +279,7 @@ impl SimpleMatchState {
     #[inline(always)]
     pub(super) fn init_rule(&mut self, rule: &RuleHot, rule_idx: usize, ctx: ScanContext) {
         let generation = self.generation;
+        // SAFETY: `rule_idx` is in bounds — caller guarantees it via `RuleSet` indexing.
         let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
         word_state.matrix_generation = generation;
         word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
@@ -286,7 +289,10 @@ impl SimpleMatchState {
 
         if rule.use_matrix {
             init_matrix(
+                // SAFETY: `rule_idx` is in bounds — `matrix` is resized to match
+                // `word_states` in `prepare`.
                 unsafe { self.matrix.get_unchecked_mut(rule_idx) },
+                // SAFETY: `matrix_status` is resized identically to `matrix` in `prepare`.
                 unsafe { self.matrix_status.get_unchecked_mut(rule_idx) },
                 &rule.segment_counts,
                 ctx.num_variants,

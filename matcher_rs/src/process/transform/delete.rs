@@ -44,20 +44,27 @@ const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 ///   guarantees that many continuation bytes follow.
 #[inline(always)]
 fn decode_utf8(bytes: &[u8], offset: usize) -> (u32, usize) {
+    // SAFETY: `offset` is within bounds — caller only passes offsets inside a valid `&str`.
     let b0 = unsafe { *bytes.get_unchecked(offset) };
     if b0 < 0xE0 {
+        // SAFETY: b0 is a 2-byte UTF-8 lead (0xC0..0xDF); valid UTF-8 guarantees offset+1 exists.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
         (((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2)
     } else if b0 < 0xF0 {
+        // SAFETY: b0 is a 3-byte UTF-8 lead (0xE0..0xEF); valid UTF-8 guarantees offset+1 exists.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        // SAFETY: 3-byte UTF-8 lead guarantees offset+2 exists.
         let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
         (
             ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F),
             3,
         )
     } else {
+        // SAFETY: b0 is a 4-byte UTF-8 lead (0xF0..0xF7); valid UTF-8 guarantees offset+1 exists.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        // SAFETY: 4-byte UTF-8 lead guarantees offset+2 exists.
         let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
+        // SAFETY: 4-byte UTF-8 lead guarantees offset+3 exists.
         let b3 = unsafe { *bytes.get_unchecked(offset + 3) };
         (
             ((b0 as u32 & 0x07) << 18)
@@ -126,6 +133,7 @@ impl DeleteMatcher {
             if offset >= len {
                 return None;
             }
+            // SAFETY: `offset < len` is checked by the guard above.
             let byte = unsafe { *bytes.get_unchecked(offset) };
             if byte < 0x80 {
                 if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
@@ -146,6 +154,7 @@ impl DeleteMatcher {
         let mut result = get_string_from_pool(text.len());
         result.push_str(&text[..offset]);
 
+        // SAFETY: The seek loop above broke on a match at `offset`, so `offset < len` still holds.
         let byte = unsafe { *bytes.get_unchecked(offset) };
         if byte < 0x80 {
             offset += 1;
@@ -156,6 +165,7 @@ impl DeleteMatcher {
 
         let mut gap_start = offset;
         while offset < len {
+            // SAFETY: `offset < len` is checked by the while condition.
             let byte = unsafe { *bytes.get_unchecked(offset) };
             if byte < 0x80 {
                 if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {

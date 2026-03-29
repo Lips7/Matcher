@@ -3,6 +3,8 @@
     not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
     feature(portable_simd)
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 //! High-performance multi-pattern text matcher with logical operators and transformation pipelines.
 //!
 //! `matcher_rs` is designed for rule matching tasks where plain substring search is too rigid.

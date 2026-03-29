@@ -229,6 +229,7 @@ impl Iterator for AsciiOverlappingIter<'_> {
             #[cfg(feature = "dfa")]
             Self::AcDfa { inner, to_value } => inner
                 .next()
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
                 .map(|hit| unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) }),
             Self::DaacBytewise(iter) => iter.next().map(|hit| hit.value()),
         }
