@@ -3,6 +3,7 @@
 //! [`SimpleMatcherBuilder`] accumulates patterns grouped by [`crate::ProcessType`] pipeline
 //! and compiles them into an optimized automaton in one shot via [`SimpleMatcherBuilder::build`].
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::{MatcherError, ProcessType, SimpleMatcher};
@@ -27,10 +28,23 @@ use crate::{MatcherError, ProcessType, SimpleMatcher};
 ///
 /// assert!(matcher.is_match("hello world"));
 /// ```
+///
+/// Owned strings work without keeping the originals alive:
+///
+/// ```rust
+/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+///
+/// let matcher = SimpleMatcherBuilder::new()
+///     .add_word(ProcessType::None, 1, String::from("hello"))
+///     .build()
+///     .unwrap();
+///
+/// assert!(matcher.is_match("hello world"));
+/// ```
 #[must_use]
 #[derive(Default)]
 pub struct SimpleMatcherBuilder<'a> {
-    word_map: HashMap<ProcessType, HashMap<u32, &'a str>>,
+    word_map: HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>,
 }
 
 /// Builder operations for accumulating and compiling rules.
@@ -124,9 +138,14 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// assert!(matcher.is_match("妳好世界"));
     /// ```
     #[must_use = "builder methods return a new builder; dropping it discards the added word"]
-    pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
+    pub fn add_word(
+        mut self,
+        process_type: ProcessType,
+        word_id: u32,
+        word: impl Into<Cow<'a, str>>,
+    ) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();
-        bucket.insert(word_id, word);
+        bucket.insert(word_id, word.into());
         self
     }
 
