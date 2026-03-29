@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=["search", "build", "engine-search", "engine-build", "all"],
+        choices=["search", "build", "engine-search", "engine-build", "engine-is-match", "all"],
         default="search",
         help="Benchmark preset to run. Default: search.",
     )
@@ -108,7 +108,7 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
     def divan_args(kind: str) -> list[str]:
         defaults = {
             "search": {"sample_count": 40, "min_time": 2.0},
-            "build": {"sample_count": 20, "min_time": 1.0},
+            "build": {"sample_count": 15, "min_time": 0.5},
         }[kind]
         sample_count = sample_count_override or defaults["sample_count"]
         min_time = min_time_override or defaults["min_time"]
@@ -185,6 +185,20 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
                     "--",
                     "build_",
                     *divan_args("build"),
+                ],
+            ),
+            (
+                "engine-is-match",
+                [
+                    "cargo",
+                    "bench",
+                    "-p",
+                    "matcher_rs",
+                    "--bench",
+                    "bench_engine",
+                    "--",
+                    "is_match_",
+                    *divan_args("search"),
                 ],
             ),
         ]

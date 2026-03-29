@@ -40,11 +40,12 @@ use super::rule::{PatternEntry, PatternIndex};
 
 /// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
 ///
-/// Above this threshold the DFA's memory usage becomes excessive (~10x NFA) and the
-/// `daachorse` bytewise engine is used instead. Only relevant when the `dfa` feature is
-/// enabled.
+/// Benchmarked on Apple M3 Max: AcDfa beats DaacBytewise by 14-22% up to ~5,000 ASCII
+/// patterns on English text (both `search` overlapping iteration and `is_match` early
+/// exit). Above ~5,000 the DFA's cache footprint grows enough that DaacBytewise wins.
+/// Only relevant when the `dfa` feature is enabled.
 #[cfg(feature = "dfa")]
-const AC_DFA_PATTERN_THRESHOLD: usize = 2_000;
+const AC_DFA_PATTERN_THRESHOLD: usize = 5_000;
 
 /// Compiled scan engines together with the pattern metadata they report into.
 ///
