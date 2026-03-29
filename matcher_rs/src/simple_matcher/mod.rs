@@ -57,6 +57,7 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// // word is a Cow that borrows from the matcher — no extra allocation.
 /// assert!(results.iter().any(|r| r.word == "hello"));
 /// ```
+#[must_use]
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct SimpleResult<'a> {
     /// The caller-assigned identifier for the matched rule, as passed to
@@ -134,6 +135,7 @@ pub struct SimpleResult<'a> {
 /// assert_eq!(results[0].word_id, 1);
 /// assert_eq!(results[0].word, "apple&pie");
 /// ```
+#[must_use]
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process: ProcessPlan,
@@ -231,6 +233,7 @@ impl SimpleMatcher {
     /// assert!(!matcher.is_match("foo only"));
     /// assert!(!matcher.is_match(""));
     /// ```
+    #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -273,6 +276,7 @@ impl SimpleMatcher {
     /// assert!(ids.contains(&2));
     /// assert!(!ids.contains(&3));
     /// ```
+    #[must_use]
     pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         let mut results = Vec::new();
         self.process_into(text, &mut results);

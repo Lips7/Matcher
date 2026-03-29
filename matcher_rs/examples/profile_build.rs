@@ -86,7 +86,7 @@ fn main() {
 
     let start = Instant::now();
     for _ in 0..iters {
-        black_box(SimpleMatcher::new(&table));
+        let _ = black_box(SimpleMatcher::new(&table));
     }
     let elapsed = start.elapsed();
 

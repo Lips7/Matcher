@@ -26,6 +26,7 @@ use crate::{ProcessType, SimpleMatcher};
 ///
 /// assert!(matcher.is_match("hello world"));
 /// ```
+#[must_use]
 #[derive(Default)]
 pub struct SimpleMatcherBuilder<'a> {
     word_map: HashMap<ProcessType, HashMap<u32, &'a str>>,
@@ -117,6 +118,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// // Traditional "妳好" matches via the ProcessType::Fanjian path
     /// assert!(matcher.is_match("妳好世界"));
     /// ```
+    #[must_use = "builder methods return a new builder; dropping it discards the added word"]
     pub fn add_word(mut self, process_type: ProcessType, word_id: u32, word: &'a str) -> Self {
         let bucket = self.word_map.entry(process_type).or_default();
         bucket.insert(word_id, word);
@@ -143,6 +145,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// assert!(matcher.is_match("hello world"));
     /// assert!(!matcher.is_match("goodbye"));
     /// ```
+    #[must_use = "building a matcher is expensive; discarding it wastes the compilation work"]
     pub fn build(self) -> SimpleMatcher {
         SimpleMatcher::new(&self.word_map)
     }
