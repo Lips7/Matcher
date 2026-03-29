@@ -70,7 +70,7 @@ impl SimpleMatcher {
     /// 6. Assemble and return the immutable [`SimpleMatcher`].
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
-    ) -> SimpleMatcher
+    ) -> Result<SimpleMatcher, crate::MatcherError>
     where
         I: AsRef<str> + 'a,
     {
@@ -99,18 +99,18 @@ impl SimpleMatcher {
         } else {
             SearchMode::General
         };
-        let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries, base_mode);
+        let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries, base_mode)?;
         let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
             SearchMode::AllSimple
         } else {
             base_mode
         };
 
-        SimpleMatcher {
+        Ok(SimpleMatcher {
             process: ProcessPlan::new(process_type_tree, mode),
             scan,
             rules: parsed.rules,
-        }
+        })
     }
 
     /// Assigns each used composite process type a compact sequential index.

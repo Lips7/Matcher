@@ -82,11 +82,11 @@ fn main() {
     table.insert(pt, map);
 
     // Warmup: initialize OnceLock transform step caches
-    let _ = black_box(SimpleMatcher::new(&table));
+    let _ = black_box(SimpleMatcher::new(&table).unwrap());
 
     let start = Instant::now();
     for _ in 0..iters {
-        black_box(SimpleMatcher::new(&table));
+        let _ = black_box(SimpleMatcher::new(&table).unwrap());
     }
     let elapsed = start.elapsed();
 

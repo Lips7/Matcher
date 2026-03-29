@@ -129,7 +129,7 @@ mod build {
     fn by_size(bencher: Bencher, size: usize) {
         let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
         bencher.bench_local(|| {
-            let _ = black_box(SimpleMatcher::new(&table));
+            let _ = black_box(SimpleMatcher::new(&table).unwrap());
         });
     }
 
@@ -137,7 +137,7 @@ mod build {
     fn by_process_type(bencher: Bencher, pt: ProcessType) {
         let table = wrap_table(pt, build_literal_map("cn", DEFAULT_RULE_COUNT, true));
         bencher.bench_local(|| {
-            let _ = black_box(SimpleMatcher::new(&table));
+            let _ = black_box(SimpleMatcher::new(&table).unwrap());
         });
     }
 
@@ -145,7 +145,7 @@ mod build {
     fn multi_process_type(bencher: Bencher, size: usize) {
         let table = build_multi_process_table(size);
         bencher.bench_local(|| {
-            let _ = black_box(SimpleMatcher::new(&table));
+            let _ = black_box(SimpleMatcher::new(&table).unwrap());
         });
     }
 }
@@ -169,7 +169,7 @@ mod search_mode {
                 ProcessType::None,
                 build_literal_map("en", DEFAULT_RULE_COUNT, true),
             );
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -184,7 +184,7 @@ mod search_mode {
                 ProcessType::None,
                 build_literal_map("en", DEFAULT_RULE_COUNT, true),
             );
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -203,7 +203,7 @@ mod search_mode {
                 ProcessType::Delete,
                 build_literal_map("en", DEFAULT_RULE_COUNT, true),
             );
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -218,7 +218,7 @@ mod search_mode {
                 ProcessType::Delete,
                 build_literal_map("en", DEFAULT_RULE_COUNT, true),
             );
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -234,7 +234,7 @@ mod search_mode {
         #[divan::bench(max_time = 5)]
         fn is_match(bencher: Bencher) {
             let table = build_multi_process_table(DEFAULT_RULE_COUNT);
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -246,7 +246,7 @@ mod search_mode {
         #[divan::bench(max_time = 5)]
         fn process(bencher: Bencher) {
             let table = build_multi_process_table(DEFAULT_RULE_COUNT);
-            let matcher = SimpleMatcher::new(&table);
+            let matcher = SimpleMatcher::new(&table).unwrap();
             let haystack = EN_HAYSTACK;
             bencher.counter(BytesCount::new(haystack.len())).bench(|| {
                 for line in haystack.lines() {
@@ -269,7 +269,7 @@ mod match_vs_nomatch {
             ProcessType::None,
             build_literal_map("en", DEFAULT_RULE_COUNT, true),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -284,7 +284,7 @@ mod match_vs_nomatch {
             ProcessType::None,
             build_literal_map("en", DEFAULT_RULE_COUNT, false),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -299,7 +299,7 @@ mod match_vs_nomatch {
             ProcessType::None,
             build_literal_map("en", DEFAULT_RULE_COUNT, true),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -314,7 +314,7 @@ mod match_vs_nomatch {
             ProcessType::None,
             build_literal_map("en", DEFAULT_RULE_COUNT, false),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -333,7 +333,7 @@ mod scaling {
     #[divan::bench(args = RULE_COUNTS, max_time = 5)]
     fn is_match_en(bencher: Bencher, size: usize) {
         let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -345,7 +345,7 @@ mod scaling {
     #[divan::bench(args = RULE_COUNTS, max_time = 5)]
     fn is_match_cn(bencher: Bencher, size: usize) {
         let table = wrap_table(ProcessType::None, build_literal_map("cn", size, true));
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = CN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -357,7 +357,7 @@ mod scaling {
     #[divan::bench(args = RULE_COUNTS, max_time = 5)]
     fn process_en(bencher: Bencher, size: usize) {
         let table = wrap_table(ProcessType::None, build_literal_map("en", size, true));
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -418,7 +418,7 @@ mod rule_complexity {
             ProcessType::None,
             build_shaped_map("en", DEFAULT_RULE_COUNT, shape),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -433,7 +433,7 @@ mod rule_complexity {
             ProcessType::None,
             build_shaped_map("en", DEFAULT_RULE_COUNT, shape),
         );
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
@@ -445,7 +445,7 @@ mod rule_complexity {
     #[divan::bench(args = RULE_COUNTS, max_time = 5)]
     fn mixed_scripts(bencher: Bencher, size: usize) {
         let table = wrap_table(ProcessType::None, build_mixed_script_map(size));
-        let matcher = SimpleMatcher::new(&table);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = CN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {

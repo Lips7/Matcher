@@ -515,8 +515,10 @@ fn skip_ascii_non_delete_avx2(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 #[inline(always)]
 unsafe fn first_non_ascii_in_neon(bytes: *const u8, offset: usize) -> usize {
+    // SAFETY: caller guarantees `offset + 16 <= bytes.len()`, so `bytes.add(offset)` is valid for a 16-byte read.
     let chunk = unsafe { vld1q_u8(bytes.add(offset)) };
     let mut scratch = [0u8; 16];
+    // SAFETY: `scratch` is a local [u8; 16] on the stack, so the pointer is valid for a 16-byte store.
     unsafe { vst1q_u8(scratch.as_mut_ptr(), chunk) };
     scratch
         .iter()
@@ -542,6 +544,7 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     }
 
     let mut offset = offset;
+    // SAFETY: all `vld1q_u8` loads are guarded by `offset + 16 <= bytes.len()`, ensuring valid 16-byte reads.
     unsafe {
         while offset + 16 <= bytes.len() {
             let chunk = vld1q_u8(bytes.as_ptr().add(offset));
@@ -578,6 +581,7 @@ fn skip_non_digit_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     }
 
     let mut offset = offset;
+    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`; stores target local stack buffers.
     unsafe {
         let digit_lo = vdupq_n_u8(b'0');
         let digit_hi = vdupq_n_u8(b'9');
@@ -625,6 +629,7 @@ fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
     }
 
     let mut offset = offset;
+    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`; `ascii_lut` and `SHIFT_TABLE_16` are [u8; 16].
     unsafe {
         let lut = vld1q_u8(ascii_lut.as_ptr());
         let shift = vld1q_u8(SHIFT_TABLE_16.as_ptr());

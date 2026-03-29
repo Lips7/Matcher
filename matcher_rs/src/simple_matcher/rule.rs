@@ -323,6 +323,7 @@ impl RuleSet {
 
         match kind {
             PatternKind::Simple => {
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_assert above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
                 if word_state.positive_generation == generation {
                     return ctx.exit_early;
@@ -336,7 +337,9 @@ impl RuleSet {
             }
             PatternKind::And => {
                 let offset = offset as usize;
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
@@ -353,9 +356,12 @@ impl RuleSet {
                     state.init_rule(rule, rule_idx, ctx);
                 }
 
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
                 let is_satisfied = if rule.use_matrix {
+                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
+                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_status = unsafe { state.matrix_status.get_unchecked_mut(rule_idx) };
                     let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                     *counter -= 1;
@@ -392,7 +398,9 @@ impl RuleSet {
             }
             PatternKind::Not => {
                 let offset = offset as usize;
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
@@ -403,9 +411,12 @@ impl RuleSet {
                     state.init_rule(rule, rule_idx, ctx);
                 }
 
+                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
                 if rule.use_matrix {
+                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
+                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_status = unsafe { state.matrix_status.get_unchecked_mut(rule_idx) };
                     let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                     *counter += 1;
@@ -435,6 +446,7 @@ impl RuleSet {
     #[inline(always)]
     fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
         debug_assert!(rule_idx < self.cold.len());
+        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_assert above.
         let cold = unsafe { self.cold.get_unchecked(rule_idx) };
         results.push(SimpleResult {
             word_id: cold.word_id,
@@ -504,6 +516,7 @@ impl PatternIndex {
 
         for (dedup_idx, &(start, len)) in self.ranges.iter().enumerate() {
             if use_direct_rule && len == 1 {
+                // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by `Self::new`.
                 let entry = unsafe { self.entries.get_unchecked(start) };
                 if entry.kind == PatternKind::Simple {
                     value_map.push(entry.rule_idx | DIRECT_RULE_BIT);
@@ -540,12 +553,15 @@ impl PatternIndex {
 
         let pattern_idx = raw_value as usize;
         debug_assert!(pattern_idx < self.ranges.len());
+        // SAFETY: `pattern_idx` is in bounds — guaranteed by debug_assert above.
         let &(start, len) = unsafe { self.ranges.get_unchecked(pattern_idx) };
         debug_assert!(start + len <= self.entries.len());
 
         if len == 1 {
+            // SAFETY: `start` and `start + len` are in bounds — guaranteed by debug_assert above.
             PatternDispatch::SingleEntry(unsafe { self.entries.get_unchecked(start) })
         } else {
+            // SAFETY: `start..start + len` is in bounds — guaranteed by debug_assert above.
             PatternDispatch::Entries(unsafe { self.entries.get_unchecked(start..start + len) })
         }
     }

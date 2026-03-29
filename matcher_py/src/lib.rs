@@ -124,7 +124,8 @@ impl PySimpleMatcher {
     fn new(_py: Python, simple_table_bytes: &[u8]) -> PyResult<PySimpleMatcher> {
         let simple_table = deserialize_table(simple_table_bytes)?;
         Ok(PySimpleMatcher {
-            simple_matcher: SimpleMatcher::new(&simple_table),
+            simple_matcher: SimpleMatcher::new(&simple_table)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
             simple_table_bytes: simple_table_bytes.to_vec(),
         })
     }
@@ -140,7 +141,8 @@ impl PySimpleMatcher {
     #[pyo3(signature=(simple_table_bytes))]
     fn __setstate__(&mut self, simple_table_bytes: &[u8]) -> PyResult<()> {
         let simple_table = deserialize_table(simple_table_bytes)?;
-        self.simple_matcher = SimpleMatcher::new(&simple_table);
+        self.simple_matcher =
+            SimpleMatcher::new(&simple_table).map_err(|e| PyValueError::new_err(e.to_string()))?;
         self.simple_table_bytes = simple_table_bytes.to_vec();
         Ok(())
     }

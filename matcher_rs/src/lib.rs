@@ -3,6 +3,8 @@
     not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
     feature(portable_simd)
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 //! High-performance multi-pattern text matcher with logical operators and transformation pipelines.
 //!
 //! `matcher_rs` is designed for rule matching tasks where plain substring search is too rigid.
@@ -34,7 +36,8 @@
 //!     .add_word(ProcessType::None, 3, "apple&pie")
 //!     // "banana" matches only when "peel" is absent
 //!     .add_word(ProcessType::None, 4, "banana~peel")
-//!     .build();
+//!     .build()
+//!     .unwrap();
 //!
 //! assert!(matcher.is_match("hello world"));
 //! assert!(matcher.is_match("apple and pie"));
@@ -48,6 +51,38 @@
 //! against both the raw text and a transformed variant. For example, a rule with
 //! `ProcessType::None | ProcessType::PinYin` can satisfy one sub-pattern directly from
 //! the input and another via Pinyin transliteration during the same search.
+//!
+//! # Safety
+//!
+//! This crate uses `unsafe` in three categories:
+//!
+//! ## Thread-local state via `#[thread_local]` + `UnsafeCell`
+//!
+//! | Static | Location |
+//! |--------|----------|
+//! | `SIMPLE_MATCH_STATE` | `simple_matcher/state.rs` |
+//! | `STRING_POOL` | `process/variant.rs` |
+//! | `TRANSFORM_STATE` | `process/variant.rs` |
+//!
+//! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!` macro
+//! to avoid per-access closure overhead. Safety relies on two invariants:
+//! (1) `#[thread_local]` guarantees single-threaded access — no data races.
+//! (2) No public function is re-entrant: the borrow from `UnsafeCell::get()` is
+//! always dropped before any call that could re-enter the same pool.
+//!
+//! ## Bounds-elided indexing
+//!
+//! Hot loops use `get_unchecked` / `get_unchecked_mut` to avoid repeated bounds
+//! checks on indices that are structurally guaranteed in-bounds by construction
+//! (e.g. automaton values, rule indices). Every such site is guarded by a
+//! `debug_assert!` that validates the index in debug builds.
+//!
+//! ## Lifetime transmute in buffer pooling
+//!
+//! `return_processed_string_to_pool` (`process/variant.rs`) transmutes an empty
+//! `Vec<TextVariant<'_>>` to `Vec<TextVariant<'static>>` after draining all
+//! elements. This is sound because an empty `Vec` holds no values — the lifetime
+//! parameter exists only at the type level and has no runtime representation.
 //!
 //! # Feature Flags
 //!
@@ -66,6 +101,35 @@
 /// where many threads match concurrently.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+use std::fmt;
+
+/// Error returned when [`SimpleMatcher`] construction fails.
+///
+/// Currently this only wraps automaton-build errors from the underlying
+/// Aho-Corasick libraries. The type is an opaque struct (not an enum) to
+/// avoid coupling the public API to third-party error types, and to allow
+/// adding new error variants in the future without breaking callers.
+#[derive(Debug, Clone)]
+pub struct MatcherError {
+    message: String,
+}
+
+impl fmt::Display for MatcherError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for MatcherError {}
+
+impl MatcherError {
+    fn automaton_build(source: impl fmt::Display) -> Self {
+        Self {
+            message: format!("automaton build failed: {source}"),
+        }
+    }
+}
 
 mod builder;
 pub use builder::SimpleMatcherBuilder;

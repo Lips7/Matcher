@@ -21,7 +21,8 @@ fn main() {
     );
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Fanjian, 1, "你好")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    matcher(\"你好\").is_match(\"妳好世界\") => {}",
         m.is_match("妳好世界")
@@ -36,7 +37,8 @@ fn main() {
     );
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "hello")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    matcher(\"hello\").is_match(\"h e l l o\") => {}",
         m.is_match("h e l l o")
@@ -50,7 +52,8 @@ fn main() {
     );
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Normalize, 1, "abc")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    matcher(\"abc\").is_match(\"Ａｂｃ\") => {}",
         m.is_match("Ａｂｃ")
@@ -62,7 +65,8 @@ fn main() {
     println!("    text_process(\"中国\") => \"{py}\"");
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::PinYin, 1, "zhong")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    matcher(\"zhong\").is_match(\"中国\") => {}",
         m.is_match("中国")
@@ -74,7 +78,8 @@ fn main() {
     println!("    text_process(\"中国\") => \"{pyc}\"");
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::PinYinChar, 1, "zhongguo")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    matcher(\"zhongguo\").is_match(\"中国\") => {}",
         m.is_match("中国")
@@ -95,7 +100,8 @@ fn main() {
     println!("\n  [None | Fanjian] Match raw OR converted");
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None | ProcessType::Fanjian, 1, "你好")
-        .build();
+        .build()
+        .unwrap();
     println!(
         "    is_match(\"你好\")   => {} (raw match)",
         m.is_match("你好")
@@ -150,7 +156,8 @@ fn main() {
     // another matches via the Fanjian-converted variant.
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None | ProcessType::Fanjian, 1, "hello&你好")
-        .build();
+        .build()
+        .unwrap();
 
     println!("  Rule: \"hello&你好\" under None | Fanjian");
     println!(

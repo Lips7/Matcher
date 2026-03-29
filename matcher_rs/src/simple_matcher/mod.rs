@@ -15,6 +15,7 @@
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 
 use std::borrow::Cow;
+use std::fmt;
 
 use serde::Serialize;
 
@@ -44,7 +45,8 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 42, "hello")
 ///     .add_word(ProcessType::None, 7, "world")
-///     .build();
+///     .build()
+///     .unwrap();
 ///
 /// let results = matcher.process("hello world");
 /// assert_eq!(results.len(), 2);
@@ -57,7 +59,8 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// // word is a Cow that borrows from the matcher — no extra allocation.
 /// assert!(results.iter().any(|r| r.word == "hello"));
 /// ```
-#[derive(Serialize, Debug)]
+#[must_use]
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct SimpleResult<'a> {
     /// The caller-assigned identifier for the matched rule, as passed to
     /// [`SimpleMatcherBuilder::add_word`](crate::SimpleMatcherBuilder::add_word) or
@@ -124,7 +127,8 @@ pub struct SimpleResult<'a> {
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "apple&pie")
 ///     .add_word(ProcessType::None, 2, "banana~peel")
-///     .build();
+///     .build()
+///     .unwrap();
 ///
 /// assert!(matcher.is_match("I like apple and pie"));
 /// assert!(!matcher.is_match("I like banana peel"));
@@ -134,11 +138,21 @@ pub struct SimpleResult<'a> {
 /// assert_eq!(results[0].word_id, 1);
 /// assert_eq!(results[0].word, "apple&pie");
 /// ```
+#[must_use]
 #[derive(Clone)]
 pub struct SimpleMatcher {
     process: ProcessPlan,
     scan: ScanPlan,
     rules: RuleSet,
+}
+
+impl fmt::Debug for SimpleMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimpleMatcher")
+            .field("search_mode", &self.process.mode())
+            .field("rule_count", &self.rules.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Immutable process-type traversal plan cached inside a [`SimpleMatcher`].
@@ -224,13 +238,15 @@ impl SimpleMatcher {
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "foo&bar")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// assert!(matcher.is_match("hello world"));
     /// assert!(matcher.is_match("foo and bar"));
     /// assert!(!matcher.is_match("foo only"));
     /// assert!(!matcher.is_match(""));
     /// ```
+    #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -263,7 +279,8 @@ impl SimpleMatcher {
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "world")
     ///     .add_word(ProcessType::None, 3, "missing")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// let results = matcher.process("hello world");
     /// assert_eq!(results.len(), 2);
@@ -273,6 +290,7 @@ impl SimpleMatcher {
     /// assert!(ids.contains(&2));
     /// assert!(!ids.contains(&3));
     /// ```
+    #[must_use]
     pub fn process<'a>(&'a self, text: &'a str) -> Vec<SimpleResult<'a>> {
         let mut results = Vec::new();
         self.process_into(text, &mut results);
@@ -299,7 +317,8 @@ impl SimpleMatcher {
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
     ///     .add_word(ProcessType::None, 2, "world")
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// // Reuse the same buffer for multiple searches.
     /// let mut results: Vec<SimpleResult<'_>> = Vec::new();

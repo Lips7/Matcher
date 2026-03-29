@@ -100,11 +100,14 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     if page_idx >= l1.len() {
         return None;
     }
+    // SAFETY: `page_idx < l1.len()` is checked by the guard above.
     let page = unsafe { *l1.get_unchecked(page_idx) as usize };
     if page == 0 {
         return None;
     }
     debug_assert!(page * 256 + char_idx < l2.len());
+    // SAFETY: `page` is a non-zero index assigned during table construction;
+    // `page * 256 + char_idx` is always within the allocated L2 extent.
     let value = unsafe { *l2.get_unchecked(page * 256 + char_idx) };
     (value != 0).then_some(value)
 }
@@ -192,20 +195,27 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
 ///   continuation bytes exist, and valid UTF-8 guarantees they are present.
 #[inline(always)]
 unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
+    // SAFETY: `offset` points at a valid UTF-8 lead byte within `bytes`.
     let b0 = unsafe { *bytes.get_unchecked(offset) };
     if b0 < 0xE0 {
+        // SAFETY: 2-byte sequence; valid UTF-8 guarantees the continuation byte is present.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
         (((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2)
     } else if b0 < 0xF0 {
+        // SAFETY: 3-byte sequence; valid UTF-8 guarantees both continuation bytes are present.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        // SAFETY: Second continuation byte of a 3-byte UTF-8 sequence; guaranteed present.
         let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
         (
             ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F),
             3,
         )
     } else {
+        // SAFETY: 4-byte sequence; valid UTF-8 guarantees all three continuation bytes are present.
         let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        // SAFETY: Second continuation byte of a 4-byte UTF-8 sequence; guaranteed present.
         let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
+        // SAFETY: Third continuation byte of a 4-byte UTF-8 sequence; guaranteed present.
         let b3 = unsafe { *bytes.get_unchecked(offset + 3) };
         (
             ((b0 as u32 & 0x07) << 18)
@@ -256,6 +266,8 @@ impl<'a> Iterator for FanjianFindIter<'a> {
             }
 
             let start = self.byte_offset;
+            // SAFETY: SIMD skip positioned `start` at a non-ASCII byte in a valid UTF-8 `&str`,
+            // so it is a valid multi-byte lead byte.
             let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
             self.byte_offset += char_len;
 
@@ -263,6 +275,7 @@ impl<'a> Iterator for FanjianFindIter<'a> {
                 && mapped_cp != cp
             {
                 debug_assert!(char::from_u32(mapped_cp).is_some());
+                // SAFETY: Page table values are valid Unicode codepoints assigned at build time.
                 let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
                 return Some((start, self.byte_offset, Replacement::Char(mapped)));
             }
@@ -312,6 +325,8 @@ impl<'a> Iterator for PinyinFindIter<'a> {
             let (cp, char_len) = if byte < 0x80 {
                 (byte as u32, 1)
             } else {
+                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `start` is a
+                // valid multi-byte lead byte.
                 unsafe { decode_utf8_raw(bytes, start) }
             };
             self.byte_offset += char_len;
@@ -401,6 +416,8 @@ impl FanjianMatcher {
                     s.push_str(text);
                     s
                 });
+                // SAFETY: `mapped.len_utf8() == span_len` is verified above, so `encode_utf8`
+                // overwrites exactly the same number of bytes, preserving valid UTF-8.
                 unsafe { mapped.encode_utf8(&mut buf.as_bytes_mut()[start..end]) };
             } else {
                 if let Some(existing) = result.take() {

@@ -65,6 +65,7 @@ impl SimpleMatcher {
     pub(super) fn is_match_inner<const SINGLE_PT: bool>(&self, text: &str) -> bool {
         let tree = self.process.tree();
         let max_pt = tree.len();
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
         let (text_masks, stopped) =
@@ -101,6 +102,7 @@ impl SimpleMatcher {
     /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
     /// See module-level safety documentation.
     pub(super) fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
 
@@ -141,6 +143,7 @@ impl SimpleMatcher {
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         results: &mut Vec<SimpleResult<'a>>,
     ) {
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
 

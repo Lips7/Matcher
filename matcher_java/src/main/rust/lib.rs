@@ -86,7 +86,9 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher<'local
     env.with_env(|env| -> JniResult<_> {
         let bytes = env.convert_byte_array(simple_table_bytes)?;
         let simple_table = parse_simple_table(&bytes)?;
-        let matcher = Box::new(SimpleMatcher::new(&simple_table));
+        let matcher = Box::new(
+            SimpleMatcher::new(&simple_table).map_err(|e| JniError::ParseFailed(e.to_string()))?,
+        );
 
         Ok(Box::into_raw(matcher) as jlong)
     })

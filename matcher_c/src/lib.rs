@@ -41,7 +41,13 @@ pub unsafe extern "C" fn init_simple_matcher(
                 }
             };
 
-        Box::into_raw(Box::new(SimpleMatcher::new(&simple_table)))
+        match SimpleMatcher::new(&simple_table) {
+            Ok(matcher) => Box::into_raw(Box::new(matcher)),
+            Err(e) => {
+                eprintln!("SimpleMatcher build failed: {e}");
+                ptr::null_mut()
+            }
+        }
     }));
 
     result.unwrap_or_else(|_| {

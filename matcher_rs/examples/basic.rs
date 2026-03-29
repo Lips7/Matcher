@@ -16,7 +16,8 @@ fn main() {
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "world")
         .add_word(ProcessType::None, 3, "rust")
-        .build();
+        .build()
+        .unwrap();
 
     println!("Built matcher with 3 rules: hello(1), world(2), rust(3)");
 
@@ -58,7 +59,8 @@ fn main() {
     // AND: both sub-patterns must appear (order-independent)
     let and_matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "apple&pie")
-        .build();
+        .build()
+        .unwrap();
 
     println!("  Rule: \"apple&pie\" (AND)");
     println!(
@@ -77,7 +79,8 @@ fn main() {
     // NOT: match first, veto if second appears
     let not_matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "banana~peel")
-        .build();
+        .build()
+        .unwrap();
 
     println!("\n  Rule: \"banana~peel\" (NOT)");
     println!(
@@ -92,7 +95,8 @@ fn main() {
     // Combined: AND + NOT
     let combined = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "fox&jump~lazy")
-        .build();
+        .build()
+        .unwrap();
 
     println!("\n  Rule: \"fox&jump~lazy\" (AND + NOT)");
     println!(
@@ -107,7 +111,8 @@ fn main() {
     // Count semantics: "a&a" requires at least 2 occurrences
     let count = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "ha&ha")
-        .build();
+        .build()
+        .unwrap();
 
     println!("\n  Rule: \"ha&ha\" (requires 2 occurrences)");
     println!("    \"ha\"    => {}", count.is_match("ha"));
@@ -120,7 +125,7 @@ fn main() {
         ProcessType::None,
         HashMap::from([(1, "hello"), (2, "world")]),
     )]);
-    let matcher = SimpleMatcher::new(&table);
+    let matcher = SimpleMatcher::new(&table).unwrap();
 
     println!(
         "  Built from HashMap: is_match(\"hello\") => {}",
