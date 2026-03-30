@@ -20,17 +20,12 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, FindOverlappingIter as AcFindOverlappingIter,
-    MatchKind as AhoCorasickMatchKind,
+    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
 };
 use daachorse::{
     DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
     MatchKind as DoubleArrayAhoCorasickMatchKind,
-    bytewise::iter::{FindOverlappingIterator as BytewiseOverlappingIter, U8SliceIterator},
-    charwise::{
-        CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
-        iter::{FindOverlappingIterator as CharwiseOverlappingIter, StrIterator},
-    },
+    charwise::{CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder},
 };
 
 use crate::MatcherError;
@@ -104,29 +99,6 @@ enum NonAsciiMatcher {
     DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
 }
 
-/// Overlapping-iterator wrapper for ASCII scan engines.
-///
-/// Implements [`Iterator<Item = u32>`] yielding raw match values. The wrapper exists to
-/// present a uniform interface across the two possible ASCII engine backends.
-enum AsciiOverlappingIter<'a> {
-    /// Wraps [`aho_corasick::FindOverlappingIter`] and translates pattern indices to values.
-    #[cfg(feature = "dfa")]
-    AcDfa {
-        inner: AcFindOverlappingIter<'a, 'a>,
-        to_value: &'a [u32],
-    },
-    /// Wraps [`daachorse`]'s bytewise overlapping iterator (values are already `u32`).
-    DaacBytewise(BytewiseOverlappingIter<'a, U8SliceIterator<&'a str>, u32>),
-}
-
-/// Overlapping-iterator wrapper for the non-ASCII scan engine.
-///
-/// Implements [`Iterator<Item = u32>`] yielding raw match values.
-enum NonAsciiOverlappingIter<'a> {
-    /// Wraps [`daachorse`]'s charwise overlapping iterator (values are already `u32`).
-    DaacCharwise(CharwiseOverlappingIter<'a, StrIterator<&'a str>, u32>),
-}
-
 /// Construction and query helpers for compiled scan engines.
 impl ScanPlan {
     /// Compiles the ASCII and non-ASCII scan engines for the deduplicated pattern set.
@@ -192,63 +164,18 @@ impl ScanPlan {
         &self,
         text: &str,
         is_ascii: bool,
-        mut on_value: impl FnMut(u32) -> bool,
+        on_value: impl FnMut(u32) -> bool,
     ) -> bool {
         let use_ascii = self.non_ascii_matcher.is_none() || is_ascii;
         if use_ascii {
             if let Some(ref matcher) = self.ascii_matcher {
-                for value in matcher.find_overlapping_iter(text) {
-                    if on_value(value) {
-                        return true;
-                    }
-                }
+                return matcher.for_each_match_value(text, on_value);
             }
         } else if let Some(ref matcher) = self.non_ascii_matcher {
-            for value in matcher.find_overlapping_iter(text) {
-                if on_value(value) {
-                    return true;
-                }
-            }
+            return matcher.for_each_match_value(text, on_value);
         }
 
         false
-    }
-}
-
-/// Iterator implementation for ASCII match streams.
-impl Iterator for AsciiOverlappingIter<'_> {
-    type Item = u32;
-
-    /// Returns the next raw match value produced by the ASCII engine.
-    ///
-    /// # Safety (AcDfa variant)
-    ///
-    /// Uses `get_unchecked` on `to_value` with the pattern index from the `aho-corasick`
-    /// match. This is safe because `to_value` was constructed with one entry per pattern
-    /// in [`compile_automata`], so the pattern index is always in bounds.
-    #[inline(always)]
-    fn next(&mut self) -> Option<u32> {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { inner, to_value } => inner
-                .next()
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
-                .map(|hit| unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) }),
-            Self::DaacBytewise(iter) => iter.next().map(|hit| hit.value()),
-        }
-    }
-}
-
-/// Iterator implementation for non-ASCII match streams.
-impl Iterator for NonAsciiOverlappingIter<'_> {
-    type Item = u32;
-
-    /// Returns the next raw match value produced by the non-ASCII engine.
-    #[inline(always)]
-    fn next(&mut self) -> Option<u32> {
-        match self {
-            Self::DaacCharwise(iter) => iter.next().map(|hit| hit.value()),
-        }
     }
 }
 
@@ -264,17 +191,28 @@ impl AsciiMatcher {
         }
     }
 
-    /// Creates the overlapping iterator for the ASCII engine.
+    /// Calls `on_value` for each raw match value produced by the ASCII engine.
     #[inline(always)]
-    fn find_overlapping_iter<'a>(&'a self, text: &'a str) -> AsciiOverlappingIter<'a> {
+    fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
         match self {
             #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, to_value } => AsciiOverlappingIter::AcDfa {
-                inner: matcher.find_overlapping_iter(text),
-                to_value,
-            },
+            Self::AcDfa { matcher, to_value } => {
+                for hit in matcher.find_overlapping_iter(text) {
+                    // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                    let value = unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
+                    if on_value(value) {
+                        return true;
+                    }
+                }
+                false
+            }
             Self::DaacBytewise(matcher) => {
-                AsciiOverlappingIter::DaacBytewise(matcher.find_overlapping_iter(text))
+                for hit in matcher.find_overlapping_iter(text) {
+                    if on_value(hit.value()) {
+                        return true;
+                    }
+                }
+                false
             }
         }
     }
@@ -290,12 +228,17 @@ impl NonAsciiMatcher {
         }
     }
 
-    /// Creates the overlapping iterator for the non-ASCII engine.
+    /// Calls `on_value` for each raw match value produced by the non-ASCII engine.
     #[inline(always)]
-    fn find_overlapping_iter<'a>(&'a self, text: &'a str) -> NonAsciiOverlappingIter<'a> {
+    fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
         match self {
             Self::DaacCharwise(matcher) => {
-                NonAsciiOverlappingIter::DaacCharwise(matcher.find_overlapping_iter(text))
+                for hit in matcher.find_overlapping_iter(text) {
+                    if on_value(hit.value()) {
+                        return true;
+                    }
+                }
+                false
             }
         }
     }

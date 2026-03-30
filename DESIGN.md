@@ -290,28 +290,28 @@ struct SimpleMatcher {
 ### Two-Pass Matching
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ Input text                                                       │
-│   ↓                                                              │
-│ walk_process_tree → [TextVariant₀, TextVariant₁, ...]           │
-│   ↓                                                              │
-│ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐  │
-│ │ For each text variant:                                      │  │
-│ │   Select ASCII or charwise engine based on is_ascii flag    │  │
-│ │   For each overlapping hit:                                 │  │
-│ │     Dispatch raw value via PatternIndex::dispatch            │  │
-│ │     → DirectRule: mark_positive immediately                 │  │
-│ │     → SingleEntry / Entries: RuleSet::process_entry          │  │
-│ │     (Early exit if exit_early && rule fully satisfied)       │  │
-│ └─────────────────────────────────────────────────────────────┘  │
-│   ↓                                                              │
-│ ┌─── Pass 2: Logical Evaluation ─────────────────────────────┐  │
-│ │ For each rule_idx in touched_indices:                        │  │
-│ │   Check positive_generation == generation (all ANDs met)     │  │
-│ │   Check not_generation != generation (no NOT vetoed)         │  │
-│ │   If both: emit SimpleResult { word_id, word }               │  │
-│ └─────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ Input text                                                     │
+│   ↓                                                            │
+│ walk_process_tree → [TextVariant₀, TextVariant₁, ...]          │
+│   ↓                                                            │
+│ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐ │
+│ │ For each text variant:                                     │ │
+│ │   Select ASCII or charwise engine based on is_ascii flag   │ │
+│ │   For each overlapping hit:                                │ │
+│ │     Dispatch raw value via PatternIndex::dispatch          │ │
+│ │     → DirectRule: mark_positive immediately                │ │
+│ │     → SingleEntry / Entries: RuleSet::process_entry        │ │
+│ │     (Early exit if exit_early && rule fully satisfied)     │ │
+│ └────────────────────────────────────────────────────────────┘ │
+│   ↓                                                            │
+│ ┌─── Pass 2: Logical Evaluation ─────────────────────────────┐ │
+│ │ For each rule_idx in touched_indices:                      │ │
+│ │   Check positive_generation == generation (all ANDs met)   │ │
+│ │   Check not_generation != generation (no NOT vetoed)       │ │
+│ │   If both: emit SimpleResult { word_id, word }             │ │
+│ └────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ### Scan Engine Selection
