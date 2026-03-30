@@ -20,18 +20,19 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
             toolchain: nightly
-      - name: Install cargo-all-features
-        run: cargo install cargo-all-features
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-all-features,cargo-nextest
       - name: Build
         run: cargo build --release --verbose
       - name: Test
         run: cargo all-features nextest run
+        working-directory: matcher_rs
         env:
           RUST_BACKTRACE: 1
       - name: Run doc
         run: cargo doc
+        working-directory: matcher_rs
       - name: Release
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
