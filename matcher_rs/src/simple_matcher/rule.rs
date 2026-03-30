@@ -70,14 +70,45 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 /// The table maps each bitflag value to a dense sequential index used in the scan masks.
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
 
-/// Bit flag in [`PatternEntry::flags`]: the owning rule contains at least one NOT segment.
-pub(super) const FLAG_HAS_NOT: u8 = 1 << 0;
+/// Pre-resolved rule shape encoding the combination of `use_matrix`, `and_count == 1`,
+/// and `has_not` for one [`PatternEntry`].
+///
+/// Stored in [`PatternEntry::shape`] so the hot path in [`RuleSet::process_entry`] can
+/// branch on rule properties without loading [`RuleHot`].
+///
+/// `repr(u8)` values are chosen so that:
+/// - `has_not` = `self as u8 & 1 != 0` (odd values)
+/// - `use_matrix` = `self as u8 >= 4`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(super) enum RuleShape {
+    /// Multi-segment bitmask path, no NOT segments.
+    Bitmask = 0,
+    /// Multi-segment bitmask path, with NOT segments.
+    BitmaskNot = 1,
+    /// Single AND segment, no NOT segments.
+    SingleAnd = 2,
+    /// Single AND segment, with NOT segments.
+    SingleAndNot = 3,
+    /// Per-variant counter matrix, no NOT segments.
+    Matrix = 4,
+    /// Per-variant counter matrix, with NOT segments.
+    MatrixNot = 5,
+}
 
-/// Bit flag in [`PatternEntry::flags`]: the owning rule requires the per-variant counter matrix.
-pub(super) const FLAG_USE_MATRIX: u8 = 1 << 1;
+impl RuleShape {
+    /// Whether the owning rule contains at least one NOT (`~`) segment.
+    #[inline(always)]
+    pub(super) fn has_not(self) -> bool {
+        self as u8 & 1 != 0
+    }
 
-/// Bit flag in [`PatternEntry::flags`]: the owning rule has exactly one AND segment.
-pub(super) const FLAG_SINGLE_AND: u8 = 1 << 2;
+    /// Whether the owning rule requires the per-variant counter matrix.
+    #[inline(always)]
+    pub(super) fn use_matrix(self) -> bool {
+        matches!(self, Self::Matrix | Self::MatrixNot)
+    }
+}
 
 /// Logical role of one emitted pattern inside a rule.
 ///
@@ -178,12 +209,11 @@ pub(super) struct PatternEntry {
     pub(super) pt_index: u8,
     /// Logical role of this segment hit.
     pub(super) kind: PatternKind,
-    /// Embedded rule-level flags read on the hot path to avoid loading [`RuleHot`].
+    /// Pre-resolved rule shape encoding `use_matrix`, `and_count == 1`, and `has_not`.
     ///
-    /// Combines [`FLAG_HAS_NOT`], [`FLAG_USE_MATRIX`], and [`FLAG_SINGLE_AND`] so
-    /// that [`RuleSet::process_entry`] can make branching decisions without touching
-    /// the `hot` array (only needed on first-touch in [`SimpleMatchState::init_rule`]).
-    pub(super) flags: u8,
+    /// Lets [`RuleSet::process_entry`] branch on rule properties without touching the
+    /// `hot` array (only needed on first-touch in [`SimpleMatchState::init_rule`]).
+    pub(super) shape: RuleShape,
 }
 
 /// All hot and cold metadata for the compiled rule set.
@@ -339,7 +369,7 @@ impl RuleSet {
             offset,
             pt_index,
             kind,
-            flags,
+            shape,
         } = entry;
 
         let rule_idx = rule_idx as usize;
@@ -374,7 +404,7 @@ impl RuleSet {
                     return false;
                 }
                 if word_state.positive_generation == generation {
-                    if flags & FLAG_HAS_NOT == 0 && ctx.exit_early {
+                    if !shape.has_not() && ctx.exit_early {
                         return true;
                     }
                     return false;
@@ -388,7 +418,7 @@ impl RuleSet {
 
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
-                let is_satisfied = if flags & FLAG_USE_MATRIX != 0 {
+                let is_satisfied = if shape.use_matrix() {
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
@@ -403,7 +433,7 @@ impl RuleSet {
                         }
                     }
                     word_state.positive_generation == generation
-                } else if flags & FLAG_SINGLE_AND != 0 {
+                } else if matches!(shape, RuleShape::SingleAnd | RuleShape::SingleAndNot) {
                     word_state.positive_generation = generation;
                     true
                 } else {
@@ -420,7 +450,7 @@ impl RuleSet {
 
                 if ctx.exit_early
                     && is_satisfied
-                    && flags & FLAG_HAS_NOT == 0
+                    && !shape.has_not()
                     && word_state.not_generation != generation
                 {
                     return true;
@@ -443,7 +473,7 @@ impl RuleSet {
 
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
-                if flags & FLAG_USE_MATRIX != 0 {
+                if shape.use_matrix() {
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.

@@ -26,8 +26,8 @@ use crate::process::{ProcessType, build_process_type_tree, reduce_text_process_e
 
 use super::engine::ScanPlan;
 use super::rule::{
-    BITMASK_CAPACITY, FLAG_HAS_NOT, FLAG_SINGLE_AND, FLAG_USE_MATRIX, PROCESS_TYPE_TABLE_SIZE,
-    PatternEntry, PatternKind, RuleCold, RuleHot, RuleSet,
+    BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, PatternKind, RuleCold, RuleHot,
+    RuleSet, RuleShape,
 };
 use super::{ProcessPlan, SearchMode, SimpleMatcher};
 
@@ -259,9 +259,14 @@ impl SimpleMatcher {
                 };
 
                 let is_simple = and_count == 1 && !has_not && !use_matrix;
-                let flags = if has_not { FLAG_HAS_NOT } else { 0 }
-                    | if use_matrix { FLAG_USE_MATRIX } else { 0 }
-                    | if and_count == 1 { FLAG_SINGLE_AND } else { 0 };
+                let shape = match (use_matrix, and_count == 1, has_not) {
+                    (true, _, true) => RuleShape::MatrixNot,
+                    (true, _, false) => RuleShape::Matrix,
+                    (false, true, true) => RuleShape::SingleAndNot,
+                    (false, true, false) => RuleShape::SingleAnd,
+                    (false, false, true) => RuleShape::BitmaskNot,
+                    (false, false, false) => RuleShape::Bitmask,
+                };
 
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
@@ -287,7 +292,7 @@ impl SimpleMatcher {
                                 offset: offset as u8,
                                 pt_index,
                                 kind,
-                                flags,
+                                shape,
                             }]);
                             dedup_patterns.push(ac_word);
                             next_pattern_id += 1;
@@ -298,7 +303,7 @@ impl SimpleMatcher {
                             offset: offset as u8,
                             pt_index,
                             kind,
-                            flags,
+                            shape,
                         });
                     }
                 }
