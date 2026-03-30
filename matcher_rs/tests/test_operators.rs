@@ -120,9 +120,9 @@ fn test_not_can_veto_after_positive_completion() {
 }
 
 #[test]
-fn test_pure_not_rule_never_fires() {
-    // "~bad" has 0 AND segments -> auto-positive. But AC only fires on "bad" which vetoes.
-    // If "bad" is absent, the rule is never touched. Either way, no match.
+fn test_pure_not_rule_skipped_with_warning() {
+    // Pure-NOT rules (no AND segments) can never fire because the AC automaton only
+    // detects presence, not absence. Construction skips them with a warning to stderr.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "~bad")
         .build()
@@ -130,14 +130,26 @@ fn test_pure_not_rule_never_fires() {
 
     assert!(
         !matcher.is_match("good text"),
-        "rule never touched -> no match"
+        "pure-NOT rule skipped -> no match"
     );
     assert!(
         !matcher.is_match("bad text"),
-        "touched but vetoed -> no match"
+        "pure-NOT rule skipped -> no match"
     );
-    assert!(!matcher.is_match(""), "empty text always false");
     assert!(matcher.process("anything").is_empty());
+}
+
+#[test]
+fn test_pure_not_mixed_with_valid_rules() {
+    // Pure-NOT rules are skipped, but valid rules in the same matcher still work.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "~bad")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("hello world"), "valid rule still works");
+    assert!(!matcher.is_match("nothing"), "pure-NOT rule was skipped");
 }
 
 // ---------------------------------------------------------------------------

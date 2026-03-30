@@ -125,18 +125,22 @@ impl Serialize for ProcessType {
     }
 }
 
-/// Compact serde deserialization: reads a `u8` and retains all bits, even unknown ones.
+/// Compact serde deserialization: reads a `u8` and validates that only known bits are set.
 ///
-/// Using [`ProcessType::from_bits_retain`] means forward-compatible: if a newer version
-/// of the library defines additional bits, an older reader will round-trip them losslessly.
+/// Rejects values with undefined bits (bits 6–7) to prevent out-of-bounds indexing in
+/// downstream lookup tables that are sized for the 6-bit flag space.
 impl<'de> Deserialize<'de> for ProcessType {
-    /// Deserializes a `u8` into [`ProcessType`], preserving unknown bit combinations.
+    /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit combinations.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let bits: u8 = u8::deserialize(deserializer)?;
-        Ok(ProcessType::from_bits_retain(bits))
+        ProcessType::from_bits(bits).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "invalid ProcessType bits: {bits:#04x} (unknown bits set)"
+            ))
+        })
     }
 }
 

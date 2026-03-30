@@ -76,6 +76,12 @@ impl SimpleMatcher {
     where
         I: AsRef<str> + 'a,
     {
+        for &pt in process_type_word_map.keys() {
+            if (pt.bits() as usize) >= PROCESS_TYPE_TABLE_SIZE {
+                return Err(crate::MatcherError::invalid_process_type(pt.bits()));
+            }
+        }
+
         let pt_index_table = Self::build_pt_index_table(process_type_word_map.keys().copied());
 
         let process_type_set: HashSet<ProcessType> =
@@ -222,6 +228,16 @@ impl SimpleMatcher {
                     continue;
                 }
 
+                if and_splits.is_empty() && !not_splits.is_empty() {
+                    eprintln!(
+                        "matcher_rs: skipping pure-NOT rule (word_id={simple_word_id}, \
+                         word={:?}) — rules with only NOT (~) segments and no AND segments \
+                         can never match",
+                        simple_word.as_ref(),
+                    );
+                    continue;
+                }
+
                 let and_count = and_splits.len();
                 let segment_counts = and_splits
                     .values()
@@ -275,7 +291,7 @@ impl SimpleMatcher {
 
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
-                    debug_assert!(
+                    assert!(
                         offset < 256,
                         "rule has {offset} segments; PatternEntry::offset is u8 (max 255)"
                     );

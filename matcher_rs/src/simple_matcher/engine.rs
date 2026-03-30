@@ -157,6 +157,14 @@ impl ScanPlan {
     /// `true`). The `is_ascii` flag determines engine selection: when `true` or when no
     /// non-ASCII engine exists, the ASCII engine is used; otherwise the charwise engine
     /// handles the full scan.
+    ///
+    /// # Engine selection invariant
+    ///
+    /// When `is_ascii` is `true` and `ascii_matcher` is `None` (all patterns are non-ASCII),
+    /// the function returns `false` without scanning — this is correct because non-ASCII
+    /// patterns cannot match in a pure-ASCII text (UTF-8 guarantees that multi-byte
+    /// continuation bytes are always ≥ 0x80, so ASCII bytes never appear inside non-ASCII
+    /// codepoints).
     #[inline(always)]
     pub(super) fn for_each_match_value(
         &self,

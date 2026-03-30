@@ -272,6 +272,44 @@ fn test_serde_round_trip_process_type() {
     }
 }
 
+#[test]
+fn test_serde_rejects_invalid_process_type_bits() {
+    for bits in [64u8, 128, 192, 255] {
+        let json = bits.to_string();
+        let result: Result<ProcessType, _> = serde_json::from_str(&json);
+        assert!(
+            result.is_err(),
+            "ProcessType deserialization should reject bits={bits:#04x}"
+        );
+    }
+}
+
+#[test]
+fn test_serde_accepts_all_valid_process_type_bits() {
+    for bits in 0u8..64 {
+        let json = bits.to_string();
+        let result: Result<ProcessType, _> = serde_json::from_str(&json);
+        assert!(
+            result.is_ok(),
+            "ProcessType deserialization should accept bits={bits:#04x}"
+        );
+    }
+}
+
+#[test]
+fn test_invalid_process_type_in_construction() {
+    let bad_pt = ProcessType::from_bits_retain(128);
+    let mut table = HashMap::new();
+    let mut words = HashMap::new();
+    words.insert(1u32, "test");
+    table.insert(bad_pt, words);
+    let result = SimpleMatcher::new(&table);
+    assert!(
+        result.is_err(),
+        "construction should reject ProcessType with bits >= 64"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Stress and edge cases
 // ---------------------------------------------------------------------------

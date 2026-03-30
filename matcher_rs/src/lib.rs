@@ -130,6 +130,15 @@ impl MatcherError {
             message: format!("automaton build failed: {source}"),
         }
     }
+
+    pub(crate) fn invalid_process_type(bits: u8) -> Self {
+        Self {
+            message: format!(
+                "invalid ProcessType bits: {bits:#04x} (only bits 0–5 are defined; \
+                 bits 6–7 must be zero)"
+            ),
+        }
+    }
 }
 
 mod builder;
