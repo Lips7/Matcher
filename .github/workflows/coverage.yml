@@ -6,16 +6,26 @@ on:
       - master
     paths:
       - 'matcher_rs/src/**'
+      - 'matcher_rs/tests/**'
+      - 'matcher_rs/process_map/**'
+      - 'matcher_rs/Cargo.toml'
       - '.github/workflows/coverage.yml'
       - 'Cargo.toml'
   pull_request:
     paths:
       - 'matcher_rs/src/**'
+      - 'matcher_rs/tests/**'
+      - 'matcher_rs/process_map/**'
+      - 'matcher_rs/Cargo.toml'
       - '.github/workflows/coverage.yml'
       - 'Cargo.toml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   coverage:
@@ -26,6 +36,9 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Install tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin
       - name: Generate code coverage

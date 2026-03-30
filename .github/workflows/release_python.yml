@@ -9,7 +9,30 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-all-features,cargo-nextest
+      - name: Test
+        run: |
+          cargo all-features nextest run
+          cargo test --doc
+        working-directory: matcher_rs
+        env:
+          RUST_BACKTRACE: 1
+
   linux:
+    needs: [test]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -45,6 +68,7 @@ jobs:
           overwrite: true
 
   musllinux:
+    needs: [test]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -80,6 +104,7 @@ jobs:
           overwrite: true
 
   windows:
+    needs: [test]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -112,6 +137,7 @@ jobs:
           overwrite: true
 
   macos:
+    needs: [test]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -144,6 +170,7 @@ jobs:
           overwrite: true
 
   sdist:
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

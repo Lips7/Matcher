@@ -47,6 +47,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -60,8 +64,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-all-features
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo all-features clippy --workspace --all-targets -- -D warnings
+      - run: cargo doc --workspace --all-features --no-deps
 
   build:
     runs-on: ${{ matrix.platform.runner }}
@@ -108,7 +116,6 @@ jobs:
 
       - name: Test
         run: |
-          cargo doc
           cargo all-features nextest run --profile ci
           cargo test --doc
         working-directory: matcher_rs
