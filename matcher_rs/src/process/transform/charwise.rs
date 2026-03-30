@@ -21,9 +21,9 @@
 //! string. Only when a byte-length mismatch is encountered does it fall back to
 //! the full scan-and-rebuild path through [`replace_scan`].
 
-use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
-use std::collections::{HashMap, HashSet};
+use ahash::{AHashMap, AHashSet};
+use std::borrow::Cow;
 
 use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
 use crate::process::variant::{get_string_from_pool, return_string_to_pool};
@@ -454,7 +454,7 @@ impl FanjianMatcher {
     /// `map` keys are Traditional codepoints; values are Simplified codepoints.
     /// Delegates to [`build_2_stage_table`] to produce the L1/L2 arrays.
     #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_map(map: HashMap<u32, u32>) -> Self {
+    pub(crate) fn from_map(map: AHashMap<u32, u32>) -> Self {
         let (l1, l2) = build_2_stage_table(&map);
         Self {
             l1: l1.into_boxed_slice(),
@@ -551,9 +551,9 @@ impl PinyinMatcher {
     /// [`build_2_stage_table`]. If `trim_space` is `true`, entries are
     /// post-processed through [`trim_pinyin_packed`].
     #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_map(map: HashMap<u32, &str>, trim_space: bool) -> Self {
+    pub(crate) fn from_map(map: AHashMap<u32, &str>, trim_space: bool) -> Self {
         let mut strings = String::new();
-        let packed: HashMap<u32, u32> = map
+        let packed: AHashMap<u32, u32> = map
             .into_iter()
             .map(|(key, value)| {
                 let offset = strings.len() as u32;
@@ -589,8 +589,8 @@ impl PinyinMatcher {
 ///
 /// Returns `(l1, l2)` ready to be boxed into slices.
 #[cfg(feature = "runtime_build")]
-fn build_2_stage_table(map: &HashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
-    let mut pages: HashSet<u32> = map.keys().map(|&key| key >> 8).collect();
+fn build_2_stage_table(map: &AHashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
+    let mut pages: AHashSet<u32> = map.keys().map(|&key| key >> 8).collect();
     let mut page_list: Vec<u32> = pages.drain().collect();
     page_list.sort_unstable();
     const L1_SIZE: usize = (0x10FFFF >> 8) + 1;

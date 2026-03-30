@@ -16,9 +16,9 @@
 //! Returns `None` when no codepoint was deleted, allowing callers to keep
 //! borrowing the original `&str` without allocation.
 
-use std::borrow::Cow;
 #[cfg(feature = "runtime_build")]
-use std::collections::HashSet;
+use ahash::AHashSet;
+use std::borrow::Cow;
 
 use crate::process::transform::simd::skip_ascii_non_delete_simd;
 use crate::process::variant::get_string_from_pool;
@@ -220,7 +220,7 @@ impl DeleteMatcher {
     #[cfg(feature = "runtime_build")]
     pub(crate) fn from_sources(text_delete: &str, white_space: &[&str]) -> Self {
         let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
-        let mut chars = HashSet::new();
+        let mut chars = AHashSet::new();
         for line in text_delete.trim().lines() {
             chars.extend(line.chars());
         }

@@ -10,7 +10,7 @@
 //! most once per step per process.
 
 #[cfg(feature = "runtime_build")]
-use std::collections::HashMap;
+use ahash::AHashMap;
 use std::sync::OnceLock;
 
 use crate::process::process_type::ProcessType;
@@ -75,7 +75,7 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     match process_type_bit {
         ProcessType::None => TransformStep::None,
         ProcessType::Fanjian => {
-            let mut map = HashMap::new();
+            let mut map = AHashMap::new();
             for line in FANJIAN.trim().lines() {
                 let mut split = line.split('\t');
                 let key = split.next().unwrap().chars().next().unwrap() as u32;
@@ -90,7 +90,7 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             TransformStep::Delete(DeleteMatcher::from_sources(TEXT_DELETE, WHITE_SPACE))
         }
         ProcessType::Normalize => {
-            let mut dict = HashMap::new();
+            let mut dict = AHashMap::new();
             for process_map in [NORM, NUM_NORM] {
                 dict.extend(process_map.trim().lines().map(|pair| {
                     let mut split = pair.split('\t');
@@ -101,7 +101,7 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             TransformStep::Normalize(NormalizeMatcher::from_dict(dict))
         }
         ProcessType::PinYin => {
-            let mut map = HashMap::new();
+            let mut map = AHashMap::new();
             for line in PINYIN.trim().lines() {
                 let mut split = line.split('\t');
                 let key = split.next().unwrap().chars().next().unwrap() as u32;
@@ -110,7 +110,7 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             TransformStep::PinYin(PinyinMatcher::from_map(map, false))
         }
         ProcessType::PinYinChar => {
-            let mut map = HashMap::new();
+            let mut map = AHashMap::new();
             for line in PINYIN.trim().lines() {
                 let mut split = line.split('\t');
                 let key = split.next().unwrap().chars().next().unwrap() as u32;

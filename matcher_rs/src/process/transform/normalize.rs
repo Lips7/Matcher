@@ -23,7 +23,7 @@
 //!   parsed at startup.
 
 #[cfg(feature = "runtime_build")]
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
@@ -244,7 +244,7 @@ impl NormalizeMatcher {
     /// builds the Aho-Corasick automaton from the sorted keys, and attaches
     /// the corresponding replacement values via [`NormalizeMatcher::with_replacements`].
     #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_dict(dict: HashMap<&'static str, &'static str>) -> Self {
+    pub(crate) fn from_dict(dict: AHashMap<&'static str, &'static str>) -> Self {
         let mut pairs: Vec<(&'static str, &'static str)> = dict.into_iter().collect();
         pairs.sort_unstable_by_key(|&(k, _)| k);
         let replace_list: Vec<&'static str> = pairs.iter().map(|&(_, v)| v).collect();
