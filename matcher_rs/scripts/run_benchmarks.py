@@ -69,8 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--repeats",
         type=int,
-        default=5,
-        help="Number of recorded repeats. Default: 5.",
+        default=3,
+        help="Number of recorded repeats. Default: 3.",
     )
     parser.add_argument(
         "--metric",
