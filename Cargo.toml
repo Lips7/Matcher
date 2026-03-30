@@ -14,6 +14,9 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Lips7/Matcher"
 version = "0.12.0"
 
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 strip = true
 opt-level = 3
@@ -36,3 +39,11 @@ codegen-units = 1
 incremental = false
 debug = true
 debug-assertions = false
+
+[profile.bench-dev]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+incremental = true
+debug = true
+strip = "none"

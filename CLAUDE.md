@@ -17,14 +17,22 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 make build                          # Full workspace + copy bindings artifacts
 cargo build --release               # Rust only
 
+# Quick iteration
+make check                          # Fast type-check (no codegen)
+make test-quick                     # Default-features tests only
+make fmt                            # Auto-format
+make fmt-check                      # Check formatting without modifying
+
 # Test
+make test-rs                        # All feature combos + doctests (no lint)
+make test                           # All languages (Rust + Python + Java + C)
+make ci-rs                          # lint + doc + test (CI equivalent)
 cargo nextest run                   # Default features
-cargo all-features nextest run      # All feature combinations (use in CI)
+cargo all-features nextest run      # All feature combinations
 cargo test --doc                    # Doctests (nextest doesn't run these)
 cargo nextest run <test_name>       # Single test by name
 cargo nextest run --no-default-features  # Without DFA
 cargo nextest run --test test_simple_matcher  # Single test file by name
-make test                           # All languages (Rust + Python + Java + C)
 
 # Lint/Format
 make lint                           # All languages
@@ -41,6 +49,8 @@ python3 matcher_rs/scripts/run_benchmarks.py --preset search         # Main thro
 python3 matcher_rs/scripts/run_benchmarks.py --preset build          # Matcher construction workflow
 python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search  # Raw engine throughput workflow
 python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build   # Raw engine build workflow
+python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick # Quick directional signal (~2-3 min)
+python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev     # Faster rebuild (thin LTO)
 python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>
 python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # Raw file-to-file fallback
 

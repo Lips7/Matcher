@@ -47,6 +47,9 @@ dfa = []
 # By enabling the simd_runtime_dispatch feature, the best available transform kernel is selected at runtime (AVX2/NEON/portable).
 simd_runtime_dispatch = []
 
+[package.metadata.cargo-all-features]
+skip_feature_sets = [["simd_runtime_dispatch"]]
+
 [[bench]]
 name = "bench"
 harness = false

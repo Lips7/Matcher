@@ -4,7 +4,8 @@ EXT := $(shell \
 	elif [ "$(OS)" = "linux" ]; then echo "so"; \
 	else echo "dll"; fi)
 
-.PHONY: build update lint lint-rs lint-py lint-java test test-rs test-py test-java test-c \
+.PHONY: build update check check-rs lint lint-rs lint-py lint-java \
+	test test-rs test-py test-java test-c test-quick ci-rs doc fmt fmt-check \
 	bench-search bench-build bench-engine-search bench-engine-build bench-compare
 
 # -- Build ---------------------------------------------------------------------
@@ -20,6 +21,19 @@ build:
 update:
 	cargo update --verbose --recursive --breaking -Z unstable-options
 	cargo upgrade --verbose --recursive
+
+# -- Check / Format ------------------------------------------------------------
+
+check:
+	cargo check --workspace --all-targets
+
+check-rs: check
+
+fmt:
+	cargo fmt --all
+
+fmt-check:
+	cargo fmt --all --check
 
 # -- Lint ----------------------------------------------------------------------
 
@@ -39,15 +53,17 @@ lint-java:
 
 test: test-rs test-py test-java test-c
 
-test-rs: lint-rs
-	cargo doc
+test-rs:
 	cd matcher_rs && cargo all-features nextest run
 	cargo test --doc
 
-test-py: lint-py
+test-quick:
+	cargo nextest run -p matcher_rs
+
+test-py:
 	cd matcher_py && uv run pytest
 
-test-java: lint-java
+test-java:
 	cargo build --release
 	mkdir -p ./matcher_java/src/main/resources
 	cp ./target/release/libmatcher_java.$(EXT) ./matcher_java/src/main/resources/libmatcher_java.$(EXT)
@@ -57,6 +73,11 @@ test-c:
 	$(CC) -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
 		matcher_c/tests/test_matcher.c -o matcher_c/tests/test_matcher
 	./matcher_c/tests/test_matcher
+
+ci-rs: lint-rs doc test-rs
+
+doc:
+	cargo doc
 
 # -- Bench ---------------------------------------------------------------------
 

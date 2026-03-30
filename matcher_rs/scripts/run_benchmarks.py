@@ -96,6 +96,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the unrecorded warm-up pass.",
     )
     parser.add_argument(
+        "--profile",
+        default="bench",
+        help="Cargo profile to build/run benchmarks with. Default: bench.",
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick iteration mode: sample-count=5, min-time=0.5, repeats=1, no warmup.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=pathlib.Path,
         default=BENCH_RECORDS_DIR,
@@ -104,7 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def preset_commands(sample_count_override: int | None, min_time_override: float | None) -> OrderedDict[str, list[str]]:
+def preset_commands(
+    sample_count_override: int | None,
+    min_time_override: float | None,
+    profile: str = "bench",
+) -> OrderedDict[str, list[str]]:
     def divan_args(kind: str) -> list[str]:
         defaults = {
             "search": {"sample_count": 40, "min_time": 2.0},
@@ -125,18 +139,19 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
             "true",
         ]
 
+    def cargo_bench(bench_name: str) -> list[str]:
+        cmd = ["cargo", "bench", "-p", "matcher_rs"]
+        if profile != "bench":
+            cmd += ["--profile", profile]
+        cmd += ["--bench", bench_name, "--"]
+        return cmd
+
     return OrderedDict(
         [
             (
                 "search",
                 [
-                    "cargo",
-                    "bench",
-                    "-p",
-                    "matcher_rs",
-                    "--bench",
-                    "bench",
-                    "--",
+                    *cargo_bench("bench"),
                     "search_mode",
                     "match_vs_nomatch",
                     "scaling",
@@ -148,13 +163,7 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
             (
                 "build",
                 [
-                    "cargo",
-                    "bench",
-                    "-p",
-                    "matcher_rs",
-                    "--bench",
-                    "bench",
-                    "--",
+                    *cargo_bench("bench"),
                     "build",
                     *divan_args("build"),
                 ],
@@ -162,13 +171,7 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
             (
                 "engine-search",
                 [
-                    "cargo",
-                    "bench",
-                    "-p",
-                    "matcher_rs",
-                    "--bench",
-                    "bench_engine",
-                    "--",
+                    *cargo_bench("bench_engine"),
                     "search_",
                     *divan_args("search"),
                 ],
@@ -176,13 +179,7 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
             (
                 "engine-build",
                 [
-                    "cargo",
-                    "bench",
-                    "-p",
-                    "matcher_rs",
-                    "--bench",
-                    "bench_engine",
-                    "--",
+                    *cargo_bench("bench_engine"),
                     "build_",
                     *divan_args("build"),
                 ],
@@ -190,13 +187,7 @@ def preset_commands(sample_count_override: int | None, min_time_override: float 
             (
                 "engine-is-match",
                 [
-                    "cargo",
-                    "bench",
-                    "-p",
-                    "matcher_rs",
-                    "--bench",
-                    "bench_engine",
-                    "--",
+                    *cargo_bench("bench_engine"),
                     "is_match_",
                     *divan_args("search"),
                 ],
@@ -209,21 +200,26 @@ def command_sets_for_preset(
     preset: str,
     sample_count_override: int | None,
     min_time_override: float | None,
+    profile: str = "bench",
 ) -> OrderedDict[str, list[str]]:
-    commands = preset_commands(sample_count_override, min_time_override)
+    commands = preset_commands(sample_count_override, min_time_override, profile=profile)
     if preset == "all":
         return commands
     return OrderedDict([(preset, commands[preset])])
 
 
-def prebuild(command_sets: OrderedDict[str, list[str]]) -> None:
+def prebuild(command_sets: OrderedDict[str, list[str]], profile: str = "bench") -> None:
     benches = {
         command[command.index("--bench") + 1]
         for command in command_sets.values()
         if "--bench" in command
     }
     for bench_name in sorted(benches):
-        run_command(["cargo", "bench", "-p", "matcher_rs", "--bench", bench_name, "--no-run"])
+        cmd = ["cargo", "bench", "-p", "matcher_rs"]
+        if profile != "bench":
+            cmd += ["--profile", profile]
+        cmd += ["--bench", bench_name, "--no-run"]
+        run_command(cmd)
 
 
 def timestamp_slug() -> str:
@@ -244,7 +240,16 @@ def aggregate_run_set(run_dir: pathlib.Path, metric: str, metadata: dict[str, st
 
 def main() -> int:
     args = build_parser().parse_args()
-    command_sets = command_sets_for_preset(args.preset, args.sample_count, args.min_time)
+
+    if args.quick:
+        args.sample_count = args.sample_count or 5
+        args.min_time = args.min_time or 0.5
+        args.repeats = 1
+        args.no_warmup = True
+
+    command_sets = command_sets_for_preset(
+        args.preset, args.sample_count, args.min_time, profile=args.profile,
+    )
 
     if args.repeats <= 0:
         raise SystemExit("--repeats must be greater than zero")
@@ -259,6 +264,7 @@ def main() -> int:
             ("Preset", args.preset),
             ("Repeat Count", str(args.repeats)),
             ("Metric", args.metric),
+            ("Profile", args.profile),
             ("Branch", detect_branch()),
             ("Hardware", detect_hardware()),
             ("Platform", platform.platform()),
@@ -271,6 +277,7 @@ def main() -> int:
         "preset": args.preset,
         "repeat_count": args.repeats,
         "metric": args.metric,
+        "profile": args.profile,
         "branch": metadata["Branch"],
         "hardware": metadata["Hardware"],
         "platform": metadata["Platform"],
@@ -285,7 +292,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    prebuild(command_sets)
+    prebuild(command_sets, profile=args.profile)
 
     if not args.no_warmup:
         for label, command in command_sets.items():
