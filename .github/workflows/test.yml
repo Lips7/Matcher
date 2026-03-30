@@ -84,24 +84,18 @@ jobs:
           target: ${{ matrix.platform.target }}
       - name: Install cargo-all-features
         run: cargo install cargo-all-features
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
 
       - name: Test
-        if: runner.os != 'Windows' && matrix.platform.target != 'aarch64-unknown-linux-gnu'
         run: |
           cargo doc
-          cargo all-features test
+          cargo all-features nextest run
+          cargo test --doc
         env:
           RUST_BACKTRACE: 1
-      - name: Test (Windows & Linux Arm)
-        if: runner.os == 'Windows' || matrix.platform.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          cargo doc
-          cargo test --no-default-features
-          cargo test --features dfa
-          cargo test --features runtime_build
-          cargo test --features dfa,runtime_build
 
       - name: Rename & move
         shell: bash

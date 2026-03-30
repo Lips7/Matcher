@@ -41,7 +41,8 @@ test: test-rs test-py test-java test-c
 
 test-rs: lint-rs
 	cargo doc
-	cd matcher_rs && cargo all-features test
+	cd matcher_rs && cargo all-features nextest run
+	cargo test --doc
 
 test-py: lint-py
 	cd matcher_py && uv run pytest

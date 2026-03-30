@@ -8,7 +8,7 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 
 **Toolchain:** nightly Rust (see `rust-toolchain.toml`). Nightly is required — do not change this.
 
-**Prerequisites:** `cargo-all-features` (`cargo install cargo-all-features`), `uv` (Python env manager), `prek` (pre-commit runner).
+**Prerequisites:** `cargo-all-features` (`cargo install cargo-all-features`), `cargo-nextest` (`cargo install cargo-nextest`), `uv` (Python env manager), `prek` (pre-commit runner).
 
 ## Commands
 
@@ -18,11 +18,12 @@ make build                          # Full workspace + copy bindings artifacts
 cargo build --release               # Rust only
 
 # Test
-cargo test                          # Default features
-cargo all-features test             # All feature combinations (use in CI)
-cargo test <test_name>              # Single test by name
-cargo test --no-default-features    # Without DFA
-cargo test --test test_simple_matcher          # Single test file by name
+cargo nextest run                   # Default features
+cargo all-features nextest run      # All feature combinations (use in CI)
+cargo test --doc                    # Doctests (nextest doesn't run these)
+cargo nextest run <test_name>       # Single test by name
+cargo nextest run --no-default-features  # Without DFA
+cargo nextest run --test test_simple_matcher  # Single test file by name
 make test                           # All languages (Rust + Python + Java + C)
 
 # Lint/Format
