@@ -58,7 +58,7 @@ test-rs:
 	cargo test --doc
 
 test-quick:
-	cargo nextest run -p matcher_rs
+	cd matcher_rs && cargo nextest run
 
 test-py:
 	cd matcher_py && uv run pytest
