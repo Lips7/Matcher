@@ -355,6 +355,7 @@ fn skip_ascii_non_delete_portable(bytes: &[u8], offset: usize, ascii_lut: &[u8; 
 #[target_feature(enable = "avx2")]
 unsafe fn skip_ascii_avx2_impl(bytes: &[u8], mut offset: usize) -> usize {
     while offset + 32 <= bytes.len() {
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
         let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
         let mask = _mm256_movemask_epi8(chunk) as u32;
         if mask != 0 {
@@ -375,6 +376,7 @@ fn skip_ascii_avx2(bytes: &[u8], offset: usize) -> usize {
     if offset >= bytes.len() || bytes[offset] >= 0x80 {
         return offset;
     }
+    // SAFETY: AVX2 support verified by `SimdDispatch::detect` before this function pointer is stored.
     unsafe { skip_ascii_avx2_impl(bytes, offset) }
 }
 
@@ -395,6 +397,7 @@ unsafe fn skip_non_digit_ascii_avx2_impl(bytes: &[u8], mut offset: usize) -> usi
     let digit_lo = _mm256_set1_epi8((b'0' - 1) as i8);
     let digit_hi = _mm256_set1_epi8((b'9' + 1) as i8);
     while offset + 32 <= bytes.len() {
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
         let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
         let non_ascii_mask = _mm256_movemask_epi8(chunk) as u32;
         let ge_lo = _mm256_cmpgt_epi8(chunk, digit_lo);
@@ -421,6 +424,7 @@ fn skip_non_digit_ascii_avx2(bytes: &[u8], offset: usize) -> usize {
     if b0 >= 0x80 || b0.is_ascii_digit() {
         return offset;
     }
+    // SAFETY: AVX2 support verified by `SimdDispatch::detect` before this function pointer is stored.
     unsafe { skip_non_digit_ascii_avx2_impl(bytes, offset) }
 }
 
@@ -456,13 +460,16 @@ unsafe fn skip_ascii_non_delete_avx2_impl(
     lut32[..16].copy_from_slice(ascii_lut);
     lut32[16..].copy_from_slice(ascii_lut);
 
+    // SAFETY: `lut32` is a local [u8; 32] on the stack, valid for a 32-byte read.
     let shuffle_lut = unsafe { _mm256_loadu_si256(lut32.as_ptr() as *const __m256i) };
+    // SAFETY: `SHIFT_TABLE_32` is a static [u8; 32], valid for a 32-byte read.
     let shift_table = unsafe { _mm256_loadu_si256(SHIFT_TABLE_32.as_ptr() as *const __m256i) };
     let low_nibble_mask = _mm256_set1_epi8(0x0f);
     let bit_pos_mask = _mm256_set1_epi8(0x07);
     let zero = _mm256_setzero_si256();
 
     while offset + 32 <= bytes.len() {
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
         let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
         let non_ascii_mask = _mm256_movemask_epi8(chunk) as u32;
 
@@ -495,6 +502,7 @@ fn skip_ascii_non_delete_avx2(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
     if b0 >= 0x80 || ascii_delete_contains(b0, ascii_lut) {
         return offset;
     }
+    // SAFETY: AVX2 support verified by `SimdDispatch::detect` before this function pointer is stored.
     unsafe { skip_ascii_non_delete_avx2_impl(bytes, offset, ascii_lut) }
 }
 
