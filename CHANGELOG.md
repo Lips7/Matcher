@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.12.1 - 2026-03-30
+
+### Performance
+- Optimize search throughput 10-17% via six hot-path improvements.
+- Encode `rule_idx` directly in automaton values for simple single-PT patterns (`DIRECT_RULE_BIT`), eliminating one indirection per hit.
+- Skip `text.is_ascii()` scan when only ASCII patterns exist.
+- Optimize `is_match` hot path with two targeted improvements.
+- Raise `AC_DFA_PATTERN_THRESHOLD` to 5000 and optimize `bench_engine`.
+- Optimize hot-path processing for single `ProcessType` matchers (`SearchMode::SingleProcessType`).
+- Improve `SimpleMatcher` build performance up to 42%.
+- Replace std `HashMap` with `ahash` in `runtime_build` transform init.
+
+### API
+- `SimpleMatcher::new` and `builder::build` now return `Result` instead of panicking.
+- `SimpleMatcherBuilder::add_word` accepts owned `String` in addition to `&str`.
+- Add `#[must_use]` to public types and query methods.
+- Derive `PartialEq`/`Eq` on `SimpleResult`; add `Send + Sync` static assertions.
+- Add manual `Debug` impl for `SimpleMatcher`.
+
+### Features
+- Release GIL and add batch methods (`is_match_batch`, `process_batch`) in Python bindings.
+
+### Bug Fixes
+- Harden construction against invalid `ProcessType` and edge-case rules.
+- Fix PinYin handling to correctly track `is_ascii` for unmapped characters.
+- Resolve broken intra-doc link to cfg-gated private function.
+
+### Safety
+- Deny `unsafe_op_in_unsafe_fn` lint, document all unsafe blocks with `SAFETY` comments.
+- Add `SAFETY` comments to all unsafe blocks in AVX2 SIMD functions.
+- Add crate-level Safety section documenting unsafe usage.
+
+### Refactor
+- Reorganize `simple_matcher` internals into focused modules (`build.rs`, `engine.rs`, `rule.rs`, `search.rs`, `state.rs`).
+- Reorganize transform pipeline into dedicated modules under `process/`.
+- Replace `FLAG_*` bit flags with `RuleShape` enum in `PatternEntry`.
+
+### Testing
+- Add 6 property tests for correctness invariants.
+- Reorganize test suite by system-under-test.
+
+### Documentation
+- Rewrite `DESIGN.md` and update `CLAUDE.md` to match refactored codebase.
+- Add API tutorial and profiling targets in `examples/`.
+- Update `DESIGN.md` to reflect search throughput optimizations.
+
+### CI
+- Adopt `cargo-nextest` across all test workflows.
+- Enable `rust-lld` linker for test and bench builds.
+- Streamline cargo installation in release workflow.
+- Improve CI workflow reliability and efficiency.
+
 ## 0.12.0 - 2026-03-28
 
 ### Performance

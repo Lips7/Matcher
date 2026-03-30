@@ -12,7 +12,7 @@ readme = "README.md"
 keywords = ["text", "string", "search", "pattern", "multi"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Lips7/Matcher"
-version = "0.12.0"
+version = "0.12.1"
 
 [profile.dev.package."*"]
 opt-level = 2
