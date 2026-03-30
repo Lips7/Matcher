@@ -52,7 +52,7 @@ impl StepOutput {
 /// Compiled single-bit transformation step.
 ///
 /// Each variant wraps the corresponding low-level matcher from [`super::transform`].
-/// Instances are created by [`super::registry::build_transform_step`] and cached in
+/// Instances are created by `build_transform_step` in [`super::registry`] and cached in
 /// `TRANSFORM_STEP_CACHE` for the lifetime of the process. The [`apply`](Self::apply)
 /// method provides a uniform dispatch point.
 #[derive(Clone)]
