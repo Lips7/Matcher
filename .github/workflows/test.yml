@@ -111,6 +111,7 @@ jobs:
           cargo doc
           cargo all-features nextest run --profile ci
           cargo test --doc
+        working-directory: matcher_rs
         env:
           RUST_BACKTRACE: 1
 
@@ -128,9 +129,9 @@ jobs:
       - name: Python Test
         shell: bash
         run: |
-          cd matcher_py
           uv sync
           uv run pytest
+        working-directory: matcher_py
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
