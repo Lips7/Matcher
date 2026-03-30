@@ -44,7 +44,7 @@ use crate::process::variant::{
 ///   traversal loop avoids a registry lookup.
 /// - **`process_type_list`** records which composite [`ProcessType`] values terminate at
 ///   this node, so the traversal can tag output text variants with the correct bitmask.
-/// - **`folded_mask`** is the pre-computed OR of `1u64 << pt.bits()` for all entries in
+/// - **`pt_index_mask`** is the pre-computed OR of `1u64 << pt.bits()` for all entries in
 ///   `process_type_list`, avoiding a per-call fold in the hot loop.
 ///
 /// All fields are `pub(crate)` or private; users obtain instances exclusively through
@@ -69,13 +69,13 @@ pub struct ProcessTypeBitNode {
     /// A non-empty list means that one or more rules emit a text variant here. For example,
     /// if both `Fanjian` and `Fanjian|Delete` are in the set, the Fanjian node's list
     /// contains `Fanjian`, and the Delete child's list contains `Fanjian|Delete`.
-    process_type_list: Vec<ProcessType>,
+    process_type_list: TinyVec<[ProcessType; 4]>,
     /// The single-bit [`ProcessType`] step this node represents (the edge label from parent).
     ///
     /// For the root node this is [`ProcessType::None`].
     pub(crate) process_type_bit: ProcessType,
     /// Flat-array indices of child nodes (the next transformation steps reachable from here).
-    pub(crate) children: Vec<usize>,
+    pub(crate) children: TinyVec<[usize; 4]>,
     /// Cached reference to the compiled transform step for this node's `process_type_bit`.
     ///
     /// [`None`] only for the root node. All other nodes cache their step at construction
@@ -86,12 +86,12 @@ pub struct ProcessTypeBitNode {
     /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop. After
     /// [`recompute_mask_with_index`](Self::recompute_mask_with_index) is called, the
     /// encoding switches from raw bit positions to sequential indices.
-    pub(crate) folded_mask: u64,
+    pub(crate) pt_index_mask: u64,
 }
 
 /// Post-construction helpers for [`ProcessTypeBitNode`].
 impl ProcessTypeBitNode {
-    /// Re-encodes [`folded_mask`](Self::folded_mask) using a sequential index table.
+    /// Re-encodes [`pt_index_mask`](Self::pt_index_mask) using a sequential index table.
     ///
     /// The default encoding stores `1u64 << pt.bits()`, which can scatter bits across the
     /// full `u64` range for composite [`ProcessType`] values. A sequential index keeps bit
@@ -106,7 +106,7 @@ impl ProcessTypeBitNode {
     /// Called by [`SimpleMatcher::new()`](crate::SimpleMatcher) after
     /// [`build_process_type_tree`] returns.
     pub(crate) fn recompute_mask_with_index(&mut self, pt_index_table: &[u8; 64]) {
-        self.folded_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
+        self.pt_index_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
             acc | (1u64 << pt_index_table[pt.bits() as usize])
         });
     }
@@ -141,17 +141,21 @@ impl ProcessTypeBitNode {
 /// assert!(tree.len() >= 3);
 /// ```
 pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
-    let mut process_type_tree = Vec::new();
+    let max_nodes: usize = 1 + process_type_set
+        .iter()
+        .map(|pt| pt.bits().count_ones() as usize)
+        .sum::<usize>();
+    let mut process_type_tree = Vec::with_capacity(max_nodes);
     let mut root = ProcessTypeBitNode {
-        process_type_list: Vec::new(),
+        process_type_list: TinyVec::new(),
         process_type_bit: ProcessType::None,
-        children: Vec::new(),
+        children: TinyVec::new(),
         step: None,
-        folded_mask: 0,
+        pt_index_mask: 0,
     };
     if process_type_set.contains(&ProcessType::None) {
         root.process_type_list.push(ProcessType::None);
-        root.folded_mask |= 1u64 << ProcessType::None.bits();
+        root.pt_index_mask |= 1u64 << ProcessType::None.bits();
     }
     process_type_tree.push(root);
     for &process_type in process_type_set.iter() {
@@ -173,17 +177,17 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
                 process_type_tree[current_node_index]
                     .process_type_list
                     .push(process_type);
-                process_type_tree[current_node_index].folded_mask |= 1u64 << process_type.bits();
+                process_type_tree[current_node_index].pt_index_mask |= 1u64 << process_type.bits();
             } else {
                 let mut child = ProcessTypeBitNode {
-                    process_type_list: Vec::new(),
+                    process_type_list: TinyVec::new(),
                     process_type_bit,
-                    children: Vec::new(),
+                    children: TinyVec::new(),
                     step: Some(get_transform_step(process_type_bit)),
-                    folded_mask: 0,
+                    pt_index_mask: 0,
                 };
                 child.process_type_list.push(process_type);
-                child.folded_mask |= 1u64 << process_type.bits();
+                child.pt_index_mask |= 1u64 << process_type.bits();
                 process_type_tree.push(child);
                 let new_node_index = process_type_tree.len() - 1;
                 process_type_tree[current_node_index]
@@ -345,14 +349,14 @@ where
         let root_is_ascii = text.is_ascii();
         text_masks.push(TextVariant {
             text: Cow::Borrowed(text),
-            mask: process_type_tree[0].folded_mask,
+            mask: process_type_tree[0].pt_index_mask,
             is_ascii: root_is_ascii,
         });
 
         let mut scanned_masks: TinyVec<[u64; 8]> = TinyVec::new();
         if LAZY {
             scanned_masks.push(0u64);
-            let root_mask = process_type_tree[0].folded_mask;
+            let root_mask = process_type_tree[0].pt_index_mask;
             if root_mask != 0 && on_variant(text, 0, root_mask, root_is_ascii) {
                 return (text_masks, true);
             }
@@ -395,7 +399,7 @@ where
                 }
 
                 ts.tree_node_indices[child_node_index] = child_index;
-                text_masks[child_index].mask |= child_node.folded_mask;
+                text_masks[child_index].mask |= child_node.pt_index_mask;
 
                 if LAZY && child_index >= old_len {
                     // New unique text: call on_variant immediately.

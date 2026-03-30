@@ -68,9 +68,9 @@ impl SimpleMatcher {
         state.prepare(self.rules.len());
 
         let root_is_ascii = text.is_ascii();
-        let root_mask = tree[0].folded_mask;
+        let root_mask = tree[0].pt_index_mask;
         let child_node = &tree[1];
-        let child_mask = child_node.folded_mask;
+        let child_mask = child_node.pt_index_mask;
 
         // Apply the single transform step.
         let step = child_node
@@ -155,9 +155,9 @@ impl SimpleMatcher {
         state.prepare(self.rules.len());
 
         let root_is_ascii = text.is_ascii();
-        let root_mask = tree[0].folded_mask;
+        let root_mask = tree[0].pt_index_mask;
         let child_node = &tree[1];
-        let child_mask = child_node.folded_mask;
+        let child_mask = child_node.pt_index_mask;
 
         let step = child_node
             .step

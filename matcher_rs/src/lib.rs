@@ -111,6 +111,7 @@ use std::fmt;
 /// avoid coupling the public API to third-party error types, and to allow
 /// adding new error variants in the future without breaking callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MatcherError {
     message: String,
 }

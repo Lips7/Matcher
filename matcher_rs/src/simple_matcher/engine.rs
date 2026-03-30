@@ -30,7 +30,6 @@ use daachorse::{
 
 use crate::MatcherError;
 
-use super::SearchMode;
 use super::rule::{PatternEntry, PatternIndex};
 
 /// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
@@ -109,10 +108,9 @@ impl ScanPlan {
     pub(super) fn compile(
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
-        mode: SearchMode,
     ) -> Result<Self, MatcherError> {
         let patterns = PatternIndex::new(dedup_entries);
-        let value_map = patterns.build_value_map(mode);
+        let value_map = patterns.build_value_map();
         let (ascii_matcher, non_ascii_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
         Ok(Self {

@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 use crate::process::ProcessType;
 
+use super::SimpleResult;
 use super::state::{ScanContext, SimpleMatchState};
-use super::{SearchMode, SimpleResult};
 
 /// Public table format accepted by [`super::SimpleMatcher::new`].
 ///
@@ -253,8 +253,8 @@ pub(super) struct PatternIndex {
 ///
 /// 1. [`DirectRule`](Self::DirectRule) — the automaton value already encodes the rule index
 ///    (only possible for single-entry [`PatternKind::Simple`] patterns in
-///    [`SearchMode::AllSimple`] or
-///    [`SearchMode::SingleProcessType`] mode).
+///    [`AllSimple`](super::SearchMode::AllSimple) or
+///    [`SingleProcessType`](super::SearchMode::SingleProcessType) mode).
 /// 2. [`SingleEntry`](Self::SingleEntry) — one entry to process.
 /// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
 pub(super) enum PatternDispatch<'a> {
@@ -544,7 +544,7 @@ impl PatternIndex {
 
     /// Returns whether every entry across all patterns is a [`PatternKind::Simple`] segment.
     ///
-    /// When true, the matcher can use [`SearchMode::AllSimple`]
+    /// When true, the matcher can use [`AllSimple`](super::SearchMode::AllSimple)
     /// which skips the full state machine and processes every hit as a completed rule.
     #[inline(always)]
     pub(super) fn all_simple(&self) -> bool {
@@ -556,8 +556,8 @@ impl PatternIndex {
     /// Builds the raw scan-value mapping used by the automata.
     ///
     /// For each deduplicated pattern, produces the `u32` value that the automaton will
-    /// report on a hit. In [`SearchMode::AllSimple`] and
-    /// [`SearchMode::SingleProcessType`] modes, a
+    /// report on a hit. In [`AllSimple`](super::SearchMode::AllSimple) and
+    /// [`SingleProcessType`](super::SearchMode::SingleProcessType) modes, a
     /// pattern with exactly one [`PatternKind::Simple`] entry is encoded as
     /// `rule_idx | DIRECT_RULE_BIT` so the hot path can skip the indirection through the
     /// entry table. All other patterns store the deduplicated index directly.
@@ -567,7 +567,7 @@ impl PatternIndex {
     /// Uses `get_unchecked` on `self.entries` when checking the single-entry fast path.
     /// The index `start` comes from `self.ranges` which was built by [`Self::new`] and
     /// is always in bounds.
-    pub(super) fn build_value_map(&self, _mode: SearchMode) -> Vec<u32> {
+    pub(super) fn build_value_map(&self) -> Vec<u32> {
         let mut value_map = Vec::with_capacity(self.ranges.len());
 
         for (dedup_idx, &(start, len)) in self.ranges.iter().enumerate() {

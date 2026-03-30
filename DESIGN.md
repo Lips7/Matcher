@@ -176,14 +176,14 @@ Root (None)
 
 Each node (`ProcessTypeBitNode`) stores:
 - `process_type_bit` — the single-bit transformation step this edge represents.
-- `process_type_list: Vec<ProcessType>` — which composite `ProcessType` values terminate at this node.
-- `children: Vec<usize>` — flat-array indices of the next transformation steps reachable from here.
+- `process_type_list: TinyVec<[ProcessType; 4]>` — which composite `ProcessType` values terminate at this node.
+- `children: TinyVec<[usize; 4]>` — flat-array indices of the next transformation steps reachable from here.
 - `step: Option<&'static TransformStep>` — a cached reference to the compiled step for this node (fetched from the registry at construction time). The root stores `None`.
-- `folded_mask: u64` — pre-computed OR of `1u64 << pt.bits()` for every composite type in `process_type_list`. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
+- `pt_index_mask: u64` — pre-computed OR of `1u64 << pt.bits()` for every composite type in `process_type_list`. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
 
-The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits()` values can use bits up to position 5, and composite types produce values up to 0b00111111 = 63. Storing a full `u64` mask per `PatternEntry` would waste space. Instead, `build_pt_index_table` assigns each composite type used in the current matcher a sequential index 0, 1, 2, ... (with `ProcessType::None` always at 0). These compact indices let `PatternEntry.pt_index` fit in a `u8` while `folded_mask` stays a `u64` with small bit positions.
+The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits()` values can use bits up to position 5, and composite types produce values up to 0b00111111 = 63. Storing a full `u64` mask per `PatternEntry` would waste space. Instead, `build_pt_index_table` assigns each composite type used in the current matcher a sequential index 0, 1, 2, ... (with `ProcessType::None` always at 0). These compact indices let `PatternEntry.pt_index` fit in a `u8` while `pt_index_mask` stays a `u64` with small bit positions.
 
-After tree construction, `recompute_mask_with_index` rewrites every node's `folded_mask` from raw-bit encoding to sequential-index encoding so it matches the `pt_index` stored in `PatternEntry`.
+After tree construction, `recompute_mask_with_index` rewrites every node's `pt_index_mask` from raw-bit encoding to sequential-index encoding so it matches the `pt_index` stored in `PatternEntry`.
 
 ### walk_process_tree
 
@@ -245,7 +245,7 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
    - De-duplicates emitted pattern strings across all rules into a flat `dedup_patterns` list using a `HashMap<Cow<'_, str>, usize>`. Each unique pattern is assigned a dedup index. A `PatternEntry` links each dedup index back to its `(rule_idx, offset, pt_index, kind)`.
    - Returns a `ParsedRules` intermediate representation containing `dedup_patterns`, `dedup_entries`, and the compiled `RuleSet`.
 
-3. **Build transformation tree and recompute masks.** `build_process_type_tree` produces the trie from the `HashSet` of process types, then `recompute_mask_with_index` re-encodes every node's `folded_mask` to use the sequential indices matching `PatternEntry.pt_index`.
+3. **Build transformation tree and recompute masks.** `build_process_type_tree` produces the trie from the `HashSet` of process types, then `recompute_mask_with_index` re-encodes every node's `pt_index_mask` to use the sequential indices matching `PatternEntry.pt_index`.
 
 4. **Choose search mode.** Determines `single_pt_index` if only one process type is used. Sets the base mode to `SingleProcessType { pt_index }` or `General`. After scan plan compilation, checks if the tree has no children and every pattern is `PatternKind::Simple` — if so, overrides to `AllSimple`.
 

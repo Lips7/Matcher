@@ -99,7 +99,7 @@ impl SimpleMatcher {
         } else {
             SearchMode::General
         };
-        let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries, base_mode)?;
+        let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
         let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
             SearchMode::AllSimple
         } else {

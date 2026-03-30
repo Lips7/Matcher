@@ -49,11 +49,13 @@ static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
 /// index is within the cache bounds. In release mode, passing a multi-bit or out-of-range
 /// value is undefined behavior (array out-of-bounds).
 pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static TransformStep {
-    let index = process_type_bit.bits().trailing_zeros() as usize;
     debug_assert!(
-        index < TRANSFORM_STEP_CACHE.len(),
-        "ProcessType bit index out of bounds"
+        process_type_bit.bits().is_power_of_two() || process_type_bit == ProcessType::None,
+        "get_transform_step requires a single-bit ProcessType, got {:?}",
+        process_type_bit
     );
+    let index = process_type_bit.bits().trailing_zeros() as usize;
+    debug_assert!(index < TRANSFORM_STEP_CACHE.len());
 
     TRANSFORM_STEP_CACHE[index].get_or_init(|| build_transform_step(process_type_bit))
 }
