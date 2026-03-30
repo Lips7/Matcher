@@ -36,9 +36,26 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 /// High bit used to encode the direct-rule fast path in raw scan values.
 ///
 /// When a deduplicated pattern is attached to exactly one [`PatternKind::Simple`] rule,
-/// the automaton stores `rule_idx | DIRECT_RULE_BIT` as the raw value so that
+/// the automaton stores an encoded value with this bit set so that
 /// [`PatternIndex::dispatch`] can skip the indirection through the entry table entirely.
+///
+/// The encoding packs both `rule_idx` and `pt_index` into 31 bits:
+///
+/// ```text
+/// Bit 31:     DIRECT_RULE_BIT flag
+/// Bits 26-30: pt_index (5 bits, max 31)
+/// Bits 0-25:  rule_idx (26 bits, max ~67M rules)
+/// ```
 pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
+
+/// Bit shift for the process-type index inside a direct-rule encoded value.
+const DIRECT_PT_SHIFT: u32 = 26;
+
+/// Mask for extracting the process-type index from a direct-rule encoded value.
+const DIRECT_PT_MASK: u32 = 0x1F << DIRECT_PT_SHIFT;
+
+/// Mask for extracting the rule index from a direct-rule encoded value.
+const DIRECT_RULE_MASK: u32 = (1 << DIRECT_PT_SHIFT) - 1;
 
 /// Maximum number of segments handled by the bitmask fast path.
 ///
@@ -52,6 +69,15 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 /// [`ProcessType`] is a 6-bit bitflag, so `2^6 = 64` covers every possible combination.
 /// The table maps each bitflag value to a dense sequential index used in the scan masks.
 pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
+
+/// Bit flag in [`PatternEntry::flags`]: the owning rule contains at least one NOT segment.
+pub(super) const FLAG_HAS_NOT: u8 = 1 << 0;
+
+/// Bit flag in [`PatternEntry::flags`]: the owning rule requires the per-variant counter matrix.
+pub(super) const FLAG_USE_MATRIX: u8 = 1 << 1;
+
+/// Bit flag in [`PatternEntry::flags`]: the owning rule has exactly one AND segment.
+pub(super) const FLAG_SINGLE_AND: u8 = 1 << 2;
 
 /// Logical role of one emitted pattern inside a rule.
 ///
@@ -111,11 +137,6 @@ pub(super) struct RuleHot {
     /// True when any segment requires a count other than 1, or when the total number
     /// of segments exceeds [`BITMASK_CAPACITY`].
     pub(super) use_matrix: bool,
-    /// Whether the rule contains any NOT (`~`) segments.
-    ///
-    /// When false, the scan can short-circuit as soon as all AND segments are satisfied
-    /// without waiting to check for vetoes.
-    pub(super) has_not: bool,
 }
 
 /// Cold rule metadata only needed when returning results.
@@ -140,7 +161,7 @@ pub(super) struct RuleCold {
 /// contain the sub-pattern `"hello"`). Each such binding is stored as a separate
 /// `PatternEntry` in the same bucket of the [`PatternIndex`].
 ///
-/// Size: 8 bytes (u32 + u16 + u8 + u8 repr).
+/// Size: 8 bytes (u32 + u8 + u8 + u8 + u8).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {
     /// Rule index inside [`RuleSet`] (indexes into the hot/cold `Vec`s).
@@ -148,7 +169,8 @@ pub(super) struct PatternEntry {
     /// Segment offset within the rule's [`RuleHot::segment_counts`] array.
     ///
     /// For AND segments this is `0..and_count`; for NOT segments it is `and_count..`.
-    pub(super) offset: u16,
+    /// Maximum 255 segments per rule (far exceeds [`BITMASK_CAPACITY`] of 64).
+    pub(super) offset: u8,
     /// Compact process-type index assigned by `SimpleMatcher::build_pt_index_table`.
     ///
     /// Used to filter pattern hits by comparing against the current variant's
@@ -156,6 +178,12 @@ pub(super) struct PatternEntry {
     pub(super) pt_index: u8,
     /// Logical role of this segment hit.
     pub(super) kind: PatternKind,
+    /// Embedded rule-level flags read on the hot path to avoid loading [`RuleHot`].
+    ///
+    /// Combines [`FLAG_HAS_NOT`], [`FLAG_USE_MATRIX`], and [`FLAG_SINGLE_AND`] so
+    /// that [`RuleSet::process_entry`] can make branching decisions without touching
+    /// the `hot` array (only needed on first-touch in [`SimpleMatchState::init_rule`]).
+    pub(super) flags: u8,
 }
 
 /// All hot and cold metadata for the compiled rule set.
@@ -200,8 +228,8 @@ pub(super) struct PatternIndex {
 /// 2. [`SingleEntry`](Self::SingleEntry) — one entry to process.
 /// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
 pub(super) enum PatternDispatch<'a> {
-    /// Direct simple-rule fast path — the `usize` is the rule index.
-    DirectRule(usize),
+    /// Direct simple-rule fast path — carries rule index and process-type index.
+    DirectRule { rule_idx: usize, pt_index: u8 },
     /// Exactly one attached pattern entry.
     SingleEntry(&'a PatternEntry),
     /// Multiple attached entries sharing the same deduplicated pattern string.
@@ -294,8 +322,9 @@ impl RuleSet {
     ///
     /// # Safety
     ///
-    /// Uses `get_unchecked` / `get_unchecked_mut` on `state.word_states`, `self.hot`,
-    /// `state.matrix`, and `state.matrix_status`. All accesses are guarded by preceding
+    /// Uses `get_unchecked` / `get_unchecked_mut` on `state.word_states`, `state.matrix`,
+    /// and `state.matrix_status`. `self.hot` is only accessed on the cold init path
+    /// (first touch per rule per generation). All accesses are guarded by preceding
     /// `debug_assert!` bounds checks.
     #[inline(always)]
     pub(super) fn process_entry<const SINGLE_PT: bool>(
@@ -310,6 +339,7 @@ impl RuleSet {
             offset,
             pt_index,
             kind,
+            flags,
         } = entry;
 
         let rule_idx = rule_idx as usize;
@@ -338,27 +368,27 @@ impl RuleSet {
             PatternKind::And => {
                 let offset = offset as usize;
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let rule = unsafe { self.hot.get_unchecked(rule_idx) };
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
                     return false;
                 }
                 if word_state.positive_generation == generation {
-                    if !rule.has_not && ctx.exit_early {
+                    if flags & FLAG_HAS_NOT == 0 && ctx.exit_early {
                         return true;
                     }
                     return false;
                 }
 
                 if word_state.matrix_generation != generation {
+                    // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                    let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                     state.init_rule(rule, rule_idx, ctx);
                 }
 
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
-                let is_satisfied = if rule.use_matrix {
+                let is_satisfied = if flags & FLAG_USE_MATRIX != 0 {
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
@@ -373,7 +403,7 @@ impl RuleSet {
                         }
                     }
                     word_state.positive_generation == generation
-                } else if rule.and_count == 1 {
+                } else if flags & FLAG_SINGLE_AND != 0 {
                     word_state.positive_generation = generation;
                     true
                 } else {
@@ -390,7 +420,7 @@ impl RuleSet {
 
                 if ctx.exit_early
                     && is_satisfied
-                    && !rule.has_not
+                    && flags & FLAG_HAS_NOT == 0
                     && word_state.not_generation != generation
                 {
                     return true;
@@ -399,8 +429,6 @@ impl RuleSet {
             PatternKind::Not => {
                 let offset = offset as usize;
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let rule = unsafe { self.hot.get_unchecked(rule_idx) };
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
@@ -408,12 +436,14 @@ impl RuleSet {
                 }
 
                 if word_state.matrix_generation != generation {
+                    // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                    let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                     state.init_rule(rule, rule_idx, ctx);
                 }
 
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
-                if rule.use_matrix {
+                if flags & FLAG_USE_MATRIX != 0 {
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
                     let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
                     // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
@@ -507,19 +537,21 @@ impl PatternIndex {
     /// Uses `get_unchecked` on `self.entries` when checking the single-entry fast path.
     /// The index `start` comes from `self.ranges` which was built by [`Self::new`] and
     /// is always in bounds.
-    pub(super) fn build_value_map(&self, mode: SearchMode) -> Vec<u32> {
-        let use_direct_rule = matches!(
-            mode,
-            SearchMode::AllSimple | SearchMode::SingleProcessType { .. }
-        );
+    pub(super) fn build_value_map(&self, _mode: SearchMode) -> Vec<u32> {
         let mut value_map = Vec::with_capacity(self.ranges.len());
 
         for (dedup_idx, &(start, len)) in self.ranges.iter().enumerate() {
-            if use_direct_rule && len == 1 {
+            if len == 1 {
                 // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by `Self::new`.
                 let entry = unsafe { self.entries.get_unchecked(start) };
-                if entry.kind == PatternKind::Simple {
-                    value_map.push(entry.rule_idx | DIRECT_RULE_BIT);
+                if entry.kind == PatternKind::Simple
+                    && (entry.pt_index as u32) < 32
+                    && entry.rule_idx < (1 << DIRECT_PT_SHIFT)
+                {
+                    let encoded = DIRECT_RULE_BIT
+                        | ((entry.pt_index as u32) << DIRECT_PT_SHIFT)
+                        | entry.rule_idx;
+                    value_map.push(encoded);
                     continue;
                 }
             }
@@ -531,10 +563,9 @@ impl PatternIndex {
 
     /// Resolves one raw scan value back into rule-attachment metadata.
     ///
-    /// # Const generic `SINGLE_PT`
-    ///
-    /// When `true`, the [`DIRECT_RULE_BIT`] encoding is checked first. When `false`, the
-    /// direct-rule encoding is never used, so the check is compiled out.
+    /// When the high bit ([`DIRECT_RULE_BIT`]) is set, the value encodes both `rule_idx`
+    /// and `pt_index` directly — no indirection through the entry table. Otherwise, the
+    /// value is a deduplicated pattern index looked up in `ranges` and `entries`.
     ///
     /// # Safety
     ///
@@ -546,9 +577,11 @@ impl PatternIndex {
     /// Debug-asserts that the pattern index is within `self.ranges` and that the resulting
     /// entry slice is within `self.entries`.
     #[inline(always)]
-    pub(super) fn dispatch<const SINGLE_PT: bool>(&self, raw_value: u32) -> PatternDispatch<'_> {
-        if SINGLE_PT && raw_value & DIRECT_RULE_BIT != 0 {
-            return PatternDispatch::DirectRule((raw_value & !DIRECT_RULE_BIT) as usize);
+    pub(super) fn dispatch(&self, raw_value: u32) -> PatternDispatch<'_> {
+        if raw_value & DIRECT_RULE_BIT != 0 {
+            let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
+            let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
+            return PatternDispatch::DirectRule { rule_idx, pt_index };
         }
 
         let pattern_idx = raw_value as usize;

@@ -128,6 +128,84 @@ impl SimpleMatcher {
         self.rules.has_match(state)
     }
 
+    /// Specialized `process` for matchers with a single-bit ProcessType (tree = [root, child]).
+    ///
+    /// Bypasses the full `walk_process_tree` machinery: no `TRANSFORM_STATE` TLS access,
+    /// no masks pool, no `scanned_masks` tracking, no `dedup_insert`. Instead, applies the
+    /// single transform step directly and scans at most two texts, then collects all matches.
+    ///
+    /// # Safety
+    ///
+    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
+    /// See module-level safety documentation.
+    #[inline(always)]
+    pub(super) fn process_single_step<'a>(
+        &'a self,
+        text: &'a str,
+        results: &mut Vec<SimpleResult<'a>>,
+    ) {
+        let tree = self.process.tree();
+        debug_assert!(
+            tree.len() == 2,
+            "process_single_step requires exactly 2 tree nodes"
+        );
+
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
+        state.prepare(self.rules.len());
+
+        let root_is_ascii = text.is_ascii();
+        let root_mask = tree[0].folded_mask;
+        let child_node = &tree[1];
+        let child_mask = child_node.folded_mask;
+
+        let step = child_node
+            .step
+            .expect("non-root process tree nodes always cache a transform step");
+        let output = step.apply(text, root_is_ascii);
+
+        match output.changed {
+            None => {
+                let merged_mask = root_mask | child_mask;
+                if merged_mask != 0 {
+                    let ctx = ScanContext {
+                        text_index: 0,
+                        process_type_mask: merged_mask,
+                        num_variants: 1,
+                        exit_early: false,
+                        is_ascii: root_is_ascii,
+                    };
+                    self.scan_variant::<true>(text, ctx, state);
+                }
+            }
+            Some(transformed) => {
+                if root_mask != 0 {
+                    let ctx = ScanContext {
+                        text_index: 0,
+                        process_type_mask: root_mask,
+                        num_variants: 2,
+                        exit_early: false,
+                        is_ascii: root_is_ascii,
+                    };
+                    self.scan_variant::<true>(text, ctx, state);
+                }
+                if child_mask != 0 {
+                    let ctx = ScanContext {
+                        text_index: 1,
+                        process_type_mask: child_mask,
+                        num_variants: 2,
+                        exit_early: false,
+                        is_ascii: output.is_ascii,
+                    };
+                    self.scan_variant::<true>(&transformed, ctx, state);
+                }
+                return_string_to_pool(transformed);
+            }
+        }
+
+        self.rules.collect_matches(state, results);
+    }
+
     /// General `is_match` path for matchers that need transform traversal or rule state.
     ///
     /// Walks the process-type tree with [`walk_process_tree`], scanning each transformed
@@ -178,8 +256,8 @@ impl SimpleMatcher {
     /// via [`RuleSet::push_result_if_new`](super::rule::RuleSet::push_result_if_new).
     /// Deduplication is handled by the generation stamp in [`SimpleMatchState::mark_positive`].
     ///
-    /// Uses `dispatch::<true>` because all-simple matchers always have the
-    /// [`DIRECT_RULE_BIT`](super::rule::DIRECT_RULE_BIT) encoding available.
+    /// All patterns have [`DIRECT_RULE_BIT`](super::rule::DIRECT_RULE_BIT) encoding
+    /// in all-simple mode, so every hit resolves to [`PatternDispatch::DirectRule`].
     ///
     /// # Safety
     ///
@@ -193,8 +271,8 @@ impl SimpleMatcher {
         let _ = self
             .scan
             .for_each_match_value(text, text.is_ascii(), |raw_value| {
-                match self.scan.patterns().dispatch::<true>(raw_value) {
-                    PatternDispatch::DirectRule(rule_idx) => {
+                match self.scan.patterns().dispatch(raw_value) {
+                    PatternDispatch::DirectRule { rule_idx, .. } => {
                         self.rules.push_result_if_new(rule_idx, state, results);
                     }
                     PatternDispatch::SingleEntry(entry) => {
@@ -339,8 +417,11 @@ impl SimpleMatcher {
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
-        match self.scan.patterns().dispatch::<SINGLE_PT>(raw_value) {
-            PatternDispatch::DirectRule(rule_idx) => {
+        match self.scan.patterns().dispatch(raw_value) {
+            PatternDispatch::DirectRule { rule_idx, pt_index } => {
+                if !SINGLE_PT && ctx.process_type_mask & (1u64 << pt_index) == 0 {
+                    return false;
+                }
                 state.mark_positive(rule_idx);
                 ctx.exit_early
             }

@@ -346,6 +346,9 @@ impl SimpleMatcher {
         if self.process.is_all_simple() {
             return self.process_simple(text, results);
         }
+        if self.process.mode().single_pt_index().is_some() && self.process.tree().len() == 2 {
+            return self.process_single_step(text, results);
+        }
         let (processed, _) =
             walk_process_tree::<false, _>(self.process.tree(), text, &mut |_, _, _, _| false);
         self.process_preprocessed_into(&processed, results);

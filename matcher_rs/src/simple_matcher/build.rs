@@ -26,8 +26,8 @@ use crate::process::{ProcessType, build_process_type_tree, reduce_text_process_e
 
 use super::engine::ScanPlan;
 use super::rule::{
-    BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, PatternKind, RuleCold, RuleHot,
-    RuleSet,
+    BITMASK_CAPACITY, FLAG_HAS_NOT, FLAG_SINGLE_AND, FLAG_USE_MATRIX, PROCESS_TYPE_TABLE_SIZE,
+    PatternEntry, PatternKind, RuleCold, RuleHot, RuleSet,
 };
 use super::{ProcessPlan, SearchMode, SimpleMatcher};
 
@@ -237,7 +237,6 @@ impl SimpleMatcher {
                         segment_counts,
                         and_count,
                         use_matrix,
-                        has_not,
                     };
                     rule_cold[existing_idx] = RuleCold {
                         word_id: simple_word_id,
@@ -251,7 +250,6 @@ impl SimpleMatcher {
                         segment_counts,
                         and_count,
                         use_matrix,
-                        has_not,
                     });
                     rule_cold.push(RuleCold {
                         word_id: simple_word_id,
@@ -261,9 +259,17 @@ impl SimpleMatcher {
                 };
 
                 let is_simple = and_count == 1 && !has_not && !use_matrix;
+                let flags = if has_not { FLAG_HAS_NOT } else { 0 }
+                    | if use_matrix { FLAG_USE_MATRIX } else { 0 }
+                    | if and_count == 1 { FLAG_SINGLE_AND } else { 0 };
 
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
+                    debug_assert!(
+                        offset < 256,
+                        "rule has {offset} segments; PatternEntry::offset is u8 (max 255)"
+                    );
+
                     let kind = if is_simple {
                         PatternKind::Simple
                     } else if offset < and_count {
@@ -278,9 +284,10 @@ impl SimpleMatcher {
                             pattern_id_map.insert(ac_word.clone(), next_pattern_id);
                             dedup_entries.push(vec![PatternEntry {
                                 rule_idx: rule_idx as u32,
-                                offset: offset as u16,
+                                offset: offset as u8,
                                 pt_index,
                                 kind,
+                                flags,
                             }]);
                             dedup_patterns.push(ac_word);
                             next_pattern_id += 1;
@@ -288,9 +295,10 @@ impl SimpleMatcher {
                         };
                         dedup_entries[dedup_id].push(PatternEntry {
                             rule_idx: rule_idx as u32,
-                            offset: offset as u16,
+                            offset: offset as u8,
                             pt_index,
                             kind,
+                            flags,
                         });
                     }
                 }
