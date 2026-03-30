@@ -503,14 +503,39 @@ impl PinyinMatcher {
     /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
     ///
     /// Returns `None` when no codepoint in `text` has a Pinyin mapping,
-    /// allowing callers to continue borrowing the original input.
-    pub(crate) fn replace(&self, text: &str) -> Option<String> {
-        replace_scan(text, self.iter(text), |result, replacement| {
+    /// allowing callers to continue borrowing the original input. The `bool`
+    /// indicates whether the output is pure ASCII, tracked incrementally to
+    /// avoid a redundant scan. Pinyin replacements are always ASCII, so only
+    /// the unchanged gaps between replacements need checking.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
+        let mut iter = self.iter(text);
+        if let Some((start, end, replacement)) = iter.next() {
+            let mut result = get_string_from_pool(text.len());
+            let prefix = &text[..start];
+            let mut is_ascii = prefix.is_ascii();
+            result.push_str(prefix);
             let Replacement::Str(mapped) = replacement else {
                 unreachable!("pinyin iter yields string replacements");
             };
             result.push_str(mapped);
-        })
+            let mut last_end = end;
+            for (start, end, replacement) in iter {
+                let gap = &text[last_end..start];
+                is_ascii = is_ascii && gap.is_ascii();
+                result.push_str(gap);
+                let Replacement::Str(mapped) = replacement else {
+                    unreachable!("pinyin iter yields string replacements");
+                };
+                result.push_str(mapped);
+                last_end = end;
+            }
+            let suffix = &text[last_end..];
+            is_ascii = is_ascii && suffix.is_ascii();
+            result.push_str(suffix);
+            Some((result, is_ascii))
+        } else {
+            None
+        }
     }
 
     /// Builds a matcher from the precompiled build-time tables and string storage.

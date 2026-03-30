@@ -84,7 +84,9 @@ impl TransformStep {
     /// - **Delete** — ORs the parent flag with its own scan (deletion can only remove
     ///   non-ASCII chars, so if parent was ASCII the output is too).
     /// - **Normalize** — tracked incrementally during the replacement loop.
-    /// - **PinYin / PinYinChar** — always sets `is_ascii = true` (Pinyin is ASCII).
+    /// - **PinYin / PinYinChar** — tracked incrementally: Pinyin replacements are
+    ///   always ASCII, but unmapped characters (emoji, Korean, etc.) pass through
+    ///   unchanged, so the output may contain non-ASCII bytes.
     #[inline(always)]
     pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput {
         match self {
@@ -103,7 +105,7 @@ impl TransformStep {
             ),
             Self::PinYin(matcher) | Self::PinYinChar(matcher) => matcher.replace(text).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),
-                |changed| StepOutput::changed(changed, true),
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
         }
     }

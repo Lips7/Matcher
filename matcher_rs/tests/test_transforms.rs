@@ -564,3 +564,70 @@ fn test_process_into_with_transforms() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 1);
 }
+
+// ===========================================================================
+// PinYin is_ascii correctness: unmapped non-ASCII chars must not be lost
+// ===========================================================================
+
+#[test]
+fn test_pinyin_is_ascii_with_emoji() {
+    // "你好" has pinyin, but the emoji 🎉 (U+1F389) has no pinyin mapping
+    // and passes through unchanged. The is_ascii flag must be false so the
+    // non-ASCII AC engine is used for scanning.
+    let types = HashSet::from([ProcessType::PinYin]);
+    let tree = build_process_type_tree(&types);
+    let (variants, _) = walk_process_tree::<false, _>(&tree, "你好🎉", &mut |_, _, _, _| false);
+    let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
+    assert!(
+        !pinyin_variant.is_ascii,
+        "PinYin output containing emoji must not claim is_ascii=true"
+    );
+}
+
+#[test]
+fn test_pinyin_is_ascii_pure_cjk() {
+    // When all characters have pinyin mappings, output is pure ASCII.
+    let types = HashSet::from([ProcessType::PinYin]);
+    let tree = build_process_type_tree(&types);
+    let (variants, _) = walk_process_tree::<false, _>(&tree, "你好", &mut |_, _, _, _| false);
+    let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
+    assert!(
+        pinyin_variant.is_ascii,
+        "PinYin output of pure CJK should be ASCII"
+    );
+}
+
+#[test]
+fn test_pinyin_char_is_ascii_with_korean() {
+    // Korean characters (한글) have no pinyin mapping and pass through unchanged.
+    let types = HashSet::from([ProcessType::PinYinChar]);
+    let tree = build_process_type_tree(&types);
+    let (variants, _) = walk_process_tree::<false, _>(&tree, "你한글", &mut |_, _, _, _| false);
+    let pinyin_variant = variants.iter().find(|v| v.text != "你한글").unwrap();
+    assert!(
+        !pinyin_variant.is_ascii,
+        "PinYinChar output containing Korean must not claim is_ascii=true"
+    );
+    assert!(
+        pinyin_variant.text.contains("한글"),
+        "Korean should pass through unchanged"
+    );
+}
+
+#[test]
+fn test_pinyin_non_ascii_pattern_match() {
+    // End-to-end: a non-ASCII pattern registered under PinYin must still be
+    // found when the PinYin-transformed text contains unmapped non-ASCII chars.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::PinYin, 1, "한글")
+        .build()
+        .unwrap();
+    // Input: Chinese "你" (converted to pinyin) + Korean "한글" (passes through).
+    assert!(
+        matcher.is_match("你한글"),
+        "non-ASCII pattern under PinYin should match when unmapped chars pass through"
+    );
+    let results = matcher.process("你한글");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
+}
