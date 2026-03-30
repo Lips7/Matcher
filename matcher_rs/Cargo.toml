@@ -53,3 +53,6 @@ harness = false
 [[bench]]
 name = "bench_engine"
 harness = false
+
+[package.metadata.cargo-all-features]
+denylist = ["runtime_build"]
