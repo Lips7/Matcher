@@ -261,10 +261,11 @@ fn compile_automata(
     dedup_patterns: &[Cow<'_, str>],
     value_map: &[u32],
 ) -> Result<(Option<AsciiMatcher>, Option<NonAsciiMatcher>), MatcherError> {
-    let mut ascii_patvals: Vec<(&str, u32)> = Vec::new();
-    let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::new();
+    let cap = dedup_patterns.len();
+    let mut ascii_patvals: Vec<(&str, u32)> = Vec::with_capacity(cap);
+    let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::with_capacity(cap);
     #[cfg(feature = "dfa")]
-    let mut ascii_ac_to_value: Vec<u32> = Vec::new();
+    let mut ascii_ac_to_value: Vec<u32> = Vec::with_capacity(cap);
 
     for (dedup_idx, pattern) in dedup_patterns.iter().enumerate() {
         let value = value_map[dedup_idx];
@@ -277,64 +278,64 @@ fn compile_automata(
         }
     }
 
-    let full_charwise_patvals = if ascii_patvals.is_empty() || non_ascii_patvals.is_empty() {
-        None
-    } else {
+    let has_ascii = !ascii_patvals.is_empty();
+    let has_non_ascii = !non_ascii_patvals.is_empty();
+
+    let full_charwise_patvals = if has_ascii && has_non_ascii {
         Some(
             dedup_patterns
                 .iter()
                 .enumerate()
-                .map(|(dedup_idx, pattern)| (pattern.as_ref(), value_map[dedup_idx]))
+                .map(|(i, p)| (p.as_ref(), value_map[i]))
                 .collect::<Vec<_>>(),
         )
+    } else {
+        None
     };
+    let charwise_source = full_charwise_patvals
+        .as_deref()
+        .unwrap_or(non_ascii_patvals.as_slice());
 
-    let ascii_matcher = if !ascii_patvals.is_empty() {
+    let build_ascii = move || -> Result<AsciiMatcher, MatcherError> {
         #[cfg(feature = "dfa")]
-        let engine = if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
-            AsciiMatcher::AcDfa {
+        if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+            return Ok(AsciiMatcher::AcDfa {
                 matcher: AhoCorasickBuilder::new()
                     .kind(Some(AhoCorasickKind::DFA))
                     .match_kind(AhoCorasickMatchKind::Standard)
-                    .build(ascii_patvals.iter().map(|(pattern, _)| pattern))
+                    .build(ascii_patvals.iter().map(|(p, _)| p))
                     .map_err(MatcherError::automaton_build)?,
                 to_value: ascii_ac_to_value,
-            }
-        } else {
-            AsciiMatcher::DaacBytewise(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                    .build_with_values(ascii_patvals)
-                    .map_err(MatcherError::automaton_build)?,
-            )
-        };
-
-        #[cfg(not(feature = "dfa"))]
-        let engine = AsciiMatcher::DaacBytewise(
+            });
+        }
+        Ok(AsciiMatcher::DaacBytewise(
             DoubleArrayAhoCorasickBuilder::new()
                 .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
                 .build_with_values(ascii_patvals)
                 .map_err(MatcherError::automaton_build)?,
-        );
-
-        Some(engine)
-    } else {
-        None
+        ))
     };
 
-    let non_ascii_patvals = full_charwise_patvals
-        .as_deref()
-        .unwrap_or(non_ascii_patvals.as_slice());
-    let non_ascii_matcher = if !non_ascii_patvals.is_empty() {
-        Some(NonAsciiMatcher::DaacCharwise(
+    let build_charwise = || -> Result<NonAsciiMatcher, MatcherError> {
+        Ok(NonAsciiMatcher::DaacCharwise(
             CharwiseDoubleArrayAhoCorasickBuilder::new()
                 .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                .build_with_values(non_ascii_patvals.iter().copied())
+                .build_with_values(charwise_source.iter().copied())
                 .map_err(MatcherError::automaton_build)?,
         ))
-    } else {
-        None
     };
 
-    Ok((ascii_matcher, non_ascii_matcher))
+    match (has_ascii, has_non_ascii) {
+        (true, true) => std::thread::scope(|s| {
+            let ascii_handle = s.spawn(build_ascii);
+            let charwise = build_charwise()?;
+            let ascii = ascii_handle
+                .join()
+                .expect("ASCII automaton build panicked")?;
+            Ok((Some(ascii), Some(charwise)))
+        }),
+        (true, false) => Ok((Some(build_ascii()?), None)),
+        (false, true) => Ok((None, Some(build_charwise()?))),
+        (false, false) => Ok((None, None)),
+    }
 }

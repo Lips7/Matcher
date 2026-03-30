@@ -321,7 +321,7 @@ fn test_fanjian() {
     use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
 
-    let simple_matcher = SimpleMatcher::new(&std::collections::HashMap::from([(
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
         HashMap::from([(1, "你好")]),
     )]))
@@ -331,7 +331,7 @@ fn test_fanjian() {
         "Fanjian should match traditional variant of 你好"
     );
 
-    let simple_matcher = SimpleMatcher::new(&std::collections::HashMap::from([(
+    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
         HashMap::from([(1, "妳好")]),
     )]))

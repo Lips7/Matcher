@@ -1,5 +1,8 @@
 use std::io::Result;
 
+#[cfg(not(feature = "runtime_build"))]
+use std::collections::{HashMap, HashSet};
+
 /// Build script for `matcher_rs`.
 ///
 /// Transforms raw text-map files in `process_map/` into pre-compiled binary structures
@@ -193,14 +196,11 @@ fn main() -> Result<()> {
 /// # Errors
 /// Returns `io::Error` if either output file cannot be created or written.
 #[cfg(not(feature = "runtime_build"))]
-fn build_2_stage_table(
-    map: &std::collections::HashMap<u32, u32>,
-    prefix: &str,
-) -> std::io::Result<()> {
+fn build_2_stage_table(map: &HashMap<u32, u32>, prefix: &str) -> std::io::Result<()> {
     use std::fs::File;
     use std::io::Write;
 
-    let mut pages = std::collections::HashSet::new();
+    let mut pages = HashSet::new();
     for &k in map.keys() {
         pages.insert(k >> 8);
     }
