@@ -109,3 +109,56 @@ def test_pinyinchar():
     assert simple_matcher.is_match("洗按")
     assert simple_matcher.is_match("现")
     assert simple_matcher.is_match("xian")
+
+
+def test_batch_is_match():
+    simple_matcher = SimpleMatcher(
+        json.dumps({ProcessType.NONE: {1: "hello", 2: "world"}}).encode()
+    )
+    assert simple_matcher.batch_is_match([]) == []
+    assert simple_matcher.batch_is_match(["hello"]) == [True]
+    assert simple_matcher.batch_is_match(["hello", "miss", "world", ""]) == [
+        True,
+        False,
+        True,
+        False,
+    ]
+
+
+def test_batch_process():
+    simple_matcher = SimpleMatcher(
+        json.dumps({ProcessType.NONE: {1: "hello", 2: "world"}}).encode()
+    )
+    results = simple_matcher.batch_process(["hello world", "miss", "hello"])
+    assert len(results) == 3
+
+    ids_0 = sorted(r.word_id for r in results[0])
+    assert ids_0 == [1, 2]
+
+    assert results[1] == []
+
+    assert len(results[2]) == 1
+    assert results[2][0].word_id == 1
+    assert results[2][0].word == "hello"
+
+
+def test_threading():
+    import concurrent.futures
+
+    simple_matcher = SimpleMatcher(
+        json.dumps({ProcessType.FANJIAN: {1: "你好"}}).encode()
+    )
+    texts = ["妳好测试文本" * 100] * 200
+
+    def run_serial():
+        return [simple_matcher.is_match(t) for t in texts]
+
+    def run_threaded():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            return list(pool.map(simple_matcher.is_match, texts))
+
+    serial = run_serial()
+    threaded = run_threaded()
+
+    assert serial == threaded
+    assert all(serial)

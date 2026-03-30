@@ -148,18 +148,61 @@ impl PySimpleMatcher {
     }
 
     #[pyo3(signature=(text))]
-    fn is_match(&self, text: &str) -> bool {
-        self.simple_matcher.is_match(text)
+    fn is_match(&self, py: Python<'_>, text: &str) -> bool {
+        let matcher = &self.simple_matcher;
+        py.detach(|| matcher.is_match(text))
     }
 
     #[pyo3(signature=(text))]
     fn process(&self, py: Python<'_>, text: &str) -> Vec<PySimpleResult> {
-        self.simple_matcher
-            .process(text)
+        let matcher = &self.simple_matcher;
+        let owned: Vec<(u32, String)> = py.detach(|| {
+            matcher
+                .process(text)
+                .into_iter()
+                .map(|r| (r.word_id, r.word.into_owned()))
+                .collect()
+        });
+        owned
             .into_iter()
-            .map(|res| PySimpleResult {
-                word_id: res.word_id,
-                word: PyString::new(py, &res.word).into(),
+            .map(|(word_id, word)| PySimpleResult {
+                word_id,
+                word: PyString::new(py, &word).into(),
+            })
+            .collect()
+    }
+
+    #[pyo3(signature=(texts))]
+    fn batch_is_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<bool> {
+        let matcher = &self.simple_matcher;
+        py.detach(|| texts.iter().map(|t| matcher.is_match(t)).collect())
+    }
+
+    #[pyo3(signature=(texts))]
+    fn batch_process(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Vec<PySimpleResult>> {
+        let matcher = &self.simple_matcher;
+        let all: Vec<Vec<(u32, String)>> = py.detach(|| {
+            let mut buf = Vec::new();
+            texts
+                .iter()
+                .map(|t| {
+                    buf.clear();
+                    matcher.process_into(t, &mut buf);
+                    buf.drain(..)
+                        .map(|r| (r.word_id, r.word.into_owned()))
+                        .collect()
+                })
+                .collect()
+        });
+        all.into_iter()
+            .map(|results| {
+                results
+                    .into_iter()
+                    .map(|(word_id, word)| PySimpleResult {
+                        word_id,
+                        word: PyString::new(py, &word).into(),
+                    })
+                    .collect()
             })
             .collect()
     }
