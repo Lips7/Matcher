@@ -124,10 +124,6 @@ The "non-delete" skip functions probe a 128-bit ASCII bitset (`ascii_lut`, 16 by
 
 This is combined (OR) with the non-ASCII mask to produce a stop mask; the first set bit (via `trailing_zeros`) gives the exact stop offset.
 
-#### In-Place Fanjian Optimization
-
-`FanjianMatcher::replace` has a same-length fast path: on first hit, it clones `text` into a pooled `String` from `get_string_from_pool` and overwrites the matched span directly via `unsafe { mapped.encode_utf8(&mut buf.as_bytes_mut()[start..end]) }`, avoiding the scan-and-rebuild allocations of the generic `replace_scan` path. Only when a replacement has a different UTF-8 byte width does it abandon the in-place buffer (returning it to the pool) and fall back to a full re-scan through `replace_scan`, which builds a new `String` by copying unchanged spans and pushing replacement chars.
-
 #### UTF-8 Decoding
 
 Both `charwise.rs` and `delete.rs` contain a private `decode_utf8_raw`/`decode_utf8` function that decodes one non-ASCII UTF-8 codepoint from `bytes[offset..]` using `get_unchecked` reads. These are kept as separate copies rather than shared to avoid cross-module coupling in the hot path. The functions handle 2, 3, and 4-byte sequences by branching on the lead byte's high bits.
@@ -457,7 +453,7 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 |------|------|--------|---------|
 | `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
 | `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/variant.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
-| `TRANSFORM_STATE` | `UnsafeCell<TransformThreadState>` | `process/variant.rs` | Node-index-to-text-index scratch buffer (`tree_node_indices`) + recycled `ProcessedTextMasks` vectors (`masks_pool`, bounded to 16). Bundled into one slot to save a TLS lookup per call. |
+| `TRANSFORM_STATE` | `UnsafeCell<TransformThreadState>` | `process/variant.rs` | Node-index-to-text-index scratch buffer (`tree_node_indices`) for `walk_process_tree`. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.
 
@@ -465,11 +461,7 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 
 `get_string_from_pool(capacity)` pops a `String` from the thread-local pool (clearing it and reserving to the requested capacity), or allocates a new one if the pool is empty. `return_string_to_pool(s)` pushes a `String` back, bounded at 128 entries so thread-local memory stays predictable.
 
-The pool is used throughout the transformation pipeline. When a `Cow::Owned` result is replaced by a new transformation step, the old owned string is returned to the pool. `return_processed_string_to_pool` drains a `ProcessedTextMasks` vector, returning all owned strings to the pool and recycling the empty vector itself into `TRANSFORM_STATE.masks_pool`.
-
-### ProcessedTextMasks Pool
-
-`walk_process_tree` pops a recycled `ProcessedTextMasks` vector from `TRANSFORM_STATE.masks_pool` at the start of each call. After the caller finishes with the variants, `return_processed_string_to_pool` recycles both the individual strings and the vector itself. The transmute from `ProcessedTextMasks<'static>` to `ProcessedTextMasks<'a>` is sound because the pooled vectors are always empty (all `Cow<'_, str>` elements have been drained). Similarly, the reverse transmute after `drain()` is sound because an empty `Vec` holds no values and `Cow<'_, str>` has identical layout regardless of lifetime.
+The pool is used throughout the transformation pipeline. When a `Cow::Owned` result is replaced by a new transformation step, the old owned string is returned to the pool. `return_processed_string_to_pool` drains a `ProcessedTextMasks` vector, returning all owned strings to the pool.
 
 ### Static Transform Step Cache
 
