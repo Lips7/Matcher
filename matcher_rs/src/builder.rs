@@ -156,6 +156,11 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// the API — it should be done once at startup, and the resulting
     /// [`SimpleMatcher`] reused for the lifetime of the application.
     ///
+    /// # Errors
+    ///
+    /// Returns [`MatcherError`] if the underlying automaton construction fails.
+    /// See [`SimpleMatcher::new`] for the full list of failure modes.
+    ///
     /// # Examples
     ///
     /// ```rust

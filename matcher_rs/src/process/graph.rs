@@ -33,10 +33,36 @@ use crate::process::step::TransformStep;
 /// transformation step reachable from its parent.
 #[derive(Clone)]
 pub(crate) struct ProcessTypeBitNode {
+    /// Composite [`ProcessType`] values that terminate at or pass through this node.
+    ///
+    /// Used by [`recompute_mask_with_index`](Self::recompute_mask_with_index) to
+    /// rebuild `pt_index_mask` from sequential indices.
     process_type_list: TinyVec<[ProcessType; 4]>,
+    /// The single-bit [`ProcessType`] transformation step this node represents.
+    ///
+    /// The root node always has `ProcessType::None`; all other nodes have exactly
+    /// one bit set (e.g., `Fanjian`, `Delete`).
     pub(crate) process_type_bit: ProcessType,
+    /// Indices of child nodes in the flat trie array.
+    ///
+    /// Children represent the next transformation step that follows this one.
+    /// Empty for leaf nodes.
     pub(crate) children: TinyVec<[usize; 4]>,
+    /// Cached reference to the compiled [`TransformStep`] for this node's bit.
+    ///
+    /// [`None`] only for the root node (which represents the raw input text and
+    /// needs no transformation). All other nodes hold a `&'static` reference
+    /// obtained from the global `TRANSFORM_STEP_CACHE` in [`super::registry`].
     pub(crate) step: Option<&'static TransformStep>,
+    /// Bitmask of compact process-type indices that produce a scannable variant
+    /// at this node.
+    ///
+    /// Bit `i` is set when the composite [`ProcessType`] whose compact index is
+    /// `i` terminates at (or passes through) this node. A non-zero mask means
+    /// this node's text variant should be scanned by the AC automaton.
+    /// Initially encoded as `1u64 << pt.bits()` during construction, then
+    /// re-encoded via [`recompute_mask_with_index`](Self::recompute_mask_with_index)
+    /// to use sequential indices.
     pub(crate) pt_index_mask: u64,
 }
 

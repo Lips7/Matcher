@@ -115,6 +115,21 @@ bitflags! {
 /// Compact serde serialization: writes the raw `u8` bitfield.
 ///
 /// This keeps the wire format tiny (one byte) regardless of which flags are set.
+/// Composite flags serialize as the bitwise OR of their components.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::ProcessType;
+///
+/// let combined = ProcessType::Fanjian | ProcessType::Delete;
+/// let json = serde_json::to_string(&combined).unwrap();
+/// // Fanjian = 0x02, Delete = 0x04 → 6
+/// assert_eq!(json, "6");
+///
+/// // Single flag:
+/// assert_eq!(serde_json::to_string(&ProcessType::None).unwrap(), "1");
+/// ```
 impl Serialize for ProcessType {
     /// Serializes the bitflags value as its underlying `u8` representation.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -129,6 +144,22 @@ impl Serialize for ProcessType {
 ///
 /// Rejects values with undefined bits (bits 6–7) to prevent out-of-bounds indexing in
 /// downstream lookup tables that are sized for the 6-bit flag space.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::ProcessType;
+///
+/// // Valid round-trip:
+/// let combined = ProcessType::Fanjian | ProcessType::Delete;
+/// let json = serde_json::to_string(&combined).unwrap();
+/// let back: ProcessType = serde_json::from_str(&json).unwrap();
+/// assert_eq!(back, combined);
+///
+/// // Invalid bits are rejected:
+/// let result: Result<ProcessType, _> = serde_json::from_str("128");
+/// assert!(result.is_err());
+/// ```
 impl<'de> Deserialize<'de> for ProcessType {
     /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit combinations.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -148,6 +179,24 @@ impl<'de> Deserialize<'de> for ProcessType {
 ///
 /// Active flag names are lowercased and joined with underscores. For example,
 /// `ProcessType::Fanjian | ProcessType::Delete` formats as `"fanjian_delete"`.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::ProcessType;
+///
+/// assert_eq!(format!("{}", ProcessType::None), "none");
+/// assert_eq!(
+///     format!("{}", ProcessType::Fanjian | ProcessType::Delete),
+///     "fanjian_delete"
+/// );
+/// assert_eq!(
+///     format!("{}", ProcessType::FanjianDeleteNormalize),
+///     "fanjian_delete_normalize"
+/// );
+/// // Empty flags (no bits set) produce an empty string.
+/// assert_eq!(format!("{}", ProcessType::empty()), "");
+/// ```
 impl Display for ProcessType {
     /// Formats active flag names as lowercase strings joined by underscores.
     ///

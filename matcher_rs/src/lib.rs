@@ -98,31 +98,65 @@ use std::fmt;
 
 /// Error returned when [`SimpleMatcher`] construction fails.
 ///
-/// Currently this only wraps automaton-build errors from the underlying
-/// Aho-Corasick libraries. The type is an opaque struct (not an enum) to
-/// avoid coupling the public API to third-party error types, and to allow
-/// adding new error variants in the future without breaking callers.
+/// This is an opaque struct (not an enum) to avoid coupling the public API to
+/// third-party error types and to allow adding new error variants in the future
+/// without breaking callers. The human-readable message is available via the
+/// [`Display`](fmt::Display) implementation.
+///
+/// # When does construction fail?
+///
+/// - **Invalid [`ProcessType`] bits** — the caller passed a bitflag value with
+///   undefined bits (bits 6–7) set.
+/// - **Automaton build failure** — the underlying Aho-Corasick libraries
+///   (`daachorse` or `aho-corasick`) rejected the compiled pattern set
+///   (e.g., the pattern set exceeded internal capacity limits).
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
+/// use std::collections::HashMap;
+///
+/// // Construction can be checked with standard Result handling.
+/// let empty: SimpleTable = HashMap::new();
+/// match SimpleMatcher::new(&empty) {
+///     Ok(matcher) => assert!(!matcher.is_match("anything")),
+///     Err(e) => panic!("unexpected error: {e}"),
+/// }
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct MatcherError {
     message: String,
 }
 
+/// Formats the error as a human-readable message describing what went wrong
+/// during [`SimpleMatcher`] construction.
 impl fmt::Display for MatcherError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
     }
 }
 
+/// Enables use with `?` and the standard error-handling ecosystem.
 impl std::error::Error for MatcherError {}
 
 impl MatcherError {
+    /// Wraps a third-party automaton build error (from `daachorse` or
+    /// `aho-corasick`) into a [`MatcherError`].
+    ///
+    /// The `source` message is prefixed with `"automaton build failed: "`.
     fn automaton_build(source: impl fmt::Display) -> Self {
         Self {
             message: format!("automaton build failed: {source}"),
         }
     }
 
+    /// Creates an error for a [`ProcessType`] value with undefined bits set.
+    ///
+    /// Bits 6–7 are reserved; passing them to [`SimpleMatcher::new`] would
+    /// cause out-of-bounds indexing in downstream lookup tables sized for the
+    /// 6-bit flag space.
     pub(crate) fn invalid_process_type(bits: u8) -> Self {
         Self {
             message: format!(

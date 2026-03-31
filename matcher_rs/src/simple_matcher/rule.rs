@@ -20,17 +20,65 @@ use crate::process::ProcessType;
 use super::SimpleResult;
 use super::state::{ScanContext, SimpleMatchState};
 
-/// Public table format accepted by [`super::SimpleMatcher::new`].
+/// Raw table format accepted by [`SimpleMatcher::new`](super::SimpleMatcher::new).
 ///
-/// Outer key is the [`ProcessType`] that governs text transformation; inner key is a
-/// caller-chosen rule id (`word_id`); inner value is the pattern string (may contain
-/// `&` and `~` operators).
+/// The outer key is the [`ProcessType`] that governs which text-transformation
+/// pipeline to apply before matching. The inner key is a caller-chosen rule id
+/// (`word_id`) that will be returned in [`SimpleResult::word_id`](super::SimpleResult::word_id)
+/// on a match. The inner value is the pattern string, which may contain `&`
+/// (AND) and `~` (NOT) operators to combine sub-patterns.
+///
+/// This is the borrowed-string variant — all pattern strings must outlive the
+/// table reference passed to [`SimpleMatcher::new`](super::SimpleMatcher::new).
+/// For owned or deserialized strings, use [`SimpleTableSerde`] instead.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
+/// use std::collections::HashMap;
+///
+/// let mut table: SimpleTable = HashMap::new();
+/// table.entry(ProcessType::None).or_default().insert(1, "hello");
+/// table.entry(ProcessType::None).or_default().insert(2, "apple&pie");
+/// table.entry(ProcessType::Fanjian).or_default().insert(3, "你好");
+///
+/// let matcher = SimpleMatcher::new(&table).unwrap();
+/// assert!(matcher.is_match("hello world"));
+/// assert!(matcher.is_match("apple and pie"));
+/// ```
 pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 
-/// Serde-friendly table format that stores rule strings as [`Cow`].
+/// Serde-friendly table format that stores rule strings as [`Cow<str>`].
 ///
-/// Identical semantics to [`SimpleTable`] but allows owned or borrowed pattern strings,
-/// which is useful when deserializing from external sources.
+/// Identical semantics to [`SimpleTable`] but allows both owned and borrowed
+/// pattern strings. This is useful when deserializing rule tables from JSON,
+/// YAML, or other external sources where the strings are owned by the
+/// deserializer.
+///
+/// # Examples
+///
+/// ```rust
+/// use matcher_rs::{SimpleMatcher, SimpleTableSerde, ProcessType};
+/// use std::borrow::Cow;
+/// use std::collections::HashMap;
+///
+/// // Build programmatically with owned strings.
+/// let mut table: SimpleTableSerde = HashMap::new();
+/// table
+///     .entry(ProcessType::None)
+///     .or_default()
+///     .insert(1, Cow::Owned("hello".to_string()));
+///
+/// let matcher = SimpleMatcher::new(&table).unwrap();
+/// assert!(matcher.is_match("hello world"));
+///
+/// // Or deserialize from JSON (ProcessType serializes as its raw u8 bits).
+/// let json = r#"{"1":{"1":"hello","2":"world"}}"#;
+/// let deserialized: SimpleTableSerde = serde_json::from_str(json).unwrap();
+/// let matcher = SimpleMatcher::new(&deserialized).unwrap();
+/// assert!(matcher.is_match("hello world"));
+/// ```
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
 /// High bit used to encode the direct-rule fast path in raw scan values.

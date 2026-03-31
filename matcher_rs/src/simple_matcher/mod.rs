@@ -146,6 +146,11 @@ pub struct SimpleMatcher {
     rules: RuleSet,
 }
 
+/// Formats as `SimpleMatcher { search_mode: …, rule_count: …, .. }`.
+///
+/// Internal engine details (automaton sizes, pattern indices) are omitted to
+/// keep the output concise and stable across versions. The two fields shown
+/// give a quick summary of the matcher's dispatch mode and rule count.
 impl fmt::Debug for SimpleMatcher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SimpleMatcher")

@@ -70,6 +70,31 @@ impl SimpleMatcher {
     ///    pattern is simple; `General` otherwise.
     /// 5. Compile Aho-Corasick automata via the scan plan.
     /// 6. Assemble and return the immutable [`SimpleMatcher`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MatcherError`](crate::MatcherError) if:
+    ///
+    /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits set
+    ///   (bits 6–7 must be zero).
+    /// - The underlying Aho-Corasick automaton construction (`daachorse` or
+    ///   `aho-corasick`) fails internally.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut table: SimpleTable = HashMap::new();
+    /// table.entry(ProcessType::None).or_default().insert(1, "hello");
+    /// table.entry(ProcessType::None).or_default().insert(2, "foo&bar");
+    ///
+    /// let matcher = SimpleMatcher::new(&table).unwrap();
+    /// assert!(matcher.is_match("hello world"));
+    /// assert!(matcher.is_match("foo and bar"));
+    /// assert!(!matcher.is_match("foo only"));
+    /// ```
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
     ) -> Result<SimpleMatcher, crate::MatcherError>
