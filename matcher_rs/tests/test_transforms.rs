@@ -115,8 +115,7 @@ fn test_reduce_text_process_with_tree() {
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
-    let (results, _) =
-        walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _, _| false);
+    let results = walk_process_tree(&process_type_tree, text);
 
     let find_variant = |target: &str| results.iter().find(|tv| tv.text == target);
 
@@ -140,11 +139,7 @@ fn test_reduce_text_process_with_set() {
     ]);
     let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
 
-    let (results, _) = walk_process_tree::<false, _>(
-        &build_process_type_tree(&process_type_set),
-        text,
-        &mut |_, _, _, _| false,
-    );
+    let results = walk_process_tree(&build_process_type_tree(&process_type_set), text);
 
     assert!(results.iter().any(|tv| tv.text == "a裸b軆c"));
     assert!(results.iter().any(|tv| tv.text == "ᗩ裸𝚩軆Ⲉ"));
@@ -161,8 +156,7 @@ fn test_reduce_text_process_with_tree_correctness() {
     let process_type_tree = build_process_type_tree(&process_type_set);
     let text = "妳！好";
 
-    let (results, _) =
-        walk_process_tree::<false, _>(&process_type_tree, text, &mut |_, _, _, _| false);
+    let results = walk_process_tree(&process_type_tree, text);
 
     let mut found_variants = results
         .iter()
@@ -184,11 +178,7 @@ fn test_reduce_text_process_empty_text() {
         ProcessType::Normalize,
     ]);
 
-    let (processed_text, _) = walk_process_tree::<false, _>(
-        &build_process_type_tree(&process_type_set),
-        "",
-        &mut |_, _, _, _| false,
-    );
+    let processed_text = walk_process_tree(&build_process_type_tree(&process_type_set), "");
     assert!(processed_text.iter().all(|tv| tv.text.is_empty()));
 }
 
@@ -576,7 +566,7 @@ fn test_pinyin_is_ascii_with_emoji() {
     // non-ASCII AC engine is used for scanning.
     let types = HashSet::from([ProcessType::PinYin]);
     let tree = build_process_type_tree(&types);
-    let (variants, _) = walk_process_tree::<false, _>(&tree, "你好🎉", &mut |_, _, _, _| false);
+    let variants = walk_process_tree(&tree, "你好🎉");
     let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
     assert!(
         !pinyin_variant.is_ascii,
@@ -589,7 +579,7 @@ fn test_pinyin_is_ascii_pure_cjk() {
     // When all characters have pinyin mappings, output is pure ASCII.
     let types = HashSet::from([ProcessType::PinYin]);
     let tree = build_process_type_tree(&types);
-    let (variants, _) = walk_process_tree::<false, _>(&tree, "你好", &mut |_, _, _, _| false);
+    let variants = walk_process_tree(&tree, "你好");
     let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
     assert!(
         pinyin_variant.is_ascii,
@@ -602,7 +592,7 @@ fn test_pinyin_char_is_ascii_with_korean() {
     // Korean characters (한글) have no pinyin mapping and pass through unchanged.
     let types = HashSet::from([ProcessType::PinYinChar]);
     let tree = build_process_type_tree(&types);
-    let (variants, _) = walk_process_tree::<false, _>(&tree, "你한글", &mut |_, _, _, _| false);
+    let variants = walk_process_tree(&tree, "你한글");
     let pinyin_variant = variants.iter().find(|v| v.text != "你한글").unwrap();
     assert!(
         !pinyin_variant.is_ascii,

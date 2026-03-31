@@ -34,7 +34,7 @@ const STRING_POOL_MAX: usize = 128;
 /// use matcher_rs::{ProcessType, TextVariant, build_process_type_tree, walk_process_tree};
 ///
 /// let tree = build_process_type_tree(&HashSet::from([ProcessType::None]));
-/// let (variants, _) = walk_process_tree::<false, _>(&tree, "hello", &mut |_, _, _, _| false);
+/// let variants = walk_process_tree(&tree, "hello");
 ///
 /// assert_eq!(variants.len(), 1);
 /// assert_eq!(variants[0].text, "hello");
@@ -75,8 +75,7 @@ pub struct TextVariant<'a> {
 ///
 /// let types = HashSet::from([ProcessType::None, ProcessType::Fanjian]);
 /// let tree = build_process_type_tree(&types);
-/// let (masks, _): (ProcessedTextMasks<'_>, _) =
-///     walk_process_tree::<false, _>(&tree, "妳好", &mut |_, _, _, _| false);
+/// let masks: ProcessedTextMasks<'_> = walk_process_tree(&tree, "妳好");
 ///
 /// // At least two variants: original + Fanjian-converted.
 /// assert!(masks.len() >= 2);
@@ -139,14 +138,5 @@ pub(crate) fn return_string_to_pool(s: String) {
     let pool = unsafe { &mut *STRING_POOL.get() };
     if pool.len() < STRING_POOL_MAX {
         pool.push(s);
-    }
-}
-
-/// Drains a [`ProcessedTextMasks`] collection, returning owned strings to the pool.
-pub(crate) fn return_processed_string_to_pool(mut text_masks: ProcessedTextMasks) {
-    for TextVariant { text: cow, .. } in text_masks.drain(..) {
-        if let Cow::Owned(s) = cow {
-            return_string_to_pool(s);
-        }
     }
 }

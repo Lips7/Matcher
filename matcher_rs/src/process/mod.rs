@@ -41,5 +41,4 @@ pub(crate) mod variant;
 pub use api::{reduce_text_process, reduce_text_process_emit, text_process};
 pub use graph::{ProcessTypeBitNode, build_process_type_tree, walk_process_tree};
 pub use process_type::ProcessType;
-pub(crate) use variant::return_processed_string_to_pool;
 pub use variant::{ProcessedTextMasks, TextVariant};

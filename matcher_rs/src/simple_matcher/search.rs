@@ -4,20 +4,26 @@
 //! compiled [`SimpleMatcher`], it:
 //!
 //! 1. Obtains a `&mut` reference to the thread-local [`SIMPLE_MATCH_STATE`].
-//! 2. Transforms the input text through the process-type tree (or skips transformation
-//!    for [`SearchMode::AllSimple`](super::SearchMode::AllSimple) matchers).
-//! 3. Scans each text variant through the automata ([`ScanPlan`](super::engine::ScanPlan)).
-//! 4. Dispatches each raw match value into the rule state machine
+//! 2. Walks the process-type tree, transforming and scanning each variant immediately.
+//! 3. Dispatches each raw match value into the rule state machine
 //!    ([`RuleSet::process_entry`](super::rule::RuleSet::process_entry)).
-//! 5. Collects or checks results depending on the caller (`is_match` vs `process`).
+//! 4. Collects or checks results depending on the caller (`is_match` vs `process`).
 //!
 //! # Fast paths
 //!
 //! - **`is_match_simple`** — all rules are single-literal, no transforms. Delegates
 //!   directly to the automaton's `is_match`.
-//! - **`is_match_inner`** — general path with transform traversal and rule state.
 //! - **`process_simple`** — all-simple matchers collecting results. Each hit is a
 //!   completed rule; no need for the full state machine.
+//!
+//! # Unified tree walk
+//!
+//! The general path uses [`walk_and_scan`](SimpleMatcher::walk_and_scan), which walks the
+//! process-type trie once, scanning each variant as soon as it is produced. Leaf nodes
+//! stream transform byte iterators directly into the AC engine (zero allocation), while
+//! non-leaf nodes materialize their output for children. An `exit_early` flag controls
+//! whether the walk stops on the first satisfied rule (`is_match`) or exhausts all
+//! variants (`process`).
 //!
 //! # Safety
 //!
@@ -28,7 +34,6 @@
 
 use std::borrow::Cow;
 
-use crate::process::ProcessedTextMasks;
 use crate::process::step::TransformStep;
 use crate::process::variant::return_string_to_pool;
 
@@ -87,74 +92,13 @@ impl SimpleMatcher {
             });
     }
 
-    /// Collects matches from a precomputed list of transformed text variants.
-    ///
-    /// Used by [`SimpleMatcher::process_into`](super::SimpleMatcher::process_into) after
-    /// the process-type tree has been walked and all variants are available. Scans every
-    /// variant, then collects all satisfied rules into `results`.
-    ///
-    /// # Safety
-    ///
-    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
-    /// See module-level safety documentation.
-    pub(super) fn process_preprocessed_into<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        results: &mut Vec<SimpleResult<'a>>,
-    ) {
-        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
-        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
-        state.prepare(self.rules.len());
-
-        self.scan_all_variants(processed_text_process_type_masks, state, false);
-        self.rules.collect_matches(state, results);
-    }
-
-    /// Scans every transformed variant through the automaton and evaluates rule hits.
-    ///
-    /// Iterates over each text variant in `processed_text_process_type_masks`, skipping
-    /// variants with a zero mask (unused process-type slots). For each variant, constructs
-    /// a [`ScanContext`] and calls [`scan_variant`](Self::scan_variant).
-    ///
-    /// Returns `true` if early exit was triggered (only possible when `exit_early` is `true`).
-    pub(super) fn scan_all_variants<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        state: &mut SimpleMatchState,
-        exit_early: bool,
-    ) -> bool {
-        if self.scan.patterns().is_empty() {
-            return false;
-        }
-
-        let num_variants = processed_text_process_type_masks.len();
-
-        for (index, text_variant) in processed_text_process_type_masks.iter().enumerate() {
-            if text_variant.mask == 0 {
-                continue;
-            }
-            let ctx = ScanContext {
-                text_index: index,
-                process_type_mask: text_variant.mask,
-                num_variants,
-                exit_early,
-                is_ascii: text_variant.is_ascii,
-            };
-            if self.scan_variant(text_variant.text.as_ref(), ctx, state) {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Scans one processed text variant and forwards each raw hit into rule evaluation.
     ///
     /// Delegates to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
     /// with [`process_match`](Self::process_match) as the callback. Returns `true` if
     /// the callback triggered early exit.
     #[inline(always)]
-    pub(super) fn scan_variant(
+    fn scan_variant(
         &self,
         processed_text: &str,
         ctx: ScanContext,
@@ -180,7 +124,7 @@ impl SimpleMatcher {
     ///
     /// Returns `true` when the caller should stop scanning (early exit satisfied).
     #[inline(always)]
-    pub(super) fn process_match(
+    fn process_match(
         &self,
         raw_value: u32,
         ctx: ScanContext,
@@ -206,33 +150,34 @@ impl SimpleMatcher {
         }
     }
 
-    /// Lazy `is_match` path that streams transform byte iterators directly into the AC
-    /// scan engine, avoiding intermediate `String` allocation for leaf tree nodes.
+    /// Unified tree walk that transforms, scans, and evaluates rules in a single pass.
     ///
-    /// Walks the process-type tree manually instead of using [`walk_process_tree`]:
+    /// Walks the process-type trie built at construction time, scanning each text variant
+    /// as soon as it is produced:
     ///
-    /// - **Leaf terminals where step is a no-op** (Fanjian/Normalize/PinYin on ASCII):
-    ///   Scan the parent text with the child's mask, reusing the parent variant index.
-    /// - **Leaf terminals with real transforms**: Stream a byte iterator into AC.
-    /// - **Non-leaf terminals**: Materialize as usual (children need the text).
+    /// - **Root**: Scanned directly if it terminates (`pt_index_mask != 0`).
+    /// - **Leaf + no-op** (ASCII text with Fanjian/Normalize/PinYin/PinYinChar step):
+    ///   Reuses the parent's text and variant index, scans with the child's mask bits.
+    /// - **Leaf + real transform**: Streams a byte iterator directly into the AC engine
+    ///   via [`scan_variant_streaming`](Self::scan_variant_streaming), avoiding allocation.
+    /// - **Non-leaf**: Materializes the transform output for children, scans if the node
+    ///   also terminates.
     ///
-    /// # No-op detection
-    ///
-    /// When the parent text is pure ASCII, certain transforms are guaranteed no-ops:
-    /// - Fanjian: only maps non-ASCII CJK codepoints
-    /// - Normalize: all patterns contain non-ASCII characters
-    /// - PinYin/PinYinChar: only maps non-ASCII CJK codepoints
-    ///
-    /// For these cases the child's text equals the parent's, so we reuse the parent's
-    /// variant index and scan with only the child's mask bits, avoiding both allocation
-    /// and redundant AC scanning.
+    /// When `exit_early` is `true` (used by `is_match`), the walk stops as soon as any
+    /// rule is satisfied. When `false` (used by `process`), all variants are exhausted and
+    /// results are collected into `results`.
     ///
     /// # Safety
     ///
     /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
     /// See module-level safety documentation.
     #[inline(always)]
-    pub(super) fn is_match_lazy(&self, text: &str) -> bool {
+    pub(super) fn walk_and_scan<'a>(
+        &'a self,
+        text: &'a str,
+        exit_early: bool,
+        results: Option<&mut Vec<SimpleResult<'a>>>,
+    ) -> bool {
         let tree = self.process.tree();
         let num_variants = tree.len();
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
@@ -251,7 +196,7 @@ impl SimpleMatcher {
                 text_index: 0,
                 process_type_mask: tree[0].pt_index_mask,
                 num_variants,
-                exit_early: true,
+                exit_early,
                 is_ascii: root_is_ascii,
             };
             if self.scan_variant(text, ctx, state) {
@@ -260,6 +205,9 @@ impl SimpleMatcher {
         }
 
         if tree[0].children.is_empty() {
+            if let Some(results) = results {
+                self.rules.collect_matches(state, results);
+            }
             return self.rules.has_match(state);
         }
 
@@ -295,7 +243,6 @@ impl SimpleMatcher {
 
                 if is_leaf {
                     if child.pt_index_mask != 0 {
-                        // Check if the step is guaranteed to be a no-op on ASCII text.
                         // Fanjian/Normalize/PinYin only operate on non-ASCII codepoints,
                         // so pure-ASCII input passes through unchanged.
                         let is_noop = parent_ascii
@@ -308,25 +255,22 @@ impl SimpleMatcher {
                             );
 
                         stopped = if is_noop {
-                            // No-op: scan parent text with child's mask,
-                            // reusing the parent's variant index.
                             let ctx = ScanContext {
                                 text_index: parent_vi,
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
-                                exit_early: true,
+                                exit_early,
                                 is_ascii: parent_ascii,
                             };
                             self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
                         } else {
-                            // Real transform: stream byte iterator into AC.
                             let vi = variant_counter;
                             variant_counter += 1;
                             let ctx = ScanContext {
                                 text_index: vi,
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
-                                exit_early: true,
+                                exit_early,
                                 is_ascii: parent_ascii,
                             };
                             self.scan_variant_streaming(
@@ -364,7 +308,7 @@ impl SimpleMatcher {
                             text_index: child_vi,
                             process_type_mask: child.pt_index_mask,
                             num_variants,
-                            exit_early: true,
+                            exit_early,
                             is_ascii: ascii_flags[child_aidx],
                         };
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, state);
@@ -387,6 +331,9 @@ impl SimpleMatcher {
             return true;
         }
 
+        if let Some(results) = results {
+            self.rules.collect_matches(state, results);
+        }
         self.rules.has_match(state)
     }
 

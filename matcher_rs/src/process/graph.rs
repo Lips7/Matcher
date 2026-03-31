@@ -244,51 +244,24 @@ fn dedup_insert(
 
 /// Walks the transformation trie, producing all text variants needed for matching.
 ///
-/// This is the hot-path function called on every [`SimpleMatcher::is_match`](crate::SimpleMatcher::is_match) /
-/// [`SimpleMatcher::process`](crate::SimpleMatcher::process) invocation. It performs one
-/// forward pass over the flat tree built by [`build_process_type_tree`], relying on the
-/// invariant that every parent node appears before its children (guaranteed by construction).
-/// Common prefixes (for example the shared `Fanjian` step in both `Fanjian | Delete` and
-/// `Fanjian | Normalize`) are computed once and their result indices are reused for child
-/// nodes.
+/// Performs one forward pass over the flat tree built by [`build_process_type_tree`],
+/// relying on the invariant that every parent node appears before its children (guaranteed
+/// by construction). Common prefixes (for example the shared `Fanjian` step in both
+/// `Fanjian | Delete` and `Fanjian | Normalize`) are computed once and their result indices
+/// are reused for child nodes.
 ///
 /// Each [`TextVariant`] in the returned [`ProcessedTextMasks`] carries the transformed
 /// text, the bitmask of [`ProcessType`] indices that produced it, and an `is_ascii` flag.
 /// When different trie paths converge to the same string, they share a single entry with
 /// a merged mask.
 ///
-/// # Const-generic `LAZY` parameter
-///
-/// - **`LAZY = false`** — Produces all variants without callbacks; `on_variant` is never
-///   called. Use this when you need the complete set of variants (e.g. for
-///   [`SimpleMatcher::process`](crate::SimpleMatcher::process)).
-///
-/// - **`LAZY = true`** — Calls `on_variant(text, index, mask, is_ascii)` as soon as each
-///   new unique variant is produced. If `on_variant` returns `true`, the walk stops early.
-///   A "delta phase" at the end replays any additional mask bits that were merged into an
-///   already-seen text through deduplication. Use this for
-///   [`SimpleMatcher::is_match`](crate::SimpleMatcher::is_match) to short-circuit as soon
-///   as a rule is satisfied.
-///
-/// # Return value
-///
-/// Returns `(text_masks, stopped)` where `stopped` is `true` only when `LAZY = true` and
-/// `on_variant` triggered early exit.
-///
-/// Inside `matcher_rs`, owned strings in the returned vector are recycled via
-/// `return_processed_string_to_pool`.
-/// External callers can simply drop the vector — no manual cleanup is needed.
+/// Callers can simply drop the returned vector — no manual cleanup is needed.
 ///
 /// # Safety
 ///
 /// Accesses `TRANSFORM_STATE` through `UnsafeCell::get()`.
 /// Safe because `#[thread_local]` guarantees single-threaded access and this function is
 /// never called re-entrantly.
-///
-/// Contains a `transmute` from `ProcessedTextMasks<'static>` to `ProcessedTextMasks<'a>`
-/// when recycling a pooled buffer. This is sound because the pooled buffer is always empty
-/// (drained before being returned to the pool), so no `Cow` borrows with the wrong lifetime
-/// exist, and `Vec` layout is lifetime-independent.
 ///
 /// # Panics
 ///
@@ -309,11 +282,7 @@ fn dedup_insert(
 /// ]);
 /// let tree = build_process_type_tree(&process_types);
 ///
-/// // LAZY=false: produce all variants without early stopping.
-/// let (variants, stopped) = walk_process_tree::<false, _>(
-///     &tree, "妳！好", &mut |_, _, _, _| false,
-/// );
-/// assert!(!stopped);
+/// let variants = walk_process_tree(&tree, "妳！好");
 ///
 /// let texts: std::collections::HashSet<_> = variants
 ///     .into_iter()
@@ -327,116 +296,52 @@ fn dedup_insert(
 /// assert!(texts.contains("你好"));    // Fanjian | Delete
 /// ```
 #[inline(always)]
-pub fn walk_process_tree<'a, const LAZY: bool, F>(
+pub fn walk_process_tree<'a>(
     process_type_tree: &[ProcessTypeBitNode],
     text: &'a str,
-    on_variant: &mut F,
-) -> (ProcessedTextMasks<'a>, bool)
-where
-    F: FnMut(&str, usize, u64, bool) -> bool,
-{
-    {
-        // SAFETY: #[thread_local] guarantees single-threaded access.
-        // walk_process_tree is never called re-entrantly.
-        let ts = unsafe { &mut *TRANSFORM_STATE.get() };
+) -> ProcessedTextMasks<'a> {
+    // SAFETY: #[thread_local] guarantees single-threaded access.
+    // walk_process_tree is never called re-entrantly.
+    let ts = unsafe { &mut *TRANSFORM_STATE.get() };
 
-        let mut text_masks: ProcessedTextMasks<'a> = Vec::with_capacity(process_type_tree.len());
-        let root_is_ascii = text.is_ascii();
-        text_masks.push(TextVariant {
-            text: Cow::Borrowed(text),
-            mask: process_type_tree[0].pt_index_mask,
-            is_ascii: root_is_ascii,
-        });
+    let mut text_masks: ProcessedTextMasks<'a> = Vec::with_capacity(process_type_tree.len());
+    let root_is_ascii = text.is_ascii();
+    text_masks.push(TextVariant {
+        text: Cow::Borrowed(text),
+        mask: process_type_tree[0].pt_index_mask,
+        is_ascii: root_is_ascii,
+    });
 
-        let mut scanned_masks: TinyVec<[u64; 8]> = TinyVec::new();
-        if LAZY {
-            scanned_masks.push(0u64);
-            let root_mask = process_type_tree[0].pt_index_mask;
-            if root_mask != 0 && on_variant(text, 0, root_mask, root_is_ascii) {
-                return (text_masks, true);
-            }
-            scanned_masks[0] = root_mask;
-        }
-
-        if process_type_tree[0].children.is_empty() {
-            return (text_masks, false);
-        }
-
-        ts.tree_node_indices.clear();
-        ts.tree_node_indices.resize(process_type_tree.len(), 0);
-
-        let mut stopped = false;
-
-        'walk: for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-            let current_index = ts.tree_node_indices[current_node_index];
-            let parent_is_ascii = text_masks[current_index].is_ascii;
-
-            for &child_node_index in &current_node.children {
-                let child_node = &process_type_tree[child_node_index];
-                let step = child_node
-                    .step
-                    .expect("non-root process tree nodes always cache a transform step");
-                let current_text = text_masks[current_index].text.as_ref();
-                let output = step.apply(current_text, parent_is_ascii);
-
-                let old_len = if LAZY { text_masks.len() } else { 0 };
-                let child_index = dedup_insert(
-                    &mut text_masks,
-                    current_index,
-                    output.changed,
-                    output.is_ascii,
-                );
-
-                if LAZY {
-                    while scanned_masks.len() < text_masks.len() {
-                        scanned_masks.push(0u64);
-                    }
-                }
-
-                ts.tree_node_indices[child_node_index] = child_index;
-                text_masks[child_index].mask |= child_node.pt_index_mask;
-
-                if LAZY && child_index >= old_len {
-                    // New unique text: call on_variant immediately.
-                    let mask = text_masks[child_index].mask;
-                    let is_ascii = text_masks[child_index].is_ascii;
-                    if mask != 0
-                        && on_variant(
-                            text_masks[child_index].text.as_ref(),
-                            child_index,
-                            mask,
-                            is_ascii,
-                        )
-                    {
-                        stopped = true;
-                        break 'walk;
-                    }
-                    scanned_masks[child_index] = mask;
-                }
-                // Dedup'd entry: mask may have grown; handled in delta phase below.
-            }
-        }
-
-        if LAZY {
-            if stopped {
-                return (text_masks, true);
-            }
-            // Delta phase: re-scan entries whose mask grew after their initial callback.
-            for i in 0..text_masks.len() {
-                let delta = text_masks[i].mask & !scanned_masks[i];
-                if delta != 0
-                    && on_variant(
-                        text_masks[i].text.as_ref(),
-                        i,
-                        delta,
-                        text_masks[i].is_ascii,
-                    )
-                {
-                    return (text_masks, true);
-                }
-            }
-        }
-
-        (text_masks, false)
+    if process_type_tree[0].children.is_empty() {
+        return text_masks;
     }
+
+    ts.tree_node_indices.clear();
+    ts.tree_node_indices.resize(process_type_tree.len(), 0);
+
+    for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
+        let current_index = ts.tree_node_indices[current_node_index];
+        let parent_is_ascii = text_masks[current_index].is_ascii;
+
+        for &child_node_index in &current_node.children {
+            let child_node = &process_type_tree[child_node_index];
+            let step = child_node
+                .step
+                .expect("non-root process tree nodes always cache a transform step");
+            let current_text = text_masks[current_index].text.as_ref();
+            let output = step.apply(current_text, parent_is_ascii);
+
+            let child_index = dedup_insert(
+                &mut text_masks,
+                current_index,
+                output.changed,
+                output.is_ascii,
+            );
+
+            ts.tree_node_indices[child_node_index] = child_index;
+            text_masks[child_index].mask |= child_node.pt_index_mask;
+        }
+    }
+
+    text_masks
 }

@@ -19,7 +19,7 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::process::{ProcessTypeBitNode, return_processed_string_to_pool, walk_process_tree};
+use crate::process::ProcessTypeBitNode;
 
 mod build;
 mod engine;
@@ -239,7 +239,7 @@ impl SimpleMatcher {
         if self.process.is_all_simple() {
             return self.is_match_simple(text);
         }
-        self.is_match_lazy(text)
+        self.walk_and_scan(text, true, None)
     }
 
     /// Returns all patterns that match `text`.
@@ -285,11 +285,6 @@ impl SimpleMatcher {
     /// [`Vec::clear`] between batches, avoiding repeated heap allocation for the output
     /// vector itself.
     ///
-    /// Internally, when text transformation is needed, the method calls
-    /// [`walk_process_tree`] to produce all text variants, scans them, then returns the
-    /// variant buffers to a thread-local pool via `return_processed_string_to_pool` so
-    /// they can be reused on the next call.
-    ///
     /// # Examples
     ///
     /// ```rust
@@ -324,9 +319,6 @@ impl SimpleMatcher {
         if self.process.is_all_simple() {
             return self.process_simple(text, results);
         }
-        let (processed, _) =
-            walk_process_tree::<false, _>(self.process.tree(), text, &mut |_, _, _, _| false);
-        self.process_preprocessed_into(&processed, results);
-        return_processed_string_to_pool(processed);
+        self.walk_and_scan(text, false, Some(results));
     }
 }
