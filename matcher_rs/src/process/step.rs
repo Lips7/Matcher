@@ -17,10 +17,9 @@ use ahash::AHashMap;
 use std::sync::OnceLock;
 
 use crate::process::process_type::ProcessType;
-use crate::process::transform::charwise::{FanjianMatcher, PinyinMatcher};
 use crate::process::transform::constants::*;
 use crate::process::transform::delete::DeleteMatcher;
-use crate::process::transform::normalize::NormalizeMatcher;
+use crate::process::transform::replace::{FanjianMatcher, NormalizeMatcher, PinyinMatcher};
 
 /// Result of applying one compiled pipeline step to a text variant.
 ///
@@ -62,7 +61,7 @@ impl StepOutput {
 /// Compiled single-bit transformation step.
 ///
 /// Each variant wraps the corresponding low-level matcher from [`super::transform`].
-/// Instances are created by `build_transform_step` in [`super::registry`] and cached in
+/// Instances are created by `build_transform_step` and cached in
 /// `TRANSFORM_STEP_CACHE` for the lifetime of the process. The [`apply`](Self::apply)
 /// method provides a uniform dispatch point.
 #[derive(Clone)]

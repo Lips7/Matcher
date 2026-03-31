@@ -1,12 +1,12 @@
 //! SIMD-accelerated skip helpers for the text transformation pipeline.
 //!
-//! Provides three public functions used by the charwise and delete engines to
+//! Provides three public functions used by the replace and delete engines to
 //! fast-forward over irrelevant ASCII byte runs without per-byte branching:
 //!
 //! - [`skip_ascii_simd`] -- skips all ASCII bytes (`< 0x80`). Used by
-//!   `FanjianFindIter` (in [`super::charwise`]).
+//!   `FanjianFindIter` (in [`super::replace`]).
 //! - [`skip_non_digit_ascii_simd`] -- skips ASCII bytes that are not digits
-//!   (`'0'..='9'`). Used by `PinyinFindIter` (in [`super::charwise`]).
+//!   (`'0'..='9'`). Used by `PinyinFindIter` (in [`super::replace`]).
 //! - [`skip_ascii_non_delete_simd`] -- skips ASCII bytes that are not in the
 //!   delete bitset. Used by [`super::delete::DeleteMatcher`].
 //!

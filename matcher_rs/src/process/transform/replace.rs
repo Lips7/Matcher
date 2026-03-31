@@ -1,6 +1,12 @@
-//! Charwise lookup engines for Fanjian and Pinyin transformations.
+//! Text-replacement engines for Fanjian, Pinyin, and Normalize transformations.
 //!
-//! Both engines share a **two-stage page table** for O(1) codepoint lookup:
+//! All three engines share a common pattern: scan the input for replacement
+//! spans, then rebuild the output by interleaving unchanged text with
+//! replacement strings.
+//!
+//! ## Fanjian and Pinyin — page-table engines
+//!
+//! Both use a **two-stage page table** for O(1) codepoint lookup:
 //!
 //! - **L1** (`&[u16]`): indexed by `codepoint >> 8` (the "page index"). A non-zero
 //!   value is the 1-based page number in L2; zero means the entire 256-codepoint
@@ -15,19 +21,29 @@
 //! fast-forward over ASCII bytes that cannot produce hits, falling through to
 //! the page-table probe only for multi-byte (non-ASCII) codepoints.
 //!
-//! [`FanjianMatcher::replace`] has a **same-length fast path**: when the
-//! simplified codepoint has the same UTF-8 byte width as the traditional one,
-//! it overwrites the bytes in-place via `as_bytes_mut()` without rebuilding the
-//! string. Only when a byte-length mismatch is encountered does it fall back to
-//! the full scan-and-rebuild path through [`replace_scan`].
+//! ## Normalize — Aho-Corasick engine
+//!
+//! [`NormalizeMatcher`] performs multi-character replacement (full-width to
+//! half-width, variant forms, number normalization, etc.) using leftmost-longest
+//! Aho-Corasick matching. The automaton scans the text once, finds all
+//! non-overlapping matches, and rebuilds the output by interleaving unchanged
+//! spans with replacements from a parallel lookup table.
 
 #[cfg(feature = "runtime_build")]
 use ahash::{AHashMap, AHashSet};
 use std::borrow::Cow;
 
+use aho_corasick::{
+    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
+};
+
 use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
 use crate::process::transform::utf8::decode_utf8_raw;
 use crate::process::variant::get_string_from_pool;
+
+// ---------------------------------------------------------------------------
+// Shared replacement helpers
+// ---------------------------------------------------------------------------
 
 /// Replacement payload yielded by the charwise iterators.
 ///
@@ -72,6 +88,145 @@ where
         None
     }
 }
+
+/// Like [`replace_scan`] but also tracks whether the output is pure ASCII.
+///
+/// Accepts `(start, end, replacement_str)` triples where each replacement is a `&str`
+/// pushed directly into the result. `all_replacements_ascii` indicates whether all
+/// replacement strings are known to be ASCII (allows skipping per-replacement checks).
+/// The `is_ascii` flag is tracked incrementally by checking each unchanged gap.
+///
+/// Used by [`PinyinMatcher::replace`] and [`NormalizeMatcher::replace`].
+#[inline(always)]
+fn replace_spans_with_ascii<'a, I>(
+    text: &str,
+    mut iter: I,
+    all_replacements_ascii: bool,
+) -> Option<(String, bool)>
+where
+    I: Iterator<Item = (usize, usize, &'a str)>,
+{
+    if let Some((start, end, replacement)) = iter.next() {
+        let mut result = get_string_from_pool(text.len());
+        let prefix = &text[..start];
+        let mut is_ascii = all_replacements_ascii && prefix.is_ascii();
+        result.push_str(prefix);
+        result.push_str(replacement);
+        let mut last_end = end;
+        for (start, end, replacement) in iter {
+            let gap = &text[last_end..start];
+            is_ascii = is_ascii && gap.is_ascii();
+            result.push_str(gap);
+            result.push_str(replacement);
+            last_end = end;
+        }
+        let suffix = &text[last_end..];
+        is_ascii = is_ascii && suffix.is_ascii();
+        result.push_str(suffix);
+        Some((result, is_ascii))
+    } else {
+        None
+    }
+}
+
+/// Trait for find iterators that yield `(start, end, replacement_bytes)` triples.
+///
+/// Implemented by adapter types that wrap concrete find iterators (e.g.,
+/// [`PinyinFindIter`], [`aho_corasick::FindIter`]) and normalize their output
+/// into a uniform byte-slice replacement format for [`SliceReplacingByteIter`].
+pub(crate) trait ReplacementFinder<'a> {
+    fn next_replacement(&mut self) -> Option<(usize, usize, &'a [u8])>;
+}
+
+/// Byte-by-byte iterator that replaces text spans with borrowed byte slices.
+///
+/// Generic over `F: ReplacementFinder`, which provides the next replacement triple.
+/// The iterator interleaves original source bytes with replacement bytes, yielding
+/// one byte at a time. Used by both Pinyin and Normalize byte iterators.
+///
+/// `F` is a concrete generic bound (static dispatch), so each instantiation
+/// produces monomorphized code identical to the hand-written iterators.
+pub(crate) struct SliceReplacingByteIter<'a, F: ReplacementFinder<'a>> {
+    finder: F,
+    source: &'a [u8],
+    pos: usize,
+    next_start: usize,
+    next_end: usize,
+    next_repl: &'a [u8],
+    repl: &'a [u8],
+    repl_pos: usize,
+}
+
+impl<'a, F: ReplacementFinder<'a>> SliceReplacingByteIter<'a, F> {
+    /// Creates a new byte iterator, pre-fetching the first replacement.
+    #[inline(always)]
+    fn new(mut finder: F, source: &'a [u8]) -> Self {
+        let (next_start, next_end, next_repl) = finder
+            .next_replacement()
+            .map_or((usize::MAX, 0, &[] as &[u8]), |(s, e, r)| (s, e, r));
+        Self {
+            finder,
+            source,
+            pos: 0,
+            next_start,
+            next_end,
+            next_repl,
+            repl: &[],
+            repl_pos: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn advance_finder(&mut self) {
+        match self.finder.next_replacement() {
+            Some((s, e, r)) => {
+                self.next_start = s;
+                self.next_end = e;
+                self.next_repl = r;
+            }
+            None => {
+                self.next_start = usize::MAX;
+            }
+        }
+    }
+}
+
+impl<'a, F: ReplacementFinder<'a>> Iterator for SliceReplacingByteIter<'a, F> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Drain current replacement
+        if self.repl_pos < self.repl.len() {
+            let b = self.repl[self.repl_pos];
+            self.repl_pos += 1;
+            return Some(b);
+        }
+
+        // At match start?
+        if self.pos == self.next_start {
+            self.pos = self.next_end;
+            self.repl = self.next_repl;
+            self.repl_pos = 1;
+            let first = self.repl[0];
+            self.advance_finder();
+            return Some(first);
+        }
+
+        // Yield original byte
+        if self.pos < self.source.len() {
+            let b = self.source[self.pos];
+            self.pos += 1;
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared page-table helpers (Fanjian + Pinyin)
+// ---------------------------------------------------------------------------
 
 /// Looks up one codepoint in a two-stage page table.
 ///
@@ -176,6 +331,10 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
     }
     ((start as u32) << 8) | ((end - start) as u32)
 }
+
+// ---------------------------------------------------------------------------
+// Fanjian (Traditional → Simplified Chinese)
+// ---------------------------------------------------------------------------
 
 /// Iterator over Traditional Chinese codepoints that have Simplified replacements.
 ///
@@ -305,136 +464,6 @@ impl<'a> FanjianByteIter<'a> {
     }
 }
 
-/// Iterator over codepoints that have Pinyin replacements.
-///
-/// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
-/// instead of [`skip_ascii_simd`], because ASCII digits may appear in the
-/// Pinyin tables and must not be skipped. Yields
-/// `(start, end, Replacement::Str(pinyin_slice))` for each matched codepoint.
-struct PinyinFindIter<'a> {
-    l1: &'a [u16],
-    l2: &'a [u32],
-    /// Shared string buffer containing all Pinyin syllables concatenated.
-    strings: &'a str,
-    text: &'a str,
-    byte_offset: usize,
-}
-
-impl<'a> Iterator for PinyinFindIter<'a> {
-    type Item = (usize, usize, Replacement<'a>);
-
-    /// Advances to the next codepoint that has a Pinyin replacement.
-    ///
-    /// # Safety (internal)
-    ///
-    /// - [`decode_utf8_raw`] is called only when the current byte is non-ASCII
-    ///   (`>= 0x80`), guaranteeing a valid UTF-8 lead byte.
-    /// - The `offset + str_len <= self.strings.len()` bounds check ensures the
-    ///   slice into the Pinyin string buffer is in range.
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let bytes = self.text.as_bytes();
-        let len = bytes.len();
-
-        loop {
-            self.byte_offset = skip_non_digit_ascii_simd(bytes, self.byte_offset);
-            if self.byte_offset >= len {
-                return None;
-            }
-
-            let start = self.byte_offset;
-            let byte = bytes[start];
-            let (cp, char_len) = if byte < 0x80 {
-                (byte as u32, 1)
-            } else {
-                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `start` is a
-                // valid multi-byte lead byte.
-                unsafe { decode_utf8_raw(bytes, start) }
-            };
-            self.byte_offset += char_len;
-
-            if let Some(value) = page_table_lookup(cp, self.l1, self.l2) {
-                let offset = (value >> 8) as usize;
-                let str_len = (value & 0xFF) as usize;
-                if offset + str_len <= self.strings.len() {
-                    return Some((
-                        start,
-                        self.byte_offset,
-                        Replacement::Str(&self.strings[offset..offset + str_len]),
-                    ));
-                }
-            }
-        }
-    }
-}
-
-/// Byte-by-byte iterator over Pinyin-transformed text.
-///
-/// Yields the UTF-8 bytes of `text` with all matched CJK codepoints replaced
-/// by their Pinyin syllable bytes. Wraps [`PinyinFindIter`] internally.
-pub(crate) struct PinyinByteIter<'a> {
-    find_iter: PinyinFindIter<'a>,
-    source: &'a [u8],
-    pos: usize,
-    /// Pre-fetched next match start (usize::MAX when exhausted).
-    next_start: usize,
-    next_end: usize,
-    /// Pre-fetched replacement bytes for the next match.
-    next_repl: &'a [u8],
-    /// Current replacement bytes being yielded.
-    repl: &'a [u8],
-    repl_pos: usize,
-}
-
-impl<'a> Iterator for PinyinByteIter<'a> {
-    type Item = u8;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<u8> {
-        // Drain current replacement
-        if self.repl_pos < self.repl.len() {
-            let b = self.repl[self.repl_pos];
-            self.repl_pos += 1;
-            return Some(b);
-        }
-
-        // At match start?
-        if self.pos == self.next_start {
-            self.pos = self.next_end;
-            self.repl = self.next_repl;
-            self.repl_pos = 1;
-            let first = self.repl[0];
-            self.advance_find_iter();
-            return Some(first);
-        }
-
-        // Yield original byte
-        if self.pos < self.source.len() {
-            let b = self.source[self.pos];
-            self.pos += 1;
-            Some(b)
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a> PinyinByteIter<'a> {
-    #[inline(always)]
-    fn advance_find_iter(&mut self) {
-        match self.find_iter.next() {
-            Some((s, e, Replacement::Str(r))) => {
-                self.next_start = s;
-                self.next_end = e;
-                self.next_repl = r.as_bytes();
-            }
-            _ => {
-                self.next_start = usize::MAX;
-            }
-        }
-    }
-}
-
 /// Two-stage page-table matcher for Traditional-to-Simplified Chinese replacement.
 ///
 /// Stores a pair of decoded page tables (`l1` and `l2`) whose layout is
@@ -528,6 +557,91 @@ impl FanjianMatcher {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pinyin (CJK → Pinyin romanization)
+// ---------------------------------------------------------------------------
+
+/// Iterator over codepoints that have Pinyin replacements.
+///
+/// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
+/// instead of [`skip_ascii_simd`], because ASCII digits may appear in the
+/// Pinyin tables and must not be skipped. Yields
+/// `(start, end, Replacement::Str(pinyin_slice))` for each matched codepoint.
+struct PinyinFindIter<'a> {
+    l1: &'a [u16],
+    l2: &'a [u32],
+    /// Shared string buffer containing all Pinyin syllables concatenated.
+    strings: &'a str,
+    text: &'a str,
+    byte_offset: usize,
+}
+
+impl<'a> Iterator for PinyinFindIter<'a> {
+    type Item = (usize, usize, Replacement<'a>);
+
+    /// Advances to the next codepoint that has a Pinyin replacement.
+    ///
+    /// # Safety (internal)
+    ///
+    /// - [`decode_utf8_raw`] is called only when the current byte is non-ASCII
+    ///   (`>= 0x80`), guaranteeing a valid UTF-8 lead byte.
+    /// - The `offset + str_len <= self.strings.len()` bounds check ensures the
+    ///   slice into the Pinyin string buffer is in range.
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+        let len = bytes.len();
+
+        loop {
+            self.byte_offset = skip_non_digit_ascii_simd(bytes, self.byte_offset);
+            if self.byte_offset >= len {
+                return None;
+            }
+
+            let start = self.byte_offset;
+            let byte = bytes[start];
+            let (cp, char_len) = if byte < 0x80 {
+                (byte as u32, 1)
+            } else {
+                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `start` is a
+                // valid multi-byte lead byte.
+                unsafe { decode_utf8_raw(bytes, start) }
+            };
+            self.byte_offset += char_len;
+
+            if let Some(value) = page_table_lookup(cp, self.l1, self.l2) {
+                let offset = (value >> 8) as usize;
+                let str_len = (value & 0xFF) as usize;
+                if offset + str_len <= self.strings.len() {
+                    return Some((
+                        start,
+                        self.byte_offset,
+                        Replacement::Str(&self.strings[offset..offset + str_len]),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Adapter wrapping [`PinyinFindIter`] for use with [`SliceReplacingByteIter`].
+pub(crate) struct PinyinFindAdapter<'a> {
+    find_iter: PinyinFindIter<'a>,
+}
+
+impl<'a> ReplacementFinder<'a> for PinyinFindAdapter<'a> {
+    #[inline(always)]
+    fn next_replacement(&mut self) -> Option<(usize, usize, &'a [u8])> {
+        match self.find_iter.next() {
+            Some((s, e, Replacement::Str(r))) => Some((s, e, r.as_bytes())),
+            _ => None,
+        }
+    }
+}
+
+/// Byte-by-byte iterator over Pinyin-transformed text.
+pub(crate) type PinyinByteIter<'a> = SliceReplacingByteIter<'a, PinyinFindAdapter<'a>>;
+
 /// Two-stage page-table matcher for CJK-to-Pinyin replacement.
 ///
 /// Uses the same two-stage page table as [`FanjianMatcher`], but each non-zero
@@ -571,18 +685,12 @@ impl PinyinMatcher {
     /// bytes, but without allocating an intermediate `String`.
     #[inline(always)]
     pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> PinyinByteIter<'a> {
-        let mut iter = PinyinByteIter {
-            find_iter: self.iter(text),
-            source: text.as_bytes(),
-            pos: 0,
-            next_start: usize::MAX,
-            next_end: 0,
-            next_repl: &[],
-            repl: &[],
-            repl_pos: 0,
-        };
-        iter.advance_find_iter();
-        iter
+        SliceReplacingByteIter::new(
+            PinyinFindAdapter {
+                find_iter: self.iter(text),
+            },
+            text.as_bytes(),
+        )
     }
 
     /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
@@ -593,34 +701,14 @@ impl PinyinMatcher {
     /// avoid a redundant scan. Pinyin replacements are always ASCII, so only
     /// the unchanged gaps between replacements need checking.
     pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        let mut iter = self.iter(text);
-        if let Some((start, end, replacement)) = iter.next() {
-            let mut result = get_string_from_pool(text.len());
-            let prefix = &text[..start];
-            let mut is_ascii = prefix.is_ascii();
-            result.push_str(prefix);
-            let Replacement::Str(mapped) = replacement else {
-                unreachable!("pinyin iter yields string replacements");
-            };
-            result.push_str(mapped);
-            let mut last_end = end;
-            for (start, end, replacement) in iter {
-                let gap = &text[last_end..start];
-                is_ascii = is_ascii && gap.is_ascii();
-                result.push_str(gap);
-                let Replacement::Str(mapped) = replacement else {
-                    unreachable!("pinyin iter yields string replacements");
-                };
-                result.push_str(mapped);
-                last_end = end;
-            }
-            let suffix = &text[last_end..];
-            is_ascii = is_ascii && suffix.is_ascii();
-            result.push_str(suffix);
-            Some((result, is_ascii))
-        } else {
-            None
-        }
+        replace_spans_with_ascii(
+            text,
+            self.iter(text).filter_map(|(s, e, r)| match r {
+                Replacement::Str(mapped) => Some((s, e, mapped)),
+                _ => None,
+            }),
+            true, // pinyin replacements are always ASCII
+        )
     }
 
     /// Builds a matcher from the precompiled build-time tables and string storage.
@@ -688,6 +776,142 @@ impl PinyinMatcher {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Normalize (Aho-Corasick multi-character replacement)
+// ---------------------------------------------------------------------------
+
+/// Multi-character normalization matcher plus its parallel replacement table.
+///
+/// The matcher holds a compiled [`AhoCorasick`] DFA and a `replace_list` where
+/// index `i` is the replacement string for the `i`-th pattern in the automaton.
+/// Pattern order is established at construction time and must be consistent
+/// between the automaton and the replacement list.
+#[derive(Clone)]
+pub(crate) struct NormalizeMatcher {
+    engine: AhoCorasick,
+    /// Replacement strings parallel to the automaton's pattern indices.
+    /// `replace_list[match.pattern_index]` is the output for a given match.
+    replace_list: Vec<&'static str>,
+    /// Pre-computed: true when every entry in `replace_list` is pure ASCII.
+    /// Allows skipping per-replacement ASCII checks during the hot-path replace loop.
+    pub(crate) all_replacements_ascii: bool,
+}
+
+/// Adapter wrapping [`aho_corasick::FindIter`] for use with [`SliceReplacingByteIter`].
+pub(crate) struct NormalizeFindAdapter<'a> {
+    find_iter: aho_corasick::FindIter<'a, 'a>,
+    replace_list: &'a [&'static str],
+}
+
+impl<'a> ReplacementFinder<'a> for NormalizeFindAdapter<'a> {
+    #[inline(always)]
+    fn next_replacement(&mut self) -> Option<(usize, usize, &'a [u8])> {
+        self.find_iter.next().map(|m| {
+            (
+                m.start(),
+                m.end(),
+                self.replace_list[m.pattern().as_usize()].as_bytes(),
+            )
+        })
+    }
+}
+
+/// Byte-by-byte iterator over normalize-transformed text.
+pub(crate) type NormalizeByteIter<'a> = SliceReplacingByteIter<'a, NormalizeFindAdapter<'a>>;
+
+impl NormalizeMatcher {
+    /// Creates a find iterator over all leftmost-longest matches in `text`.
+    #[inline(always)]
+    fn find_iter<'a>(&'a self, text: &'a str) -> aho_corasick::FindIter<'a, 'a> {
+        self.engine.find_iter(text)
+    }
+
+    /// Returns a byte-by-byte iterator over normalize-transformed text.
+    ///
+    /// Equivalent output to `replace()` followed by iterating the result's
+    /// bytes, but without allocating an intermediate `String`.
+    #[inline(always)]
+    pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> NormalizeByteIter<'a> {
+        SliceReplacingByteIter::new(
+            NormalizeFindAdapter {
+                find_iter: self.find_iter(text),
+                replace_list: &self.replace_list,
+            },
+            text.as_bytes(),
+        )
+    }
+
+    /// Replaces every normalization match in `text`.
+    ///
+    /// Scans `text` with the Aho-Corasick automaton in leftmost-longest mode.
+    /// For each match, copies the unchanged text since the last match, then
+    /// appends the replacement string from `replace_list[pattern_index]`.
+    ///
+    /// Returns `None` when no pattern matched, so callers can preserve
+    /// borrowed input without allocation. The `bool` indicates whether the
+    /// output is pure ASCII, tracked incrementally to avoid a redundant scan.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
+        let replace_list = &self.replace_list;
+        replace_spans_with_ascii(
+            text,
+            self.find_iter(text)
+                .map(|m| (m.start(), m.end(), replace_list[m.pattern().as_usize()])),
+            self.all_replacements_ascii,
+        )
+    }
+
+    /// Builds a matcher from an ordered pattern list.
+    ///
+    /// Compiles the patterns into an aho_corasick DFA using leftmost-longest
+    /// match semantics.
+    ///
+    /// # Panics
+    ///
+    /// Panics (via `.unwrap()`) if the Aho-Corasick builder fails.
+    pub(crate) fn new<I, P>(patterns: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<str> + AsRef<[u8]>,
+    {
+        Self {
+            engine: AhoCorasickBuilder::new()
+                .kind(Some(AhoCorasickKind::DFA))
+                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
+                .build(patterns)
+                .unwrap(),
+            replace_list: Vec::new(),
+            all_replacements_ascii: true,
+        }
+    }
+
+    /// Attaches the replacement list parallel to the compiled pattern order.
+    ///
+    /// `replace_list[i]` must be the replacement for pattern `i` in the
+    /// automaton. Consumes and returns `self` for builder-style chaining.
+    pub(crate) fn with_replacements(mut self, replace_list: Vec<&'static str>) -> Self {
+        self.all_replacements_ascii = replace_list.iter().all(|s| s.is_ascii());
+        self.replace_list = replace_list;
+        self
+    }
+
+    /// Builds a matcher from a runtime-parsed normalization dictionary.
+    ///
+    /// Sorts the dictionary entries by key for deterministic pattern ordering,
+    /// builds the Aho-Corasick automaton from the sorted keys, and attaches
+    /// the corresponding replacement values via [`NormalizeMatcher::with_replacements`].
+    #[cfg(feature = "runtime_build")]
+    pub(crate) fn from_dict(dict: AHashMap<&'static str, &'static str>) -> Self {
+        let mut pairs: Vec<(&'static str, &'static str)> = dict.into_iter().collect();
+        pairs.sort_unstable_by_key(|&(k, _)| k);
+        let replace_list: Vec<&'static str> = pairs.iter().map(|&(_, v)| v).collect();
+        Self::new(pairs.into_iter().map(|(k, _)| k)).with_replacements(replace_list)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime page-table builder (shared by Fanjian + Pinyin)
+// ---------------------------------------------------------------------------
+
 /// Converts a sparse codepoint map into the shared two-stage page-table layout.
 ///
 /// Groups all keys by their high bits (`key >> 8`) to determine which 256-entry
@@ -719,6 +943,10 @@ fn build_2_stage_table(map: &AHashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
     (l1, l2)
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(all(test, not(feature = "runtime_build")))]
 mod tests {
     use super::*;
@@ -747,6 +975,14 @@ mod tests {
         )
     }
 
+    fn normalize_matcher() -> NormalizeMatcher {
+        let patterns: Vec<&str> = constants::NORMALIZE_PROCESS_LIST_STR.lines().collect();
+        let replace_list: Vec<&'static str> = constants::NORMALIZE_PROCESS_REPLACE_LIST_STR
+            .lines()
+            .collect();
+        NormalizeMatcher::new(patterns.iter()).with_replacements(replace_list)
+    }
+
     fn assert_byte_iter_eq_replace_fanjian(matcher: &FanjianMatcher, text: &str) {
         let materialized: Vec<u8> = match matcher.replace(text) {
             Some(s) => s.into_bytes(),
@@ -763,6 +999,15 @@ mod tests {
         };
         let streamed: Vec<u8> = matcher.byte_iter(text).collect();
         assert_eq!(materialized, streamed, "pinyin mismatch for: {:?}", text);
+    }
+
+    fn assert_byte_iter_eq_replace_normalize(matcher: &NormalizeMatcher, text: &str) {
+        let materialized: Vec<u8> = match matcher.replace(text) {
+            Some((s, _)) => s.into_bytes(),
+            None => text.as_bytes().to_vec(),
+        };
+        let streamed: Vec<u8> = matcher.byte_iter(text).collect();
+        assert_eq!(materialized, streamed, "normalize mismatch for: {:?}", text);
     }
 
     #[test]
@@ -789,6 +1034,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn normalize_byte_iter_matches_replace() {
+        let m = normalize_matcher();
+        for text in ["", "hello", "ＡＢＣ", "abc１２３def", "①②③"] {
+            assert_byte_iter_eq_replace_normalize(&m, text);
+        }
+    }
+
     proptest::proptest! {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
 
@@ -802,6 +1055,12 @@ mod tests {
         fn prop_pinyin_byte_iter(text in "\\PC{0,200}") {
             let m = pinyin();
             assert_byte_iter_eq_replace_pinyin(&m, &text);
+        }
+
+        #[test]
+        fn prop_normalize_byte_iter(text in "\\PC{0,200}") {
+            let m = normalize_matcher();
+            assert_byte_iter_eq_replace_normalize(&m, &text);
         }
     }
 }

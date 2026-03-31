@@ -81,7 +81,7 @@ pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!
 
 /// L1 index for the Fanjian 2-stage page table (`u16[4352]`, little-endian).
 ///
-/// See [`crate::process::transform::charwise::FanjianMatcher`]
+/// See [`crate::process::transform::replace::FanjianMatcher`]
 /// for the table layout.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const FANJIAN_L1_BYTES: &[u8] =

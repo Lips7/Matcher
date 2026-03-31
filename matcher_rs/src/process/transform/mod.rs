@@ -8,24 +8,21 @@
 //! - [`constants`] -- Pre-compiled binary tables (page tables, bitsets,
 //!   serialized automata) embedded at build time by `build.rs`, or raw source
 //!   text maps when the `runtime_build` feature is active.
-//! - [`charwise`] -- Two-stage page-table lookup engines for single-codepoint
-//!   replacements: [`charwise::FanjianMatcher`] (Traditional-to-Simplified
-//!   Chinese) and [`charwise::PinyinMatcher`] (CJK-to-Pinyin).
+//! - [`replace`] -- Text-replacement engines: [`replace::FanjianMatcher`]
+//!   (Traditional-to-Simplified Chinese, page-table), [`replace::PinyinMatcher`]
+//!   (CJK-to-Pinyin, page-table), and [`replace::NormalizeMatcher`]
+//!   (multi-character Aho-Corasick replacement).
 //! - [`delete`] -- A flat Unicode bitset engine ([`delete::DeleteMatcher`])
 //!   that strips configured codepoints from text, with a fast ASCII LUT path.
-//! - [`normalize`] -- Multi-character replacement via Aho-Corasick
-//!   ([`normalize::NormalizeMatcher`]), handling full-width-to-half-width,
-//!   variant forms, and number normalization.
-//! - [`simd`] -- SIMD-accelerated byte-skip helpers that let the charwise and
+//! - [`simd`] -- SIMD-accelerated byte-skip helpers that let the replace and
 //!   delete engines jump over long runs of irrelevant ASCII bytes in a single
 //!   instruction (AVX2 / NEON / portable `std::simd` fallback).
 //!
 //! All types in this module are `pub(crate)` -- they are internal implementation
-//! details consumed by the higher-level [`super::registry`] and
+//! details consumed by the higher-level [`super::step`] and
 //! [`super::api`] modules.
-pub(crate) mod charwise;
 pub(crate) mod constants;
 pub(crate) mod delete;
-pub(crate) mod normalize;
+pub(crate) mod replace;
 pub(crate) mod simd;
 pub(crate) mod utf8;
