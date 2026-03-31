@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.12.2 - 2026-03-31
+
+### Performance
+- Fix PinYin regression by eliminating `Replacement` enum indirection in replacement engines.
+- Unify streaming tree walk into single `walk_and_scan` method — 25% faster `process`, 33% faster `is_match`.
+- Lazy transform pipeline for `is_match` — skips materializing text variants when early exit is possible.
+
+### Refactor
+- Merge charwise + normalize into unified `replace.rs` with shared `ReplacementFinder` trait.
+- Deduplicate SIMD dispatch and AVX2 entry points with macros.
+- Extract shared UTF-8 decoder to `transform/utf8.rs`.
+- Merge `step.rs` and `registry.rs` into single `step` module.
+- Remove dead public API after `walk_and_scan` unification.
+- Remove unused optimizations (masks pool, Fanjian in-place, `SingleProcessType` const generic).
+- Remove unused `daachorse` dependency and related non-overlapping code.
+
+### Bug Fixes
+- Remove broken single-step match processing methods from `SimpleMatcher`.
+
+### Testing
+- Add unit tests for critical internals and improve coverage infrastructure.
+- Simplify runtime build test configuration.
+
+### Documentation
+- Add doc tests and expand rustdoc for public API gaps.
+- Update `CLAUDE.md` and `DESIGN.md` for post-refactor accuracy.
+
 ## 0.12.1 - 2026-03-30
 
 ### Performance
