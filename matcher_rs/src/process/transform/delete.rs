@@ -21,60 +21,13 @@ use ahash::AHashSet;
 use std::borrow::Cow;
 
 use crate::process::transform::simd::skip_ascii_non_delete_simd;
+use crate::process::transform::utf8::decode_utf8_raw;
 use crate::process::variant::get_string_from_pool;
 
 /// Number of bytes needed to represent all Unicode codepoints (0x0–0x10FFFF) in
 /// a flat bitset: one bit per codepoint, packed 8 per byte.
 #[cfg(feature = "runtime_build")]
 const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
-
-/// Decodes one non-ASCII UTF-8 codepoint from `bytes[offset..]`.
-///
-/// Returns `(codepoint, byte_length)` where `byte_length` is 2, 3, or 4.
-/// Functionally identical to `charwise::decode_utf8_raw` but kept as a
-/// separate copy to avoid cross-module coupling in this hot path.
-///
-/// # Safety (internal)
-///
-/// Uses `get_unchecked` to read continuation bytes without bounds checks.
-/// This is safe because:
-/// - `offset` always points at a non-ASCII lead byte (`>= 0x80`) inside a
-///   valid `&str`, guaranteeing the continuation bytes exist within the slice.
-/// - The lead byte's high bits determine the sequence length, and valid UTF-8
-///   guarantees that many continuation bytes follow.
-#[inline(always)]
-fn decode_utf8(bytes: &[u8], offset: usize) -> (u32, usize) {
-    // SAFETY: `offset` is within bounds — caller only passes offsets inside a valid `&str`.
-    let b0 = unsafe { *bytes.get_unchecked(offset) };
-    if b0 < 0xE0 {
-        // SAFETY: b0 is a 2-byte UTF-8 lead (0xC0..0xDF); valid UTF-8 guarantees offset+1 exists.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
-        (((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2)
-    } else if b0 < 0xF0 {
-        // SAFETY: b0 is a 3-byte UTF-8 lead (0xE0..0xEF); valid UTF-8 guarantees offset+1 exists.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
-        // SAFETY: 3-byte UTF-8 lead guarantees offset+2 exists.
-        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
-        (
-            ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F),
-            3,
-        )
-    } else {
-        // SAFETY: b0 is a 4-byte UTF-8 lead (0xF0..0xF7); valid UTF-8 guarantees offset+1 exists.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
-        // SAFETY: 4-byte UTF-8 lead guarantees offset+2 exists.
-        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
-        // SAFETY: 4-byte UTF-8 lead guarantees offset+3 exists.
-        let b3 = unsafe { *bytes.get_unchecked(offset + 3) };
-        (
-            ((b0 as u32 & 0x07) << 18)
-                | ((b1 as u32 & 0x3F) << 12)
-                | ((b2 as u32 & 0x3F) << 6)
-                | (b3 as u32 & 0x3F),
-            4,
-        )
-    }
-}
 
 /// Byte-by-byte iterator over delete-transformed text.
 ///
@@ -126,7 +79,9 @@ impl<'a> Iterator for DeleteByteIter<'a> {
             }
 
             // Multi-byte: decode codepoint and check bitset
-            let (cp, char_len) = decode_utf8(self.source, self.pos);
+            // SAFETY: `b >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `pos` is a
+            // valid multi-byte lead byte.
+            let (cp, char_len) = unsafe { decode_utf8_raw(self.source, self.pos) };
             let cp_usize = cp as usize;
             if cp_usize / 8 < self.bitset.len()
                 && (self.bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
@@ -218,7 +173,8 @@ impl DeleteMatcher {
                 offset += 1;
                 offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
             } else {
-                let (cp, char_len) = decode_utf8(bytes, offset);
+                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
                 let cp = cp as usize;
                 if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     break;
@@ -235,7 +191,8 @@ impl DeleteMatcher {
         if byte < 0x80 {
             offset += 1;
         } else {
-            let (_, char_len) = decode_utf8(bytes, offset);
+            // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
+            let (_, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
             offset += char_len;
         }
 
@@ -253,7 +210,8 @@ impl DeleteMatcher {
                     offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
                 }
             } else {
-                let (cp, char_len) = decode_utf8(bytes, offset);
+                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
                 let cp = cp as usize;
                 if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     result.push_str(&text[gap_start..offset]);

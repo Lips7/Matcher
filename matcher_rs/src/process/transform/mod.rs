@@ -28,3 +28,4 @@ pub(crate) mod constants;
 pub(crate) mod delete;
 pub(crate) mod normalize;
 pub(crate) mod simd;
+pub(crate) mod utf8;
