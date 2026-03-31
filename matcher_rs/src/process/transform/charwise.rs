@@ -283,6 +283,78 @@ impl<'a> Iterator for FanjianFindIter<'a> {
     }
 }
 
+/// Byte-by-byte iterator over Fanjian-transformed text.
+///
+/// Yields the UTF-8 bytes of `text` with all Traditional Chinese codepoints
+/// replaced by their Simplified equivalents. Wraps [`FanjianFindIter`]
+/// internally: original bytes are yielded between replacement spans, and
+/// replacement character bytes are yielded from a small stack buffer.
+pub(crate) struct FanjianByteIter<'a> {
+    find_iter: FanjianFindIter<'a>,
+    source: &'a [u8],
+    pos: usize,
+    /// Pre-fetched next match start (usize::MAX when exhausted).
+    next_start: usize,
+    next_end: usize,
+    /// Replacement char for the pre-fetched match.
+    next_char: char,
+    /// Encoded replacement bytes being yielded.
+    buf: [u8; 4],
+    buf_pos: u8,
+    buf_len: u8,
+}
+
+impl<'a> Iterator for FanjianByteIter<'a> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Drain replacement buffer
+        if self.buf_pos < self.buf_len {
+            let b = self.buf[self.buf_pos as usize];
+            self.buf_pos += 1;
+            return Some(b);
+        }
+
+        // At match start? Encode replacement and advance.
+        if self.pos == self.next_start {
+            self.pos = self.next_end;
+            let len = self.next_char.len_utf8();
+            self.next_char.encode_utf8(&mut self.buf);
+            self.buf_len = len as u8;
+            self.buf_pos = 1;
+            // Fetch next match
+            self.advance_find_iter();
+            return Some(self.buf[0]);
+        }
+
+        // Yield original byte
+        if self.pos < self.source.len() {
+            let b = self.source[self.pos];
+            self.pos += 1;
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> FanjianByteIter<'a> {
+    #[inline(always)]
+    fn advance_find_iter(&mut self) {
+        match self.find_iter.next() {
+            Some((s, e, Replacement::Char(c))) => {
+                self.next_start = s;
+                self.next_end = e;
+                self.next_char = c;
+            }
+            _ => {
+                self.next_start = usize::MAX;
+            }
+        }
+    }
+}
+
 /// Iterator over codepoints that have Pinyin replacements.
 ///
 /// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
@@ -346,6 +418,73 @@ impl<'a> Iterator for PinyinFindIter<'a> {
     }
 }
 
+/// Byte-by-byte iterator over Pinyin-transformed text.
+///
+/// Yields the UTF-8 bytes of `text` with all matched CJK codepoints replaced
+/// by their Pinyin syllable bytes. Wraps [`PinyinFindIter`] internally.
+pub(crate) struct PinyinByteIter<'a> {
+    find_iter: PinyinFindIter<'a>,
+    source: &'a [u8],
+    pos: usize,
+    /// Pre-fetched next match start (usize::MAX when exhausted).
+    next_start: usize,
+    next_end: usize,
+    /// Pre-fetched replacement bytes for the next match.
+    next_repl: &'a [u8],
+    /// Current replacement bytes being yielded.
+    repl: &'a [u8],
+    repl_pos: usize,
+}
+
+impl<'a> Iterator for PinyinByteIter<'a> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Drain current replacement
+        if self.repl_pos < self.repl.len() {
+            let b = self.repl[self.repl_pos];
+            self.repl_pos += 1;
+            return Some(b);
+        }
+
+        // At match start?
+        if self.pos == self.next_start {
+            self.pos = self.next_end;
+            self.repl = self.next_repl;
+            self.repl_pos = 1;
+            let first = self.repl[0];
+            self.advance_find_iter();
+            return Some(first);
+        }
+
+        // Yield original byte
+        if self.pos < self.source.len() {
+            let b = self.source[self.pos];
+            self.pos += 1;
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> PinyinByteIter<'a> {
+    #[inline(always)]
+    fn advance_find_iter(&mut self) {
+        match self.find_iter.next() {
+            Some((s, e, Replacement::Str(r))) => {
+                self.next_start = s;
+                self.next_end = e;
+                self.next_repl = r.as_bytes();
+            }
+            _ => {
+                self.next_start = usize::MAX;
+            }
+        }
+    }
+}
+
 /// Two-stage page-table matcher for Traditional-to-Simplified Chinese replacement.
 ///
 /// Stores a pair of decoded page tables (`l1` and `l2`) whose layout is
@@ -376,6 +515,27 @@ impl FanjianMatcher {
             text,
             byte_offset: 0,
         }
+    }
+
+    /// Returns a byte-by-byte iterator over Fanjian-transformed text.
+    ///
+    /// Equivalent output to `replace()` followed by iterating the result's
+    /// bytes, but without allocating an intermediate `String`.
+    #[inline(always)]
+    pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> FanjianByteIter<'a> {
+        let mut iter = FanjianByteIter {
+            find_iter: self.iter(text),
+            source: text.as_bytes(),
+            pos: 0,
+            next_start: usize::MAX,
+            next_end: 0,
+            next_char: '\0',
+            buf: [0; 4],
+            buf_pos: 0,
+            buf_len: 0,
+        };
+        iter.advance_find_iter();
+        iter
     }
 
     /// Replaces every Traditional Chinese codepoint in `text` that has a Simplified mapping.
@@ -453,6 +613,26 @@ impl PinyinMatcher {
             text,
             byte_offset: 0,
         }
+    }
+
+    /// Returns a byte-by-byte iterator over Pinyin-transformed text.
+    ///
+    /// Equivalent output to `replace()` followed by iterating the result's
+    /// bytes, but without allocating an intermediate `String`.
+    #[inline(always)]
+    pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> PinyinByteIter<'a> {
+        let mut iter = PinyinByteIter {
+            find_iter: self.iter(text),
+            source: text.as_bytes(),
+            pos: 0,
+            next_start: usize::MAX,
+            next_end: 0,
+            next_repl: &[],
+            repl: &[],
+            repl_pos: 0,
+        };
+        iter.advance_find_iter();
+        iter
     }
 
     /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
@@ -587,4 +767,103 @@ fn build_2_stage_table(map: &AHashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
         }
     }
     (l1, l2)
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(not(feature = "runtime_build"))]
+    use super::*;
+
+    #[cfg(not(feature = "runtime_build"))]
+    use super::super::constants;
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn fanjian() -> FanjianMatcher {
+        FanjianMatcher::new(constants::FANJIAN_L1_BYTES, constants::FANJIAN_L2_BYTES)
+    }
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn pinyin() -> PinyinMatcher {
+        PinyinMatcher::new(
+            constants::PINYIN_L1_BYTES,
+            constants::PINYIN_L2_BYTES,
+            constants::PINYIN_STR_BYTES,
+            false,
+        )
+    }
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn pinyin_char() -> PinyinMatcher {
+        PinyinMatcher::new(
+            constants::PINYIN_L1_BYTES,
+            constants::PINYIN_L2_BYTES,
+            constants::PINYIN_STR_BYTES,
+            true,
+        )
+    }
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn assert_byte_iter_eq_replace_fanjian(matcher: &FanjianMatcher, text: &str) {
+        let materialized: Vec<u8> = match matcher.replace(text) {
+            Some(s) => s.into_bytes(),
+            None => text.as_bytes().to_vec(),
+        };
+        let streamed: Vec<u8> = matcher.byte_iter(text).collect();
+        assert_eq!(materialized, streamed, "fanjian mismatch for: {:?}", text);
+    }
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn assert_byte_iter_eq_replace_pinyin(matcher: &PinyinMatcher, text: &str) {
+        let materialized: Vec<u8> = match matcher.replace(text) {
+            Some((s, _)) => s.into_bytes(),
+            None => text.as_bytes().to_vec(),
+        };
+        let streamed: Vec<u8> = matcher.byte_iter(text).collect();
+        assert_eq!(materialized, streamed, "pinyin mismatch for: {:?}", text);
+    }
+
+    #[test]
+    #[cfg(not(feature = "runtime_build"))]
+    fn fanjian_byte_iter_matches_replace() {
+        let m = fanjian();
+        for text in ["", "hello", "國際經濟", "abc東def國", "a", "東"] {
+            assert_byte_iter_eq_replace_fanjian(&m, text);
+        }
+    }
+
+    #[test]
+    #[cfg(not(feature = "runtime_build"))]
+    fn pinyin_byte_iter_matches_replace() {
+        let m = pinyin();
+        for text in ["", "hello", "中文", "abc中def文", "a", "中"] {
+            assert_byte_iter_eq_replace_pinyin(&m, text);
+        }
+    }
+
+    #[test]
+    #[cfg(not(feature = "runtime_build"))]
+    fn pinyin_char_byte_iter_matches_replace() {
+        let m = pinyin_char();
+        for text in ["", "hello", "中文", "abc中def文"] {
+            assert_byte_iter_eq_replace_pinyin(&m, text);
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
+
+        #[test]
+        #[cfg(not(feature = "runtime_build"))]
+        fn prop_fanjian_byte_iter(text in "\\PC{0,200}") {
+            let m = fanjian();
+            assert_byte_iter_eq_replace_fanjian(&m, &text);
+        }
+
+        #[test]
+        #[cfg(not(feature = "runtime_build"))]
+        fn prop_pinyin_byte_iter(text in "\\PC{0,200}") {
+            let m = pinyin();
+            assert_byte_iter_eq_replace_pinyin(&m, &text);
+        }
+    }
 }

@@ -34,11 +34,99 @@ pub(crate) struct NormalizeMatcher {
     pub(crate) all_replacements_ascii: bool,
 }
 
+/// Byte-by-byte iterator over normalize-transformed text.
+///
+/// Yields the UTF-8 bytes of `text` with all normalization matches replaced
+/// by their target strings. Wraps [`aho_corasick::FindIter`] internally:
+/// original bytes are yielded between match spans, and replacement string
+/// bytes are yielded for each match.
+pub(crate) struct NormalizeByteIter<'a> {
+    find_iter: aho_corasick::FindIter<'a, 'a>,
+    replace_list: &'a [&'static str],
+    source: &'a [u8],
+    pos: usize,
+    /// Pre-fetched next match start (usize::MAX when exhausted).
+    next_start: usize,
+    next_end: usize,
+    /// Pre-fetched replacement bytes for the next match.
+    next_repl: &'a [u8],
+    /// Current replacement bytes being yielded.
+    repl: &'a [u8],
+    repl_pos: usize,
+}
+
+impl<'a> Iterator for NormalizeByteIter<'a> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Drain current replacement
+        if self.repl_pos < self.repl.len() {
+            let b = self.repl[self.repl_pos];
+            self.repl_pos += 1;
+            return Some(b);
+        }
+
+        // At match start?
+        if self.pos == self.next_start {
+            self.pos = self.next_end;
+            self.repl = self.next_repl;
+            self.repl_pos = 1;
+            let first = self.repl[0];
+            self.advance_find_iter();
+            return Some(first);
+        }
+
+        // Yield original byte
+        if self.pos < self.source.len() {
+            let b = self.source[self.pos];
+            self.pos += 1;
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> NormalizeByteIter<'a> {
+    #[inline(always)]
+    fn advance_find_iter(&mut self) {
+        if let Some(m) = self.find_iter.next() {
+            self.next_start = m.start();
+            self.next_end = m.end();
+            self.next_repl = self.replace_list[m.pattern().as_usize()].as_bytes();
+        } else {
+            self.next_start = usize::MAX;
+        }
+    }
+}
+
 impl NormalizeMatcher {
     /// Creates a find iterator over all leftmost-longest matches in `text`.
     #[inline(always)]
     fn find_iter<'a>(&'a self, text: &'a str) -> aho_corasick::FindIter<'a, 'a> {
         self.engine.find_iter(text)
+    }
+
+    /// Returns a byte-by-byte iterator over normalize-transformed text.
+    ///
+    /// Equivalent output to `replace()` followed by iterating the result's
+    /// bytes, but without allocating an intermediate `String`.
+    #[inline(always)]
+    pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> NormalizeByteIter<'a> {
+        let mut iter = NormalizeByteIter {
+            find_iter: self.find_iter(text),
+            replace_list: &self.replace_list,
+            source: text.as_bytes(),
+            pos: 0,
+            next_start: usize::MAX,
+            next_end: 0,
+            next_repl: &[],
+            repl: &[],
+            repl_pos: 0,
+        };
+        iter.advance_find_iter();
+        iter
     }
 
     /// Replaces every normalization match in `text`.
@@ -121,5 +209,53 @@ impl NormalizeMatcher {
         pairs.sort_unstable_by_key(|&(k, _)| k);
         let replace_list: Vec<&'static str> = pairs.iter().map(|&(_, v)| v).collect();
         Self::new(pairs.into_iter().map(|(k, _)| k)).with_replacements(replace_list)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(not(feature = "runtime_build"))]
+    use super::*;
+
+    #[cfg(not(feature = "runtime_build"))]
+    use super::super::constants;
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn normalize_matcher() -> NormalizeMatcher {
+        let patterns: Vec<&str> = constants::NORMALIZE_PROCESS_LIST_STR.lines().collect();
+        let replace_list: Vec<&'static str> = constants::NORMALIZE_PROCESS_REPLACE_LIST_STR
+            .lines()
+            .collect();
+        NormalizeMatcher::new(patterns.iter()).with_replacements(replace_list)
+    }
+
+    #[cfg(not(feature = "runtime_build"))]
+    fn assert_byte_iter_eq_replace(matcher: &NormalizeMatcher, text: &str) {
+        let materialized: Vec<u8> = match matcher.replace(text) {
+            Some((s, _)) => s.into_bytes(),
+            None => text.as_bytes().to_vec(),
+        };
+        let streamed: Vec<u8> = matcher.byte_iter(text).collect();
+        assert_eq!(materialized, streamed, "normalize mismatch for: {:?}", text);
+    }
+
+    #[test]
+    #[cfg(not(feature = "runtime_build"))]
+    fn normalize_byte_iter_matches_replace() {
+        let m = normalize_matcher();
+        for text in ["", "hello", "ＡＢＣ", "abc１２３def", "①②③"] {
+            assert_byte_iter_eq_replace(&m, text);
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
+
+        #[test]
+        #[cfg(not(feature = "runtime_build"))]
+        fn prop_normalize_byte_iter(text in "\\PC{0,200}") {
+            let m = normalize_matcher();
+            assert_byte_iter_eq_replace(&m, &text);
+        }
     }
 }

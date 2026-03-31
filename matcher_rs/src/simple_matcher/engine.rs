@@ -20,7 +20,8 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
+    Anchored, Input, MatchKind as AhoCorasickMatchKind, automaton::Automaton,
+    dfa::DFA as AcDfaEngine,
 };
 use daachorse::{
     DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
@@ -81,7 +82,7 @@ enum AsciiMatcher {
     /// match output, so `to_value` maps pattern index → raw value.
     #[cfg(feature = "dfa")]
     AcDfa {
-        matcher: AhoCorasick,
+        matcher: Box<AcDfaEngine>,
         to_value: Vec<u32>,
     },
     /// `daachorse` bytewise double-array engine with user-supplied `u32` values.
@@ -183,6 +184,31 @@ impl ScanPlan {
 
         false
     }
+
+    /// Calls `on_value` for each raw match value produced by streaming a byte
+    /// iterator through the chosen engine.
+    ///
+    /// Same semantics as [`for_each_match_value`](Self::for_each_match_value)
+    /// but accepts an `Iterator<Item = u8>` instead of a `&str`, enabling
+    /// zero-allocation transform-to-scan fusion.
+    #[inline(always)]
+    pub(super) fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
+        &self,
+        iter: I,
+        is_ascii: bool,
+        on_value: impl FnMut(u32) -> bool,
+    ) -> bool {
+        let use_ascii = self.non_ascii_matcher.is_none() || is_ascii;
+        if use_ascii {
+            if let Some(ref matcher) = self.ascii_matcher {
+                return matcher.for_each_match_value_from_iter(iter, on_value);
+            }
+        } else if let Some(ref matcher) = self.non_ascii_matcher {
+            return matcher.for_each_match_value_from_iter(iter, on_value);
+        }
+
+        false
+    }
 }
 
 /// Query helpers for the chosen ASCII scan engine.
@@ -192,7 +218,7 @@ impl AsciiMatcher {
     fn is_match(&self, text: &str) -> bool {
         match self {
             #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, .. } => matcher.is_match(text),
+            Self::AcDfa { matcher, .. } => matcher.try_find(&Input::new(text)).unwrap().is_some(),
             Self::DaacBytewise(matcher) => matcher.find_iter(text).next().is_some(),
         }
     }
@@ -203,7 +229,7 @@ impl AsciiMatcher {
         match self {
             #[cfg(feature = "dfa")]
             Self::AcDfa { matcher, to_value } => {
-                for hit in matcher.find_overlapping_iter(text) {
+                for hit in matcher.try_find_overlapping_iter(Input::new(text)).unwrap() {
                     // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
                     let value = unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
                     if on_value(value) {
@@ -214,6 +240,43 @@ impl AsciiMatcher {
             }
             Self::DaacBytewise(matcher) => {
                 for hit in matcher.find_overlapping_iter(text) {
+                    if on_value(hit.value()) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Streams a byte iterator through the ASCII engine, calling `on_value` per hit.
+    #[inline(always)]
+    fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
+        &self,
+        iter: I,
+        mut on_value: impl FnMut(u32) -> bool,
+    ) -> bool {
+        match self {
+            #[cfg(feature = "dfa")]
+            Self::AcDfa { matcher, to_value } => {
+                let mut sid = matcher.start_state(Anchored::No).unwrap();
+                for byte in iter {
+                    sid = matcher.next_state(Anchored::No, sid, byte);
+                    if matcher.is_special(sid) && matcher.is_match(sid) {
+                        for i in 0..matcher.match_len(sid) {
+                            let pid = matcher.match_pattern(sid, i);
+                            // SAFETY: `to_value` has one entry per pattern.
+                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
+                            if on_value(value) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            Self::DaacBytewise(matcher) => {
+                for hit in matcher.find_overlapping_iter_from_iter(iter) {
                     if on_value(hit.value()) {
                         return true;
                     }
@@ -240,6 +303,32 @@ impl NonAsciiMatcher {
         match self {
             Self::DaacCharwise(matcher) => {
                 for hit in matcher.find_overlapping_iter(text) {
+                    if on_value(hit.value()) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Streams a byte iterator through the non-ASCII engine, calling `on_value` per hit.
+    ///
+    /// # Safety (internal)
+    ///
+    /// The `unsafe` call to `find_overlapping_iter_from_iter` requires that
+    /// the byte iterator produces valid UTF-8. This is guaranteed because the
+    /// transform byte iterators preserve UTF-8 validity of the source text.
+    #[inline(always)]
+    fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
+        &self,
+        iter: I,
+        mut on_value: impl FnMut(u32) -> bool,
+    ) -> bool {
+        match self {
+            Self::DaacCharwise(matcher) => {
+                // SAFETY: byte iterator produces valid UTF-8 (transforms preserve validity).
+                for hit in unsafe { matcher.find_overlapping_iter_from_iter(iter) } {
                     if on_value(hit.value()) {
                         return true;
                     }
@@ -308,11 +397,12 @@ fn compile_automata(
         #[cfg(feature = "dfa")]
         if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
             return Ok(AsciiMatcher::AcDfa {
-                matcher: AhoCorasickBuilder::new()
-                    .kind(Some(AhoCorasickKind::DFA))
-                    .match_kind(AhoCorasickMatchKind::Standard)
-                    .build(ascii_patvals.iter().map(|(p, _)| p))
-                    .map_err(MatcherError::automaton_build)?,
+                matcher: Box::new(
+                    AcDfaEngine::builder()
+                        .match_kind(AhoCorasickMatchKind::Standard)
+                        .build(ascii_patvals.iter().map(|(p, _)| p))
+                        .map_err(MatcherError::automaton_build)?,
+                ),
                 to_value: ascii_ac_to_value,
             });
         }

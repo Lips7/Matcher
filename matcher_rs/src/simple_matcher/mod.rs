@@ -239,7 +239,7 @@ impl SimpleMatcher {
         if self.process.is_all_simple() {
             return self.is_match_simple(text);
         }
-        self.is_match_inner(text)
+        self.is_match_lazy(text)
     }
 
     /// Returns all patterns that match `text`.
