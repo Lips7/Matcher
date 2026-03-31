@@ -105,7 +105,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `engine.rs` — `ScanPlan`, `AsciiMatcher`, `NonAsciiMatcher`, `PatternIndex` — AC automaton compilation and scan iteration
 - `rule.rs` — `RuleSet`, `RuleHot`, `RuleCold`, `PatternEntry`, `PatternKind`, `PatternDispatch`, `DIRECT_RULE_BIT`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
-- `search.rs` — Hot-path: `is_match_simple`, `is_match_inner`, `process_simple`, `process_preprocessed_into`, scan loops and rule evaluation
+- `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified streaming tree walk), `process_simple`, `scan_variant`, `scan_variant_streaming`, `process_match`
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:

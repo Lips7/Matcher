@@ -182,17 +182,15 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 
 ### walk_process_tree
 
-`walk_process_tree<const LAZY: bool, F>` (in `graph.rs`) traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
+`walk_process_tree` (in `graph.rs`) traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-For each child node, the parent's text variant is transformed by the child's cached `TransformStep::apply`. The traversal only handles deduplication and mask propagation; per-step behavior lives behind `TransformStep::apply`, which returns a `StepOutput` with the changed string (if any) and the resulting `is_ascii` flag.
+For each child node, the parent's text variant is transformed by the child's cached `TransformStep::apply`. The traversal handles deduplication and mask propagation; per-step behavior lives behind `TransformStep::apply`, which returns a `StepOutput` with the changed string (if any) and the resulting `is_ascii` flag.
 
 A `dedup_insert` function prevents duplicate text variants: if two trie paths converge on the same string (comparing by length first, then content), the existing entry is reused and its `mask` is OR'd with the new type's mask. Duplicate strings are returned to the pool via `return_string_to_pool`.
 
-**`LAZY=true` mode** (used by `is_match`): Calls `on_variant(text, index, mask, is_ascii)` as soon as each new unique variant is produced. If the callback returns `true`, the walk stops early. A "delta phase" at the end re-invokes the callback for any entry whose mask grew after its initial callback (due to dedup merging), passing only the delta bits. A `TinyVec<[u64; 8]>` named `scanned_masks` tracks what has already been scanned per variant.
+`walk_process_tree` is used only by the standalone public APIs (`text_process`, `reduce_text_process`, etc.). `SimpleMatcher` uses a unified `walk_and_scan` method in `search.rs` that walks the same trie but scans each variant immediately — streaming leaf transforms via `ByteIter` into the AC engine without allocation, and materializing non-leaf outputs into a `Cow<str>` arena. This avoids building an intermediate `ProcessedTextMasks` collection.
 
-**`LAZY=false` mode** (used by `process`/`process_into`): The callback is never called. The function simply returns all text variants with their final masks. Dead code for the callback is eliminated by the compiler.
-
-A thread-local `TRANSFORM_STATE` provides the scratch buffer (`tree_node_indices: Vec<usize>`) that maps trie node index to text variant index, plus a pool of recycled `ProcessedTextMasks` vectors. Both are bundled into a single TLS slot to avoid two lookups per call.
+A thread-local `TRANSFORM_STATE` provides the scratch buffer (`tree_node_indices: Vec<usize>`) that maps trie node index to text variant index. The string pool (`STRING_POOL`) recycles `String` allocations across calls.
 
 ---
 
@@ -320,12 +318,11 @@ struct SimpleMatcher {
 
 ### Pass 1: Pattern Scanning
 
-`search.rs` implements the runtime half. The entry points are:
+`search.rs` implements the runtime half. The unified entry point is `walk_and_scan`, which walks the process-type trie and scans each variant immediately after production:
 
-- `is_match_inner` — Walks the tree with `LAZY=true`, scanning each variant as it is produced. Each variant scan constructs a `ScanContext` and calls `scan_variant`. If the callback returns `true` (a rule is satisfied), the tree walk stops.
-- `process_preprocessed_into` — Takes pre-computed `ProcessedTextMasks`, calls `scan_all_variants`, then `RuleSet::collect_matches`.
-- `scan_all_variants` — Iterates all variants (skipping those with `mask == 0`), constructs a `ScanContext` for each, and calls `scan_variant`.
+- `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Leaf nodes stream their transform's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation). Non-leaf nodes materialize their output into a `Vec<Cow<str>>` arena for children, scanning immediately if the node terminates. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), exhausts all variants and calls `RuleSet::collect_matches`.
 - `scan_variant` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
+- `scan_variant_streaming` — Feeds a `TransformStep`'s byte iterator into `ScanPlan::for_each_match_value_from_iter`.
 - `process_match` — Dispatches the raw value via `PatternIndex::dispatch`:
   - `DirectRule(rule_idx)` → checks process-type mask, then `state.mark_positive(rule_idx)`, returns `ctx.exit_early`.
   - `SingleEntry(entry)` → `RuleSet::process_entry(entry, ctx, state)`.
@@ -461,7 +458,7 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 
 `get_string_from_pool(capacity)` pops a `String` from the thread-local pool (clearing it and reserving to the requested capacity), or allocates a new one if the pool is empty. `return_string_to_pool(s)` pushes a `String` back, bounded at 128 entries so thread-local memory stays predictable.
 
-The pool is used throughout the transformation pipeline. When a `Cow::Owned` result is replaced by a new transformation step, the old owned string is returned to the pool. `return_processed_string_to_pool` drains a `ProcessedTextMasks` vector, returning all owned strings to the pool.
+The pool is used throughout the transformation pipeline. When a `Cow::Owned` result is replaced by a new transformation step, the old owned string is returned to the pool. In `walk_and_scan`, all `Cow::Owned` arena strings are returned to the pool after scanning completes.
 
 ### Static Transform Step Cache
 
