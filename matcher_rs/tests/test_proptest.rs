@@ -248,4 +248,13 @@ proptest! {
         // Remaining elements should match process() output
         prop_assert_eq!(&results[1..], expected.as_slice());
     }
+
+    #[test]
+    fn prop_all_process_types_no_panic(
+        bits in 0u8..64,
+        text in "\\PC{0,200}"
+    ) {
+        let pt = ProcessType::from_bits_retain(bits);
+        let _ = matcher_rs::text_process(pt, &text);
+    }
 }

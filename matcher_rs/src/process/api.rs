@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 use crate::process::process_type::ProcessType;
 use crate::process::step::get_transform_step;
-use crate::process::variant::return_string_to_pool;
+use crate::process::string_pool::return_string_to_pool;
 
 /// Replaces the current owned value in a [`Cow`] and returns the old allocation to the pool.
 ///

@@ -20,9 +20,9 @@
 use ahash::AHashSet;
 use std::borrow::Cow;
 
+use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::skip_ascii_non_delete_simd;
 use crate::process::transform::utf8::decode_utf8_raw;
-use crate::process::variant::get_string_from_pool;
 
 /// Number of bytes needed to represent all Unicode codepoints (0x0–0x10FFFF) in
 /// a flat bitset: one bit per codepoint, packed 8 per byte.

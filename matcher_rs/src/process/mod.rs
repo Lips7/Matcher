@@ -19,15 +19,15 @@
 //! - [`step`] — [`TransformStep`](step::TransformStep) enum, [`StepOutput`](step::StepOutput),
 //!   and the global `OnceLock` cache that lazily compiles each single-bit step once.
 //! - [`graph`] — Trie construction (reuses shared prefixes across process types).
-//! - [`variant`] — Thread-local string pool.
+//! - [`string_pool`] — Thread-local string pool.
 //! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`], etc.).
 //! - [`transform`] — Low-level engines (charwise page-table, Aho-Corasick normalizer, SIMD delete).
 pub(crate) mod api;
 pub(crate) mod graph;
 pub(crate) mod process_type;
 pub(crate) mod step;
+pub(crate) mod string_pool;
 pub(crate) mod transform;
-pub(crate) mod variant;
 
 pub use api::{reduce_text_process, reduce_text_process_emit, text_process};
 pub use process_type::ProcessType;

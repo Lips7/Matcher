@@ -475,3 +475,55 @@ fn test_pinyin_non_ascii_pattern_match() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 1);
 }
+
+// ===========================================================================
+// Unicode edge cases
+// ===========================================================================
+
+#[test]
+fn test_unicode_private_use_area() {
+    // U+E000..U+F8FF are Private Use Area chars — should pass through transforms unchanged
+    let pua = "\u{E000}\u{E001}\u{F8FF}";
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, pua)
+        .build()
+        .unwrap();
+    assert!(matcher.is_match(pua));
+
+    // Fanjian should not alter PUA chars
+    let result = text_process(ProcessType::Fanjian, pua);
+    assert_eq!(result.as_ref(), pua);
+}
+
+#[test]
+fn test_unicode_4byte_emoji_pattern() {
+    let emoji_pattern = "test\u{1F389}"; // test🎉
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, emoji_pattern)
+        .build()
+        .unwrap();
+    assert!(matcher.is_match("test\u{1F389}"));
+    assert!(!matcher.is_match("test"));
+    assert!(!matcher.is_match("\u{1F389}"));
+}
+
+#[test]
+fn test_unicode_delete_strips_punctuation() {
+    // Delete set includes common punctuation like periods
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "helloworld")
+        .build()
+        .unwrap();
+    assert!(matcher.is_match("h.e.l.l.o.w.o.r.l.d"));
+    assert!(matcher.is_match("hello...world!!!"));
+}
+
+#[test]
+fn test_all_process_type_bits_no_panic() {
+    // Every valid ProcessType bit combination (0..63) should not panic in text_process
+    let input = "Hello 你好世界 test123";
+    for bits in 0u8..64 {
+        let pt = ProcessType::from_bits_retain(bits);
+        let _ = text_process(pt, input);
+    }
+}

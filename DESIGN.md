@@ -448,7 +448,7 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 | Slot | Type | Module | Purpose |
 |------|------|--------|---------|
 | `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
-| `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/variant.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
+| `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/string_pool.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.
 

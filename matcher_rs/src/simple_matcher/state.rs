@@ -327,3 +327,117 @@ fn init_matrix(
         flat_matrix[row_start..row_start + num_variants].fill(count);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ctx(num_variants: usize, exit_early: bool) -> ScanContext {
+        ScanContext {
+            text_index: 0,
+            process_type_mask: u64::MAX,
+            num_variants,
+            exit_early,
+            is_ascii: true,
+        }
+    }
+
+    #[test]
+    fn test_prepare_grows_storage() {
+        let mut state = SimpleMatchState::new();
+        assert_eq!(state.generation(), 0);
+        state.prepare(10);
+        assert!(state.word_states.len() >= 10);
+        assert!(state.matrix.len() >= 10);
+        assert!(state.matrix_status.len() >= 10);
+        assert_eq!(state.generation(), 1);
+        assert!(state.touched_indices().is_empty());
+    }
+
+    #[test]
+    fn test_prepare_generation_increments() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        assert_eq!(state.generation(), 1);
+        state.prepare(1);
+        assert_eq!(state.generation(), 2);
+        state.prepare(1);
+        assert_eq!(state.generation(), 3);
+    }
+
+    #[test]
+    fn test_prepare_generation_wraparound() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(3);
+        let current = state.generation();
+        state.word_states[0].positive_generation = current;
+        state.word_states[1].matrix_generation = current;
+        state.word_states[2].not_generation = current;
+
+        // Force generation to u32::MAX - 1 so next prepare hits MAX
+        state.generation = u32::MAX - 1;
+        state.prepare(3);
+        assert_eq!(state.generation(), u32::MAX);
+
+        // Next prepare should wraparound: reset all stamps to 0, generation = 1
+        state.prepare(3);
+        assert_eq!(state.generation(), 1);
+        for ws in &state.word_states {
+            assert_eq!(ws.matrix_generation, 0);
+            assert_eq!(ws.positive_generation, 0);
+            assert_eq!(ws.not_generation, 0);
+        }
+    }
+
+    #[test]
+    fn test_mark_positive_dedup() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(2);
+
+        assert!(state.mark_positive(0), "first mark should return true");
+        assert!(!state.mark_positive(0), "second mark should return false");
+        assert_eq!(state.touched_indices(), &[0]);
+    }
+
+    #[test]
+    fn test_rule_is_satisfied() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let current = state.generation();
+
+        assert!(!state.rule_is_satisfied(0));
+
+        state.word_states[0].positive_generation = current;
+        assert!(state.rule_is_satisfied(0));
+
+        // NOT veto overrides positive
+        state.word_states[0].not_generation = current;
+        assert!(!state.rule_is_satisfied(0));
+    }
+
+    #[test]
+    fn test_init_rule_matrix() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+
+        let rule = RuleHot {
+            segment_counts: vec![1, 1, 0],
+            and_count: 2,
+            use_matrix: true,
+        };
+        let ctx = make_ctx(2, false);
+        state.init_rule(&rule, 0, ctx);
+
+        assert_eq!(state.word_states[0].matrix_generation, state.generation());
+        assert_eq!(state.word_states[0].remaining_and, 2);
+        assert_eq!(state.word_states[0].satisfied_mask, 0);
+        assert_eq!(state.touched_indices(), &[0]);
+
+        // Matrix should be 3 segments × 2 variants = 6 cells
+        assert_eq!(state.matrix[0].len(), 6);
+        // Row 0: [1, 1], Row 1: [1, 1], Row 2 (NOT): [0, 0]
+        assert_eq!(&state.matrix[0][..], &[1, 1, 1, 1, 0, 0]);
+        assert_eq!(state.matrix_status[0].len(), 3);
+        assert!(state.matrix_status[0].iter().all(|&s| s == 0));
+    }
+}

@@ -35,7 +35,7 @@
 use std::borrow::Cow;
 
 use crate::process::step::TransformStep;
-use crate::process::variant::return_string_to_pool;
+use crate::process::string_pool::return_string_to_pool;
 
 use super::rule::PatternDispatch;
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};

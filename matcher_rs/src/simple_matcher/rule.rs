@@ -668,3 +668,321 @@ impl PatternIndex {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ctx(exit_early: bool) -> ScanContext {
+        ScanContext {
+            text_index: 0,
+            process_type_mask: u64::MAX,
+            num_variants: 1,
+            exit_early,
+            is_ascii: true,
+        }
+    }
+
+    fn make_simple_ruleset(word_id: u32, word: &str) -> RuleSet {
+        RuleSet::new(
+            vec![RuleHot {
+                segment_counts: vec![1],
+                and_count: 1,
+                use_matrix: false,
+            }],
+            vec![RuleCold {
+                word_id,
+                word: word.to_owned(),
+            }],
+        )
+    }
+
+    // --- PatternIndex dispatch tests ---
+
+    #[test]
+    fn test_pattern_index_dispatch_direct_rule() {
+        let entries = vec![vec![PatternEntry {
+            rule_idx: 5,
+            offset: 0,
+            pt_index: 2,
+            kind: PatternKind::Simple,
+            shape: RuleShape::SingleAnd,
+        }]];
+        let index = PatternIndex::new(entries);
+        let value_map = index.build_value_map();
+
+        assert_eq!(value_map.len(), 1);
+        assert!(
+            value_map[0] & DIRECT_RULE_BIT != 0,
+            "should set DIRECT_RULE_BIT"
+        );
+
+        match index.dispatch(value_map[0]) {
+            PatternDispatch::DirectRule { rule_idx, pt_index } => {
+                assert_eq!(rule_idx, 5);
+                assert_eq!(pt_index, 2);
+            }
+            _ => panic!("expected DirectRule dispatch"),
+        }
+    }
+
+    #[test]
+    fn test_pattern_index_dispatch_single_entry() {
+        // Non-Simple kind should NOT get DIRECT_RULE_BIT
+        let entries = vec![vec![PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 0,
+            kind: PatternKind::And,
+            shape: RuleShape::Bitmask,
+        }]];
+        let index = PatternIndex::new(entries);
+        let value_map = index.build_value_map();
+
+        assert!(
+            value_map[0] & DIRECT_RULE_BIT == 0,
+            "And kind should not get DIRECT_RULE_BIT"
+        );
+
+        match index.dispatch(value_map[0]) {
+            PatternDispatch::SingleEntry(entry) => {
+                assert_eq!(entry.rule_idx, 0);
+                assert_eq!(entry.kind, PatternKind::And);
+            }
+            _ => panic!("expected SingleEntry dispatch"),
+        }
+    }
+
+    #[test]
+    fn test_pattern_index_dispatch_multi_entry() {
+        let entries = vec![vec![
+            PatternEntry {
+                rule_idx: 0,
+                offset: 0,
+                pt_index: 0,
+                kind: PatternKind::Simple,
+                shape: RuleShape::SingleAnd,
+            },
+            PatternEntry {
+                rule_idx: 1,
+                offset: 0,
+                pt_index: 0,
+                kind: PatternKind::Simple,
+                shape: RuleShape::SingleAnd,
+            },
+        ]];
+        let index = PatternIndex::new(entries);
+        let value_map = index.build_value_map();
+
+        // Multi-entry patterns never get DIRECT_RULE_BIT
+        assert!(value_map[0] & DIRECT_RULE_BIT == 0);
+
+        match index.dispatch(value_map[0]) {
+            PatternDispatch::Entries(slice) => assert_eq!(slice.len(), 2),
+            _ => panic!("expected Entries dispatch"),
+        }
+    }
+
+    // --- RuleShape predicate tests ---
+
+    #[test]
+    fn test_rule_shape_predicates() {
+        assert!(!RuleShape::Bitmask.has_not());
+        assert!(RuleShape::BitmaskNot.has_not());
+        assert!(!RuleShape::SingleAnd.has_not());
+        assert!(RuleShape::SingleAndNot.has_not());
+        assert!(!RuleShape::Matrix.has_not());
+        assert!(RuleShape::MatrixNot.has_not());
+
+        assert!(!RuleShape::Bitmask.use_matrix());
+        assert!(!RuleShape::BitmaskNot.use_matrix());
+        assert!(!RuleShape::SingleAnd.use_matrix());
+        assert!(!RuleShape::SingleAndNot.use_matrix());
+        assert!(RuleShape::Matrix.use_matrix());
+        assert!(RuleShape::MatrixNot.use_matrix());
+    }
+
+    // --- process_entry tests ---
+
+    #[test]
+    fn test_process_entry_simple_kind() {
+        let rules = make_simple_ruleset(1, "hello");
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+
+        let entry = PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 0,
+            kind: PatternKind::Simple,
+            shape: RuleShape::SingleAnd,
+        };
+
+        let result = rules.process_entry(&entry, make_ctx(true), &mut state);
+        assert!(result, "Simple entry with exit_early should return true");
+        assert!(state.rule_is_satisfied(0));
+
+        // Idempotent on repeat
+        let result2 = rules.process_entry(&entry, make_ctx(true), &mut state);
+        assert!(
+            result2,
+            "already-satisfied Simple should still return exit_early"
+        );
+    }
+
+    #[test]
+    fn test_process_entry_and_bitmask() {
+        // 3-segment AND rule: a&b&c
+        let rules = RuleSet::new(
+            vec![RuleHot {
+                segment_counts: vec![1, 1, 1],
+                and_count: 3,
+                use_matrix: false,
+            }],
+            vec![RuleCold {
+                word_id: 1,
+                word: "a&b&c".to_owned(),
+            }],
+        );
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let ctx = make_ctx(true);
+
+        // Process segment 0
+        let e0 = PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 0,
+            kind: PatternKind::And,
+            shape: RuleShape::Bitmask,
+        };
+        assert!(!rules.process_entry(&e0, ctx, &mut state));
+        assert!(!state.rule_is_satisfied(0));
+
+        // Process segment 1
+        let e1 = PatternEntry { offset: 1, ..e0 };
+        assert!(!rules.process_entry(&e1, ctx, &mut state));
+        assert!(!state.rule_is_satisfied(0));
+
+        // Process segment 2 — now satisfied
+        let e2 = PatternEntry { offset: 2, ..e0 };
+        assert!(rules.process_entry(&e2, ctx, &mut state));
+        assert!(state.rule_is_satisfied(0));
+    }
+
+    #[test]
+    fn test_process_entry_not_veto() {
+        // Rule: a~b (1 AND, 1 NOT)
+        let rules = RuleSet::new(
+            vec![RuleHot {
+                segment_counts: vec![1, 0],
+                and_count: 1,
+                use_matrix: false,
+            }],
+            vec![RuleCold {
+                word_id: 1,
+                word: "a~b".to_owned(),
+            }],
+        );
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let ctx = make_ctx(false);
+
+        // Satisfy the AND segment
+        let and_entry = PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 0,
+            kind: PatternKind::And,
+            shape: RuleShape::SingleAndNot,
+        };
+        rules.process_entry(&and_entry, ctx, &mut state);
+        assert!(state.rule_is_satisfied(0));
+
+        // NOT segment vetoes
+        let not_entry = PatternEntry {
+            rule_idx: 0,
+            offset: 1,
+            pt_index: 0,
+            kind: PatternKind::Not,
+            shape: RuleShape::SingleAndNot,
+        };
+        rules.process_entry(&not_entry, ctx, &mut state);
+        assert!(!state.rule_is_satisfied(0), "NOT should veto the rule");
+    }
+
+    #[test]
+    fn test_process_entry_matrix_counters() {
+        // Matrix rule: repeated AND segment that needs 2 hits
+        let rules = RuleSet::new(
+            vec![RuleHot {
+                segment_counts: vec![2, 1],
+                and_count: 2,
+                use_matrix: true,
+            }],
+            vec![RuleCold {
+                word_id: 1,
+                word: "a&a&b".to_owned(),
+            }],
+        );
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let ctx = make_ctx(true);
+
+        let seg0 = PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 0,
+            kind: PatternKind::And,
+            shape: RuleShape::Matrix,
+        };
+        let seg1 = PatternEntry {
+            rule_idx: 0,
+            offset: 1,
+            pt_index: 0,
+            kind: PatternKind::And,
+            shape: RuleShape::Matrix,
+        };
+
+        // First hit on seg0 (needs 2): counter goes 2→1, not satisfied
+        assert!(!rules.process_entry(&seg0, ctx, &mut state));
+        assert!(!state.rule_is_satisfied(0));
+
+        // Hit seg1 (needs 1): counter goes 1→0, seg1 done but seg0 still pending
+        assert!(!rules.process_entry(&seg1, ctx, &mut state));
+        assert!(!state.rule_is_satisfied(0));
+
+        // Second hit on seg0: counter goes 1→0, all segments done
+        assert!(rules.process_entry(&seg0, ctx, &mut state));
+        assert!(state.rule_is_satisfied(0));
+    }
+
+    #[test]
+    fn test_process_entry_pt_mask_filters() {
+        let rules = make_simple_ruleset(1, "hello");
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+
+        let entry = PatternEntry {
+            rule_idx: 0,
+            offset: 0,
+            pt_index: 3, // bit 3
+            kind: PatternKind::Simple,
+            shape: RuleShape::SingleAnd,
+        };
+
+        // Mask does NOT include bit 3
+        let ctx = ScanContext {
+            text_index: 0,
+            process_type_mask: 0b0101, // bits 0 and 2 only
+            num_variants: 1,
+            exit_early: true,
+            is_ascii: true,
+        };
+        assert!(!rules.process_entry(&entry, ctx, &mut state));
+        assert!(
+            !state.rule_is_satisfied(0),
+            "entry should be filtered by mask"
+        );
+    }
+}

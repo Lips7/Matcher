@@ -350,3 +350,137 @@ impl SimpleMatcher {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::rule::PatternKind;
+    use super::*;
+    use crate::process::ProcessType;
+
+    fn single_rule_table(
+        pt: ProcessType,
+        word_id: u32,
+        pattern: &str,
+    ) -> HashMap<ProcessType, HashMap<u32, String>> {
+        let mut table = HashMap::new();
+        table
+            .entry(pt)
+            .or_insert_with(HashMap::new)
+            .insert(word_id, pattern.to_owned());
+        table
+    }
+
+    // --- build_pt_index_table tests ---
+
+    #[test]
+    fn test_pt_index_table_none_always_zero() {
+        let keys = vec![ProcessType::Fanjian, ProcessType::Delete];
+        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
+        assert_eq!(table[ProcessType::None.bits() as usize], 0);
+    }
+
+    #[test]
+    fn test_pt_index_table_sequential() {
+        let keys = vec![ProcessType::None, ProcessType::Fanjian, ProcessType::Delete];
+        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
+        assert_eq!(table[ProcessType::None.bits() as usize], 0);
+        // Fanjian and Delete should get indices 1 and 2 (order may vary)
+        let fj = table[ProcessType::Fanjian.bits() as usize];
+        let del = table[ProcessType::Delete.bits() as usize];
+        assert!(fj == 1 || fj == 2);
+        assert!(del == 1 || del == 2);
+        assert_ne!(fj, del);
+        // All other entries should be u8::MAX
+        for (i, &val) in table.iter().enumerate() {
+            let pt_bits = i as u8;
+            if pt_bits != ProcessType::None.bits()
+                && pt_bits != ProcessType::Fanjian.bits()
+                && pt_bits != ProcessType::Delete.bits()
+            {
+                assert_eq!(val, u8::MAX);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pt_index_table_dedup() {
+        let keys = vec![ProcessType::Fanjian, ProcessType::Fanjian];
+        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
+        // None=0, Fanjian=1, no index 2 allocated
+        assert_eq!(table[ProcessType::Fanjian.bits() as usize], 1);
+        let count = table.iter().filter(|&&v| v != u8::MAX).count();
+        assert_eq!(count, 2); // None + Fanjian
+    }
+
+    // --- parse_rules tests ---
+
+    #[test]
+    fn test_parse_rules_simple() {
+        let table = single_rule_table(ProcessType::None, 1, "hello");
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        assert_eq!(parsed.dedup_patterns.len(), 1);
+        assert_eq!(parsed.dedup_patterns[0].as_ref(), "hello");
+        assert_eq!(parsed.dedup_entries.len(), 1);
+        assert_eq!(parsed.dedup_entries[0].len(), 1);
+        assert_eq!(parsed.dedup_entries[0][0].kind, PatternKind::Simple);
+    }
+
+    #[test]
+    fn test_parse_rules_and_operator() {
+        let table = single_rule_table(ProcessType::None, 1, "a&b");
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        assert_eq!(parsed.dedup_patterns.len(), 2);
+        let kinds: Vec<_> = parsed
+            .dedup_entries
+            .iter()
+            .flat_map(|bucket| bucket.iter().map(|e| e.kind))
+            .collect();
+        assert!(kinds.iter().all(|k| *k == PatternKind::And));
+        assert_eq!(parsed.rules.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_rules_not_operator() {
+        let table = single_rule_table(ProcessType::None, 1, "a~b");
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        assert_eq!(parsed.dedup_patterns.len(), 2);
+        let all_entries: Vec<_> = parsed
+            .dedup_entries
+            .iter()
+            .flat_map(|bucket| bucket.iter())
+            .collect();
+        let and_count = all_entries
+            .iter()
+            .filter(|e| e.kind == PatternKind::And)
+            .count();
+        let not_count = all_entries
+            .iter()
+            .filter(|e| e.kind == PatternKind::Not)
+            .count();
+        assert_eq!(and_count, 1);
+        assert_eq!(not_count, 1);
+    }
+
+    #[test]
+    fn test_parse_rules_dedup_across_rules() {
+        let mut table: HashMap<ProcessType, HashMap<u32, String>> = HashMap::new();
+        let inner = table.entry(ProcessType::None).or_default();
+        inner.insert(1, "hello".to_owned());
+        inner.insert(2, "hello".to_owned());
+
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        // "hello" should be deduplicated to one pattern
+        assert_eq!(parsed.dedup_patterns.len(), 1);
+        // But it should have entries for both rules
+        assert_eq!(parsed.dedup_entries[0].len(), 2);
+        assert_eq!(parsed.rules.len(), 2);
+    }
+}

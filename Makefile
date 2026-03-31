@@ -6,7 +6,8 @@ EXT := $(shell \
 
 .PHONY: build update check check-rs lint lint-rs lint-py lint-java \
 	test test-rs test-py test-java test-c test-quick ci-rs doc fmt fmt-check \
-	bench-search bench-build bench-engine-search bench-engine-build bench-compare
+	bench-search bench-build bench-engine-search bench-engine-build bench-compare \
+	coverage
 
 # -- Build ---------------------------------------------------------------------
 
@@ -97,3 +98,9 @@ bench-compare:
 	@test -n "$(BASELINE)" || (echo "BASELINE is required"; exit 1)
 	@test -n "$(CANDIDATE)" || (echo "CANDIDATE is required"; exit 1)
 	python3 matcher_rs/scripts/compare_benchmark_runs.py "$(BASELINE)" "$(CANDIDATE)"
+
+# -- Coverage ------------------------------------------------------------------
+
+coverage:
+	cargo tarpaulin -p matcher_rs --all-features --out html
+	@echo "Coverage report: tarpaulin-report.html"

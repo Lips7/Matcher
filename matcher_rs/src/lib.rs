@@ -61,7 +61,7 @@
 //! | Static | Location |
 //! |--------|----------|
 //! | `SIMPLE_MATCH_STATE` | `simple_matcher/state.rs` |
-//! | `STRING_POOL` | `process/variant.rs` |
+//! | `STRING_POOL` | `process/string_pool.rs` |
 //!
 //! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!` macro
 //! to avoid per-access closure overhead. Safety relies on two invariants:

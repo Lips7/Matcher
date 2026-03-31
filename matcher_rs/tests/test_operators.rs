@@ -220,3 +220,38 @@ fn test_and_not_segment_order_independence() {
         "NOT 'a' and 'b' should veto"
     );
 }
+
+// ---------------------------------------------------------------------------
+// NUL byte in patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_pattern_with_nul_byte() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello\0world")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("hello\0world"));
+    assert!(!matcher.is_match("hello world"));
+    assert!(!matcher.is_match("helloworld"));
+}
+
+// ---------------------------------------------------------------------------
+// High-repetition AND (same sub-pattern)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_high_repetition_and() {
+    // "a&a&a&a&a&a&a&a&a&a" requires 10 occurrences of "a"
+    let pattern = (0..10).map(|_| "a").collect::<Vec<_>>().join("&");
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern)
+        .build()
+        .unwrap();
+
+    let text_10 = "a ".repeat(10);
+    let text_9 = "a ".repeat(9);
+    assert!(matcher.is_match(&text_10));
+    assert!(!matcher.is_match(&text_9));
+}

@@ -37,9 +37,9 @@ use aho_corasick::{
     AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
 };
 
+use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
 use crate::process::transform::utf8::decode_utf8_raw;
-use crate::process::variant::get_string_from_pool;
 
 // ---------------------------------------------------------------------------
 // Shared replacement helpers
