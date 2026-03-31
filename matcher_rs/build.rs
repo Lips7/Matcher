@@ -13,9 +13,7 @@ use std::collections::{HashMap, HashSet};
 /// ### Binary Generation Strategy:
 /// 1. **Normalize (Complex Rules)**:
 ///    Rules in `NORM.txt` and `NUM-NORM.txt` are compiled into sorted pattern/replacement
-///    text files. When the `dfa` feature is **disabled**, a serialized `daachorse`
-///    matcher is also written. When `dfa` is enabled, only the text files are written and
-///    the DFA is built lazily from them on first use.
+///    text files. The aho_corasick DFA is built lazily from them on first use.
 ///
 /// 2. **Fanjian (Traditional to Simplified Chinese)**:
 ///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
@@ -45,12 +43,6 @@ fn main() -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 
-        #[cfg(not(feature = "dfa"))]
-        use daachorse::{
-            CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder,
-            MatchKind as DoubleArrayAhoCorasickMatchKind,
-        };
-
         const FANJIAN: &str = include_str!("./process_map/FANJIAN.txt");
         const NUM_NORM: &str = include_str!("./process_map/NUM-NORM.txt");
         const NORM: &str = include_str!("./process_map/NORM.txt");
@@ -66,7 +58,7 @@ fn main() -> Result<()> {
 
         let out_dir = env::var("OUT_DIR").unwrap();
 
-        // 1. Build Normalize (uses Daachorse due to multi-char overlaps)
+        // 1. Build Normalize pattern/replacement text files
         let mut normalize_map = HashMap::new();
         for process_map in [NORM, NUM_NORM] {
             normalize_map.extend(process_map.trim().lines().map(|pair_str| {
@@ -90,20 +82,6 @@ fn main() -> Result<()> {
         let mut replacement_file =
             File::create(format!("{out_dir}/normalize_process_replace_list.bin"))?;
         replacement_file.write_all(normalize_replacements.join("\n").as_bytes())?;
-
-        #[cfg(not(feature = "dfa"))]
-        {
-            let matcher: CharwiseDoubleArrayAhoCorasick<u32> =
-                CharwiseDoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(DoubleArrayAhoCorasickMatchKind::LeftmostLongest)
-                    .build(&normalize_patterns)
-                    .unwrap();
-            let matcher_bytes = matcher.serialize();
-            let mut matcher_bin = File::create(format!(
-                "{out_dir}/normalize_daachorse_charwise_u32_matcher.bin"
-            ))?;
-            matcher_bin.write_all(&matcher_bytes)?;
-        }
 
         // 2. Build Fanjian 2-stage flat array
         let mut fanjian_map = HashMap::new();

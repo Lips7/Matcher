@@ -139,22 +139,10 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             TransformStep::Fanjian(FanjianMatcher::new(FANJIAN_L1_BYTES, FANJIAN_L2_BYTES))
         }
         ProcessType::Delete => TransformStep::Delete(DeleteMatcher::new(DELETE_BITSET_BYTES)),
-        ProcessType::Normalize => {
-            #[cfg(feature = "dfa")]
-            {
-                TransformStep::Normalize(
-                    NormalizeMatcher::new(NORMALIZE_PROCESS_LIST_STR.lines())
-                        .with_replacements(NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect()),
-                )
-            }
-            #[cfg(not(feature = "dfa"))]
-            {
-                TransformStep::Normalize(
-                    NormalizeMatcher::deserialize(NORMALIZE_PROCESS_MATCHER_BYTES)
-                        .with_replacements(NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect()),
-                )
-            }
-        }
+        ProcessType::Normalize => TransformStep::Normalize(
+            NormalizeMatcher::new(NORMALIZE_PROCESS_LIST_STR.lines())
+                .with_replacements(NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect()),
+        ),
         ProcessType::PinYin => TransformStep::PinYin(PinyinMatcher::new(
             PINYIN_L1_BYTES,
             PINYIN_L2_BYTES,

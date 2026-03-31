@@ -62,25 +62,15 @@ pub(crate) const WHITE_SPACE: &[&str] = &[
 /// Newline-separated source patterns for the Normalize matcher.
 ///
 /// Loaded via `include_str!` from the `OUT_DIR` artifact produced by `build.rs`.
-/// Used when the `dfa` feature is enabled and `runtime_build` is disabled.
-#[cfg(all(not(feature = "runtime_build"), feature = "dfa"))]
+/// Used when `runtime_build` is disabled.
+#[cfg(not(feature = "runtime_build"))]
 pub(crate) const NORMALIZE_PROCESS_LIST_STR: &str =
     include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
 
-/// Pre-serialized `daachorse` matcher for the Normalize step.
-///
-/// Loaded via `include_bytes!` from the `OUT_DIR` artifact produced by `build.rs`.
-/// Only used when `dfa` is disabled and `runtime_build` is disabled.
-#[cfg(all(not(feature = "runtime_build"), not(feature = "dfa")))]
-pub(crate) const NORMALIZE_PROCESS_MATCHER_BYTES: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/normalize_daachorse_charwise_u32_matcher.bin"
-));
-
 /// Newline-separated replacement strings parallel to the Normalize pattern list.
 ///
-/// Index `i` is the replacement for pattern `i` in `NORMALIZE_PROCESS_LIST_STR` (DFA) or
-/// the pattern order in `NORMALIZE_PROCESS_MATCHER_BYTES` (DAAC). Loaded from `OUT_DIR`.
+/// Index `i` is the replacement for pattern `i` in `NORMALIZE_PROCESS_LIST_STR`. Loaded
+/// from `OUT_DIR`.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
     env!("OUT_DIR"),
