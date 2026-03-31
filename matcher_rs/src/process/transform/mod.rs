@@ -1,7 +1,7 @@
 //! Low-level text transformation engines.
 //!
 //! This module provides the building blocks used by the step registry
-//! ([`super::registry`]) and pipeline executor ([`super::api`]) to transform
+//! ([`super::step`]) and pipeline executor ([`super::api`]) to transform
 //! input text before pattern matching. Each sub-module implements one class of
 //! transformation:
 //!

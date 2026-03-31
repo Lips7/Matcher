@@ -23,8 +23,7 @@ use std::collections::HashSet;
 use tinyvec::TinyVec;
 
 use crate::process::process_type::ProcessType;
-use crate::process::registry::get_transform_step;
-use crate::process::step::TransformStep;
+use crate::process::step::{TransformStep, get_transform_step};
 
 /// A node in the flat-array transformation trie.
 ///
@@ -52,7 +51,7 @@ pub(crate) struct ProcessTypeBitNode {
     ///
     /// [`None`] only for the root node (which represents the raw input text and
     /// needs no transformation). All other nodes hold a `&'static` reference
-    /// obtained from the global `TRANSFORM_STEP_CACHE` in [`super::registry`].
+    /// obtained from the global `TRANSFORM_STEP_CACHE` in [`super::step`].
     pub(crate) step: Option<&'static TransformStep>,
     /// Bitmask of compact process-type indices that produce a scannable variant
     /// at this node.

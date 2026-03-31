@@ -16,8 +16,8 @@
 //!
 //! # Internal structure
 //!
-//! - [`step`] — [`TransformStep`](step::TransformStep) enum and [`StepOutput`](step::StepOutput).
-//! - [`registry`] — Global `OnceLock` cache that lazily compiles each single-bit step once.
+//! - [`step`] — [`TransformStep`](step::TransformStep) enum, [`StepOutput`](step::StepOutput),
+//!   and the global `OnceLock` cache that lazily compiles each single-bit step once.
 //! - [`graph`] — Trie construction (reuses shared prefixes across process types).
 //! - [`variant`] — Thread-local string pool.
 //! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`], etc.).
@@ -25,7 +25,6 @@
 pub(crate) mod api;
 pub(crate) mod graph;
 pub(crate) mod process_type;
-pub(crate) mod registry;
 pub(crate) mod step;
 pub(crate) mod transform;
 pub(crate) mod variant;

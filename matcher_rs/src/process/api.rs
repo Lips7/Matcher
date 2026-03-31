@@ -2,12 +2,12 @@
 //!
 //! These are the standalone entry points for the transformation pipeline. They decompose
 //! a composite [`ProcessType`] into single-bit steps, apply each in order via the global
-//! [`super::registry`], and return the results as borrowed or owned [`Cow<str>`] values.
+//! [`super::step`] registry, and return the results as borrowed or owned [`Cow<str>`] values.
 
 use std::borrow::Cow;
 
 use crate::process::process_type::ProcessType;
-use crate::process::registry::get_transform_step;
+use crate::process::step::get_transform_step;
 use crate::process::variant::return_string_to_pool;
 
 /// Replaces the current owned value in a [`Cow`] and returns the old allocation to the pool.
