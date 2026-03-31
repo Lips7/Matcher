@@ -26,7 +26,7 @@ use ahash::{AHashMap, AHashSet};
 use std::borrow::Cow;
 
 use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
-use crate::process::variant::{get_string_from_pool, return_string_to_pool};
+use crate::process::variant::get_string_from_pool;
 
 /// Replacement payload yielded by the charwise iterators.
 ///
@@ -380,59 +380,14 @@ impl FanjianMatcher {
 
     /// Replaces every Traditional Chinese codepoint in `text` that has a Simplified mapping.
     ///
-    /// Returns `None` when no replacements were needed (the text contains no
-    /// Traditional characters in the table), allowing callers to continue
-    /// borrowing the original input.
-    ///
-    /// # Algorithm
-    ///
-    /// 1. **Same-length fast path**: On first hit, clones `text` into a pooled
-    ///    `String` and overwrites the matched span in place via
-    ///    `char::encode_utf8` on `as_bytes_mut()`. This avoids a full rebuild
-    ///    when all replacements have the same UTF-8 byte width as their source.
-    /// 2. **Byte-length mismatch fallback**: If any replacement has a different
-    ///    byte width, the in-place buffer is returned to the pool and the entire
-    ///    text is re-scanned through [`replace_scan`], which builds a new
-    ///    `String` by copying unchanged spans and pushing replacement chars.
-    ///
-    /// # Safety (internal)
-    ///
-    /// The `as_bytes_mut()` + `encode_utf8` write is safe because:
-    /// - The span `[start..end]` is exactly `span_len` bytes (one UTF-8 char).
-    /// - `mapped.len_utf8() == span_len` is checked before the write.
-    /// - `encode_utf8` writes exactly `span_len` bytes of valid UTF-8, so the
-    ///   `String` invariant (valid UTF-8) is preserved at every step.
+    /// Returns `None` when no replacements were needed.
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
-        let mut result: Option<String> = None;
-
-        for (start, end, replacement) in self.iter(text) {
+        replace_scan(text, self.iter(text), |result, replacement| {
             let Replacement::Char(mapped) = replacement else {
                 unreachable!("fanjian iter yields char replacements");
             };
-            let span_len = end - start;
-            if mapped.len_utf8() == span_len {
-                let buf = result.get_or_insert_with(|| {
-                    let mut s = get_string_from_pool(text.len());
-                    s.push_str(text);
-                    s
-                });
-                // SAFETY: `mapped.len_utf8() == span_len` is verified above, so `encode_utf8`
-                // overwrites exactly the same number of bytes, preserving valid UTF-8.
-                unsafe { mapped.encode_utf8(&mut buf.as_bytes_mut()[start..end]) };
-            } else {
-                if let Some(existing) = result.take() {
-                    return_string_to_pool(existing);
-                }
-                return replace_scan(text, self.iter(text), |result, replacement| {
-                    let Replacement::Char(mapped) = replacement else {
-                        unreachable!("fanjian iter yields char replacements");
-                    };
-                    result.push(mapped);
-                });
-            }
-        }
-
-        result
+            result.push(mapped);
+        })
     }
 
     /// Builds a matcher from the precompiled build-time page tables.

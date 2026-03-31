@@ -77,13 +77,6 @@
 //! (e.g. automaton values, rule indices). Every such site is guarded by a
 //! `debug_assert!` that validates the index in debug builds.
 //!
-//! ## Lifetime transmute in buffer pooling
-//!
-//! `return_processed_string_to_pool` (`process/variant.rs`) transmutes an empty
-//! `Vec<TextVariant<'_>>` to `Vec<TextVariant<'static>>` after draining all
-//! elements. This is sound because an empty `Vec` holds no values — the lifetime
-//! parameter exists only at the type level and has no runtime representation.
-//!
 //! # Feature Flags
 //!
 //! | Flag | Default | Effect |

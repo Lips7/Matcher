@@ -340,12 +340,7 @@ where
         // walk_process_tree is never called re-entrantly.
         let ts = unsafe { &mut *TRANSFORM_STATE.get() };
 
-        let pooled: Option<ProcessedTextMasks<'static>> = ts.masks_pool.pop();
-        // Safety: pool holds empty Vecs with no live borrows; transmuting from
-        // 'static to 'a is safe since 'static: 'a (covariant) and Vec is empty.
-        let mut text_masks: ProcessedTextMasks<'a> =
-            unsafe { std::mem::transmute(pooled.unwrap_or_default()) };
-        text_masks.clear();
+        let mut text_masks: ProcessedTextMasks<'a> = Vec::with_capacity(process_type_tree.len());
         let root_is_ascii = text.is_ascii();
         text_masks.push(TextVariant {
             text: Cow::Borrowed(text),
