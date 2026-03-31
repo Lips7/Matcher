@@ -45,41 +45,28 @@ use crate::process::transform::utf8::decode_utf8_raw;
 // Shared replacement helpers
 // ---------------------------------------------------------------------------
 
-/// Replacement payload yielded by the charwise iterators.
-///
-/// Each variant corresponds to one type of replacement output:
-/// [`FanjianFindIter`] always yields [`Replacement::Char`], while
-/// [`PinyinFindIter`] always yields [`Replacement::Str`].
-enum Replacement<'a> {
-    /// Replace the matched span with a single Unicode scalar value (Fanjian).
-    Char(char),
-    /// Replace the matched span with a borrowed string slice (Pinyin).
-    Str(&'a str),
-}
-
-/// Shared scan-and-rebuild helper for iterators that yield non-overlapping replacement spans.
+/// Shared scan-and-rebuild helper for Fanjian replacement.
 ///
 /// Pulls the first item from `iter`; if `None`, returns `None` (no replacements needed).
 /// Otherwise allocates a [`String`] from the thread-local pool, copies unchanged text
-/// between replacement spans, and calls `push` for each replacement payload.
+/// between replacement spans, and pushes each replacement `char`.
 ///
 /// The caller is responsible for ensuring the iterator yields spans in strictly
 /// ascending, non-overlapping byte-offset order; otherwise the interleaved
 /// `push_str` calls will produce garbled output.
 #[inline(always)]
-fn replace_scan<'a, I, F>(text: &str, mut iter: I, mut push: F) -> Option<String>
+fn replace_scan<I>(text: &str, mut iter: I) -> Option<String>
 where
-    I: Iterator<Item = (usize, usize, Replacement<'a>)>,
-    F: FnMut(&mut String, Replacement<'a>),
+    I: Iterator<Item = (usize, usize, char)>,
 {
-    if let Some((start, end, replacement)) = iter.next() {
+    if let Some((start, end, ch)) = iter.next() {
         let mut result = get_string_from_pool(text.len());
         result.push_str(&text[..start]);
-        push(&mut result, replacement);
+        result.push(ch);
         let mut last_end = end;
-        for (start, end, replacement) in iter {
+        for (start, end, ch) in iter {
             result.push_str(&text[last_end..start]);
-            push(&mut result, replacement);
+            result.push(ch);
             last_end = end;
         }
         result.push_str(&text[last_end..]);
@@ -340,8 +327,8 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
 ///
 /// Scans `text` byte-by-byte (with [`skip_ascii_simd`] acceleration), decodes
 /// each non-ASCII codepoint via [`decode_utf8_raw`], and probes the two-stage
-/// page table. Yields `(start, end, Replacement::Char(simplified))` for every
-/// codepoint that maps to a *different* Simplified form.
+/// page table. Yields `(start, end, simplified_char)` for every codepoint that
+/// maps to a *different* Simplified form.
 struct FanjianFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -350,7 +337,7 @@ struct FanjianFindIter<'a> {
 }
 
 impl<'a> Iterator for FanjianFindIter<'a> {
-    type Item = (usize, usize, Replacement<'a>);
+    type Item = (usize, usize, char);
 
     /// Advances to the next Traditional codepoint that has a Simplified replacement.
     ///
@@ -386,7 +373,7 @@ impl<'a> Iterator for FanjianFindIter<'a> {
                 debug_assert!(char::from_u32(mapped_cp).is_some());
                 // SAFETY: Page table values are valid Unicode codepoints assigned at build time.
                 let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
-                return Some((start, self.byte_offset, Replacement::Char(mapped)));
+                return Some((start, self.byte_offset, mapped));
             }
         }
     }
@@ -452,12 +439,12 @@ impl<'a> FanjianByteIter<'a> {
     #[inline(always)]
     fn advance_find_iter(&mut self) {
         match self.find_iter.next() {
-            Some((s, e, Replacement::Char(c))) => {
+            Some((s, e, c)) => {
                 self.next_start = s;
                 self.next_end = e;
                 self.next_char = c;
             }
-            _ => {
+            None => {
                 self.next_start = usize::MAX;
             }
         }
@@ -521,12 +508,7 @@ impl FanjianMatcher {
     ///
     /// Returns `None` when no replacements were needed.
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
-        replace_scan(text, self.iter(text), |result, replacement| {
-            let Replacement::Char(mapped) = replacement else {
-                unreachable!("fanjian iter yields char replacements");
-            };
-            result.push(mapped);
-        })
+        replace_scan(text, self.iter(text))
     }
 
     /// Builds a matcher from the precompiled build-time page tables.
@@ -566,7 +548,7 @@ impl FanjianMatcher {
 /// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
 /// instead of [`skip_ascii_simd`], because ASCII digits may appear in the
 /// Pinyin tables and must not be skipped. Yields
-/// `(start, end, Replacement::Str(pinyin_slice))` for each matched codepoint.
+/// `(start, end, pinyin_slice)` for each matched codepoint.
 struct PinyinFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -577,7 +559,7 @@ struct PinyinFindIter<'a> {
 }
 
 impl<'a> Iterator for PinyinFindIter<'a> {
-    type Item = (usize, usize, Replacement<'a>);
+    type Item = (usize, usize, &'a str);
 
     /// Advances to the next codepoint that has a Pinyin replacement.
     ///
@@ -616,7 +598,7 @@ impl<'a> Iterator for PinyinFindIter<'a> {
                     return Some((
                         start,
                         self.byte_offset,
-                        Replacement::Str(&self.strings[offset..offset + str_len]),
+                        &self.strings[offset..offset + str_len],
                     ));
                 }
             }
@@ -632,10 +614,7 @@ pub(crate) struct PinyinFindAdapter<'a> {
 impl<'a> ReplacementFinder<'a> for PinyinFindAdapter<'a> {
     #[inline(always)]
     fn next_replacement(&mut self) -> Option<(usize, usize, &'a [u8])> {
-        match self.find_iter.next() {
-            Some((s, e, Replacement::Str(r))) => Some((s, e, r.as_bytes())),
-            _ => None,
-        }
+        self.find_iter.next().map(|(s, e, r)| (s, e, r.as_bytes()))
     }
 }
 
@@ -701,14 +680,7 @@ impl PinyinMatcher {
     /// avoid a redundant scan. Pinyin replacements are always ASCII, so only
     /// the unchanged gaps between replacements need checking.
     pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        replace_spans_with_ascii(
-            text,
-            self.iter(text).filter_map(|(s, e, r)| match r {
-                Replacement::Str(mapped) => Some((s, e, mapped)),
-                _ => None,
-            }),
-            true, // pinyin replacements are always ASCII
-        )
+        replace_spans_with_ascii(text, self.iter(text), true)
     }
 
     /// Builds a matcher from the precompiled build-time tables and string storage.
