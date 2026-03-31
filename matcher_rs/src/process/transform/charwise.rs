@@ -769,20 +769,16 @@ fn build_2_stage_table(map: &AHashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
     (l1, l2)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "runtime_build")))]
 mod tests {
-    #[cfg(not(feature = "runtime_build"))]
     use super::*;
 
-    #[cfg(not(feature = "runtime_build"))]
     use super::super::constants;
 
-    #[cfg(not(feature = "runtime_build"))]
     fn fanjian() -> FanjianMatcher {
         FanjianMatcher::new(constants::FANJIAN_L1_BYTES, constants::FANJIAN_L2_BYTES)
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn pinyin() -> PinyinMatcher {
         PinyinMatcher::new(
             constants::PINYIN_L1_BYTES,
@@ -792,7 +788,6 @@ mod tests {
         )
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn pinyin_char() -> PinyinMatcher {
         PinyinMatcher::new(
             constants::PINYIN_L1_BYTES,
@@ -802,7 +797,6 @@ mod tests {
         )
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn assert_byte_iter_eq_replace_fanjian(matcher: &FanjianMatcher, text: &str) {
         let materialized: Vec<u8> = match matcher.replace(text) {
             Some(s) => s.into_bytes(),
@@ -812,7 +806,6 @@ mod tests {
         assert_eq!(materialized, streamed, "fanjian mismatch for: {:?}", text);
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn assert_byte_iter_eq_replace_pinyin(matcher: &PinyinMatcher, text: &str) {
         let materialized: Vec<u8> = match matcher.replace(text) {
             Some((s, _)) => s.into_bytes(),
@@ -823,7 +816,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "runtime_build"))]
     fn fanjian_byte_iter_matches_replace() {
         let m = fanjian();
         for text in ["", "hello", "國際經濟", "abc東def國", "a", "東"] {
@@ -832,7 +824,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "runtime_build"))]
     fn pinyin_byte_iter_matches_replace() {
         let m = pinyin();
         for text in ["", "hello", "中文", "abc中def文", "a", "中"] {
@@ -841,7 +832,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "runtime_build"))]
     fn pinyin_char_byte_iter_matches_replace() {
         let m = pinyin_char();
         for text in ["", "hello", "中文", "abc中def文"] {
@@ -853,14 +843,12 @@ mod tests {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
 
         #[test]
-        #[cfg(not(feature = "runtime_build"))]
         fn prop_fanjian_byte_iter(text in "\\PC{0,200}") {
             let m = fanjian();
             assert_byte_iter_eq_replace_fanjian(&m, &text);
         }
 
         #[test]
-        #[cfg(not(feature = "runtime_build"))]
         fn prop_pinyin_byte_iter(text in "\\PC{0,200}") {
             let m = pinyin();
             assert_byte_iter_eq_replace_pinyin(&m, &text);

@@ -212,15 +212,12 @@ impl NormalizeMatcher {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "runtime_build")))]
 mod tests {
-    #[cfg(not(feature = "runtime_build"))]
     use super::*;
 
-    #[cfg(not(feature = "runtime_build"))]
     use super::super::constants;
 
-    #[cfg(not(feature = "runtime_build"))]
     fn normalize_matcher() -> NormalizeMatcher {
         let patterns: Vec<&str> = constants::NORMALIZE_PROCESS_LIST_STR.lines().collect();
         let replace_list: Vec<&'static str> = constants::NORMALIZE_PROCESS_REPLACE_LIST_STR
@@ -229,7 +226,6 @@ mod tests {
         NormalizeMatcher::new(patterns.iter()).with_replacements(replace_list)
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn assert_byte_iter_eq_replace(matcher: &NormalizeMatcher, text: &str) {
         let materialized: Vec<u8> = match matcher.replace(text) {
             Some((s, _)) => s.into_bytes(),
@@ -240,7 +236,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "runtime_build"))]
     fn normalize_byte_iter_matches_replace() {
         let m = normalize_matcher();
         for text in ["", "hello", "ＡＢＣ", "abc１２３def", "①②③"] {
@@ -252,7 +247,6 @@ mod tests {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
 
         #[test]
-        #[cfg(not(feature = "runtime_build"))]
         fn prop_normalize_byte_iter(text in "\\PC{0,200}") {
             let m = normalize_matcher();
             assert_byte_iter_eq_replace(&m, &text);

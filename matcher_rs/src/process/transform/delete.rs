@@ -333,20 +333,16 @@ impl DeleteMatcher {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "runtime_build")))]
 mod tests {
-    #[cfg(not(feature = "runtime_build"))]
     use super::*;
 
-    #[cfg(not(feature = "runtime_build"))]
     use super::super::constants;
 
-    #[cfg(not(feature = "runtime_build"))]
     fn delete_matcher() -> DeleteMatcher {
         DeleteMatcher::new(constants::DELETE_BITSET_BYTES)
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     fn assert_byte_iter_eq_delete(matcher: &DeleteMatcher, text: &str) {
         let materialized: Vec<u8> = match matcher.delete(text) {
             Some((s, _)) => s.into_bytes(),
@@ -357,7 +353,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "runtime_build"))]
     fn delete_byte_iter_matches_delete() {
         let m = delete_matcher();
         for text in ["", "hello", "hello world", "a b c", "\t\n", "中 文"] {
@@ -369,7 +364,6 @@ mod tests {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
 
         #[test]
-        #[cfg(not(feature = "runtime_build"))]
         fn prop_delete_byte_iter(text in "\\PC{0,200}") {
             let m = delete_matcher();
             assert_byte_iter_eq_delete(&m, &text);
