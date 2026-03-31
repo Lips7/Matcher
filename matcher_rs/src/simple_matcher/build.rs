@@ -66,8 +66,7 @@ impl SimpleMatcher {
     /// 2. Parse all rules into deduplicated patterns and rule metadata.
     /// 3. Build the process-type transformation tree and recompute masks using compact indices.
     /// 4. Choose the search mode — `AllSimple` when the tree has no children and every
-    ///    pattern is simple; `SingleProcessType` when only one process type is used;
-    ///    `General` otherwise.
+    ///    pattern is simple; `General` otherwise.
     /// 5. Compile Aho-Corasick automata via the scan plan.
     /// 6. Assemble and return the immutable [`SimpleMatcher`].
     pub fn new<'a, I, S1, S2>(
@@ -86,14 +85,6 @@ impl SimpleMatcher {
 
         let process_type_set: HashSet<ProcessType> =
             process_type_word_map.keys().copied().collect();
-        let single_pt_index = if process_type_set.len() == 1 {
-            process_type_set
-                .iter()
-                .next()
-                .map(|pt| pt_index_table[pt.bits() as usize])
-        } else {
-            None
-        };
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
@@ -102,16 +93,11 @@ impl SimpleMatcher {
             node.recompute_mask_with_index(&pt_index_table);
         }
 
-        let base_mode = if let Some(pt_index) = single_pt_index {
-            SearchMode::SingleProcessType { pt_index }
-        } else {
-            SearchMode::General
-        };
         let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
         let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
             SearchMode::AllSimple
         } else {
-            base_mode
+            SearchMode::General
         };
 
         Ok(SimpleMatcher {

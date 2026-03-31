@@ -23,23 +23,6 @@ fn test_search_mode_all_simple() {
 }
 
 #[test]
-fn test_search_mode_single_process_type() {
-    // All rules under one non-None PT with operators -> SingleProcessType
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Delete, 1, "hello&world")
-        .add_word(ProcessType::Delete, 2, "foo")
-        .build()
-        .unwrap();
-
-    assert!(
-        matcher.is_match("h.e.l.l.o w.o.r.l.d"),
-        "Delete strips noise chars"
-    );
-    assert!(matcher.is_match("foo"));
-    assert!(!matcher.is_match("hello"));
-}
-
-#[test]
 fn test_search_mode_general() {
     // Rules across multiple PTs -> General
     let matcher = SimpleMatcherBuilder::new()
@@ -57,19 +40,12 @@ fn test_search_mode_general() {
 
 #[test]
 fn test_search_mode_equivalence() {
-    // All three SearchMode paths should agree on equivalent logical matching.
+    // Both SearchMode paths should agree on equivalent logical matching.
 
     // AllSimple: single literals under None
     let all_simple = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "alpha")
         .add_word(ProcessType::None, 2, "beta")
-        .build()
-        .unwrap();
-
-    // SingleProcessType: same literals under Delete (text already clean, no noise)
-    let single_pt = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Delete, 1, "alpha")
-        .add_word(ProcessType::Delete, 2, "beta")
         .build()
         .unwrap();
 
@@ -82,43 +58,29 @@ fn test_search_mode_equivalence() {
 
     let texts = ["alpha", "beta", "alpha beta", "gamma", ""];
     for text in texts {
-        let r_simple = all_simple.is_match(text);
-        let r_single = single_pt.is_match(text);
-        let r_general = general.is_match(text);
         assert_eq!(
-            r_simple, r_single,
-            "AllSimple vs SinglePT disagree on '{text}'"
-        );
-        assert_eq!(
-            r_simple, r_general,
+            all_simple.is_match(text),
+            general.is_match(text),
             "AllSimple vs General disagree on '{text}'"
         );
 
-        let ids_simple: Vec<u32> = all_simple
+        let mut ids_simple: Vec<u32> = all_simple
             .process(text)
             .into_iter()
             .map(|r| r.word_id)
             .collect();
-        let ids_single: Vec<u32> = single_pt
-            .process(text)
-            .into_iter()
-            .map(|r| r.word_id)
-            .collect();
-        let ids_general: Vec<u32> = general
+        let mut ids_general: Vec<u32> = general
             .process(text)
             .into_iter()
             .map(|r| r.word_id)
             .collect();
 
-        // Sort before comparing since result order may differ across modes
-        let mut s1 = ids_simple.clone();
-        let mut s2 = ids_single.clone();
-        let mut s3 = ids_general.clone();
-        s1.sort();
-        s2.sort();
-        s3.sort();
-        assert_eq!(s1, s2, "AllSimple vs SinglePT ids disagree on '{text}'");
-        assert_eq!(s1, s3, "AllSimple vs General ids disagree on '{text}'");
+        ids_simple.sort();
+        ids_general.sort();
+        assert_eq!(
+            ids_simple, ids_general,
+            "AllSimple vs General ids disagree on '{text}'"
+        );
     }
 }
 

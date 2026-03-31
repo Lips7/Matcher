@@ -176,10 +176,7 @@ pub(super) enum SearchMode {
     /// Every rule is a simple single-fragment literal with no `&`/`~` operators
     /// and no text transformation. The matcher bypasses state tracking entirely.
     AllSimple,
-    /// All rules share a single process-type bucket. Enables the `SINGLE_PT`
-    /// const-generic fast path, which skips the per-entry process-type mask check.
-    SingleProcessType { pt_index: u8 },
-    /// Multiple process types or complex rules require the full state machine.
+    /// Rules require text transformation and/or the full state machine.
     General,
 }
 
@@ -207,18 +204,6 @@ impl ProcessPlan {
     #[inline(always)]
     pub(super) fn is_all_simple(&self) -> bool {
         matches!(self.mode, SearchMode::AllSimple)
-    }
-}
-
-/// Helpers for extracting fast-path information from a [`SearchMode`].
-impl SearchMode {
-    /// Returns the sole process-type index when the matcher has exactly one process bucket.
-    #[inline(always)]
-    pub(super) fn single_pt_index(self) -> Option<u8> {
-        match self {
-            Self::SingleProcessType { pt_index } => Some(pt_index),
-            Self::AllSimple | Self::General => None,
-        }
     }
 }
 
@@ -254,11 +239,7 @@ impl SimpleMatcher {
         if self.process.is_all_simple() {
             return self.is_match_simple(text);
         }
-        if self.process.mode().single_pt_index().is_some() {
-            self.is_match_inner::<true>(text)
-        } else {
-            self.is_match_inner::<false>(text)
-        }
+        self.is_match_inner(text)
     }
 
     /// Returns all patterns that match `text`.

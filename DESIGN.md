@@ -31,7 +31,6 @@ This document describes the internal architecture of `matcher_rs` as it exists i
   - [Bitmask Fast Path](#bitmask-fast-path)
   - [Matrix Fallback](#matrix-fallback)
   - [AllSimple Fast Path](#allsimple-fast-path)
-  - [Const-Generic SINGLE_PT Dispatch](#const-generic-single_pt-dispatch)
 - [Memory and Resource Efficiency](#memory-and-resource-efficiency)
   - [Thread-Local Storage](#thread-local-storage)
   - [String Pool](#string-pool)
@@ -247,11 +246,11 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
 
 3. **Build transformation tree and recompute masks.** `build_process_type_tree` produces the trie from the `HashSet` of process types, then `recompute_mask_with_index` re-encodes every node's `pt_index_mask` to use the sequential indices matching `PatternEntry.pt_index`.
 
-4. **Choose search mode.** Determines `single_pt_index` if only one process type is used. Sets the base mode to `SingleProcessType { pt_index }` or `General`. After scan plan compilation, checks if the tree has no children and every pattern is `PatternKind::Simple` — if so, overrides to `AllSimple`.
+4. **Choose search mode.** After scan plan compilation, checks if the tree has no children and every pattern is `PatternKind::Simple` — if so, sets `AllSimple`; otherwise `General`.
 
 5. **Compile scan engines.** `ScanPlan::compile` (in `engine.rs`) receives the deduplicated patterns and entries:
    - Builds a `PatternIndex` from the entry buckets (flattens into contiguous storage with parallel `ranges`).
-   - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. In `AllSimple` and `SingleProcessType` modes, single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
+   - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. Single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
    - Delegates to `compile_automata` which partitions patterns by `is_ascii()` and builds:
      - **ASCII matcher** (`AsciiMatcher`): With the `dfa` feature and `≤ 2000` patterns, uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Above the threshold or without `dfa`, uses `daachorse` bytewise DAAC with user-supplied `u32` values.
      - **Non-ASCII matcher** (`NonAsciiMatcher`): `daachorse` charwise DAAC. When both ASCII and non-ASCII patterns exist, the charwise matcher is compiled over *all* patterns (not just the non-ASCII subset), so a single charwise scan covers everything for non-ASCII input text.
@@ -284,8 +283,7 @@ struct SimpleMatcher {
 | Variant | Condition | Behavior |
 |---------|-----------|----------|
 | `AllSimple` | Tree has no children (only root) AND every `PatternEntry` has `kind == PatternKind::Simple` | Bypasses state tracking entirely. `is_match` delegates directly to `ScanPlan::is_match`. `process` uses `process_simple` which emits results immediately per hit with generation-based dedup. |
-| `SingleProcessType { pt_index }` | Only one composite `ProcessType` in the rule map | Enables `const SINGLE_PT: bool = true` monomorphization. The process-type mask check in `process_entry` compiles away. Also enables `DIRECT_RULE_BIT` encoding. |
-| `General` | Multiple process types or any non-simple pattern | Full state machine with process-type mask checks on every hit. |
+| `General` | Any non-simple pattern or any text transformation | Full state machine with process-type mask checks on every hit. |
 
 ### Two-Pass Matching
 
@@ -328,14 +326,13 @@ struct SimpleMatcher {
 
 `search.rs` implements the runtime half. The entry points are:
 
-- `is_match_inner<SINGLE_PT>` — Walks the tree with `LAZY=true`, scanning each variant as it is produced. Each variant scan constructs a `ScanContext` and calls `scan_variant`. If the callback returns `true` (a rule is satisfied), the tree walk stops.
+- `is_match_inner` — Walks the tree with `LAZY=true`, scanning each variant as it is produced. Each variant scan constructs a `ScanContext` and calls `scan_variant`. If the callback returns `true` (a rule is satisfied), the tree walk stops.
 - `process_preprocessed_into` — Takes pre-computed `ProcessedTextMasks`, calls `scan_all_variants`, then `RuleSet::collect_matches`.
-- `scan_all_variants` — Dispatches to `scan_all_variants_inner::<true>` or `::<false>` based on `single_pt_index()`.
-- `scan_all_variants_inner<SINGLE_PT>` — Iterates all variants (skipping those with `mask == 0`), constructs a `ScanContext` for each, and calls `scan_variant`.
-- `scan_variant<SINGLE_PT>` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
-- `process_match<SINGLE_PT>` — Dispatches the raw value via `PatternIndex::dispatch::<SINGLE_PT>`:
-  - `DirectRule(rule_idx)` → `state.mark_positive(rule_idx)`, returns `ctx.exit_early`.
-  - `SingleEntry(entry)` → `RuleSet::process_entry::<SINGLE_PT>(entry, ctx, state)`.
+- `scan_all_variants` — Iterates all variants (skipping those with `mask == 0`), constructs a `ScanContext` for each, and calls `scan_variant`.
+- `scan_variant` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
+- `process_match` — Dispatches the raw value via `PatternIndex::dispatch`:
+  - `DirectRule(rule_idx)` → checks process-type mask, then `state.mark_positive(rule_idx)`, returns `ctx.exit_early`.
+  - `SingleEntry(entry)` → `RuleSet::process_entry(entry, ctx, state)`.
   - `Entries(entries)` → Iterates entries, short-circuiting if any `process_entry` returns `true`.
 
 ### Pass 2: Logical Evaluation
@@ -399,11 +396,11 @@ Dispatching on a pre-computed enum avoids re-deriving the category from `offset`
 
 `PatternIndex` (in `rule.rs`) holds the flattened pattern entries and their bucket ranges. During construction, each unique pattern string may be attached to one or more `PatternEntry` values. Those per-pattern buckets are flattened into a single contiguous `entries: Vec<PatternEntry>`, and `ranges: Vec<(usize, usize)>` records the `(start, len)` slice for each deduplicated pattern id.
 
-`PatternIndex::dispatch<SINGLE_PT>(raw_value) -> PatternDispatch` resolves a raw scan value:
+`PatternIndex::dispatch(raw_value) -> PatternDispatch` resolves a raw scan value:
 
 | Variant | Condition | Behavior |
 |---------|-----------|----------|
-| `DirectRule(rule_idx)` | `SINGLE_PT && raw_value & DIRECT_RULE_BIT != 0` | The rule index is decoded directly. No entry table lookup. |
+| `DirectRule(rule_idx)` | `raw_value & DIRECT_RULE_BIT != 0` | The rule index is decoded directly. No entry table lookup. |
 | `SingleEntry(&entry)` | Entry slice has `len == 1` | Returns a reference to the single entry. Avoids loop overhead. |
 | `Entries(&[entry])` | Entry slice has `len > 1` | Returns the full entry slice for iteration. |
 
@@ -411,9 +408,9 @@ All accesses use `get_unchecked` guarded by `debug_assert!`.
 
 ### DIRECT_RULE_BIT Fast Path
 
-`DIRECT_RULE_BIT = 1 << 31` is used to encode the rule index directly in the automaton's raw value for single-entry simple patterns. When `PatternIndex::build_value_map` detects that a deduplicated pattern has exactly one `PatternEntry` with `kind == PatternKind::Simple` (and the mode is `AllSimple` or `SingleProcessType`), it stores `rule_idx | DIRECT_RULE_BIT` instead of the dedup index.
+`DIRECT_RULE_BIT = 1 << 31` is used to encode the rule index directly in the automaton's raw value for single-entry simple patterns. When `PatternIndex::build_value_map` detects that a deduplicated pattern has exactly one `PatternEntry` with `kind == PatternKind::Simple`, it stores `rule_idx | DIRECT_RULE_BIT` instead of the dedup index.
 
-At scan time, `PatternIndex::dispatch::<true>` checks the high bit first. If set, it returns `PatternDispatch::DirectRule(rule_idx)`, skipping the entry table entirely. This eliminates two indirections (range lookup + entry access) for the common case of simple single-pattern rules.
+At scan time, `PatternIndex::dispatch` checks the high bit first. If set, it returns `PatternDispatch::DirectRule(rule_idx)`, skipping the entry table entirely. This eliminates two indirections (range lookup + entry access) for the common case of simple single-pattern rules.
 
 ### Bitmask Fast Path
 
@@ -444,18 +441,7 @@ Matrix and status arrays are stored per-rule in `SimpleMatchState::matrix` and `
 When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_process_tree` and `TRANSFORM_STATE` entirely:
 
 - **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text)`. This selects the appropriate engine based on `text.is_ascii()` and the available matchers, and uses `find_iter(...).next().is_some()` or `AhoCorasick::is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
-- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value` with `dispatch::<true>`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids the `walk_process_tree` overhead, `TRANSFORM_STATE` TLS access, and `ProcessedTextMasks` allocation/deallocation, while still correctly deduplicating results when the same pattern appears multiple times in the text.
-
-### Const-Generic SINGLE_PT Dispatch
-
-When all rules share a single `ProcessType`, `SearchMode::SingleProcessType { pt_index }` is selected. The scan functions are monomorphized over `const SINGLE_PT: bool`:
-
-- `scan_all_variants` calls `scan_all_variants_inner::<true>` or `::<false>`.
-- `is_match_inner` is called as `is_match_inner::<true>` or `::<false>`.
-- `process_match::<true>` enables `PatternIndex::dispatch::<true>`, which checks `DIRECT_RULE_BIT` first.
-- `RuleSet::process_entry::<true>` compiles away the `ctx.process_type_mask & (1u64 << pt_index) == 0` check entirely, since there is only one process type and every hit is guaranteed to match.
-
-This eliminates a branch and a shift+AND per `PatternEntry` in the inner loop.
+- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids the `walk_process_tree` overhead, `TRANSFORM_STATE` TLS access, and `ProcessedTextMasks` allocation/deallocation, while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ---
 

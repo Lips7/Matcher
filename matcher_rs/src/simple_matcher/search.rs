@@ -15,8 +15,7 @@
 //!
 //! - **`is_match_simple`** — all rules are single-literal, no transforms. Delegates
 //!   directly to the automaton's `is_match`.
-//! - **`is_match_inner<true>`** — single process type. The `SINGLE_PT` const generic
-//!   compiles out the process-type mask check in `process_entry`.
+//! - **`is_match_inner`** — general path with transform traversal and rule state.
 //! - **`process_simple`** — all-simple matchers collecting results. Each hit is a
 //!   completed rule; no need for the full state machine.
 //!
@@ -52,17 +51,12 @@ impl SimpleMatcher {
     /// after all variants are scanned, the touched rules are checked via
     /// [`RuleSet::has_match`](super::rule::RuleSet::has_match).
     ///
-    /// # Const generic `SINGLE_PT`
-    ///
-    /// When `true`, the process-type mask check inside
-    /// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) is compiled out.
-    ///
     /// # Safety
     ///
     /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
     /// See module-level safety documentation.
     #[inline(always)]
-    pub(super) fn is_match_inner<const SINGLE_PT: bool>(&self, text: &str) -> bool {
+    pub(super) fn is_match_inner(&self, text: &str) -> bool {
         let tree = self.process.tree();
         let max_pt = tree.len();
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
@@ -77,7 +71,7 @@ impl SimpleMatcher {
                     exit_early: true,
                     is_ascii,
                 };
-                self.scan_variant::<SINGLE_PT>(txt, ctx, state)
+                self.scan_variant(txt, ctx, state)
             });
         if stopped {
             return_processed_string_to_pool(text_masks);
@@ -151,42 +145,14 @@ impl SimpleMatcher {
         self.rules.collect_matches(state, results);
     }
 
-    /// Scans every transformed variant, selecting the single-process-type fast path when possible.
-    ///
-    /// Dispatches to [`scan_all_variants_inner`](Self::scan_all_variants_inner) with the
-    /// appropriate `SINGLE_PT` const generic based on the matcher's [`SearchMode`](super::SearchMode).
-    ///
-    /// Returns `true` if early exit was triggered (only possible when `exit_early` is `true`).
-    pub(super) fn scan_all_variants<'a>(
-        &'a self,
-        processed_text_process_type_masks: &ProcessedTextMasks<'a>,
-        state: &mut SimpleMatchState,
-        exit_early: bool,
-    ) -> bool {
-        if self.process.mode().single_pt_index().is_some() {
-            self.scan_all_variants_inner::<true>(
-                processed_text_process_type_masks,
-                state,
-                exit_early,
-            )
-        } else {
-            self.scan_all_variants_inner::<false>(
-                processed_text_process_type_masks,
-                state,
-                exit_early,
-            )
-        }
-    }
-
-    /// Shared variant-scan loop for both general and single-process-type modes.
+    /// Scans every transformed variant through the automaton and evaluates rule hits.
     ///
     /// Iterates over each text variant in `processed_text_process_type_masks`, skipping
     /// variants with a zero mask (unused process-type slots). For each variant, constructs
     /// a [`ScanContext`] and calls [`scan_variant`](Self::scan_variant).
     ///
-    /// Returns `true` if any variant scan triggered early exit.
-    #[inline(always)]
-    fn scan_all_variants_inner<'a, const SINGLE_PT: bool>(
+    /// Returns `true` if early exit was triggered (only possible when `exit_early` is `true`).
+    pub(super) fn scan_all_variants<'a>(
         &'a self,
         processed_text_process_type_masks: &ProcessedTextMasks<'a>,
         state: &mut SimpleMatchState,
@@ -209,7 +175,7 @@ impl SimpleMatcher {
                 exit_early,
                 is_ascii: text_variant.is_ascii,
             };
-            if self.scan_variant::<SINGLE_PT>(text_variant.text.as_ref(), ctx, state) {
+            if self.scan_variant(text_variant.text.as_ref(), ctx, state) {
                 return true;
             }
         }
@@ -223,7 +189,7 @@ impl SimpleMatcher {
     /// with [`process_match`](Self::process_match) as the callback. Returns `true` if
     /// the callback triggered early exit.
     #[inline(always)]
-    pub(super) fn scan_variant<const SINGLE_PT: bool>(
+    pub(super) fn scan_variant(
         &self,
         processed_text: &str,
         ctx: ScanContext,
@@ -231,7 +197,7 @@ impl SimpleMatcher {
     ) -> bool {
         self.scan
             .for_each_match_value(processed_text, ctx.is_ascii, |raw_value| {
-                self.process_match::<SINGLE_PT>(raw_value, ctx, state)
+                self.process_match(raw_value, ctx, state)
             })
     }
 
@@ -249,7 +215,7 @@ impl SimpleMatcher {
     ///
     /// Returns `true` when the caller should stop scanning (early exit satisfied).
     #[inline(always)]
-    pub(super) fn process_match<const SINGLE_PT: bool>(
+    pub(super) fn process_match(
         &self,
         raw_value: u32,
         ctx: ScanContext,
@@ -257,18 +223,16 @@ impl SimpleMatcher {
     ) -> bool {
         match self.scan.patterns().dispatch(raw_value) {
             PatternDispatch::DirectRule { rule_idx, pt_index } => {
-                if !SINGLE_PT && ctx.process_type_mask & (1u64 << pt_index) == 0 {
+                if ctx.process_type_mask & (1u64 << pt_index) == 0 {
                     return false;
                 }
                 state.mark_positive(rule_idx);
                 ctx.exit_early
             }
-            PatternDispatch::SingleEntry(entry) => {
-                self.rules.process_entry::<SINGLE_PT>(entry, ctx, state)
-            }
+            PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, state),
             PatternDispatch::Entries(entries) => {
                 for entry in entries {
-                    if self.rules.process_entry::<SINGLE_PT>(entry, ctx, state) {
+                    if self.rules.process_entry(entry, ctx, state) {
                         return true;
                     }
                 }

@@ -135,24 +135,14 @@ fn test_empty_text_matching() {
         .build()
         .unwrap();
 
-    // SingleProcessType (with operator)
-    let single_pt = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Delete, 1, "hello&world")
-        .build()
-        .unwrap();
-
-    // General (multiple PTs)
+    // General
     let general = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::Fanjian, 2, "你好")
         .build()
         .unwrap();
 
-    for (name, m) in [
-        ("AllSimple", &all_simple),
-        ("SinglePT", &single_pt),
-        ("General", &general),
-    ] {
+    for (name, m) in [("AllSimple", &all_simple), ("General", &general)] {
         assert!(!m.is_match(""), "{name}: is_match('') should be false");
         assert!(
             m.process("").is_empty(),

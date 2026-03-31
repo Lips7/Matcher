@@ -137,7 +137,7 @@ pub(super) struct ScanContext {
     /// Bit `i` is set if the variant was produced by (or is reachable from) the process
     /// type whose compact index is `i`. Checked against
     /// [`PatternEntry::pt_index`](super::rule::PatternEntry::pt_index) to filter hits
-    /// from irrelevant variants (skipped when `SINGLE_PT` is `true`).
+    /// from irrelevant variants.
     pub(super) process_type_mask: u64,
     /// Total number of transformed variants participating in this scan.
     ///

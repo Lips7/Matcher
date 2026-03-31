@@ -8,7 +8,6 @@
 - Skip `text.is_ascii()` scan when only ASCII patterns exist.
 - Optimize `is_match` hot path with two targeted improvements.
 - Raise `AC_DFA_PATTERN_THRESHOLD` to 5000 and optimize `bench_engine`.
-- Optimize hot-path processing for single `ProcessType` matchers (`SearchMode::SingleProcessType`).
 - Improve `SimpleMatcher` build performance up to 42%.
 - Replace std `HashMap` with `ahash` in `runtime_build` transform init.
 
@@ -55,7 +54,6 @@
 ## 0.12.0 - 2026-03-28
 
 ### Performance
-- Const-generic `SINGLE_PT` scan dispatch — eliminates a branch and shift+AND per `PatternEntry` when all rules share one `ProcessType`.
 - `all_simple` fast path for `is_match` — bypasses TLS state, generation counters, and overlapping iteration for pure-literal matchers.
 - Dedup length pre-filter to skip redundant pattern entries during construction.
 - Thread-local `TRANSFORM_STATE` bundles scratch buffers into a single TLS lookup per call; literal fast path avoids TLS entirely for simple cases.

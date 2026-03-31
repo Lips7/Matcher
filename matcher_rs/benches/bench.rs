@@ -151,11 +151,10 @@ mod build {
 }
 
 // ── 2. Search Mode ──────────────────────────────────────────────────────────────
-// Question: How do the three SearchMode fast paths compare in throughput?
+// Question: How do the two SearchMode fast paths compare in throughput?
 //
-// AllSimple:        PT=None, all literals  (bypasses state tracking entirely)
-// SingleProcessType: PT=Delete, all literals (single PT with transform tree children)
-// General:          4 PTs via build_multi_process_table (full state machine)
+// AllSimple: PT=None, all literals  (bypasses state tracking entirely)
+// General:   4 PTs via build_multi_process_table (full state machine)
 
 mod search_mode {
     use super::*;
@@ -182,40 +181,6 @@ mod search_mode {
         fn process(bencher: Bencher) {
             let table = wrap_table(
                 ProcessType::None,
-                build_literal_map("en", DEFAULT_RULE_COUNT, true),
-            );
-            let matcher = SimpleMatcher::new(&table).unwrap();
-            let haystack = EN_HAYSTACK;
-            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-                for line in haystack.lines() {
-                    let _ = black_box(matcher.process(line));
-                }
-            });
-        }
-    }
-
-    mod single_pt {
-        use super::*;
-
-        #[divan::bench(max_time = 5)]
-        fn is_match(bencher: Bencher) {
-            let table = wrap_table(
-                ProcessType::Delete,
-                build_literal_map("en", DEFAULT_RULE_COUNT, true),
-            );
-            let matcher = SimpleMatcher::new(&table).unwrap();
-            let haystack = EN_HAYSTACK;
-            bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-                for line in haystack.lines() {
-                    let _ = black_box(matcher.is_match(line));
-                }
-            });
-        }
-
-        #[divan::bench(max_time = 5)]
-        fn process(bencher: Bencher) {
-            let table = wrap_table(
-                ProcessType::Delete,
                 build_literal_map("en", DEFAULT_RULE_COUNT, true),
             );
             let matcher = SimpleMatcher::new(&table).unwrap();

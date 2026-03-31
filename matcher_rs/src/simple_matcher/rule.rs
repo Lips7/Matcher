@@ -253,8 +253,7 @@ pub(super) struct PatternIndex {
 ///
 /// 1. [`DirectRule`](Self::DirectRule) — the automaton value already encodes the rule index
 ///    (only possible for single-entry [`PatternKind::Simple`] patterns in
-///    [`AllSimple`](super::SearchMode::AllSimple) or
-///    [`SingleProcessType`](super::SearchMode::SingleProcessType) mode).
+///    [`AllSimple`](super::SearchMode::AllSimple) mode).
 /// 2. [`SingleEntry`](Self::SingleEntry) — one entry to process.
 /// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
 pub(super) enum PatternDispatch<'a> {
@@ -335,12 +334,6 @@ impl RuleSet {
     /// rule's [`WordState`](super::state::WordState) and returns `true` only when the
     /// caller may stop early because a non-vetoed rule is already satisfied.
     ///
-    /// # Const generic `SINGLE_PT`
-    ///
-    /// When `true`, all rules belong to a single process type and the process-type mask
-    /// check is compiled out. When `false`, the entry's `pt_index` is tested against
-    /// `ctx.process_type_mask` to filter hits from irrelevant text variants.
-    ///
     /// # State transitions by [`PatternKind`]
     ///
     /// - **Simple**: Marks the rule satisfied on first touch. Idempotent on repeat hits.
@@ -357,7 +350,7 @@ impl RuleSet {
     /// (first touch per rule per generation). All accesses are guarded by preceding
     /// `debug_assert!` bounds checks.
     #[inline(always)]
-    pub(super) fn process_entry<const SINGLE_PT: bool>(
+    pub(super) fn process_entry(
         &self,
         entry: &PatternEntry,
         ctx: ScanContext,
@@ -374,7 +367,7 @@ impl RuleSet {
 
         let rule_idx = rule_idx as usize;
 
-        if !SINGLE_PT && ctx.process_type_mask & (1u64 << pt_index) == 0 {
+        if ctx.process_type_mask & (1u64 << pt_index) == 0 {
             return false;
         }
 
@@ -556,9 +549,7 @@ impl PatternIndex {
     /// Builds the raw scan-value mapping used by the automata.
     ///
     /// For each deduplicated pattern, produces the `u32` value that the automaton will
-    /// report on a hit. In [`AllSimple`](super::SearchMode::AllSimple) and
-    /// [`SingleProcessType`](super::SearchMode::SingleProcessType) modes, a
-    /// pattern with exactly one [`PatternKind::Simple`] entry is encoded as
+    /// report on a hit. A pattern with exactly one [`PatternKind::Simple`] entry is encoded as
     /// `rule_idx | DIRECT_RULE_BIT` so the hot path can skip the indirection through the
     /// entry table. All other patterns store the deduplicated index directly.
     ///
