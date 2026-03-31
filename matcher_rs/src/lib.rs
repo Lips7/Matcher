@@ -62,7 +62,6 @@
 //! |--------|----------|
 //! | `SIMPLE_MATCH_STATE` | `simple_matcher/state.rs` |
 //! | `STRING_POOL` | `process/variant.rs` |
-//! | `TRANSFORM_STATE` | `process/variant.rs` |
 //!
 //! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!` macro
 //! to avoid per-access closure overhead. Safety relies on two invariants:
@@ -138,10 +137,7 @@ mod builder;
 pub use builder::SimpleMatcherBuilder;
 
 mod process;
-pub use process::{
-    ProcessType, ProcessedTextMasks, TextVariant, build_process_type_tree, reduce_text_process,
-    reduce_text_process_emit, text_process, walk_process_tree,
-};
+pub use process::{ProcessType, reduce_text_process, reduce_text_process_emit, text_process};
 
 mod simple_matcher;
 pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};

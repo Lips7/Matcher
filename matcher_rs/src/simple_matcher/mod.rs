@@ -19,7 +19,7 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::process::ProcessTypeBitNode;
+use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
 mod engine;

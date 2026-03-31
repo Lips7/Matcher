@@ -127,8 +127,7 @@ pub(super) static SIMPLE_MATCH_STATE: UnsafeCell<SimpleMatchState> =
 /// that variant. Kept `Copy` to avoid reference overhead in tight loops.
 #[derive(Clone, Copy)]
 pub(super) struct ScanContext {
-    /// Index of the current transformed text variant within the
-    /// [`ProcessedTextMasks`](crate::process::ProcessedTextMasks) array.
+    /// Index of the current transformed text variant.
     ///
     /// Used as the column index into [`SimpleMatchState::matrix`] for matrix-mode rules.
     pub(super) text_index: usize,

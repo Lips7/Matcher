@@ -1,8 +1,5 @@
-use std::collections::HashSet;
-
 use matcher_rs::{
-    ProcessType, SimpleMatcherBuilder, build_process_type_tree, reduce_text_process,
-    reduce_text_process_emit, text_process, walk_process_tree,
+    ProcessType, SimpleMatcherBuilder, reduce_text_process, reduce_text_process_emit, text_process,
 };
 
 // ===========================================================================
@@ -82,104 +79,6 @@ fn test_dag_specific_outputs() {
 
     let processed = text_process(ProcessType::Normalize, "ℋЀ⒈㈠Õ");
     assert_eq!(processed, "he11o");
-}
-
-// ===========================================================================
-// DAG tree construction and walking
-// ===========================================================================
-
-#[test]
-fn test_build_process_type_tree() {
-    let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian,
-        ProcessType::DeleteNormalize,
-        ProcessType::FanjianDeleteNormalize,
-        ProcessType::Delete,
-        ProcessType::Normalize,
-    ]);
-    let process_type_tree = build_process_type_tree(&process_type_set);
-
-    // Root node (None) + 6 nodes for the various transitions
-    assert_eq!(process_type_tree.len(), 7);
-}
-
-#[test]
-fn test_reduce_text_process_with_tree() {
-    let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian,
-        ProcessType::DeleteNormalize,
-        ProcessType::FanjianDeleteNormalize,
-        ProcessType::Delete,
-        ProcessType::Normalize,
-    ]);
-    let process_type_tree = build_process_type_tree(&process_type_set);
-    let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
-
-    let results = walk_process_tree(&process_type_tree, text);
-
-    let find_variant = |target: &str| results.iter().find(|tv| tv.text == target);
-
-    // No ProcessType::None rules registered, so untouched root text carries no mask.
-    assert!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").is_some());
-    assert_eq!(find_variant("~ᗩ~躶~𝚩~軆~Ⲉ~").unwrap().mask, 0);
-
-    // mask 16388 = (1 << (Fanjian | Delete | Normalize).bits()) | (1 << Fanjian.bits())
-    assert!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").is_some());
-    assert_eq!(find_variant("~ᗩ~裸~𝚩~軆~Ⲉ~").unwrap().mask, 16388);
-}
-
-#[test]
-fn test_reduce_text_process_with_set() {
-    let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian,
-        ProcessType::DeleteNormalize,
-        ProcessType::FanjianDeleteNormalize,
-        ProcessType::Delete,
-        ProcessType::Normalize,
-    ]);
-    let text = "~ᗩ~躶~𝚩~軆~Ⲉ~";
-
-    let results = walk_process_tree(&build_process_type_tree(&process_type_set), text);
-
-    assert!(results.iter().any(|tv| tv.text == "a裸b軆c"));
-    assert!(results.iter().any(|tv| tv.text == "ᗩ裸𝚩軆Ⲉ"));
-}
-
-#[test]
-fn test_reduce_text_process_with_tree_correctness() {
-    let process_type_set = HashSet::from_iter([
-        ProcessType::None,
-        ProcessType::Fanjian,
-        ProcessType::Delete,
-        ProcessType::Fanjian | ProcessType::Delete,
-    ]);
-    let process_type_tree = build_process_type_tree(&process_type_set);
-    let text = "妳！好";
-
-    let results = walk_process_tree(&process_type_tree, text);
-
-    let mut found_variants = results
-        .iter()
-        .map(|tv| tv.text.as_ref())
-        .collect::<Vec<_>>();
-    found_variants.sort();
-
-    assert!(found_variants.contains(&"妳！好"));
-    assert!(found_variants.contains(&"你！好"));
-    assert!(found_variants.contains(&"妳好"));
-    assert!(found_variants.contains(&"你好"));
-}
-
-#[test]
-fn test_reduce_text_process_empty_text() {
-    let process_type_set = HashSet::from_iter([
-        ProcessType::Fanjian,
-        ProcessType::Delete,
-        ProcessType::Normalize,
-    ]);
-
-    let processed_text = walk_process_tree(&build_process_type_tree(&process_type_set), "");
-    assert!(processed_text.iter().all(|tv| tv.text.is_empty()));
 }
 
 // ===========================================================================
@@ -556,53 +455,8 @@ fn test_process_into_with_transforms() {
 }
 
 // ===========================================================================
-// PinYin is_ascii correctness: unmapped non-ASCII chars must not be lost
+// PinYin non-ASCII pattern matching
 // ===========================================================================
-
-#[test]
-fn test_pinyin_is_ascii_with_emoji() {
-    // "你好" has pinyin, but the emoji 🎉 (U+1F389) has no pinyin mapping
-    // and passes through unchanged. The is_ascii flag must be false so the
-    // non-ASCII AC engine is used for scanning.
-    let types = HashSet::from([ProcessType::PinYin]);
-    let tree = build_process_type_tree(&types);
-    let variants = walk_process_tree(&tree, "你好🎉");
-    let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
-    assert!(
-        !pinyin_variant.is_ascii,
-        "PinYin output containing emoji must not claim is_ascii=true"
-    );
-}
-
-#[test]
-fn test_pinyin_is_ascii_pure_cjk() {
-    // When all characters have pinyin mappings, output is pure ASCII.
-    let types = HashSet::from([ProcessType::PinYin]);
-    let tree = build_process_type_tree(&types);
-    let variants = walk_process_tree(&tree, "你好");
-    let pinyin_variant = variants.iter().find(|v| v.text.contains("ni")).unwrap();
-    assert!(
-        pinyin_variant.is_ascii,
-        "PinYin output of pure CJK should be ASCII"
-    );
-}
-
-#[test]
-fn test_pinyin_char_is_ascii_with_korean() {
-    // Korean characters (한글) have no pinyin mapping and pass through unchanged.
-    let types = HashSet::from([ProcessType::PinYinChar]);
-    let tree = build_process_type_tree(&types);
-    let variants = walk_process_tree(&tree, "你한글");
-    let pinyin_variant = variants.iter().find(|v| v.text != "你한글").unwrap();
-    assert!(
-        !pinyin_variant.is_ascii,
-        "PinYinChar output containing Korean must not claim is_ascii=true"
-    );
-    assert!(
-        pinyin_variant.text.contains("한글"),
-        "Korean should pass through unchanged"
-    );
-}
 
 #[test]
 fn test_pinyin_non_ascii_pattern_match() {

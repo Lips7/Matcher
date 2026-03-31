@@ -10,7 +10,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
   - [TransformStep and StepOutput](#transformstep-and-stepoutput)
   - [Step Registry](#step-registry)
   - [Transformation DAG (ProcessTypeBitNode Tree)](#transformation-dag-processtypebitnode-tree)
-  - [walk_process_tree](#walk_process_tree)
+  - [Trie Traversal](#trie-traversal)
 - [SimpleMatcher](#simplematcher)
   - [Input Format](#input-format)
   - [Pattern Syntax](#pattern-syntax)
@@ -34,7 +34,6 @@ This document describes the internal architecture of `matcher_rs` as it exists i
 - [Memory and Resource Efficiency](#memory-and-resource-efficiency)
   - [Thread-Local Storage](#thread-local-storage)
   - [String Pool](#string-pool)
-  - [ProcessedTextMasks Pool](#processedtextmasks-pool)
   - [Static Transform Step Cache](#static-transform-step-cache)
   - [Global Allocator](#global-allocator)
 - [Feature Flags](#feature-flags)
@@ -180,17 +179,17 @@ The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits
 
 After tree construction, `recompute_mask_with_index` rewrites every node's `pt_index_mask` from raw-bit encoding to sequential-index encoding so it matches the `pt_index` stored in `PatternEntry`.
 
-### walk_process_tree
+### Trie Traversal
 
-`walk_process_tree` (in `graph.rs`) traverses the trie, computing transformed text variants. It relies on the flat-array invariant that every parent node has a lower index than its children, so a single forward pass visits parents before children.
+`SimpleMatcher` uses `walk_and_scan` (in `search.rs`) to walk the trie and scan each variant immediately after production. The flat-array invariant guarantees every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-For each child node, the parent's text variant is transformed by the child's cached `TransformStep::apply`. The traversal handles deduplication and mask propagation; per-step behavior lives behind `TransformStep::apply`, which returns a `StepOutput` with the changed string (if any) and the resulting `is_ascii` flag.
+- **Leaf + no-op** (parent is ASCII, step is CJK-only): reuses the parent's text and variant index.
+- **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine (zero allocation).
+- **Non-leaf**: materializes via `TransformStep::apply` into a `Cow<str>` arena, scans immediately if the node terminates.
 
-A `dedup_insert` function prevents duplicate text variants: if two trie paths converge on the same string (comparing by length first, then content), the existing entry is reused and its `mask` is OR'd with the new type's mask. Duplicate strings are returned to the pool via `return_string_to_pool`.
+The standalone public APIs (`text_process`, `reduce_text_process`) in `api.rs` iterate `ProcessType` bits directly without the trie.
 
-`walk_process_tree` is used only by the standalone public APIs (`text_process`, `reduce_text_process`, etc.). `SimpleMatcher` uses a unified `walk_and_scan` method in `search.rs` that walks the same trie but scans each variant immediately — streaming leaf transforms via `ByteIter` into the AC engine without allocation, and materializing non-leaf outputs into a `Cow<str>` arena. This avoids building an intermediate `ProcessedTextMasks` collection.
-
-A thread-local `TRANSFORM_STATE` provides the scratch buffer (`tree_node_indices: Vec<usize>`) that maps trie node index to text variant index. The string pool (`STRING_POOL`) recycles `String` allocations across calls.
+The thread-local string pool (`STRING_POOL`) recycles `String` allocations across calls.
 
 ---
 
@@ -285,7 +284,7 @@ struct SimpleMatcher {
 ┌────────────────────────────────────────────────────────────────┐
 │ Input text                                                     │
 │   ↓                                                            │
-│ walk_process_tree → [TextVariant₀, TextVariant₁, ...]          │
+│ walk_and_scan: walk trie, scan each variant immediately         │
 │   ↓                                                            │
 │ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐ │
 │ │ For each text variant:                                     │ │
@@ -431,10 +430,10 @@ Matrix and status arrays are stored per-rule in `SimpleMatchState::matrix` and `
 
 ### AllSimple Fast Path
 
-When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_process_tree` and `TRANSFORM_STATE` entirely:
+When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_and_scan` entirely:
 
 - **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text)`. This selects the appropriate engine based on `text.is_ascii()` and the available matchers, and uses `find_iter(...).next().is_some()` or `AhoCorasick::is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
-- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids the `walk_process_tree` overhead, `TRANSFORM_STATE` TLS access, and `ProcessedTextMasks` allocation/deallocation, while still correctly deduplicating results when the same pattern appears multiple times in the text.
+- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids tree walk overhead while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ---
 
@@ -450,7 +449,6 @@ Three TLS slots are used, all declared with `#[thread_local]` (a nightly attribu
 |------|------|--------|---------|
 | `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
 | `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/variant.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
-| `TRANSFORM_STATE` | `UnsafeCell<TransformThreadState>` | `process/variant.rs` | Node-index-to-text-index scratch buffer (`tree_node_indices`) for `walk_process_tree`. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.
 

@@ -3,9 +3,6 @@
 //! These are the standalone entry points for the transformation pipeline. They decompose
 //! a composite [`ProcessType`] into single-bit steps, apply each in order via the global
 //! [`super::registry`], and return the results as borrowed or owned [`Cow<str>`] values.
-//!
-//! For batch matching where multiple [`ProcessType`] configurations share prefixes, prefer
-//! [`super::graph::walk_process_tree`] which deduplicates intermediate results.
 
 use std::borrow::Cow;
 
@@ -67,10 +64,7 @@ fn reduce_text_process_inner<'a>(
 /// more steps produce changes, intermediate allocations are recycled through the
 /// thread-local string pool so only the final result is returned as `Cow::Owned`.
 ///
-/// This function is best for one-shot use. When multiple [`ProcessType`] configurations
-/// share prefixes and you want all intermediate variants, use
-/// [`build_process_type_tree`](super::build_process_type_tree) +
-/// [`walk_process_tree`](super::walk_process_tree) instead.
+/// This function is best for one-shot use.
 ///
 /// # Examples
 ///

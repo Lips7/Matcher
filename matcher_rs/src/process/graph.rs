@@ -1,11 +1,11 @@
-//! Transformation graph construction and traversal.
+//! Transformation trie construction.
 //!
-//! The "graph" is a flat-array trie where each node represents one single-bit
-//! [`ProcessType`] step. [`build_process_type_tree`] constructs the trie from a set of
-//! composite bitmasks, merging shared prefixes so that intermediate results are computed
-//! once. [`walk_process_tree`] then traverses the array in parent-before-child order,
-//! applying each transformation step exactly once per reachable prefix and collecting
-//! the resulting [`TextVariant`]s.
+//! The trie is a flat array where each node represents one single-bit [`ProcessType`] step.
+//! [`build_process_type_tree`] constructs it from a set of composite bitmasks, merging shared
+//! prefixes so that intermediate results are computed once.
+//!
+//! [`SimpleMatcher`](crate::SimpleMatcher) stores the trie and walks it at match time via
+//! [`walk_and_scan`](crate::simple_matcher::SimpleMatcher::walk_and_scan) in `search.rs`.
 //!
 //! # Example trie
 //!
@@ -17,11 +17,7 @@
 //!       └─[2] Delete        ← terminates: {Fanjian|Delete}
 //!          └─[3] Normalize  ← terminates: {Fanjian|Delete|Normalize}
 //! ```
-//!
-//! Walking this trie for input `"妳！好Ａ"` computes Fanjian once, then Delete on the
-//! Fanjian output, then Normalize on the Delete output — reusing each intermediate.
 
-use std::borrow::Cow;
 use std::collections::HashSet;
 
 use tinyvec::TinyVec;
@@ -29,63 +25,18 @@ use tinyvec::TinyVec;
 use crate::process::process_type::ProcessType;
 use crate::process::registry::get_transform_step;
 use crate::process::step::TransformStep;
-use crate::process::variant::{
-    ProcessedTextMasks, TRANSFORM_STATE, TextVariant, return_string_to_pool,
-};
 
-/// A node in the flat-array transformation trie used by [`walk_process_tree`].
+/// A node in the flat-array transformation trie.
 ///
-/// The trie is built once by [`build_process_type_tree`] and stored inside
-/// [`SimpleMatcher`](crate::SimpleMatcher). Each node represents a single transformation
-/// step (`process_type_bit`) reachable from its parent. Nodes form a tree:
-///
-/// - **Root** (index 0) always has `process_type_bit = ProcessType::None` and no `step`.
-/// - **Inner / leaf nodes** each carry a cached `&'static TransformStep` so the hot
-///   traversal loop avoids a registry lookup.
-/// - **`process_type_list`** records which composite [`ProcessType`] values terminate at
-///   this node, so the traversal can tag output text variants with the correct bitmask.
-/// - **`pt_index_mask`** is the pre-computed OR of `1u64 << pt.bits()` for all entries in
-///   `process_type_list`, avoiding a per-call fold in the hot loop.
-///
-/// All fields are `pub(crate)` or private; users obtain instances exclusively through
-/// [`build_process_type_tree`].
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashSet;
-/// use matcher_rs::{ProcessType, build_process_type_tree};
-///
-/// let types = HashSet::from([ProcessType::None, ProcessType::Fanjian]);
-/// let tree = build_process_type_tree(&types);
-///
-/// // Root node is always at index 0; at least one child for Fanjian.
-/// assert!(tree.len() >= 2);
-/// ```
+/// Built once by [`build_process_type_tree`] and stored in
+/// [`SimpleMatcher`](crate::SimpleMatcher)'s `ProcessPlan`. Each node represents a single
+/// transformation step reachable from its parent.
 #[derive(Clone)]
-pub struct ProcessTypeBitNode {
-    /// Composite [`ProcessType`] values whose decomposed bit-path terminates at this node.
-    ///
-    /// A non-empty list means that one or more rules emit a text variant here. For example,
-    /// if both `Fanjian` and `Fanjian|Delete` are in the set, the Fanjian node's list
-    /// contains `Fanjian`, and the Delete child's list contains `Fanjian|Delete`.
+pub(crate) struct ProcessTypeBitNode {
     process_type_list: TinyVec<[ProcessType; 4]>,
-    /// The single-bit [`ProcessType`] step this node represents (the edge label from parent).
-    ///
-    /// For the root node this is [`ProcessType::None`].
     pub(crate) process_type_bit: ProcessType,
-    /// Flat-array indices of child nodes (the next transformation steps reachable from here).
     pub(crate) children: TinyVec<[usize; 4]>,
-    /// Cached reference to the compiled transform step for this node's `process_type_bit`.
-    ///
-    /// [`None`] only for the root node. All other nodes cache their step at construction
-    /// time to avoid a registry lookup in the hot [`walk_process_tree`] loop.
     pub(crate) step: Option<&'static TransformStep>,
-    /// Pre-computed OR of `1u64 << pt.bits()` for every `pt` in `process_type_list`.
-    ///
-    /// Avoids a per-traversal fold in the hot [`walk_process_tree`] loop. After
-    /// [`recompute_mask_with_index`](Self::recompute_mask_with_index) is called, the
-    /// encoding switches from raw bit positions to sequential indices.
     pub(crate) pt_index_mask: u64,
 }
 
@@ -119,28 +70,9 @@ impl ProcessTypeBitNode {
 /// composite type (e.g. `Fanjian | Delete`), the constructor walks its constituent bits in
 /// ascending order, reusing existing child nodes where the path overlaps with previously
 /// inserted types and creating new child nodes when a path diverges.
-///
-/// The resulting flat `Vec<ProcessTypeBitNode>` is passed to [`walk_process_tree`], which
-/// scans the node array in parent-before-child order to compute all required text variants
-/// while reusing common prefixes.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashSet;
-/// use matcher_rs::{ProcessType, build_process_type_tree};
-///
-/// let types = HashSet::from([
-///     ProcessType::None,
-///     ProcessType::Fanjian,
-///     ProcessType::Fanjian | ProcessType::Delete,
-/// ]);
-/// let tree = build_process_type_tree(&types);
-///
-/// // Root (None) + Fanjian node + Delete node = at least 3 nodes.
-/// assert!(tree.len() >= 3);
-/// ```
-pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<ProcessTypeBitNode> {
+pub(crate) fn build_process_type_tree(
+    process_type_set: &HashSet<ProcessType>,
+) -> Vec<ProcessTypeBitNode> {
     let max_nodes: usize = 1 + process_type_set
         .iter()
         .map(|pt| pt.bits().count_ones() as usize)
@@ -198,150 +130,4 @@ pub fn build_process_type_tree(process_type_set: &HashSet<ProcessType>) -> Vec<P
         }
     }
     process_type_tree
-}
-
-/// Inserts a transformed text into `text_masks`, deduplicating against existing entries.
-///
-/// If `changed` is `Some(text)` and an equal string already exists in `text_masks`, the
-/// duplicate is returned to the thread-local pool and the existing index is returned.
-/// Otherwise the new text is appended and the new index is returned. If `changed` is
-/// [`None`] (the step was a no-op), `current_index` is returned unchanged.
-///
-/// `is_ascii` indicates whether the transformed text consists entirely of ASCII bytes;
-/// it is stored alongside the text so callers can skip the charwise automaton without a
-/// redundant byte scan.
-///
-/// This deduplication keeps [`walk_process_tree`] in "unique string" space even when
-/// different trie paths converge onto the same transformed text (e.g. when Fanjian and
-/// Normalize both produce the same output for a particular input).
-fn dedup_insert(
-    text_masks: &mut ProcessedTextMasks<'_>,
-    current_index: usize,
-    changed: Option<String>,
-    is_ascii: bool,
-) -> usize {
-    match changed {
-        Some(processed) => {
-            let plen = processed.len();
-            if let Some(pos) = text_masks
-                .iter()
-                .position(|tv| tv.text.len() == plen && tv.text.as_ref() == processed.as_str())
-            {
-                return_string_to_pool(processed);
-                pos
-            } else {
-                text_masks.push(TextVariant {
-                    text: Cow::Owned(processed),
-                    mask: 0u64,
-                    is_ascii,
-                });
-                text_masks.len() - 1
-            }
-        }
-        None => current_index,
-    }
-}
-
-/// Walks the transformation trie, producing all text variants needed for matching.
-///
-/// Performs one forward pass over the flat tree built by [`build_process_type_tree`],
-/// relying on the invariant that every parent node appears before its children (guaranteed
-/// by construction). Common prefixes (for example the shared `Fanjian` step in both
-/// `Fanjian | Delete` and `Fanjian | Normalize`) are computed once and their result indices
-/// are reused for child nodes.
-///
-/// Each [`TextVariant`] in the returned [`ProcessedTextMasks`] carries the transformed
-/// text, the bitmask of [`ProcessType`] indices that produced it, and an `is_ascii` flag.
-/// When different trie paths converge to the same string, they share a single entry with
-/// a merged mask.
-///
-/// Callers can simply drop the returned vector — no manual cleanup is needed.
-///
-/// # Safety
-///
-/// Accesses `TRANSFORM_STATE` through `UnsafeCell::get()`.
-/// Safe because `#[thread_local]` guarantees single-threaded access and this function is
-/// never called re-entrantly.
-///
-/// # Panics
-///
-/// Panics (via `.expect()`) if a non-root node has `step = None`, which indicates a
-/// construction bug in [`build_process_type_tree`].
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashSet;
-/// use matcher_rs::{ProcessType, build_process_type_tree, walk_process_tree};
-///
-/// let process_types = HashSet::from([
-///     ProcessType::None,
-///     ProcessType::Fanjian,
-///     ProcessType::Delete,
-///     ProcessType::Fanjian | ProcessType::Delete,
-/// ]);
-/// let tree = build_process_type_tree(&process_types);
-///
-/// let variants = walk_process_tree(&tree, "妳！好");
-///
-/// let texts: std::collections::HashSet<_> = variants
-///     .into_iter()
-///     .map(|tv| tv.text.into_owned())
-///     .collect();
-///
-/// assert_eq!(texts.len(), 4);
-/// assert!(texts.contains("妳！好"));  // raw (None)
-/// assert!(texts.contains("你！好"));  // Fanjian
-/// assert!(texts.contains("妳好"));    // Delete
-/// assert!(texts.contains("你好"));    // Fanjian | Delete
-/// ```
-#[inline(always)]
-pub fn walk_process_tree<'a>(
-    process_type_tree: &[ProcessTypeBitNode],
-    text: &'a str,
-) -> ProcessedTextMasks<'a> {
-    // SAFETY: #[thread_local] guarantees single-threaded access.
-    // walk_process_tree is never called re-entrantly.
-    let ts = unsafe { &mut *TRANSFORM_STATE.get() };
-
-    let mut text_masks: ProcessedTextMasks<'a> = Vec::with_capacity(process_type_tree.len());
-    let root_is_ascii = text.is_ascii();
-    text_masks.push(TextVariant {
-        text: Cow::Borrowed(text),
-        mask: process_type_tree[0].pt_index_mask,
-        is_ascii: root_is_ascii,
-    });
-
-    if process_type_tree[0].children.is_empty() {
-        return text_masks;
-    }
-
-    ts.tree_node_indices.clear();
-    ts.tree_node_indices.resize(process_type_tree.len(), 0);
-
-    for (current_node_index, current_node) in process_type_tree.iter().enumerate() {
-        let current_index = ts.tree_node_indices[current_node_index];
-        let parent_is_ascii = text_masks[current_index].is_ascii;
-
-        for &child_node_index in &current_node.children {
-            let child_node = &process_type_tree[child_node_index];
-            let step = child_node
-                .step
-                .expect("non-root process tree nodes always cache a transform step");
-            let current_text = text_masks[current_index].text.as_ref();
-            let output = step.apply(current_text, parent_is_ascii);
-
-            let child_index = dedup_insert(
-                &mut text_masks,
-                current_index,
-                output.changed,
-                output.is_ascii,
-            );
-
-            ts.tree_node_indices[child_node_index] = child_index;
-            text_masks[child_index].mask |= child_node.pt_index_mask;
-        }
-    }
-
-    text_masks
 }

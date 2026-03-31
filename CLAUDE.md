@@ -110,8 +110,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:
 - `process_type.rs` — `ProcessType` bitflags + serde/display
-- `variant.rs` — `TextVariant`, `ProcessedTextMasks`, thread-local `STRING_POOL`/`TRANSFORM_STATE`
-- `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree`, `walk_process_tree`
+- `variant.rs` — Thread-local `STRING_POOL` (string buffer recycling)
+- `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `StepOutput` — uniform apply interface for all transform backends
 - `registry.rs` — `TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8]`, `get_transform_step` — lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
@@ -130,7 +130,6 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 `SimpleMatcher` is `Send + Sync`. All mutable match state is thread-local — pools per thread:
 - `SIMPLE_MATCH_STATE` (`SimpleMatchState`) — generation-stamped word states and counter matrix, reused across calls
 - `STRING_POOL` — recycled `String` allocations for transformation output
-- `TRANSFORM_STATE` — node-index-to-text-index scratch buffer for `walk_process_tree`
 
 `TRANSFORM_STEP_CACHE` is a static `[OnceLock<TransformStep>; 8]` — each single-bit `ProcessType` initializes its step once per process and shares it across all `SimpleMatcher` instances.
 
