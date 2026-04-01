@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#   "opencc",
+#   "pypinyin",
+# ]
+# ///
 
 from __future__ import annotations
 
@@ -152,7 +159,6 @@ def render_codepoints(codepoints: list[int]) -> str:
 def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
     chars = iter_scalar_chars()
     process_map_dir = root / "matcher_rs" / "process_map"
-    data_dir = root / "data" / "str_conv"
 
     fanjian = build_fanjian_map(chars)
     text_delete = build_text_delete_codepoints(chars)
@@ -185,7 +191,7 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
             "pinyin": len(pinyin),
         },
     }
-    outputs[data_dir / "manifest.json"] = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    outputs[process_map_dir / "manifest.json"] = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     return outputs, manifest
 
 
