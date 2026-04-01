@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.12.3 - 2026-04-02
+
+### Performance
+- Add per-plan `charwise_density_threshold` to `ScanPlan`; `AcDfa` never routes to charwise at any density, `DaacBytewise` uses 0.1.
+- Raise `AC_DFA_PATTERN_THRESHOLD` 5000 → 7000 based on M3 Max benchmarks (+14% at 7k, -15% cliff at 8k due to L2 cache boundary).
+- Align ASCII transform fast paths — consolidate `is_ascii` / `output_density` tracking across `TransformStep`, simplify per-transform ASCII detection.
+
+### Bug Fixes
+- Fix leaf-transform noop handling: leaf nodes in the process trie that are ASCII no-ops were incorrectly re-scanning instead of reusing the parent variant.
+
+### Data
+- Regenerate all process maps (FANJIAN, NORM, NUM-NORM, PINYIN, TEXT-DELETE) from updated Python sources.
+- Move map generator script into `matcher_rs/scripts/generate_process_map.py`; add `manifest.json` for reproducibility.
+- Remove large raw Unicode source files from `data/str_conv/` (now generated on demand).
+
+### Benchmarks
+- Add `density_dispatch` bench module to calibrate the charwise threshold.
+- Add `pattern_mix_en` / `pattern_mix_cn` modules with CJK-% sweep to validate the `all_ascii` guard.
+- Extend `search_ascii_en` with 6000/7000/8000 pattern counts around the DFA threshold.
+
+### Testing
+- Add `proptest`-based property tests for transform correctness.
+- Extend transform unit tests; remove redundant `matcher_rs` coverage.
+
+### Documentation
+- Major rustdoc pass: `ReplacementFinder`, string pool, `decode_utf8_raw`, `AsciiInputBehavior`, `get_transform_step`, `build_process_type_tree`, `multibyte_density`, SIMD skip functions.
+- Update DESIGN.md: density-based engine selection, `StepOutput` shape, `ScanPlan` accessor list, threshold and constructor docs.
+- Add `#![warn(missing_docs)]` to crate root.
+
 ## 0.12.2 - 2026-03-31
 
 ### Performance
