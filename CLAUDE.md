@@ -39,6 +39,8 @@ cargo nextest run --test test_simple_matcher  # Single test file by name
 # Lint/Format
 make lint                           # All languages
 make lint-rs                        # cargo fmt + cargo clippy
+make lint-py                        # ruff + ty check
+make lint-java                      # mvn checkstyle:check
 cargo fmt --all
 cargo all-features clippy --workspace --all-targets -- -D warnings
 
@@ -54,6 +56,7 @@ python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build   # Raw engin
 python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick # Quick directional signal (~2-3 min)
 python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev     # Faster rebuild (thin LTO)
 python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>
+make bench-compare BASELINE=<baseline_dir> CANDIDATE=<candidate_dir>  # Makefile shortcut
 python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # Raw file-to-file fallback
 
 # Profiling (uses release + debug symbols)
