@@ -30,6 +30,21 @@ const STRING_POOL_MAX: usize = 128;
 pub(crate) static STRING_POOL: UnsafeCell<Vec<String>> = UnsafeCell::new(Vec::new());
 
 /// Pops a reusable [`String`] from the thread-local pool, or allocates a new one.
+///
+/// Returns a cleared `String` with capacity ≥ `capacity`. If a buffer is
+/// available in the pool, it is reused: `clear()` is called to reset its
+/// length, and `reserve` grows it if its existing capacity falls short.
+/// If the pool is empty, a fresh `String::with_capacity(capacity)` is allocated.
+///
+/// Callers should pass the expected output length as `capacity` to avoid
+/// mid-write reallocations. Passing 0 is valid and simply pops an arbitrary-
+/// capacity buffer from the pool.
+///
+/// # Safety
+///
+/// Accesses [`STRING_POOL`] via `UnsafeCell::get()`. Safe because
+/// `#[thread_local]` guarantees single-threaded ownership and this function
+/// is not re-entrant while the returned `String` is live.
 pub(crate) fn get_string_from_pool(capacity: usize) -> String {
     // SAFETY: #[thread_local] guarantees single-threaded access; non-re-entrant.
     let pool = unsafe { &mut *STRING_POOL.get() };
@@ -45,6 +60,21 @@ pub(crate) fn get_string_from_pool(capacity: usize) -> String {
 }
 
 /// Returns a [`String`] to the thread-local pool for future reuse.
+///
+/// If the pool already holds [`STRING_POOL_MAX`] buffers, the string is
+/// dropped immediately rather than growing the pool without bound. This
+/// caps per-thread memory usage while still amortizing allocation costs
+/// across the most common working sets.
+///
+/// Callers should only return buffers that were obtained from
+/// [`get_string_from_pool`]; returning arbitrary strings is safe but may
+/// leave oversized buffers in the pool.
+///
+/// # Safety
+///
+/// Accesses [`STRING_POOL`] via `UnsafeCell::get()`. Safe because
+/// `#[thread_local]` guarantees single-threaded ownership and this function
+/// is not re-entrant.
 pub(crate) fn return_string_to_pool(s: String) {
     // SAFETY: #[thread_local] guarantees single-threaded access; non-re-entrant.
     let pool = unsafe { &mut *STRING_POOL.get() };

@@ -128,17 +128,22 @@ This is combined (OR) with the non-ASCII mask to produce a stop mask; the first 
 
 ### TransformStep and StepOutput
 
-`TransformStep` (in `step.rs`) wraps one of the low-level engines and provides a uniform `apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput` interface. The six variants are: `None`, `Fanjian(FanjianMatcher)`, `Delete(DeleteMatcher)`, `Normalize(NormalizeMatcher)`, `PinYin(PinyinMatcher)`, `PinYinChar(PinyinMatcher)`.
+`TransformStep` (in `step.rs`) wraps one of the low-level engines and provides a uniform `apply(&self, text: &str, parent_density: f32) -> StepOutput` interface. The six variants are: `None`, `Fanjian(FanjianMatcher)`, `Delete(DeleteMatcher)`, `Normalize(NormalizeMatcher)`, `PinYin(PinyinMatcher)`, `PinYinChar(PinyinMatcher)`.
+
+`parent_density` is the multi-byte density (`continuation_bytes / total_bytes`) of the incoming text. `0.0` means pure ASCII.
 
 `StepOutput` carries two fields:
 - `changed: Option<String>` — `None` when the step is a no-op (the text was unmodified). `Some(result)` when the text was transformed.
-- `is_ascii: bool` — always describes the *post-step* text, regardless of whether the text changed.
+- `output_density: f32` — always describes the *post-step* text's multi-byte density, regardless of whether the text changed. Callers use this to select the bytewise or charwise AC engine for the next scan.
 
-The `is_ascii` policy per step:
-- **Fanjian** — always `false` (output may contain CJK).
-- **Delete** — preserves ASCII when the parent is already ASCII; otherwise computes the output flag after deletion.
-- **Normalize** — tracked incrementally during the replacement loop via `replace_spans_with_ascii`. Each unchanged gap between matches is checked with `is_ascii()`; the pre-computed `all_replacements_ascii` flag avoids per-replacement checks.
-- **PinYin / PinYinChar** — tracked incrementally: Pinyin replacements are always ASCII, but unmapped characters (emoji, Korean, etc.) pass through unchanged, so the output may contain non-ASCII bytes. Uses the same `replace_spans_with_ascii` helper.
+The `output_density` policy per step:
+- **Fanjian** — CJK-to-CJK substitution; all replacements are the same byte width (3-byte UTF-8), so `output_density = parent_density`.
+- **Delete** — ASCII input stays ASCII (`output_density = 0.0`); otherwise the underlying `DeleteMatcher::delete` computes the exact density after deletion.
+- **Normalize** — ASCII input stays ASCII (`output_density = 0.0`); otherwise the underlying `NormalizeMatcher::replace` computes density via a single SIMD pass over the result.
+- **PinYin / PinYinChar** — always produces pure ASCII romanization for non-ASCII input (`output_density = 0.0` from the underlying `PinyinMatcher::replace`); ASCII input is a no-op.
+- **None** — propagates `parent_density` unchanged.
+
+ASCII fast-path: when `parent_density == 0.0`, steps that can't modify ASCII (`Fanjian`, `PinYin`, `PinYinChar`) return `StepOutput::unchanged(0.0)` immediately. Steps that may modify ASCII (`Delete`, `Normalize`) still run but force `output_density = 0.0` in the result. This is tracked via the `AsciiInputBehavior` enum (`NoOp` vs `MayChangeButStaysAscii`).
 
 ### Step Registry
 
@@ -182,9 +187,9 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 
 `SimpleMatcher` uses `walk_and_scan` (in `search.rs`) to walk the trie and scan each variant immediately after production. The flat-array invariant guarantees every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-- **Leaf + no-op** (parent is ASCII, step is guaranteed ASCII-no-op): reuses the parent's text and variant index.
-- **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine (zero allocation).
-- **Non-leaf**: materializes via `TransformStep::apply` into a `Cow<str>` arena, scans immediately if the node terminates.
+- **Leaf + no-op** (parent density is `0.0` and step is guaranteed no-op on ASCII): reuses the parent's text and variant index, scanning with the child's `pt_index_mask` instead of materializing new text.
+- **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation).
+- **Non-leaf**: materializes via `TransformStep::apply` into a `Vec<Cow<str>>` arena. `output_density` from `StepOutput` is stored per arena slot for downstream `use_bytewise` decisions. Scans immediately if the node terminates.
 
 The standalone public APIs (`text_process`, `reduce_text_process`) in `api.rs` iterate `ProcessType` bits directly without the trie.
 
@@ -243,10 +248,10 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
 5. **Compile scan engines.** `ScanPlan::compile` (in `engine.rs`) receives the deduplicated patterns and entries:
    - Builds a `PatternIndex` from the entry buckets (flattens into contiguous storage with parallel `ranges`).
    - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. Single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
-   - Delegates to `compile_automata` which partitions patterns by `is_ascii()` and builds:
-     - **ASCII matcher** (`AsciiMatcher`): With the `dfa` feature and `≤ 2000` patterns, uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Above the threshold or without `dfa`, uses `daachorse` bytewise DAAC with user-supplied `u32` values.
-     - **Non-ASCII matcher** (`NonAsciiMatcher`): `daachorse` charwise DAAC. When both ASCII and non-ASCII patterns exist, the charwise matcher is compiled over *all* patterns (not just the non-ASCII subset), so a single charwise scan covers everything for non-ASCII input text.
-   - Either or both matchers may be `None` when the corresponding pattern class is absent.
+   - Delegates to `compile_automata` which builds **both engines over the full pattern set**:
+     - **Bytewise engine** (`BytewiseMatcher`): With the `dfa` feature, all patterns ASCII, and count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000), uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Otherwise uses `daachorse` bytewise DAAC with user-supplied `u32` values.
+     - **Charwise engine** (`CharwiseMatcher`): `daachorse` charwise DAAC compiled over the entire pattern set. Non-ASCII patterns are naturally handled; ASCII patterns work correctly because charwise transitions on their Unicode codepoints (which happen to be single-byte ASCII codepoints).
+   - Both engines are `None` only when the pattern list is completely empty.
 
 6. **Assemble matcher.** The final `SimpleMatcher` stores three immutable components: `ProcessPlan` (tree + `SearchMode`), `ScanPlan` (automata + `PatternIndex`), and `RuleSet` (hot + cold rule metadata).
 
@@ -264,7 +269,7 @@ struct SimpleMatcher {
 
 **`ProcessPlan`** bundles the precomputed transformation trie (`Vec<ProcessTypeBitNode>`) and the `SearchMode` selected at construction time. It provides `tree()`, `mode()`, and `is_all_simple()` accessors.
 
-**`ScanPlan`** bundles the optional ASCII and non-ASCII matchers with the `PatternIndex` that maps raw automaton values back to rule metadata. It provides `is_match(text)`, `for_each_match_value(text, is_ascii, callback)`, and `patterns()`.
+**`ScanPlan`** bundles the optional bytewise and charwise engines with the `PatternIndex` that maps raw automaton values back to rule metadata. It provides `is_match(text, use_bytewise)`, `for_each_match_value(text, use_bytewise, callback)`, `for_each_match_value_from_iter(iter, use_bytewise, callback)`, `charwise_density_threshold()`, and `patterns()`.
 
 **`RuleSet`** stores parallel `Vec<RuleHot>` and `Vec<RuleCold>` indexed by rule id. It provides `process_entry`, `has_match`, `collect_matches`, and `push_result_if_new`.
 
@@ -287,7 +292,7 @@ struct SimpleMatcher {
 │   ↓                                                            │
 │ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐ │
 │ │ For each text variant:                                     │ │
-│ │   Select ASCII or charwise engine based on is_ascii flag   │ │
+│ │   Select bytewise or charwise engine via use_bytewise flag │ │
 │ │   For each overlapping hit:                                │ │
 │ │     Dispatch raw value via PatternIndex::dispatch          │ │
 │ │     → DirectRule: mark_positive immediately                │ │
@@ -306,13 +311,15 @@ struct SimpleMatcher {
 
 ### Scan Engine Selection
 
-`ScanPlan::for_each_match_value` selects the engine based on two factors: whether a non-ASCII matcher exists, and whether the current text variant is ASCII.
+Both `BytewiseMatcher` and `CharwiseMatcher` are compiled over the **full** pattern set. Engine selection at query time is a pure throughput decision driven by the text's multi-byte character density.
 
-1. **No non-ASCII matcher** (all patterns are ASCII): Always uses the ASCII matcher, regardless of `text.is_ascii()`. This avoids calling `text.is_ascii()` entirely.
-2. **ASCII text + non-ASCII matcher exists**: Uses the ASCII matcher only. This avoids the per-character overhead of the charwise engine on pure ASCII input.
-3. **Non-ASCII text + non-ASCII matcher exists**: Uses the charwise matcher only. Since it was compiled over all patterns (when both ASCII and non-ASCII patterns exist), one scan covers everything.
+`search.rs` computes `multibyte_density(text.as_bytes())` once per text variant and passes a `use_bytewise: bool` flag to `ScanPlan::for_each_match_value`. The flag is `true` when the density is below `ScanPlan::charwise_density_threshold()`.
 
-`ScanPlan::is_match` uses the same selection logic but calls the engine's `is_match` method (non-overlapping, first-match-only) for maximum throughput.
+The `charwise_density_threshold` is a per-plan constant set at compile time:
+- **`BytewiseMatcher::AcDfa` plan**: `f32::MAX` — charwise is never selected, because AcDfa beats the charwise engine at every density (including pure CJK).
+- **`BytewiseMatcher::DaacBytewise` plan**: `CHARWISE_DENSITY_THRESHOLD` (0.1) — charwise wins when ≥ ~10% of bytes are continuation bytes.
+
+`ScanPlan::for_each_match_value` and `ScanPlan::is_match` both accept `use_bytewise: bool` and delegate to the corresponding engine. If either engine is `None` (no patterns), the call is a no-op.
 
 ### Pass 1: Pattern Scanning
 
@@ -431,7 +438,7 @@ Matrix and status arrays are stored per-rule in `SimpleMatchState::matrix` and `
 
 When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_and_scan` entirely:
 
-- **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text)`. This selects the appropriate engine based on `text.is_ascii()` and the available matchers, and uses `find_iter(...).next().is_some()` or `AhoCorasick::is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
+- **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text, use_bytewise)` where `use_bytewise` is computed from `multibyte_density(text.as_bytes())`. This uses `find_iter(...).next().is_some()` or `AhoCorasick::is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
 - **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids tree walk overhead while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ---
@@ -471,8 +478,8 @@ The crate replaces the system allocator with `mimalloc` (v3) globally for improv
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `dfa` | on | Enables `aho-corasick` DFA mode for the ASCII scan engine when pattern count is `<= 2000` (via `AC_DFA_PATTERN_THRESHOLD`). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput. Note: `NormalizeMatcher` always uses `aho-corasick` DFA regardless of this flag. |
-| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set at runtime for the transformation skip functions (AVX2 on x86-64 via `SimdDispatch` + `OnceLock`, NEON on aarch64 at compile time, portable `std::simd` fallback). Without this flag, only the portable path is compiled. |
+| `dfa` | on | Enables `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and pattern count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput up to the cache boundary. Note: `NormalizeMatcher` always uses `aho-corasick` DFA regardless of this flag. |
+| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set at runtime for transformation skip functions and `multibyte_density` (AVX2 on x86-64 via `SimdDispatch` + `OnceLock`, NEON on aarch64 at compile time, portable `std::simd` fallback). Without this flag, only the portable path is compiled. |
 | `runtime_build` | off | Builds transformation tables at runtime from source text files in `process_map/` instead of loading precompiled binary artifacts from `build.rs`. Slower initialization but allows custom or updated transformation data without recompiling the library. |
 
 ---

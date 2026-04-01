@@ -38,7 +38,7 @@ use aho_corasick::{
 };
 
 use crate::process::string_pool::get_string_from_pool;
-use crate::process::transform::simd::skip_ascii_simd;
+use crate::process::transform::simd::{multibyte_density, skip_ascii_simd};
 use crate::process::transform::utf8::decode_utf8_raw;
 
 // ---------------------------------------------------------------------------
@@ -76,41 +76,31 @@ where
     }
 }
 
-/// Like [`replace_scan`] but also tracks whether the output is pure ASCII.
+/// Like [`replace_scan`] but also returns the multi-byte density of the output.
 ///
 /// Accepts `(start, end, replacement_str)` triples where each replacement is a `&str`
-/// pushed directly into the result. `all_replacements_ascii` indicates whether all
-/// replacement strings are known to be ASCII (allows skipping per-replacement checks).
-/// The `is_ascii` flag is tracked incrementally by checking each unchanged gap.
+/// pushed directly into the result. Density is computed via a single SIMD pass over
+/// the completed result (one sweep, no per-gap overhead).
 ///
 /// Used by [`PinyinMatcher::replace`] and [`NormalizeMatcher::replace`].
 #[inline(always)]
-fn replace_spans_with_ascii<'a, I>(
-    text: &str,
-    mut iter: I,
-    all_replacements_ascii: bool,
-) -> Option<(String, bool)>
+fn replace_spans_with_density<'a, I>(text: &str, mut iter: I) -> Option<(String, f32)>
 where
     I: Iterator<Item = (usize, usize, &'a str)>,
 {
     if let Some((start, end, replacement)) = iter.next() {
         let mut result = get_string_from_pool(text.len());
-        let prefix = &text[..start];
-        let mut is_ascii = all_replacements_ascii && prefix.is_ascii();
-        result.push_str(prefix);
+        result.push_str(&text[..start]);
         result.push_str(replacement);
         let mut last_end = end;
         for (start, end, replacement) in iter {
-            let gap = &text[last_end..start];
-            is_ascii = is_ascii && gap.is_ascii();
-            result.push_str(gap);
+            result.push_str(&text[last_end..start]);
             result.push_str(replacement);
             last_end = end;
         }
-        let suffix = &text[last_end..];
-        is_ascii = is_ascii && suffix.is_ascii();
-        result.push_str(suffix);
-        Some((result, is_ascii))
+        result.push_str(&text[last_end..]);
+        let density = multibyte_density(result.as_bytes());
+        Some((result, density))
     } else {
         None
     }
@@ -119,9 +109,20 @@ where
 /// Trait for find iterators that yield `(start, end, replacement_bytes)` triples.
 ///
 /// Implemented by adapter types that wrap concrete find iterators (e.g.,
-/// [`PinyinFindIter`], [`aho_corasick::FindIter`]) and normalize their output
-/// into a uniform byte-slice replacement format for [`SliceReplacingByteIter`].
+/// [`PinyinFindAdapter`], [`NormalizeFindAdapter`]) and normalize their output
+/// into a uniform byte-slice replacement format consumed by [`SliceReplacingByteIter`].
+///
+/// Implementations must yield spans in **strictly ascending, non-overlapping
+/// byte-offset order** — each returned `start` must be ≥ the previous `end`.
+/// Violating this contract will cause [`SliceReplacingByteIter`] to produce
+/// garbled output.
 pub(crate) trait ReplacementFinder<'a> {
+    /// Returns the next `(start_byte, end_byte, replacement_bytes)` triple,
+    /// or `None` when all replacements have been yielded.
+    ///
+    /// `start_byte` and `end_byte` are byte offsets into the original source text:
+    /// `source[start_byte..end_byte]` is the span being replaced. `replacement_bytes`
+    /// is the borrowed byte slice that replaces that span in the output stream.
     fn next_replacement(&mut self) -> Option<(usize, usize, &'a [u8])>;
 }
 
@@ -671,12 +672,10 @@ impl PinyinMatcher {
     /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
     ///
     /// Returns `None` when no codepoint in `text` has a Pinyin mapping,
-    /// allowing callers to continue borrowing the original input. The `bool`
-    /// indicates whether the output is pure ASCII, tracked incrementally to
-    /// avoid a redundant scan. Pinyin replacements are always ASCII, so only
-    /// the unchanged gaps between replacements need checking.
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        replace_spans_with_ascii(text, self.iter(text), true)
+    /// allowing callers to continue borrowing the original input. The `f32`
+    /// is the multi-byte density of the output, computed via a single SIMD pass.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, f32)> {
+        replace_spans_with_density(text, self.iter(text))
     }
 
     /// Builds a matcher from the precompiled build-time tables and string storage.
@@ -760,9 +759,6 @@ pub(crate) struct NormalizeMatcher {
     /// Replacement strings parallel to the automaton's pattern indices.
     /// `replace_list[match.pattern_index]` is the output for a given match.
     replace_list: Vec<&'static str>,
-    /// Pre-computed: true when every entry in `replace_list` is pure ASCII.
-    /// Allows skipping per-replacement ASCII checks during the hot-path replace loop.
-    pub(crate) all_replacements_ascii: bool,
 }
 
 /// Adapter wrapping [`aho_corasick::FindIter`] for use with [`SliceReplacingByteIter`].
@@ -816,15 +812,14 @@ impl NormalizeMatcher {
     /// appends the replacement string from `replace_list[pattern_index]`.
     ///
     /// Returns `None` when no pattern matched, so callers can preserve
-    /// borrowed input without allocation. The `bool` indicates whether the
-    /// output is pure ASCII, tracked incrementally to avoid a redundant scan.
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
+    /// borrowed input without allocation. The `f32` is the multi-byte density
+    /// of the output, computed via a single SIMD pass over the result.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, f32)> {
         let replace_list = &self.replace_list;
-        replace_spans_with_ascii(
+        replace_spans_with_density(
             text,
             self.find_iter(text)
                 .map(|m| (m.start(), m.end(), replace_list[m.pattern().as_usize()])),
-            self.all_replacements_ascii,
         )
     }
 
@@ -848,7 +843,6 @@ impl NormalizeMatcher {
                 .build(patterns)
                 .unwrap(),
             replace_list: Vec::new(),
-            all_replacements_ascii: true,
         }
     }
 
@@ -857,7 +851,6 @@ impl NormalizeMatcher {
     /// `replace_list[i]` must be the replacement for pattern `i` in the
     /// automaton. Consumes and returns `self` for builder-style chaining.
     pub(crate) fn with_replacements(mut self, replace_list: Vec<&'static str>) -> Self {
-        self.all_replacements_ascii = replace_list.iter().all(|s| s.is_ascii());
         self.replace_list = replace_list;
         self
     }

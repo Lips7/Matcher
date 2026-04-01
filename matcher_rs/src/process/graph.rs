@@ -93,8 +93,39 @@ impl ProcessTypeBitNode {
 /// The trie encodes every unique prefix path among the given composite types. A root node
 /// with `process_type_bit = ProcessType::None` is always present at index 0. For each
 /// composite type (e.g. `Fanjian | Delete`), the constructor walks its constituent bits in
-/// ascending order, reusing existing child nodes where the path overlaps with previously
-/// inserted types and creating new child nodes when a path diverges.
+/// ascending order (determined by [`ProcessType::iter`]), reusing existing child nodes
+/// where the path overlaps with previously inserted types and creating new child nodes
+/// when a path diverges.
+///
+/// The resulting `Vec<ProcessTypeBitNode>` is indexed by node position in the trie. The
+/// root (index 0) represents the raw input; each subsequent node represents one
+/// transformation step. Node indices are used by `walk_and_scan` to traverse the trie at
+/// match time.
+///
+/// After construction, callers must call
+/// [`ProcessTypeBitNode::recompute_mask_with_index`] on each node to convert
+/// the raw bitflag-based `pt_index_mask` into compact sequential indices.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use std::collections::HashSet;
+/// use matcher_rs::ProcessType;
+///
+/// let set: HashSet<ProcessType> = [
+///     ProcessType::Fanjian,
+///     ProcessType::Fanjian | ProcessType::Delete,
+/// ]
+/// .into_iter()
+/// .collect();
+///
+/// let tree = build_process_type_tree(&set);
+/// // tree[0] = root (None)
+/// // tree[1] = Fanjian  ← shared prefix
+/// // tree[2] = Delete   ← child of Fanjian
+/// assert_eq!(tree.len(), 3);
+/// assert_eq!(tree[0].children.len(), 1); // root → Fanjian
+/// ```
 pub(crate) fn build_process_type_tree(
     process_type_set: &HashSet<ProcessType>,
 ) -> Vec<ProcessTypeBitNode> {

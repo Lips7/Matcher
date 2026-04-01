@@ -134,9 +134,10 @@ pub(crate) struct DeleteMatcher {
 impl DeleteMatcher {
     /// Removes every configured codepoint from `text`.
     ///
-    /// Returns `Some((result, is_ascii))` where `result` is the text with all
-    /// deletable codepoints stripped, and `is_ascii` indicates whether the
-    /// result is pure ASCII. Returns `None` when nothing was deleted, allowing
+    /// Returns `Some((result, output_density))` where `result` is the text with all
+    /// deletable codepoints stripped, and `output_density` is the multi-byte density
+    /// (`continuation_bytes / total_bytes`) of the result, tracked incrementally during
+    /// the loop (no extra scan). Returns `None` when nothing was deleted, allowing
     /// callers to keep borrowing the original `&str`.
     ///
     /// # Algorithm
@@ -155,10 +156,14 @@ impl DeleteMatcher {
     /// Uses `get_unchecked` to read the current byte at `offset` after the
     /// `offset < len` / `offset >= len` guards have confirmed it is in bounds.
     /// The byte value is then used to branch into the ASCII or multi-byte path.
-    pub(crate) fn delete(&self, text: &str, parent_is_ascii: bool) -> Option<(String, bool)> {
+    pub(crate) fn delete(&self, text: &str) -> Option<(String, f32)> {
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut offset = 0usize;
+        // Continuation bytes kept in output — accumulated during seek and copy-skip.
+        // For pure-ASCII input, the non-ASCII branch never executes, so cont_kept stays
+        // 0 and output_density is correctly 0.0 without any special-casing.
+        let mut cont_kept: usize = 0;
 
         loop {
             if offset >= len {
@@ -179,6 +184,7 @@ impl DeleteMatcher {
                 if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     break;
                 }
+                cont_kept += char_len - 1; // kept non-ASCII char
                 offset += char_len;
             }
         }
@@ -194,6 +200,7 @@ impl DeleteMatcher {
             // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
             let (_, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
             offset += char_len;
+            // Deleted non-ASCII char: does not contribute to cont_kept.
         }
 
         let mut gap_start = offset;
@@ -217,15 +224,21 @@ impl DeleteMatcher {
                     result.push_str(&text[gap_start..offset]);
                     offset += char_len;
                     gap_start = offset;
+                    // Deleted non-ASCII char: does not contribute to cont_kept.
                 } else {
+                    cont_kept += char_len - 1; // kept non-ASCII char
                     offset += char_len;
                 }
             }
         }
 
         result.push_str(&text[gap_start..]);
-        let is_ascii = parent_is_ascii || result.is_ascii();
-        Some((result, is_ascii))
+        let output_density = if result.is_empty() {
+            0.0
+        } else {
+            cont_kept as f32 / result.len() as f32
+        };
+        Some((result, output_density))
     }
 
     /// Returns a byte-by-byte iterator over delete-transformed text.
@@ -309,7 +322,7 @@ mod tests {
     }
 
     fn assert_byte_iter_eq_delete(matcher: &DeleteMatcher, text: &str) {
-        let materialized: Vec<u8> = match matcher.delete(text, text.is_ascii()) {
+        let materialized: Vec<u8> = match matcher.delete(text) {
             Some((s, _)) => s.into_bytes(),
             None => text.as_bytes().to_vec(),
         };

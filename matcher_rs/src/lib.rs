@@ -4,6 +4,7 @@
     feature(portable_simd)
 )]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![warn(missing_docs)]
 #![warn(clippy::undocumented_unsafe_blocks)]
 //! High-performance multi-pattern text matcher with logical operators and transformation pipelines.
 //!

@@ -147,11 +147,13 @@ pub(super) struct ScanContext {
     /// `true` for `is_match` calls; `false` for `process` calls that must collect all
     /// matching rules.
     pub(super) exit_early: bool,
-    /// Whether the current variant is pure ASCII.
+    /// Whether to use the bytewise engine for this text variant.
     ///
-    /// Passed through to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
-    /// to select the ASCII or charwise automaton.
-    pub(super) is_ascii: bool,
+    /// `true` when the multi-byte density of the variant is below the per-plan
+    /// charwise density threshold (see [`ScanPlan::charwise_density_threshold`](super::engine::ScanPlan::charwise_density_threshold)). Passed through to
+    /// [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
+    /// to select the bytewise or charwise automaton.
+    pub(super) use_bytewise: bool,
 }
 
 /// Lifecycle helpers for the thread-local scan state.
@@ -338,7 +340,7 @@ mod tests {
             process_type_mask: u64::MAX,
             num_variants,
             exit_early,
-            is_ascii: true,
+            use_bytewise: true,
         }
     }
 

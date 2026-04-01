@@ -679,7 +679,7 @@ mod tests {
             process_type_mask: u64::MAX,
             num_variants: 1,
             exit_early,
-            is_ascii: true,
+            use_bytewise: true,
         }
     }
 
@@ -977,7 +977,7 @@ mod tests {
             process_type_mask: 0b0101, // bits 0 and 2 only
             num_variants: 1,
             exit_early: true,
-            is_ascii: true,
+            use_bytewise: true,
         };
         assert!(!rules.process_entry(&entry, ctx, &mut state));
         assert!(

@@ -2,18 +2,27 @@
 
 /// Decodes one non-ASCII UTF-8 codepoint from `bytes[offset..]`.
 ///
-/// Returns `(codepoint, byte_length)` where `byte_length` is 2, 3, or 4.
-/// This function handles only multi-byte sequences (lead byte >= 0xC0); it
-/// must not be called on ASCII bytes.
+/// This function handles only multi-byte sequences (lead byte `>= 0xC0`); it
+/// must not be called on ASCII bytes (`< 0x80`). All callers must first
+/// advance past ASCII bytes (e.g., via [`super::simd::skip_ascii_simd`])
+/// before invoking this function.
+///
+/// # Returns
+///
+/// `(codepoint, byte_length)` where:
+/// - `codepoint` is the decoded Unicode scalar value.
+/// - `byte_length` is the number of bytes consumed: 2 for U+0080–U+07FF,
+///   3 for U+0800–U+FFFF (includes all CJK Unified Ideographs), 4 for
+///   U+10000–U+10FFFF (supplementary planes).
 ///
 /// # Safety
 ///
 /// - `offset` must point at a valid UTF-8 continuation-sequence start (lead
-///   byte >= 0xC0). Callers guarantee this by only invoking after confirming
+///   byte `>= 0xC0`). Callers guarantee this by only invoking after confirming
 ///   `bytes[offset] >= 0x80`, inside a `&str` (which is always valid UTF-8).
-/// - `bytes[offset .. offset + char_len]` must be in bounds. This is guaranteed
-///   because the input originates from a `&str` whose total length covers the
-///   full multi-byte sequence.
+/// - `bytes[offset .. offset + byte_length]` must be in bounds. This is
+///   guaranteed because the input originates from a `&str` whose total length
+///   covers the full multi-byte sequence.
 /// - Each `get_unchecked` reads a continuation byte at a known offset (1, 2,
 ///   or 3 past the lead byte). The lead byte's high bits determine how many
 ///   continuation bytes exist, and valid UTF-8 guarantees they are present.

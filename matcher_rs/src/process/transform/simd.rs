@@ -54,6 +54,10 @@ type SkipFn = fn(&[u8], usize) -> usize;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 type SkipDeleteFn = fn(&[u8], usize, &[u8; 16]) -> usize;
 
+/// Function-pointer signature for the continuation-byte counter.
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+type CountContinuationFn = fn(&[u8]) -> usize;
+
 /// 16-byte lookup table mapping bit positions (0--7) to single-bit masks.
 ///
 /// Entry `i % 8` equals `1 << (i % 8)`: `[1, 2, 4, 8, 16, 32, 64, 128]`,
@@ -81,6 +85,8 @@ struct SimdDispatch {
     skip_ascii: SkipFn,
     /// Best available implementation of [`skip_ascii_non_delete_simd`].
     skip_ascii_non_delete: SkipDeleteFn,
+    /// Best available implementation of the continuation-byte counter.
+    count_continuation: CountContinuationFn,
 }
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
@@ -92,11 +98,13 @@ impl SimdDispatch {
             return Self {
                 skip_ascii: skip_ascii_avx2,
                 skip_ascii_non_delete: skip_ascii_non_delete_avx2,
+                count_continuation: count_continuation_avx2,
             };
         }
         Self {
             skip_ascii: skip_ascii_portable,
             skip_ascii_non_delete: skip_ascii_non_delete_portable,
+            count_continuation: count_continuation_portable,
         }
     }
 }
@@ -559,21 +567,192 @@ fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
 define_skip_dispatch! {
     /// Advances `offset` past all ASCII bytes (`< 0x80`) using the best available SIMD kernel.
     ///
-    /// Returns the first offset where `bytes[offset] >= 0x80`, or `bytes.len()` if
-    /// the remaining bytes are all ASCII. If `offset >= bytes.len()` or
-    /// `bytes[offset]` is already non-ASCII, returns `offset` unchanged.
+    /// Returns the first byte offset where `bytes[offset] >= 0x80` (a UTF-8 lead or
+    /// continuation byte). Returns `bytes.len()` if all remaining bytes are ASCII.
+    ///
+    /// If `offset >= bytes.len()` or `bytes[offset]` is already non-ASCII, returns
+    /// `offset` unchanged — the caller can safely call `decode_utf8_raw` at `offset`
+    /// immediately after.
+    ///
+    /// Used by `FanjianFindIter` and `PinyinFindIter` in
+    /// [`super::replace`] to skip over ASCII runs that can never produce
+    /// page-table hits.
     pub(crate) fn skip_ascii_simd(bytes, offset),
     skip_ascii, skip_ascii_neon, skip_ascii_portable
 }
 
 define_skip_dispatch! {
-    /// Advances `offset` past ASCII bytes that are not in the delete bitset,
-    /// stopping at the first non-ASCII byte or deletable ASCII byte.
+    /// Advances `offset` past ASCII bytes that are neither non-ASCII nor deletable.
     ///
-    /// `ascii_lut` is the 16-byte bitset covering ASCII codepoints 0x00--0x7F
-    /// (from [`super::delete::DeleteMatcher::ascii_lut`]).
+    /// Stops at the first byte that is either:
+    /// - Non-ASCII (`>= 0x80`): a UTF-8 lead byte requiring multi-byte decode.
+    /// - In the delete bitset: an ASCII codepoint marked for deletion by `ascii_lut`.
+    ///
+    /// Returns `bytes.len()` if no such byte is found in the remaining input.
+    /// Returns `offset` unchanged if `offset >= bytes.len()` or `bytes[offset]` is
+    /// already a stop byte.
+    ///
+    /// `ascii_lut` is the 16-byte, 128-bit bitset from
+    /// [`DeleteMatcher`](super::delete::DeleteMatcher) covering ASCII codepoints
+    /// 0x00–0x7F: byte index = `codepoint >> 3`, bit = `codepoint & 7`.
     pub(crate) fn skip_ascii_non_delete_simd(bytes, offset, ascii_lut: &[u8; 16]),
     skip_ascii_non_delete, skip_ascii_non_delete_neon, skip_ascii_non_delete_portable
+}
+
+// ── Continuation-byte counting ─────────────────────────────────────────────────
+
+/// Scalar tail: counts continuation bytes (`(byte & 0xC0) == 0x80`) from `offset`.
+#[inline(always)]
+fn count_continuation_scalar(bytes: &[u8], offset: usize) -> usize {
+    bytes[offset..]
+        .iter()
+        .filter(|&&b| (b & 0xC0) == 0x80)
+        .count()
+}
+
+/// Portable 32-lane `std::simd` continuation-byte counter.
+///
+/// Processes 32-byte chunks: masks each lane with `0xC0`, compares to `0x80`,
+/// popcount the bitmask. Falls back to [`count_continuation_scalar`] for the tail.
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+#[inline(always)]
+fn count_continuation_portable(bytes: &[u8]) -> usize {
+    const LANES: usize = 32;
+    let mask_val = Simd::<u8, LANES>::splat(0xC0);
+    let target = Simd::<u8, LANES>::splat(0x80);
+    let mut count = 0usize;
+    let mut offset = 0;
+    while offset + LANES <= bytes.len() {
+        let chunk = Simd::<u8, LANES>::from_slice(&bytes[offset..]);
+        count += (chunk & mask_val).simd_eq(target).to_bitmask().count_ones() as usize;
+        offset += LANES;
+    }
+    count + count_continuation_scalar(bytes, offset)
+}
+
+/// AVX2 inner loop for continuation-byte counting.
+///
+/// Loads 32-byte chunks, ANDs with `0xC0`, compares to `0x80` via
+/// `_mm256_cmpeq_epi8`, then popcount the movemask.
+///
+/// # Safety
+///
+/// Requires AVX2 (enforced by `#[target_feature(enable = "avx2")]`).
+/// All `_mm256_loadu_si256` loads are guarded by `offset + 32 <= bytes.len()`.
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn count_continuation_avx2_impl(bytes: &[u8]) -> usize {
+    let mask_val = _mm256_set1_epi8(0xC0u8 as i8);
+    let target = _mm256_set1_epi8(0x80u8 as i8);
+    let mut count = 0usize;
+    let mut offset = 0;
+    while offset + 32 <= bytes.len() {
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
+        let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
+        let masked = _mm256_and_si256(chunk, mask_val);
+        let eq = _mm256_cmpeq_epi8(masked, target);
+        count += (_mm256_movemask_epi8(eq) as u32).count_ones() as usize;
+        offset += 32;
+    }
+    count + count_continuation_scalar(bytes, offset)
+}
+
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+fn count_continuation_avx2(bytes: &[u8]) -> usize {
+    if bytes.len() < 32 {
+        return count_continuation_scalar(bytes, 0);
+    }
+    // SAFETY: AVX2 support verified by `SimdDispatch::detect` before this function pointer
+    // is stored.
+    unsafe { count_continuation_avx2_impl(bytes) }
+}
+
+/// NEON 16-byte-at-a-time continuation-byte counter.
+///
+/// Masks each lane with `0xC0`, compares to `0x80` via `vceqq_u8` (produces `0xFF` or
+/// `0x00`), shifts right by 7 to get 0 or 1 per lane, then horizontal-sums with
+/// `vaddvq_u8`.
+///
+/// # Safety (internal)
+///
+/// All NEON loads are guarded by `offset + 16 <= bytes.len()`.
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+#[inline(always)]
+fn count_continuation_neon(bytes: &[u8]) -> usize {
+    let mut count = 0usize;
+    let mut offset = 0;
+    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`.
+    unsafe {
+        let mask_val = vdupq_n_u8(0xC0);
+        let target = vdupq_n_u8(0x80);
+        while offset + 16 <= bytes.len() {
+            let chunk = vld1q_u8(bytes.as_ptr().add(offset));
+            let masked = vandq_u8(chunk, mask_val);
+            let eq = vceqq_u8(masked, target);
+            // 0xFF → 1 via logical shift right 7
+            let ones = vshrq_n_u8(eq, 7);
+            count += vaddvq_u8(ones) as usize;
+            offset += 16;
+        }
+    }
+    count + count_continuation_scalar(bytes, offset)
+}
+
+/// Returns the fraction of bytes that are UTF-8 continuation bytes (`(byte & 0xC0) == 0x80`).
+///
+/// A continuation byte is any byte in the range `0x80–0xBF`. Because each
+/// multi-byte UTF-8 character contributes `char_len - 1` continuation bytes,
+/// this density correlates tightly with the proportion of non-ASCII content:
+///
+/// | Content | Density |
+/// |---------|---------|
+/// | Pure ASCII | `0.0` |
+/// | 10% 3-byte CJK (by char count) | `≈ 0.167` |
+/// | 50% 3-byte CJK | `0.5` |
+/// | Pure 3-byte CJK | `≈ 0.667` |
+///
+/// Returns `0.0` for empty slices.
+///
+/// Used by `ScanPlan` in `simple_matcher::engine` to choose between the
+/// bytewise and charwise Aho-Corasick engines: above the
+/// `CHARWISE_DENSITY_THRESHOLD` (`0.1`), the charwise engine is preferred
+/// because it avoids spurious mid-character matches.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// // Pure ASCII: no continuation bytes → 0.0
+/// assert_eq!(multibyte_density(b"hello"), 0.0);
+///
+/// // "你好": 6 bytes, 4 continuation bytes → 4/6 ≈ 0.667
+/// assert!((multibyte_density("你好".as_bytes()) - 4.0 / 6.0).abs() < 1e-5);
+///
+/// // Mixed "hi你": 5 bytes, 2 continuation bytes → 0.4
+/// assert!((multibyte_density("hi你".as_bytes()) - 0.4).abs() < 1e-5);
+/// ```
+#[inline(always)]
+pub(crate) fn multibyte_density(bytes: &[u8]) -> f32 {
+    if bytes.is_empty() {
+        return 0.0;
+    }
+    let count = {
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+        {
+            (dispatch().count_continuation)(bytes)
+        }
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+        {
+            count_continuation_neon(bytes)
+        }
+        #[cfg(not(all(
+            feature = "simd_runtime_dispatch",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
+        {
+            count_continuation_portable(bytes)
+        }
+    };
+    count as f32 / bytes.len() as f32
 }
 
 #[cfg(test)]
@@ -602,5 +781,42 @@ mod tests {
 
         let unicode = "abcdef你".as_bytes();
         assert_eq!(skip_ascii_non_delete_simd(unicode, 0, &ascii_lut), 6);
+    }
+
+    #[test]
+    fn multibyte_density_pure_ascii() {
+        assert_eq!(multibyte_density(b"hello world"), 0.0);
+        assert_eq!(multibyte_density(b""), 0.0);
+    }
+
+    #[test]
+    fn multibyte_density_pure_cjk() {
+        // "你好" = 6 bytes, 4 continuation bytes → 4/6 ≈ 0.667
+        let s = "你好";
+        let d = multibyte_density(s.as_bytes());
+        assert!((d - 4.0 / 6.0).abs() < 1e-5, "got {d}");
+    }
+
+    #[test]
+    fn multibyte_density_mixed() {
+        // "hi你" = 5 bytes (2 ASCII + 3 for 你), 2 continuation bytes → 2/5 = 0.4
+        let s = "hi你";
+        let d = multibyte_density(s.as_bytes());
+        assert!((d - 2.0 / 5.0).abs() < 1e-5, "got {d}");
+    }
+
+    #[test]
+    fn multibyte_density_long_ascii() {
+        // Ensure SIMD loop path works for strings longer than one SIMD lane
+        let s: String = "a".repeat(100);
+        assert_eq!(multibyte_density(s.as_bytes()), 0.0);
+    }
+
+    #[test]
+    fn multibyte_density_long_cjk() {
+        // 100 × "你" = 300 bytes, 200 continuation bytes → 2/3
+        let s: String = "你".repeat(100);
+        let d = multibyte_density(s.as_bytes());
+        assert!((d - 200.0 / 300.0).abs() < 1e-5, "got {d}");
     }
 }

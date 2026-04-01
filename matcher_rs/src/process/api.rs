@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use crate::process::process_type::ProcessType;
 use crate::process::step::get_transform_step;
 use crate::process::string_pool::return_string_to_pool;
+use crate::process::transform::simd::multibyte_density;
 
 /// Replaces the current owned value in a [`Cow`] and returns the old allocation to the pool.
 ///
@@ -42,8 +43,8 @@ fn reduce_text_process_inner<'a>(
         let current = text_list
             .last_mut()
             .expect("text_list is never empty (seeded with original text)");
-        let output =
-            get_transform_step(process_type_bit).apply(current.as_ref(), current.is_ascii());
+        let output = get_transform_step(process_type_bit)
+            .apply(current.as_ref(), multibyte_density(current.as_bytes()));
 
         if let Some(changed) = output.changed {
             if overwrite_replace && process_type_bit != ProcessType::Delete {
@@ -86,7 +87,8 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     let mut result = Cow::Borrowed(text);
 
     for process_type_bit in process_type.iter() {
-        let output = get_transform_step(process_type_bit).apply(result.as_ref(), result.is_ascii());
+        let output = get_transform_step(process_type_bit)
+            .apply(result.as_ref(), multibyte_density(result.as_bytes()));
         if let Some(changed) = output.changed {
             replace_cow(&mut result, changed);
         }
