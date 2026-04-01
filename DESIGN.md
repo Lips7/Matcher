@@ -77,7 +77,7 @@ Each single-bit `ProcessType` maps to a low-level engine in `process/transform/`
 | ProcessType | Engine | Module | Data Structure | Complexity |
 |---|---|---|---|---|
 | `Fanjian` | `FanjianMatcher` | `replace.rs` | 2-stage page table. L1: `Box<[u16]>` (one per 256-codepoint block). L2: dense `Box<[u32]>` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
-| `PinYin` / `PinYinChar` | `PinyinMatcher` | `replace.rs` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer (`Cow<'static, str>`). `PinYinChar` trims leading/trailing spaces from each packed entry at construction time via `trim_pinyin_packed`. | O(1) per codepoint |
+| `PinYin` / `PinYinChar` | `PinyinMatcher` | `replace.rs` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer (`Cow<'static, str>`). `PinYinChar` trims leading/trailing spaces from each packed entry at construction time via `trim_pinyin_packed`. The current generated table has no ASCII keys, so ASCII input is a guaranteed no-op. | O(1) per codepoint |
 | `Delete` | `DeleteMatcher` | `delete.rs` | ~139 KB flat BitSet covering U+0000 to U+10FFFF (`Cow<'static, [u8]>`). A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. Uses a two-phase delete scan (seek + copy-skip) with SIMD bulk-skip of non-deletable ASCII. | O(1) per codepoint, branchless |
 | `Normalize` | `NormalizeMatcher` | `replace.rs` | `AhoCorasick` DFA (leftmost-longest, via `aho-corasick` crate). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. A `NormalizeFindAdapter` wraps `aho_corasick::FindIter` for use with `SliceReplacingByteIter`. | O(N) per text |
 | `None` | `TransformStep::None` | `step.rs` | No-op step that preserves the input variant. | - |
@@ -100,7 +100,7 @@ The replacement iterators (in `replace.rs`) and delete scan (in `delete.rs`) use
 |--------|--------------|---------------|
 | `FanjianFindIter` | `skip_ascii_simd` | All ASCII bytes (Fanjian only maps non-ASCII CJK codepoints) |
 | `DeleteMatcher::delete` | `skip_ascii_non_delete_simd` | ASCII bytes that are NOT in the delete bitset (probes the 16-byte `ascii_lut` via SIMD table lookup) |
-| `PinyinFindIter` | `skip_non_digit_ascii_simd` | Non-digit ASCII bytes (the Pinyin table only has entries for ASCII digits and non-ASCII codepoints) |
+| `PinyinFindIter` | `skip_ascii_simd` | All ASCII bytes (the current generated Pinyin table has no ASCII keys) |
 
 Each skip function dispatches to the best available kernel:
 
@@ -136,7 +136,7 @@ This is combined (OR) with the non-ASCII mask to produce a stop mask; the first 
 
 The `is_ascii` policy per step:
 - **Fanjian** — always `false` (output may contain CJK).
-- **Delete** — `parent_is_ascii || is_ascii` (deletion can only remove non-ASCII chars, so if parent was ASCII the output is too; otherwise rescans).
+- **Delete** — preserves ASCII when the parent is already ASCII; otherwise computes the output flag after deletion.
 - **Normalize** — tracked incrementally during the replacement loop via `replace_spans_with_ascii`. Each unchanged gap between matches is checked with `is_ascii()`; the pre-computed `all_replacements_ascii` flag avoids per-replacement checks.
 - **PinYin / PinYinChar** — tracked incrementally: Pinyin replacements are always ASCII, but unmapped characters (emoji, Korean, etc.) pass through unchanged, so the output may contain non-ASCII bytes. Uses the same `replace_spans_with_ascii` helper.
 
@@ -182,7 +182,7 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 
 `SimpleMatcher` uses `walk_and_scan` (in `search.rs`) to walk the trie and scan each variant immediately after production. The flat-array invariant guarantees every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-- **Leaf + no-op** (parent is ASCII, step is CJK-only): reuses the parent's text and variant index.
+- **Leaf + no-op** (parent is ASCII, step is guaranteed ASCII-no-op): reuses the parent's text and variant index.
 - **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine (zero allocation).
 - **Non-leaf**: materializes via `TransformStep::apply` into a `Cow<str>` arena, scans immediately if the node terminates.
 

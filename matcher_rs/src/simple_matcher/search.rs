@@ -243,11 +243,7 @@ impl SimpleMatcher {
 
                 if is_leaf {
                     if child.pt_index_mask != 0 {
-                        // Fanjian only operates on non-ASCII codepoints, so pure-ASCII
-                        // input passes through unchanged. Normalize and PinYin both have
-                        // ASCII-source entries in their replacement tables, so they must
-                        // still run even when the parent variant is ASCII.
-                        let is_noop = parent_ascii && matches!(step, TransformStep::Fanjian(_));
+                        let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
                         stopped = if is_noop {
                             let ctx = ScanContext {

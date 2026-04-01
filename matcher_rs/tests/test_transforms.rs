@@ -92,6 +92,54 @@ const NUM_NORM_TEST_DATA: &str = include_str!("../process_map/NUM-NORM.txt");
 const PINYIN_TEST_DATA: &str = include_str!("../process_map/PINYIN.txt");
 
 #[test]
+fn test_process_map_ascii_invariants() {
+    assert!(
+        FANJIAN_TEST_DATA.trim().lines().all(|line| !line
+            .split('\t')
+            .next()
+            .expect("Missing FANJIAN key")
+            .is_ascii()),
+        "FANJIAN.txt should not contain ASCII keys"
+    );
+
+    let mut saw_ascii_delete = false;
+    for token in DELETE_TEST_DATA.trim().lines() {
+        let cp = u32::from_str_radix(
+            token
+                .strip_prefix("U+")
+                .expect("TEXT-DELETE entries must use U+XXXX format"),
+            16,
+        )
+        .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint");
+        saw_ascii_delete |= cp < 0x80;
+    }
+    assert!(
+        saw_ascii_delete,
+        "TEXT-DELETE.txt should contain ASCII delete entries"
+    );
+
+    for data in [NORM_TEST_DATA, NUM_NORM_TEST_DATA] {
+        for line in data.trim().lines() {
+            let mut split = line.split('\t');
+            let k = split.next().expect("Missing normalize key");
+            let v = split.next().expect("Missing normalize value");
+            assert!(
+                !k.is_ascii() || v.is_ascii(),
+                "ASCII normalize key must map to ASCII output: {k:?} -> {v:?}"
+            );
+        }
+    }
+
+    for line in PINYIN_TEST_DATA.trim().lines() {
+        let mut split = line.split('\t');
+        let k = split.next().expect("Missing pinyin key");
+        let v = split.next().expect("Missing pinyin value");
+        assert!(!k.is_ascii(), "PINYIN.txt should not contain ASCII keys");
+        assert!(v.is_ascii(), "PINYIN.txt values should stay ASCII");
+    }
+}
+
+#[test]
 fn test_process_map_fanjian_exhaustive() {
     for line in FANJIAN_TEST_DATA.trim().lines() {
         let mut split = line.split('\t');
@@ -299,7 +347,7 @@ fn test_pinyin_leaf_does_not_apply_ascii_digit_mappings() {
 
     assert!(
         !matcher.is_match("1"),
-        "PinYin should only apply pypinyin-backed mappings"
+        "PinYin should skip ASCII digits because the generated table has no ASCII keys"
     );
 }
 
@@ -336,7 +384,7 @@ fn test_pinyinchar_leaf_does_not_apply_ascii_digit_mappings() {
 
     assert!(
         !matcher.is_match("1"),
-        "PinYinChar should only apply pypinyin-backed mappings"
+        "PinYinChar should skip ASCII digits because the generated table has no ASCII keys"
     );
 }
 

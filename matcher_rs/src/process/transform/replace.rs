@@ -17,7 +17,7 @@
 //!   - **Pinyin**: packed `(byte_offset << 8) | byte_length` into a shared
 //!     string buffer. `0` = unmapped.
 //!
-//! Scan loops use [`skip_ascii_simd`] and [`skip_non_digit_ascii_simd`] to
+//! Scan loops use [`skip_ascii_simd`] to
 //! fast-forward over ASCII bytes that cannot produce hits, falling through to
 //! the page-table probe only for multi-byte (non-ASCII) codepoints.
 //!
@@ -38,7 +38,7 @@ use aho_corasick::{
 };
 
 use crate::process::string_pool::get_string_from_pool;
-use crate::process::transform::simd::{skip_ascii_simd, skip_non_digit_ascii_simd};
+use crate::process::transform::simd::skip_ascii_simd;
 use crate::process::transform::utf8::decode_utf8_raw;
 
 // ---------------------------------------------------------------------------
@@ -545,10 +545,11 @@ impl FanjianMatcher {
 
 /// Iterator over codepoints that have Pinyin replacements.
 ///
-/// Similar to [`FanjianFindIter`] but uses [`skip_non_digit_ascii_simd`]
-/// instead of [`skip_ascii_simd`], because ASCII digits may appear in the
-/// Pinyin tables and must not be skipped. Yields
-/// `(start, end, pinyin_slice)` for each matched codepoint.
+/// Similar to [`FanjianFindIter`] but returns borrowed Pinyin syllable slices
+/// instead of replacement `char`s. The current generated Pinyin table has no
+/// ASCII keys, so the iterator skips all ASCII runs up front and only probes
+/// the page table for non-ASCII codepoints. Yields `(start, end, pinyin_slice)`
+/// for each matched codepoint.
 struct PinyinFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -575,20 +576,15 @@ impl<'a> Iterator for PinyinFindIter<'a> {
         let len = bytes.len();
 
         loop {
-            self.byte_offset = skip_non_digit_ascii_simd(bytes, self.byte_offset);
+            self.byte_offset = skip_ascii_simd(bytes, self.byte_offset);
             if self.byte_offset >= len {
                 return None;
             }
 
             let start = self.byte_offset;
-            let byte = bytes[start];
-            let (cp, char_len) = if byte < 0x80 {
-                (byte as u32, 1)
-            } else {
-                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `start` is a
-                // valid multi-byte lead byte.
-                unsafe { decode_utf8_raw(bytes, start) }
-            };
+            // SAFETY: `skip_ascii_simd` positioned `start` at a non-ASCII byte in a valid UTF-8
+            // `&str`, so it is a valid multi-byte lead byte.
+            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
             self.byte_offset += char_len;
 
             if let Some(value) = page_table_lookup(cp, self.l1, self.l2) {

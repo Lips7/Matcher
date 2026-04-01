@@ -4,9 +4,7 @@
 //! fast-forward over irrelevant ASCII byte runs without per-byte branching:
 //!
 //! - [`skip_ascii_simd`] -- skips all ASCII bytes (`< 0x80`). Used by
-//!   `FanjianFindIter` (in [`super::replace`]).
-//! - [`skip_non_digit_ascii_simd`] -- skips ASCII bytes that are not digits
-//!   (`'0'..='9'`). Used by `PinyinFindIter` (in [`super::replace`]).
+//!   `FanjianFindIter` and `PinyinFindIter` (in [`super::replace`]).
 //! - [`skip_ascii_non_delete_simd`] -- skips ASCII bytes that are not in the
 //!   delete bitset. Used by [`super::delete::DeleteMatcher`].
 //!
@@ -47,8 +45,7 @@ use std::arch::x86_64::*;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::sync::OnceLock;
 
-/// Function-pointer signature for the two-argument skip helpers
-/// ([`skip_ascii_simd`] and [`skip_non_digit_ascii_simd`]).
+/// Function-pointer signature for the two-argument ASCII skip helper.
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 type SkipFn = fn(&[u8], usize) -> usize;
 
@@ -82,8 +79,6 @@ const SHIFT_TABLE_32: [u8; 32] = [
 struct SimdDispatch {
     /// Best available implementation of [`skip_ascii_simd`].
     skip_ascii: SkipFn,
-    /// Best available implementation of [`skip_non_digit_ascii_simd`].
-    skip_non_digit_ascii: SkipFn,
     /// Best available implementation of [`skip_ascii_non_delete_simd`].
     skip_ascii_non_delete: SkipDeleteFn,
 }
@@ -96,13 +91,11 @@ impl SimdDispatch {
         if std::arch::is_x86_feature_detected!("avx2") {
             return Self {
                 skip_ascii: skip_ascii_avx2,
-                skip_non_digit_ascii: skip_non_digit_ascii_avx2,
                 skip_ascii_non_delete: skip_ascii_non_delete_avx2,
             };
         }
         Self {
             skip_ascii: skip_ascii_portable,
-            skip_non_digit_ascii: skip_non_digit_ascii_portable,
             skip_ascii_non_delete: skip_ascii_non_delete_portable,
         }
     }
@@ -142,21 +135,6 @@ fn ascii_delete_contains(byte: u8, ascii_lut: &[u8; 16]) -> bool {
 fn find_non_ascii_scalar(bytes: &[u8], offset: usize) -> usize {
     let mut offset = offset;
     while offset < bytes.len() && bytes[offset] < 0x80 {
-        offset += 1;
-    }
-    offset
-}
-
-/// Scalar tail: returns the first offset where the byte is non-ASCII (`>= 0x80`)
-/// or an ASCII digit (`'0'..='9'`), or `bytes.len()` if no such byte exists.
-#[inline(always)]
-fn find_non_digit_ascii_scalar(bytes: &[u8], offset: usize) -> usize {
-    let mut offset = offset;
-    while offset < bytes.len() {
-        let b = bytes[offset];
-        if b >= 0x80 || b.is_ascii_digit() {
-            break;
-        }
         offset += 1;
     }
     offset
@@ -302,42 +280,6 @@ fn skip_ascii_portable(bytes: &[u8], offset: usize) -> usize {
     find_non_ascii_scalar(bytes, offset)
 }
 
-/// Portable 32-lane `std::simd` implementation of non-digit-ASCII skip.
-///
-/// For each 32-byte chunk, computes two lane masks: `is_non_ascii` (byte >=
-/// 0x80) and `is_digit` (byte in `'0'..='9'`). ORs them into a single stop
-/// mask; the first set bit gives the exact stop offset. Falls back to
-/// [`find_non_digit_ascii_scalar`] for the tail.
-#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-#[inline(always)]
-fn skip_non_digit_ascii_portable(bytes: &[u8], offset: usize) -> usize {
-    if offset >= bytes.len() {
-        return offset;
-    }
-    let b0 = bytes[offset];
-    if b0 >= 0x80 || b0.is_ascii_digit() {
-        return offset;
-    }
-    let mut offset = offset;
-    const LANES: usize = 32;
-    let non_ascii = Simd::<u8, LANES>::splat(0x80u8);
-    let digit_lo = Simd::<u8, LANES>::splat(b'0');
-    let digit_hi = Simd::<u8, LANES>::splat(b'9' + 1);
-
-    while offset + LANES <= bytes.len() {
-        let chunk = Simd::<u8, LANES>::from_slice(&bytes[offset..]);
-        let is_non_ascii = chunk.simd_ge(non_ascii);
-        let is_digit = chunk.simd_ge(digit_lo) & chunk.simd_lt(digit_hi);
-        let stop_mask = (is_non_ascii | is_digit).to_bitmask();
-        if stop_mask != 0 {
-            offset += stop_mask.trailing_zeros() as usize;
-            return offset;
-        }
-        offset += LANES;
-    }
-    find_non_digit_ascii_scalar(bytes, offset)
-}
-
 /// Portable SIMD implementation of ASCII-non-delete skip.
 ///
 /// Uses 32-lane chunks with [`portable_ascii_delete_mask_32`] ORed with the
@@ -427,45 +369,6 @@ define_avx2_entry! {
     fn skip_ascii_avx2(bytes, offset),
     skip_ascii_avx2_impl,
     |b0| b0 >= 0x80
-}
-
-/// AVX2 inner loop for non-digit-ASCII skip.
-///
-/// Computes `stop_mask = non_ascii_mask | digit_mask` per 32-byte chunk.
-/// Digit detection uses signed comparisons: `chunk > ('0' - 1)` AND
-/// `('9' + 1) > chunk`. Falls back to [`find_non_digit_ascii_scalar`] for the
-/// tail.
-///
-/// # Safety
-///
-/// Same as [`skip_ascii_avx2_impl`]: requires AVX2 and the loop guard ensures
-/// all 32-byte loads are within bounds.
-#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn skip_non_digit_ascii_avx2_impl(bytes: &[u8], mut offset: usize) -> usize {
-    let digit_lo = _mm256_set1_epi8((b'0' - 1) as i8);
-    let digit_hi = _mm256_set1_epi8((b'9' + 1) as i8);
-    while offset + 32 <= bytes.len() {
-        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
-        let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
-        let non_ascii_mask = _mm256_movemask_epi8(chunk) as u32;
-        let ge_lo = _mm256_cmpgt_epi8(chunk, digit_lo);
-        let lt_hi = _mm256_cmpgt_epi8(digit_hi, chunk);
-        let digit_mask = _mm256_movemask_epi8(_mm256_and_si256(ge_lo, lt_hi)) as u32;
-        let stop_mask = non_ascii_mask | digit_mask;
-        if stop_mask != 0 {
-            return offset + stop_mask.trailing_zeros() as usize;
-        }
-        offset += 32;
-    }
-    find_non_digit_ascii_scalar(bytes, offset)
-}
-
-define_avx2_entry! {
-    /// AVX2 entry point for non-digit-ASCII skip.
-    fn skip_non_digit_ascii_avx2(bytes, offset),
-    skip_non_digit_ascii_avx2_impl,
-    |b0| b0 >= 0x80 || b0.is_ascii_digit()
 }
 
 /// AVX2 inner loop for ASCII-non-delete skip.
@@ -597,52 +500,6 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     find_non_ascii_scalar(bytes, offset)
 }
 
-/// NEON 16-byte-at-a-time non-digit-ASCII skip.
-///
-/// Combines the `vmaxvq_u8` non-ASCII test with a digit-range test per chunk:
-/// `is_digit = vcgeq_u8(chunk, '0') & vcleq_u8(chunk, '9')`. If either
-/// condition fires, stores the chunk to a scratch buffer for scalar
-/// position-finding. Falls back to [`find_non_digit_ascii_scalar`] for the
-/// tail.
-///
-/// # Safety (internal)
-///
-/// All NEON loads (`vld1q_u8`) are guarded by `offset + 16 <= bytes.len()`.
-#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
-#[inline(always)]
-fn skip_non_digit_ascii_neon(bytes: &[u8], offset: usize) -> usize {
-    if offset >= bytes.len() {
-        return offset;
-    }
-    let b0 = bytes[offset];
-    if b0 >= 0x80 || b0.is_ascii_digit() {
-        return offset;
-    }
-
-    let mut offset = offset;
-    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`; stores target local stack buffers.
-    unsafe {
-        let digit_lo = vdupq_n_u8(b'0');
-        let digit_hi = vdupq_n_u8(b'9');
-        while offset + 16 <= bytes.len() {
-            let chunk = vld1q_u8(bytes.as_ptr().add(offset));
-            let has_non_ascii = vmaxvq_u8(chunk) >= 0x80;
-            let is_digit = vandq_u8(vcgeq_u8(chunk, digit_lo), vcleq_u8(chunk, digit_hi));
-            if has_non_ascii || vmaxvq_u8(is_digit) != 0 {
-                let mut scratch = [0u8; 16];
-                vst1q_u8(scratch.as_mut_ptr(), chunk);
-                return scratch
-                    .iter()
-                    .position(|&b| b >= 0x80 || b.is_ascii_digit())
-                    .map_or(offset + 16, |idx| offset + idx);
-            }
-            offset += 16;
-        }
-    }
-
-    find_non_digit_ascii_scalar(bytes, offset)
-}
-
 /// NEON 16-byte-at-a-time ASCII-non-delete skip.
 ///
 /// Implements the shuffle-based delete-mask algorithm using NEON intrinsics:
@@ -710,16 +567,6 @@ define_skip_dispatch! {
 }
 
 define_skip_dispatch! {
-    /// Advances `offset` past ASCII non-digit bytes, stopping at the first
-    /// non-ASCII byte or ASCII digit (`'0'..='9'`).
-    ///
-    /// Returns the first offset where `bytes[offset] >= 0x80` or
-    /// `bytes[offset].is_ascii_digit()`, or `bytes.len()` if no such byte exists.
-    pub(crate) fn skip_non_digit_ascii_simd(bytes, offset),
-    skip_non_digit_ascii, skip_non_digit_ascii_neon, skip_non_digit_ascii_portable
-}
-
-define_skip_dispatch! {
     /// Advances `offset` past ASCII bytes that are not in the delete bitset,
     /// stopping at the first non-ASCII byte or deletable ASCII byte.
     ///
@@ -742,19 +589,6 @@ mod tests {
         let mixed = "hello世界".as_bytes();
         assert_eq!(skip_ascii_simd(mixed, 0), 5);
         assert_eq!(skip_ascii_simd(mixed, 5), 5);
-    }
-
-    /// Confirms the digit-aware ASCII skip helper agrees with the scalar baseline.
-    #[test]
-    fn skip_non_digit_ascii_matches_scalar_behavior() {
-        let text = "abcdefXYZ".as_bytes();
-        assert_eq!(skip_non_digit_ascii_simd(text, 0), text.len());
-
-        let mixed = "abc9def".as_bytes();
-        assert_eq!(skip_non_digit_ascii_simd(mixed, 0), 3);
-
-        let unicode = "abc你".as_bytes();
-        assert_eq!(skip_non_digit_ascii_simd(unicode, 0), 3);
     }
 
     /// Confirms the delete-aware ASCII skip helper stops at either deletable ASCII or Unicode.

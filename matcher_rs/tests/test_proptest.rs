@@ -257,4 +257,42 @@ proptest! {
         let pt = ProcessType::from_bits_retain(bits);
         let _ = matcher_rs::text_process(pt, &text);
     }
+
+    #[test]
+    fn prop_ascii_parent_child_transforms_match_materialized_output(
+        input in prop::collection::vec(
+            (32u8..=125u8).prop_filter("exclude matcher operators", |b| *b != b'&' && *b != b'~'),
+            1..80
+        ).prop_map(|bytes| String::from_utf8(bytes).expect("ASCII strategy should stay valid UTF-8"))
+    ) {
+        for bits in 1u8..64 {
+            let pt = ProcessType::from_bits_retain(bits);
+            let expected = matcher_rs::text_process(pt, &input);
+            if expected.is_empty() {
+                continue;
+            }
+
+            let matcher = SimpleMatcherBuilder::new()
+                .add_word(pt, 1, expected.as_ref())
+                .build()
+                .unwrap();
+
+            prop_assert!(
+                matcher.is_match(&input),
+                "ASCII parent transform path missed match for {:?} on input {:?} -> {:?}",
+                pt,
+                input,
+                expected
+            );
+
+            let results = matcher.process(&input);
+            prop_assert!(
+                results.iter().any(|result| result.word_id == 1),
+                "process() missed word_id=1 for {:?} on input {:?} -> {:?}",
+                pt,
+                input,
+                expected
+            );
+        }
+    }
 }

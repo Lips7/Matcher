@@ -155,7 +155,7 @@ impl DeleteMatcher {
     /// Uses `get_unchecked` to read the current byte at `offset` after the
     /// `offset < len` / `offset >= len` guards have confirmed it is in bounds.
     /// The byte value is then used to branch into the ASCII or multi-byte path.
-    pub(crate) fn delete(&self, text: &str) -> Option<(String, bool)> {
+    pub(crate) fn delete(&self, text: &str, parent_is_ascii: bool) -> Option<(String, bool)> {
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut offset = 0usize;
@@ -224,7 +224,7 @@ impl DeleteMatcher {
         }
 
         result.push_str(&text[gap_start..]);
-        let is_ascii = result.is_ascii();
+        let is_ascii = parent_is_ascii || result.is_ascii();
         Some((result, is_ascii))
     }
 
@@ -309,7 +309,7 @@ mod tests {
     }
 
     fn assert_byte_iter_eq_delete(matcher: &DeleteMatcher, text: &str) {
-        let materialized: Vec<u8> = match matcher.delete(text) {
+        let materialized: Vec<u8> = match matcher.delete(text, text.is_ascii()) {
             Some((s, _)) => s.into_bytes(),
             None => text.as_bytes().to_vec(),
         };

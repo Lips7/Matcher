@@ -58,6 +58,15 @@ impl StepOutput {
     }
 }
 
+/// How one transform behaves when its input text is already known to be ASCII.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AsciiInputBehavior {
+    /// The transform is guaranteed to leave ASCII input unchanged.
+    NoOp,
+    /// The transform may change ASCII input, but the output remains ASCII.
+    MayChangeButStaysAscii,
+}
+
 /// Compiled single-bit transformation step.
 ///
 /// Each variant wraps the corresponding low-level matcher from [`super::transform`].
@@ -82,6 +91,23 @@ pub(crate) enum TransformStep {
 
 /// Execution policy for one cached transform step.
 impl TransformStep {
+    /// Returns the behavior this step guarantees for pure-ASCII input.
+    #[inline(always)]
+    pub(crate) fn ascii_input_behavior(&self) -> AsciiInputBehavior {
+        match self {
+            Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => {
+                AsciiInputBehavior::NoOp
+            }
+            Self::Delete(_) | Self::Normalize(_) => AsciiInputBehavior::MayChangeButStaysAscii,
+        }
+    }
+
+    /// Returns whether this step is guaranteed to be a no-op on ASCII input.
+    #[inline(always)]
+    pub(crate) fn is_noop_on_ascii_input(&self) -> bool {
+        matches!(self.ascii_input_behavior(), AsciiInputBehavior::NoOp)
+    }
+
     /// Applies this step to `text`, returning a [`StepOutput`] indicating what changed.
     ///
     /// `parent_is_ascii` is the ASCII flag inherited from the parent text variant.
@@ -89,24 +115,39 @@ impl TransformStep {
     /// when the input is already known to be ASCII. The returned `is_ascii` flag is
     /// always authoritative for the *output* text:
     ///
-    /// - **Fanjian** — always sets `is_ascii = false` (output may contain CJK).
-    /// - **Delete** — ORs the parent flag with its own scan (deletion can only remove
-    ///   non-ASCII chars, so if parent was ASCII the output is too).
-    /// - **Normalize** — tracked incrementally during the replacement loop.
-    /// - **PinYin / PinYinChar** — tracked incrementally: Pinyin replacements are
-    ///   always ASCII, but unmapped characters (emoji, Korean, etc.) pass through
-    ///   unchanged, so the output may contain non-ASCII bytes.
+    /// - **Fanjian / PinYin / PinYinChar** — short-circuit to unchanged on ASCII input.
+    /// - **Delete** — may change ASCII input, but ASCII stays ASCII.
+    /// - **Normalize** — may change ASCII input, but ASCII stays ASCII.
+    /// - **Non-ASCII Normalize / PinYin / PinYinChar** — tracked incrementally during
+    ///   the replacement loop.
     #[inline(always)]
     pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput {
+        if parent_is_ascii {
+            return match self.ascii_input_behavior() {
+                AsciiInputBehavior::NoOp => StepOutput::unchanged(true),
+                AsciiInputBehavior::MayChangeButStaysAscii => match self {
+                    Self::Delete(matcher) => matcher.delete(text, true).map_or_else(
+                        || StepOutput::unchanged(true),
+                        |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
+                    ),
+                    Self::Normalize(matcher) => matcher.replace(text).map_or_else(
+                        || StepOutput::unchanged(true),
+                        |(changed, _)| StepOutput::changed(changed, true),
+                    ),
+                    _ => unreachable!("ASCII behavior and step variant must agree"),
+                },
+            };
+        }
+
         match self {
             Self::None => StepOutput::unchanged(parent_is_ascii),
             Self::Fanjian(matcher) => matcher.replace(text).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),
                 |changed| StepOutput::changed(changed, false),
             ),
-            Self::Delete(matcher) => matcher.delete(text).map_or_else(
+            Self::Delete(matcher) => matcher.delete(text, false).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),
-                |(changed, is_ascii)| StepOutput::changed(changed, parent_is_ascii || is_ascii),
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
             Self::Normalize(matcher) => matcher.replace(text).map_or_else(
                 || StepOutput::unchanged(parent_is_ascii),
