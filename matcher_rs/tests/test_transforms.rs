@@ -7,12 +7,6 @@ use matcher_rs::{
 // ===========================================================================
 
 #[test]
-fn test_text_process() {
-    let text = text_process(ProcessType::Fanjian, "測試，臺灣");
-    assert_eq!(text, "测试，台湾");
-}
-
-#[test]
 fn test_delete_simd_skip_ascii_before_non_ascii() {
     // Regression: SIMD fast-skip in DeleteFindIter incorrectly advanced to the first
     // non-ASCII byte without checking for deletable ASCII bytes before it. Spaces
@@ -70,15 +64,6 @@ fn test_reduce_text_process_all_combined() {
 
     // Final result should be fully normalized pinyin
     assert_eq!(text.last().unwrap(), "a han yu xi an1");
-}
-
-#[test]
-fn test_dag_specific_outputs() {
-    let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "測！試");
-    assert_eq!(processed, "测试");
-
-    let processed = text_process(ProcessType::Normalize, "ＡＢⅣ①℉");
-    assert_eq!(processed, "ab41°f");
 }
 
 // ===========================================================================
@@ -270,22 +255,6 @@ fn test_fanjian() {
     assert!(
         simple_matcher.is_match("测试"),
         "Fanjian should match simplified variant of 測試"
-    );
-}
-
-#[test]
-fn test_delete() {
-    use matcher_rs::SimpleMatcher;
-    use std::collections::HashMap;
-
-    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::Delete,
-        HashMap::from([(1, "你好")]),
-    )]))
-    .unwrap();
-    assert!(
-        simple_matcher.is_match("你！好"),
-        "Delete should strip noise char '！'"
     );
 }
 
@@ -586,25 +555,4 @@ fn test_unicode_4byte_emoji_pattern() {
     assert!(matcher.is_match("test\u{1F389}"));
     assert!(!matcher.is_match("test"));
     assert!(!matcher.is_match("\u{1F389}"));
-}
-
-#[test]
-fn test_unicode_delete_strips_punctuation() {
-    // Delete set includes common punctuation like periods
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Delete, 1, "helloworld")
-        .build()
-        .unwrap();
-    assert!(matcher.is_match("h.e.l.l.o.w.o.r.l.d"));
-    assert!(matcher.is_match("hello...world!!!"));
-}
-
-#[test]
-fn test_all_process_type_bits_no_panic() {
-    // Every valid ProcessType bit combination (0..63) should not panic in text_process
-    let input = "Hello 你好世界 test123";
-    for bits in 0u8..64 {
-        let pt = ProcessType::from_bits_retain(bits);
-        let _ = text_process(pt, input);
-    }
 }

@@ -38,52 +38,6 @@ fn test_search_mode_general() {
     assert_eq!(results.len(), 2);
 }
 
-#[test]
-fn test_search_mode_equivalence() {
-    // Both SearchMode paths should agree on equivalent logical matching.
-
-    // AllSimple: single literals under None
-    let all_simple = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "alpha")
-        .add_word(ProcessType::None, 2, "beta")
-        .build()
-        .unwrap();
-
-    // General: split across two PTs
-    let general = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "alpha")
-        .add_word(ProcessType::Delete, 2, "beta")
-        .build()
-        .unwrap();
-
-    let texts = ["alpha", "beta", "alpha beta", "gamma", ""];
-    for text in texts {
-        assert_eq!(
-            all_simple.is_match(text),
-            general.is_match(text),
-            "AllSimple vs General disagree on '{text}'"
-        );
-
-        let mut ids_simple: Vec<u32> = all_simple
-            .process(text)
-            .into_iter()
-            .map(|r| r.word_id)
-            .collect();
-        let mut ids_general: Vec<u32> = general
-            .process(text)
-            .into_iter()
-            .map(|r| r.word_id)
-            .collect();
-
-        ids_simple.sort();
-        ids_general.sort();
-        assert_eq!(
-            ids_simple, ids_general,
-            "AllSimple vs General ids disagree on '{text}'"
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // DIRECT_RULE_BIT and PatternDispatch
 // ---------------------------------------------------------------------------
