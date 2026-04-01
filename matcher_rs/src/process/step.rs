@@ -182,17 +182,25 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             let mut map = AHashMap::new();
             for line in FANJIAN.trim().lines() {
                 let mut split = line.split('\t');
-                let key = split.next().unwrap().chars().next().unwrap() as u32;
-                let value = split.next().unwrap().chars().next().unwrap() as u32;
+                let key = split.next().unwrap();
+                let value = split.next().unwrap();
+                assert!(
+                    key.chars().count() == 1,
+                    "FANJIAN key must be exactly one character: {key:?}"
+                );
+                assert!(
+                    value.chars().count() == 1,
+                    "FANJIAN value must be exactly one character: {value:?}"
+                );
+                let key = key.chars().next().unwrap() as u32;
+                let value = value.chars().next().unwrap() as u32;
                 if key != value {
                     map.insert(key, value);
                 }
             }
             TransformStep::Fanjian(FanjianMatcher::from_map(map))
         }
-        ProcessType::Delete => {
-            TransformStep::Delete(DeleteMatcher::from_sources(TEXT_DELETE, WHITE_SPACE))
-        }
+        ProcessType::Delete => TransformStep::Delete(DeleteMatcher::from_sources(TEXT_DELETE)),
         ProcessType::Normalize => {
             let mut dict = AHashMap::new();
             for process_map in [NORM, NUM_NORM] {
@@ -208,8 +216,18 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             let mut map = AHashMap::new();
             for line in PINYIN.trim().lines() {
                 let mut split = line.split('\t');
-                let key = split.next().unwrap().chars().next().unwrap() as u32;
-                map.insert(key, split.next().unwrap());
+                let key = split.next().unwrap();
+                assert!(
+                    key.chars().count() == 1,
+                    "PINYIN key must be exactly one character: {key:?}"
+                );
+                let key = key.chars().next().unwrap() as u32;
+                let value = split.next().unwrap();
+                assert!(
+                    !value.is_empty(),
+                    "PINYIN value must not be empty for key U+{key:04X}"
+                );
+                map.insert(key, value);
             }
             TransformStep::PinYin(PinyinMatcher::from_map(map, false))
         }
@@ -217,8 +235,18 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             let mut map = AHashMap::new();
             for line in PINYIN.trim().lines() {
                 let mut split = line.split('\t');
-                let key = split.next().unwrap().chars().next().unwrap() as u32;
-                map.insert(key, split.next().unwrap());
+                let key = split.next().unwrap();
+                assert!(
+                    key.chars().count() == 1,
+                    "PINYIN key must be exactly one character: {key:?}"
+                );
+                let key = key.chars().next().unwrap() as u32;
+                let value = split.next().unwrap();
+                assert!(
+                    !value.is_empty(),
+                    "PINYIN value must not be empty for key U+{key:04X}"
+                );
+                map.insert(key, value);
             }
             TransformStep::PinYinChar(PinyinMatcher::from_map(map, true))
         }

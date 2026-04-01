@@ -27,14 +27,14 @@ fn test_search_mode_general() {
     // Rules across multiple PTs -> General
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::Fanjian, 2, "你好")
+        .add_word(ProcessType::Fanjian, 2, "测试")
         .build()
         .unwrap();
 
     assert!(matcher.is_match("hello"));
-    assert!(matcher.is_match("妳好"));
+    assert!(matcher.is_match("測試"));
 
-    let results = matcher.process("hello 妳好");
+    let results = matcher.process("hello 測試");
     assert_eq!(results.len(), 2);
 }
 
@@ -309,20 +309,20 @@ fn test_delete_adjusted_pattern_indexing() {
 
 #[test]
 fn test_fanjian_delete_pattern_indexing() {
-    // Fanjian|Delete: pattern is Fanjian-emitted (你好), text gets both Fanjian + Delete.
+    // Fanjian|Delete: pattern is Fanjian-emitted (测试), text gets both Fanjian + Delete.
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "你好")
+        .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "测试")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("你好"), "simplified direct");
-    assert!(matcher.is_match("妳好"), "traditional -> Fanjian path");
+    assert!(matcher.is_match("测试"), "simplified direct");
+    assert!(matcher.is_match("測試"), "traditional -> Fanjian path");
     assert!(
-        matcher.is_match("你！好"),
+        matcher.is_match("测！试"),
         "simplified + noise -> Delete path"
     );
     assert!(
-        matcher.is_match("妳！好"),
+        matcher.is_match("測！試"),
         "traditional + noise -> Fanjian + Delete"
     );
 }

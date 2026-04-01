@@ -27,17 +27,17 @@ cargo add matcher_rs
 
 * `None`: Match against the original input text.
 * `Fanjian`: Traditional Chinese to simplified Chinese conversion. Based on [FANJIAN](./process_map/FANJIAN.txt).
-  * `妳好` -> `你好`
+  * `測試` -> `测试`
   * `現⾝` -> `现身`
-* `Delete`: Remove the codepoints listed in [TEXT_DELETE](./process_map/TEXT-DELETE.txt) plus the built-in whitespace set.
+* `Delete`: Remove the codepoints listed in [TEXT_DELETE](./process_map/TEXT-DELETE.txt).
   * `hello, world!` -> `helloworld`
   * `《你∷好》` -> `你好`
 * `Normalize`: Apply the replacement tables from [NORM](./process_map/NORM.txt) and [NUM_NORM](./process_map/NUM-NORM.txt).
-  * `ℋЀ⒈㈠Õ` -> `he11o`
-  * `⒈Ƨ㊂` -> `123`
+  * `ＡＢⅣ①℉` -> `ab41°f`
+  * `ⅠⅡⅢ` -> `123`
 * `PinYin`: Convert mapped codepoints to pinyin with boundary spaces. Based on [PINYIN](./process_map/PINYIN.txt).
-  * `你好` -> ` ni  hao `
-  * `西安` -> ` xi  an `
+  * `你好` -> ` ni hao`
+  * `西安` -> ` xi an`
 * `PinYinChar`: Convert the same mapped codepoints to pinyin with trimmed boundaries.
   * `你好` -> `nihao`
   * `西安` -> `xian`

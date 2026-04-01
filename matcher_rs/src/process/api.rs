@@ -72,8 +72,8 @@ fn reduce_text_process_inner<'a>(
 /// use matcher_rs::{ProcessType, text_process};
 ///
 /// // Fanjian converts Traditional→Simplified; Delete removes punctuation.
-/// let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "妳！好");
-/// assert_eq!(processed, "你好");
+/// let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "測！試");
+/// assert_eq!(processed, "测试");
 ///
 /// // No-op when the text has nothing to transform.
 /// let unchanged = text_process(ProcessType::Fanjian, "hello");
@@ -111,11 +111,11 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// use matcher_rs::{ProcessType, reduce_text_process};
 ///
 /// // FanjianDeleteNormalize = Fanjian | Delete | Normalize, applied in that order.
-/// let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~躶~Ａ~");
+/// let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~測~Ａ~");
 /// // First entry is always the original input.
-/// assert_eq!(variants[0], "~躶~Ａ~");
+/// assert_eq!(variants[0], "~測~Ａ~");
 /// // Last entry is the fully transformed result.
-/// assert_eq!(variants.last().unwrap(), "裸a");
+/// assert_eq!(variants.last().unwrap(), "测a");
 /// ```
 #[inline(always)]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
@@ -140,12 +140,12 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// use matcher_rs::{ProcessType, reduce_text_process_emit};
 ///
 /// // FanjianDeleteNormalize = Fanjian | Delete | Normalize.
-/// let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~躶~Ａ~");
+/// let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~測~Ａ~");
 /// // Only two entries: Fanjian overwrites the original, then Delete appends.
 /// // The Normalize step overwrites the Delete entry in-place.
 /// assert_eq!(variants.len(), 2);
-/// assert_eq!(variants[0], "~裸~Ａ~");  // after Fanjian (replace, overwrites original)
-/// assert_eq!(variants[1], "裸a");       // after Delete+Normalize
+/// assert_eq!(variants[0], "~测~Ａ~");  // after Fanjian (replace, overwrites original)
+/// assert_eq!(variants[1], "测a");       // after Delete+Normalize
 /// ```
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {

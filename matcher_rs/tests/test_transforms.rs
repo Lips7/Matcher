@@ -8,9 +8,8 @@ use matcher_rs::{
 
 #[test]
 fn test_text_process() {
-    let text = text_process(ProcessType::Fanjian, "~ᗩ~躶~𝚩~軆~Ⲉ~");
-    // "躶" (U+8EB6) -> "裸" (U+88F8)
-    assert_eq!(text, "~ᗩ~裸~𝚩~軆~Ⲉ~");
+    let text = text_process(ProcessType::Fanjian, "測試，臺灣");
+    assert_eq!(text, "测试，台湾");
 }
 
 #[test]
@@ -27,34 +26,35 @@ fn test_delete_simd_skip_ascii_before_non_ascii() {
 
 #[test]
 fn test_reduce_text_process() {
-    let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+    let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "！Ａ！測試！１！");
 
     // Step-by-step:
-    // 0. Original: "~ᗩ~躶~𝚩~軆~Ⲉ~"
-    // 1. Fanjian:  "~ᗩ~裸~𝚩~軆~Ⲉ~"
-    // 2. Delete:   "ᗩ裸𝚩軆Ⲉ"
-    // 3. Normalize:"a裸b軆c"
+    // 0. Original: "！Ａ！測試！１！"
+    // 1. Fanjian:  "！Ａ！测试！１！"
+    // 2. Delete:   "Ａ测试１"
+    // 3. Normalize:"a测试1"
 
     assert_eq!(variants.len(), 4);
-    assert_eq!(variants[0], "~ᗩ~躶~𝚩~軆~Ⲉ~");
-    assert_eq!(variants[1], "~ᗩ~裸~𝚩~軆~Ⲉ~");
-    assert_eq!(variants[2], "ᗩ裸𝚩軆Ⲉ");
-    assert_eq!(variants[3], "a裸b軆c");
+    assert_eq!(variants[0], "！Ａ！測試！１！");
+    assert_eq!(variants[1], "！Ａ！测试！１！");
+    assert_eq!(variants[2], "Ａ测试１");
+    assert_eq!(variants[3], "a测试1");
 }
 
 #[test]
 fn test_reduce_text_process_emit() {
-    let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~ᗩ~躶~𝚩~軆~Ⲉ~");
+    let variants =
+        reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "！Ａ！測試！１！");
 
     // emit behavior: replace-type steps overwrite; Delete appends.
-    // 1. Start:    ["~ᗩ~躶~𝚩~軆~Ⲉ~"]
-    // 2. Fanjian:  ["~ᗩ~裸~𝚩~軆~Ⲉ~"]  (overwritten)
-    // 3. Delete:   ["~ᗩ~裸~𝚩~軆~Ⲉ~", "ᗩ裸𝚩軆Ⲉ"]  (pushed)
-    // 4. Normalize:["~ᗩ~裸~𝚩~軆~Ⲉ~", "a裸b軆c"]  (overwritten last)
+    // 1. Start:    ["！Ａ！測試！１！"]
+    // 2. Fanjian:  ["！Ａ！测试！１！"]  (overwritten)
+    // 3. Delete:   ["！Ａ！测试！１！", "Ａ测试１"]  (pushed)
+    // 4. Normalize:["！Ａ！测试！１！", "a测试1"]  (overwritten last)
 
     assert_eq!(variants.len(), 2);
-    assert_eq!(variants[0], "~ᗩ~裸~𝚩~軆~Ⲉ~");
-    assert_eq!(variants[1], "a裸b軆c");
+    assert_eq!(variants[0], "！Ａ！测试！１！");
+    assert_eq!(variants[1], "a测试1");
 }
 
 #[test]
@@ -65,20 +65,20 @@ fn test_reduce_text_process_all_combined() {
             | ProcessType::Normalize
             | ProcessType::PinYin
             | ProcessType::PinYinChar,
-        "~ᗩ~躶~𝚩~軆~Ⲉ~ 漢語西安",
+        "Ａ！漢語西安１",
     );
 
     // Final result should be fully normalized pinyin
-    assert_eq!(text.last().unwrap(), "a luob tic han yu xi an");
+    assert_eq!(text.last().unwrap(), "a han yu xi an1");
 }
 
 #[test]
 fn test_dag_specific_outputs() {
-    let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "妳！好");
-    assert_eq!(processed, "你好");
+    let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "測！試");
+    assert_eq!(processed, "测试");
 
-    let processed = text_process(ProcessType::Normalize, "ℋЀ⒈㈠Õ");
-    assert_eq!(processed, "he11o");
+    let processed = text_process(ProcessType::Normalize, "ＡＢⅣ①℉");
+    assert_eq!(processed, "ab41°f");
 }
 
 // ===========================================================================
@@ -98,11 +98,15 @@ fn test_process_map_fanjian_exhaustive() {
         let k = split.next().expect("Missing key in FANJIAN.txt");
         let v = split.next().expect("Missing value in FANJIAN.txt");
 
-        // Current implementation is 1-to-1 for Fanjian, truncating v to first char
-        let expected_v = v.chars().next().unwrap().to_string();
+        assert_eq!(k.chars().count(), 1, "FANJIAN key must be one char: {k:?}");
+        assert_eq!(
+            v.chars().count(),
+            1,
+            "FANJIAN value must be one char: {v:?}"
+        );
         assert_eq!(
             text_process(ProcessType::Fanjian, k),
-            expected_v,
+            v,
             "Fanjian failed for {}",
             k
         );
@@ -111,33 +115,19 @@ fn test_process_map_fanjian_exhaustive() {
 
 #[test]
 fn test_process_map_delete_exhaustive() {
-    // Test characters from TEXT-DELETE.txt
-    for line in DELETE_TEST_DATA.trim().lines() {
-        for c in line.chars() {
-            let s = c.to_string();
-            assert_eq!(
-                text_process(ProcessType::Delete, &s),
-                "",
-                "Delete failed for char '{}' (U+{:04X})",
-                c,
-                c as u32
-            );
-        }
-    }
-
-    // Test whitespace from WHITE_SPACE constant
-    let white_spaces = [
-        "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}",
-        "\u{00A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}",
-        "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}",
-        "\u{200F}", "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
-    ];
-    for ws in white_spaces {
+    for token in DELETE_TEST_DATA.trim().lines() {
+        let cp = u32::from_str_radix(
+            token
+                .strip_prefix("U+")
+                .expect("TEXT-DELETE entries must use U+XXXX format"),
+            16,
+        )
+        .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint");
+        let ws = char::from_u32(cp).unwrap().to_string();
         assert_eq!(
-            text_process(ProcessType::Delete, ws),
+            text_process(ProcessType::Delete, &ws),
             "",
-            "Delete failed for whitespace U+{:04X}",
-            ws.chars().next().unwrap() as u32
+            "Delete failed for codepoint U+{cp:04X}"
         );
     }
 }
@@ -175,6 +165,8 @@ fn test_process_map_pinyin_exhaustive() {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing key in PINYIN.txt");
         let v = split.next().expect("Missing value in PINYIN.txt");
+        assert_eq!(k.chars().count(), 1, "PINYIN key must be one char: {k:?}");
+        assert!(!v.is_empty(), "PINYIN value must not be empty for {k:?}");
 
         assert_eq!(
             text_process(ProcessType::PinYin, k),
@@ -191,6 +183,8 @@ fn test_process_map_pinyin_char_exhaustive() {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing key in PINYIN.txt");
         let v = split.next().expect("Missing value in PINYIN.txt");
+        assert_eq!(k.chars().count(), 1, "PINYIN key must be one char: {k:?}");
+        assert!(!v.is_empty(), "PINYIN value must not be empty for {k:?}");
 
         assert_eq!(
             text_process(ProcessType::PinYinChar, k),
@@ -212,22 +206,22 @@ fn test_fanjian() {
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
-        HashMap::from([(1, "你好")]),
+        HashMap::from([(1, "测试")]),
     )]))
     .unwrap();
     assert!(
-        simple_matcher.is_match("妳好"),
-        "Fanjian should match traditional variant of 你好"
+        simple_matcher.is_match("測試"),
+        "Fanjian should match traditional variant of 测试"
     );
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Fanjian,
-        HashMap::from([(1, "妳好")]),
+        HashMap::from([(1, "測試")]),
     )]))
     .unwrap();
     assert!(
-        simple_matcher.is_match("你好"),
-        "Fanjian should match simplified variant of 妳好"
+        simple_matcher.is_match("测试"),
+        "Fanjian should match simplified variant of 測試"
     );
 }
 
@@ -254,12 +248,12 @@ fn test_normalize() {
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Normalize,
-        HashMap::from([(1, "he11o")]),
+        HashMap::from([(1, "ab41°f")]),
     )]))
     .unwrap();
     assert!(
-        simple_matcher.is_match("ℋЀ⒈㈠Õ"),
-        "Normalize should map fancy chars to 'he11o'"
+        simple_matcher.is_match("ＡＢⅣ①℉"),
+        "Normalize should map compatibility chars via NFKC + casefold"
     );
 }
 
@@ -297,15 +291,15 @@ fn test_pinyin() {
 }
 
 #[test]
-fn test_pinyin_leaf_applies_ascii_digit_mappings() {
+fn test_pinyin_leaf_does_not_apply_ascii_digit_mappings() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::PinYin, 1, "yi")
         .build()
         .unwrap();
 
     assert!(
-        matcher.is_match("1"),
-        "PinYin leaf path should apply ASCII digit mappings"
+        !matcher.is_match("1"),
+        "PinYin should only apply pypinyin-backed mappings"
     );
 }
 
@@ -334,15 +328,15 @@ fn test_pinyinchar() {
 }
 
 #[test]
-fn test_pinyinchar_leaf_applies_ascii_digit_mappings() {
+fn test_pinyinchar_leaf_does_not_apply_ascii_digit_mappings() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::PinYinChar, 1, "yi")
         .build()
         .unwrap();
 
     assert!(
-        matcher.is_match("1"),
-        "PinYinChar leaf path should apply ASCII digit mappings"
+        !matcher.is_match("1"),
+        "PinYinChar should only apply pypinyin-backed mappings"
     );
 }
 
@@ -382,13 +376,13 @@ fn test_complex_dag_transformations() {
         .add_word(
             ProcessType::Fanjian | ProcessType::Delete | ProcessType::Normalize,
             1,
-            "你好",
+            "测试",
         )
         .build()
         .unwrap();
 
     assert!(
-        matcher.is_match("妳！好"),
+        matcher.is_match("測！試"),
         "Should match with Fanjian and Delete combined"
     );
 }
@@ -400,8 +394,8 @@ fn test_complex_process_type_interactions() {
         .build()
         .unwrap();
 
-    assert!(!matcher.is_match("妳 洗按"));
-    assert!(matcher.is_match("apple 妳 洗按"));
+    assert!(!matcher.is_match("測 洗按"));
+    assert!(matcher.is_match("apple 測 洗按"));
 }
 
 #[test]
@@ -420,16 +414,16 @@ fn test_process_type_none_with_delete() {
 #[test]
 fn test_process_type_fanjian_pinyin() {
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Fanjian | ProcessType::PinYin, 1, "你好")
+        .add_word(ProcessType::Fanjian | ProcessType::PinYin, 1, "测试")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("你好"), "simplified direct");
-    assert!(matcher.is_match("妳好"), "traditional variant via Fanjian");
+    assert!(matcher.is_match("测试"), "simplified direct");
+    assert!(matcher.is_match("測試"), "traditional variant via Fanjian");
     // PinYin path: different CJK chars with same pinyin syllables
     assert!(
-        matcher.is_match("尼号"),
-        "different chars with same pinyin 'ni hao'"
+        matcher.is_match("策士"),
+        "different chars with same pinyin 'ce shi'"
     );
 }
 
@@ -483,12 +477,12 @@ fn test_process_into_with_transforms() {
 
     // process_into under Fanjian
     let fanjian_matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Fanjian, 1, "你好")
+        .add_word(ProcessType::Fanjian, 1, "测试")
         .build()
         .unwrap();
 
     results.clear();
-    fanjian_matcher.process_into("妳好", &mut results);
+    fanjian_matcher.process_into("測試", &mut results);
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 1);
 }

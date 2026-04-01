@@ -126,16 +126,16 @@ impl<'a> SimpleMatcherBuilder<'a> {
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     // Match against both raw input and Fanjian-converted text
-    ///     .add_word(ProcessType::None | ProcessType::Fanjian, 1, "你好")
+    ///     .add_word(ProcessType::None | ProcessType::Fanjian, 1, "测试")
     ///     // Match after deleting noise characters and normalizing
     ///     .add_word(ProcessType::FanjianDeleteNormalize, 2, "测试")
     ///     .build()
     ///     .unwrap();
     ///
-    /// // Raw "你好" matches via the ProcessType::None path
-    /// assert!(matcher.is_match("你好世界"));
-    /// // Traditional "妳好" matches via the ProcessType::Fanjian path
-    /// assert!(matcher.is_match("妳好世界"));
+    /// // Raw "测试" matches via the ProcessType::None path
+    /// assert!(matcher.is_match("测试世界"));
+    /// // Traditional "測試" matches via the ProcessType::Fanjian path
+    /// assert!(matcher.is_match("測試世界"));
     /// ```
     #[must_use = "builder methods return a new builder; dropping it discards the added word"]
     pub fn add_word(

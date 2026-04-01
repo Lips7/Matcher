@@ -51,18 +51,18 @@ def test_backslashes():
 
 def test_fanjian():
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "你好"}}).encode()
+        json.dumps({ProcessType.FANJIAN: {1: "测试"}}).encode()
     )
-    assert simple_matcher.is_match("妳好")
-    assert simple_matcher.process("你好")[0].word_id == 1
-    assert simple_matcher.process("你好")[0].word == "你好"
+    assert simple_matcher.is_match("測試")
+    assert simple_matcher.process("测试")[0].word_id == 1
+    assert simple_matcher.process("测试")[0].word == "测试"
 
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "妳好"}}).encode()
+        json.dumps({ProcessType.FANJIAN: {1: "測試"}}).encode()
     )
-    assert simple_matcher.is_match("你好")
-    assert simple_matcher.process("你好")[0].word_id == 1
-    assert simple_matcher.process("你好")[0].word == "妳好"
+    assert simple_matcher.is_match("测试")
+    assert simple_matcher.process("测试")[0].word_id == 1
+    assert simple_matcher.process("测试")[0].word == "測試"
 
 
 def test_delete():
@@ -77,13 +77,13 @@ def test_normalize():
     simple_matcher = SimpleMatcher(
         json.dumps({
             ProcessType.NORMALIZE: {
-                1: "he11o",
+                1: "ab41°f",
             }
         }).encode()
     )
-    assert simple_matcher.is_match("ℋЀ⒈㈠Õ")
-    assert simple_matcher.process("ℋЀ⒈㈠Õ")[0].word_id == 1
-    assert simple_matcher.process("ℋЀ⒈㈠Õ")[0].word == "he11o"
+    assert simple_matcher.is_match("ＡＢⅣ①℉")
+    assert simple_matcher.process("ＡＢⅣ①℉")[0].word_id == 1
+    assert simple_matcher.process("ＡＢⅣ①℉")[0].word == "ab41°f"
 
 
 def test_pinyin():
@@ -146,9 +146,9 @@ def test_threading():
     import concurrent.futures
 
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "你好"}}).encode()
+        json.dumps({ProcessType.FANJIAN: {1: "测试"}}).encode()
     )
-    texts = ["妳好测试文本" * 100] * 200
+    texts = ["測試测试文本" * 100] * 200
 
     def run_serial():
         return [simple_matcher.is_match(t) for t in texts]

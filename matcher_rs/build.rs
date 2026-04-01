@@ -29,16 +29,16 @@ use std::collections::{HashMap, HashSet};
 ///      `PinYinChar` trims boundary spaces after the table is decoded at runtime.
 ///
 /// 4. **Text Delete (BitSet)**:
-///    Deletion rules and whitespace are compiled into a **Global BitSet** (139 KB) covering
-///    the Unicode range U+0000 to U+10FFFF. Each bit represents whether a character should
-///    be discarded during processing.
+///    Delete-table codepoints are compiled into a **Global BitSet** (139 KB) covering the
+///    Unicode range U+0000 to U+10FFFF. Each bit represents whether a character should be
+///    discarded during processing.
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");
 
     #[cfg(not(feature = "runtime_build"))]
     {
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashMap;
         use std::env;
         use std::fs::File;
         use std::io::Write;
@@ -48,12 +48,6 @@ fn main() -> Result<()> {
         const NORM: &str = include_str!("./process_map/NORM.txt");
         const PINYIN: &str = include_str!("./process_map/PINYIN.txt");
         const TEXT_DELETE: &str = include_str!("./process_map/TEXT-DELETE.txt");
-        const WHITE_SPACE: &[&str] = &[
-            "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}",
-            "\u{00A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}",
-            "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}",
-            "\u{200F}", "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
-        ];
         const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
         let out_dir = env::var("OUT_DIR").unwrap();
@@ -87,18 +81,18 @@ fn main() -> Result<()> {
         let mut fanjian_map = HashMap::new();
         for line in FANJIAN.trim().lines() {
             let mut split = line.split('\t');
-            let k = split
-                .next()
-                .expect("missing key in FANJIAN.txt")
-                .chars()
-                .next()
-                .unwrap() as u32;
-            let v = split
-                .next()
-                .expect("missing value in FANJIAN.txt")
-                .chars()
-                .next()
-                .unwrap() as u32;
+            let key = split.next().expect("missing key in FANJIAN.txt");
+            let value = split.next().expect("missing value in FANJIAN.txt");
+            assert!(
+                key.chars().count() == 1,
+                "FANJIAN key must be exactly one character: {key:?}"
+            );
+            assert!(
+                value.chars().count() == 1,
+                "FANJIAN value must be exactly one character: {value:?}"
+            );
+            let k = key.chars().next().unwrap() as u32;
+            let v = value.chars().next().unwrap() as u32;
             if k != v {
                 fanjian_map.insert(k, v);
             }
@@ -111,13 +105,17 @@ fn main() -> Result<()> {
 
         for line in PINYIN.trim().lines() {
             let mut split = line.split('\t');
-            let k = split
-                .next()
-                .expect("missing key in PINYIN.txt")
-                .chars()
-                .next()
-                .unwrap() as u32;
+            let key = split.next().expect("missing key in PINYIN.txt");
+            assert!(
+                key.chars().count() == 1,
+                "PINYIN key must be exactly one character: {key:?}"
+            );
+            let k = key.chars().next().unwrap() as u32;
             let v = split.next().expect("missing value in PINYIN.txt");
+            assert!(
+                !v.is_empty(),
+                "PINYIN value must not be empty for key U+{k:04X}"
+            );
 
             let offset = pinyin_str_buffer.len();
             pinyin_str_buffer.push_str(v);
@@ -138,20 +136,25 @@ fn main() -> Result<()> {
 
         // 4. Build Text Delete BitSet
         let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
-        let mut process_set = HashSet::new();
-        process_set.extend(TEXT_DELETE.trim().lines());
-        process_set.extend(WHITE_SPACE);
-
-        for &val in process_set.iter() {
-            for c in val.chars() {
-                let cp = c as usize;
-                delete_bitset[cp / 8] |= 1 << (cp % 8);
-            }
+        for token in TEXT_DELETE.trim().lines() {
+            let cp = parse_delete_codepoint(token) as usize;
+            delete_bitset[cp / 8] |= 1 << (cp % 8);
         }
         File::create(format!("{out_dir}/delete_bitset.bin"))?.write_all(&delete_bitset)?;
     }
 
     Ok(())
+}
+
+#[cfg(not(feature = "runtime_build"))]
+fn parse_delete_codepoint(token: &str) -> u32 {
+    u32::from_str_radix(
+        token
+            .strip_prefix("U+")
+            .expect("TEXT-DELETE entries must use U+XXXX format"),
+        16,
+    )
+    .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
 }
 
 /// Generates a compact 2-stage flat-array page table for sparse Unicode codepoint mappings.

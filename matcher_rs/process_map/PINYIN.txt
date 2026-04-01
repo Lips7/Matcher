@@ -1,13 +1,4 @@
-0	 ling
-1	 yi
-2	 er
-3	 san
-4	 si
-5	 wu
-6	 liu
-7	 qi
-8	 ba
-9	 jiu
+〇	 ling
 㐀	 qiu
 㐁	 tian
 㐄	 kua
@@ -83,7 +74,7 @@
 㑹	 hui
 㑺	 jun
 㑻	 ma
-㑼	 lue
+㑼	 lve
 㑽	 tang
 㑾	 yao
 㑿	 zhao
@@ -188,7 +179,7 @@
 㓼	 chi
 㓽	 chong
 㓾	 xi
-㔀	 lue
+㔀	 lve
 㔁	 deng
 㔂	 lin
 㔃	 jue
@@ -220,7 +211,7 @@
 㔤	 xin
 㔥	 bai
 㔦	 yang
-㔧	 lu
+㔧	 lv
 㔨	 bei
 㔩	 e
 㔪	 lu
@@ -349,7 +340,7 @@
 㗆	 ge
 㗇	 xia
 㗈	 man
-㗉	 lue
+㗉	 lve
 㗊	 ji
 㗋	 hou
 㗌	 zhi
@@ -563,7 +554,7 @@
 㛆	 duo
 㛊	 duo
 㛍	 qie
-㛎	 lu
+㛎	 lv
 㛏	 qiu
 㛐	 sou
 㛑	 can
@@ -870,7 +861,7 @@
 㠡	 niao
 㠢	 huai
 㠣	 li
-㠥	 lu
+㠥	 lv
 㠦	 feng
 㠧	 mi
 㠨	 yu
@@ -1336,7 +1327,7 @@
 㨹	 hui
 㨺	 mian
 㨻	 can
-㨼	 lue
+㨼	 lve
 㨽	 pi
 㨾	 yang
 㨿	 ju
@@ -1399,7 +1390,7 @@
 㪂	 ku
 㪃	 he
 㪄	 fu
-㪅	 geng geng
+㪅	 geng
 㪆	 di
 㪇	 xian
 㪈	 gui
@@ -1567,7 +1558,7 @@
 㭕	 qu
 㭘	 ge
 㭙	 zhe
-㭚	 lu
+㭚	 lv
 㭛	 pai
 㭜	 rong
 㭝	 qiu
@@ -1868,7 +1859,7 @@
 㲲	 die
 㲳	 die
 㲴	 zhong
-㲶	 lu
+㲶	 lv
 㲷	 dan
 㲸	 xi
 㲹	 gui
@@ -1945,7 +1936,7 @@
 㴑	 su
 㴒	 yi
 㴓	 shai
-㴔	 xi
+㴔	 yi
 㴕	 ji
 㴖	 luo
 㴗	 you
@@ -1996,7 +1987,7 @@
 㵓	 shi
 㵔	 che
 㵕	 shen
-㵖	 nu
+㵖	 nv
 㵗	 ping
 㵘	 man
 㵝	 yi
@@ -2006,7 +1997,7 @@
 㵢	 lei
 㵣	 ke
 㵤	 sha
-㵥	 bi
+㵥	 mi
 㵦	 sui
 㵧	 ge
 㵨	 pi
@@ -2330,7 +2321,7 @@
 㻯	 tu
 㻰	 mian
 㻱	 jin
-㻲	 lu
+㻲	 lv
 㻵	 zhan
 㻶	 bi
 㻷	 ji
@@ -2341,6 +2332,7 @@
 㻾	 yong
 㻿	 shu
 㼂	 e
+㼆	 ying
 㼇	 qiong
 㼈	 luo
 㼉	 zhen
@@ -2470,7 +2462,7 @@
 㾑	 da
 㾒	 ru
 㾓	 yuan
-㾔	 lu
+㾔	 lv
 㾕	 shen
 㾖	 li
 㾗	 liang
@@ -2734,7 +2726,7 @@
 䂫	 hang
 䂬	 gong
 䂭	 qiao
-䂮	 lue
+䂮	 lve
 䂯	 guai
 䂰	 la
 䂱	 rui
@@ -2927,7 +2919,7 @@
 䅼	 man
 䅽	 xin
 䅾	 cen
-䅿	 huang
+䅿	 hua
 䆀	 mei
 䆁	 gao
 䆂	 lian
@@ -3282,7 +3274,7 @@
 䌋	 da
 䌌	 qi
 䌍	 jin
-䌎	 lue
+䌎	 lve
 䌏	 mi
 䌐	 mi
 䌑	 jian
@@ -3772,7 +3764,7 @@
 䔛	 qing
 䔜	 nan
 䔝	 zhai
-䔞	 lu
+䔞	 lv
 䔟	 yi
 䔠	 shao
 䔡	 yu
@@ -3828,7 +3820,7 @@
 䕞	 lang
 䕟	 xing
 䕠	 fei
-䕡	 lu
+䕡	 lv
 䕢	 zha
 䕣	 he
 䕤	 ji
@@ -3865,9 +3857,9 @@
 䖅	 ling
 䖆	 niang
 䖇	 yu
-䖈	 nue
+䖈	 nve
 䖊	 yi
-䖋	 nue
+䖋	 nve
 䖌	 yi
 䖍	 qian
 䖎	 xia
@@ -3889,7 +3881,7 @@
 䖞	 zhou
 䖟	 mang
 䖠	 yuan
-䖡	 nu
+䖡	 nv
 䖢	 miao
 䖣	 zao
 䖤	 wan
@@ -3993,7 +3985,7 @@
 䘍	 chai
 䘎	 wan
 䘏	 xu
-䘐	 nu
+䘐	 nv
 䘑	 mai
 䘒	 zui
 䘓	 kan
@@ -4141,9 +4133,9 @@
 䚹	 pi
 䚺	 yao
 䚻	 yao
-䚼	 nu
+䚼	 nv
 䚽	 hao
-䚾	 nin
+䚾	 ren
 䚿	 yin
 䛀	 fan
 䛁	 nan
@@ -4170,7 +4162,7 @@
 䛗	 zhi
 䛘	 ren
 䛙	 xu
-䛚	 lue
+䛚	 lve
 䛛	 hui
 䛜	 xun
 䛝	 nao
@@ -4705,7 +4697,7 @@
 䤟	 chen
 䤠	 zhi
 䤡	 ran
-䤣	 lue
+䤣	 lve
 䤤	 kai
 䤥	 gui
 䤦	 yue
@@ -4750,7 +4742,7 @@
 䥎	 chun
 䥏	 yu
 䥐	 mou
-䥑	 wan
+䥑	 mai
 䥒	 jiang
 䥓	 qi
 䥔	 su
@@ -4770,7 +4762,7 @@
 䥤	 bao
 䥥	 lian
 䥧	 huan
-䥨	 lu
+䥨	 lv
 䥩	 wei
 䥪	 xian
 䥫	 tie
@@ -4816,7 +4808,7 @@
 䦜	 wu
 䦝	 huo
 䦞	 run
-䦟	 wen
+䦟	 chuai
 䦠	 du
 䦡	 huan
 䦢	 kuo
@@ -4906,7 +4898,7 @@
 䨆	 bi
 䨈	 bin
 䨊	 yuan
-䨋	 nue
+䨋	 nve
 䨌	 bao
 䨍	 ying
 䨎	 hong
@@ -5251,7 +5243,7 @@
 䭸	 fu
 䭹	 ang
 䭺	 ang
-䭻	 fu
+䭻	 fen
 䭼	 qi
 䭽	 qun
 䭾	 tuo
@@ -5555,7 +5547,7 @@
 䳆	 bai
 䳇	 wu
 䳈	 bao
-䳉	 dan
+䳉	 dong
 䳊	 ba
 䳋	 tong
 䳍	 gong
@@ -5727,7 +5719,7 @@
 䵷	 wa
 䵹	 zhi
 䵺	 ting
-䵻	 gu
+䵻	 hui
 䵼	 shang
 䵽	 ca
 䵾	 fu
@@ -5742,7 +5734,7 @@
 䶇	 zhou
 䶈	 bo
 䶉	 liu
-䶊	 nu
+䶊	 nv
 䶋	 xi
 䶌	 pao
 䶍	 di
@@ -5783,6 +5775,9 @@
 䶲	 nan
 䶳	 yue
 䶵	 chi
+䶷	 jiao
+䶸	 yao
+䶹	 zuo
 一	 yi
 丁	 ding
 丂	 kao
@@ -5790,7 +5785,7 @@
 丄	 shang
 丅	 xia
 丆	 han
-万	 wan mo
+万	 wan
 丈	 zhang
 三	 san
 上	 shang
@@ -5909,7 +5904,7 @@
 乻	 yu
 乼	 cui
 乽	 zhe
-乾	 qian gan
+乾	 qian
 乿	 zhi
 亀	 gui
 亁	 gan
@@ -5968,7 +5963,7 @@
 亶	 dan
 亷	 lian
 亸	 duo
-亹	 men
+亹	 wei
 人	 ren
 亻	 ren
 亼	 ji
@@ -5995,7 +5990,7 @@
 仑	 lun
 仒	 bing
 仓	 cang
-仔	 zi
+仔	 zai
 仕	 shi
 他	 ta
 仗	 zhang
@@ -6074,7 +6069,7 @@
 传	 chuan
 伡	 che
 伢	 ya
-伣	 xian
+伣	 qian
 伤	 shang
 伥	 chang
 伦	 lun
@@ -6100,7 +6095,7 @@
 伺	 ci
 伻	 beng
 似	 shi
-伽	 jia
+伽	 ga
 伾	 pi
 伿	 yi
 佀	 si
@@ -6202,7 +6197,7 @@
 侠	 xia
 価	 si
 侢	 dai
-侣	 lu
+侣	 lv
 侤	 ta
 侥	 jiao
 侦	 zhen
@@ -6221,7 +6216,7 @@
 侳	 zuo
 侴	 chou
 侵	 qin
-侶	 lu
+侶	 lv
 侷	 ju
 侸	 shu
 侹	 ting
@@ -6293,7 +6288,7 @@
 俻	 bei
 俼	 yu
 俽	 xin
-俾	 bi bi
+俾	 bi
 俿	 hu
 倀	 chang
 倁	 zhi
@@ -6585,7 +6580,7 @@
 償	 chang
 儠	 lie
 儡	 lei
-儢	 lu
+儢	 lv
 儣	 kuang
 儤	 bao
 儥	 yu
@@ -6880,7 +6875,7 @@
 剈	 yuan
 剉	 cuo
 削	 xue
-剋	 kei ke
+剋	 ke
 剌	 la
 前	 qian
 剎	 sha
@@ -6891,7 +6886,7 @@
 剓	 li
 剔	 ti
 剕	 fei
-剖	 pou po
+剖	 pou
 剗	 chan
 剘	 qi
 剙	 chuang
@@ -6930,7 +6925,7 @@
 剺	 li
 剻	 peng
 剼	 shan
-剽	 piao piao
+剽	 piao
 剾	 kou
 剿	 jiao
 劀	 gua
@@ -7049,7 +7044,7 @@
 勱	 mai
 勲	 xun
 勳	 xun
-勴	 lu
+勴	 lv
 勵	 li
 勶	 che
 勷	 rang
@@ -7153,7 +7148,7 @@
 卙	 ji
 博	 bo
 卛	 shuai
-卜	 bo bu
+卜	 bo
 卝	 kuang
 卞	 bian
 卟	 bu
@@ -7279,7 +7274,7 @@
 受	 shou
 变	 bian
 叙	 xu
-叚	 xia jia
+叚	 jia
 叛	 pan
 叜	 sou
 叝	 ji
@@ -7338,7 +7333,7 @@
 吒	 zha
 吓	 xia
 吔	 ye
-吕	 lu
+吕	 lv
 吖	 ya
 吗	 ma
 吘	 ou
@@ -7383,7 +7378,7 @@
 吿	 gao
 呀	 ya
 呁	 jun
-呂	 lu
+呂	 lv
 呃	 e
 呄	 ge
 呅	 mei
@@ -7446,7 +7441,7 @@
 呾	 da
 呿	 qu
 咀	 ju
-咁	 han
+咁	 gan
 咂	 za
 咃	 tuo
 咄	 duo
@@ -7496,7 +7491,7 @@
 咰	 shu
 咱	 zan
 咲	 xiao
-咳	 hai
+咳	 ke
 咴	 hui
 咵	 kua
 咶	 huai
@@ -7884,7 +7879,7 @@
 嘵	 xiao
 嘶	 si
 嘷	 hao
-嘸	 fu wu
+嘸	 fu
 嘹	 liao
 嘺	 qiao
 嘻	 xi
@@ -7924,13 +7919,13 @@
 噝	 si
 噞	 yan
 噟	 ying
-噠	 da da
+噠	 da
 噡	 zhan
 噢	 o
 噣	 zhou
 噤	 jin
 噥	 nong
-噦	 hui
+噦	 yue
 噧	 xie
 器	 qi
 噩	 e
@@ -8109,7 +8104,7 @@
 圖	 tu
 圗	 tu
 團	 tuan
-圙	 lue
+圙	 lve
 圚	 hui
 圛	 yi
 圜	 huan
@@ -8132,7 +8127,7 @@
 圭	 gui
 圮	 pi
 圯	 yi
-地	 de di
+地	 di
 圱	 qian
 圲	 qian
 圳	 zhen
@@ -8227,7 +8222,7 @@
 垌	 dong
 垍	 ji
 垎	 he
-垏	 lu
+垏	 lv
 垐	 ci
 垑	 chi
 垒	 lei
@@ -8296,7 +8291,7 @@
 埑	 zhe
 埒	 lie
 埓	 lie
-埔	 bu
+埔	 pu
 埕	 cheng
 埖	 hua
 埗	 bu
@@ -8376,7 +8371,7 @@
 堡	 bao
 堢	 bao
 堣	 yu
-堤	 di ti
+堤	 di
 堥	 mao
 堦	 jie
 堧	 ruan
@@ -8711,7 +8706,7 @@
 奰	 bi
 奱	 luan
 奲	 duo
-女	 nu
+女	 nv
 奴	 nu
 奵	 ding
 奶	 nai
@@ -8775,7 +8770,7 @@
 妰	 zhuo
 妱	 zhao
 妲	 da
-妳	 nai
+妳	 ni
 妴	 yuan
 妵	 tou
 妶	 xian
@@ -8953,7 +8948,7 @@
 婢	 bi
 婣	 yin
 婤	 chou
-婥	 nao
+婥	 chuo
 婦	 fu
 婧	 jing
 婨	 lun
@@ -9361,7 +9356,7 @@
 寺	 si
 寻	 xun
 导	 dao
-寽	 lu
+寽	 lv
 対	 dui
 寿	 shou
 尀	 po
@@ -9461,11 +9456,11 @@
 属	 shu
 屟	 xie
 屠	 tu
-屡	 lu
-屢	 lu
+屡	 lv
+屢	 lv
 屣	 xi
 層	 ceng
-履	 lu
+履	 lv
 屦	 ju
 屧	 xie
 屨	 ju
@@ -9686,7 +9681,7 @@
 崿	 e
 嵀	 zhu
 嵁	 kan
-嵂	 lu
+嵂	 lv
 嵃	 yan
 嵄	 mei
 嵅	 han
@@ -9858,7 +9853,7 @@
 巫	 wu
 巬	 pu
 巭	 pu
-差	 cha cha
+差	 cha
 巯	 qiu
 巰	 qiu
 己	 ji
@@ -9882,7 +9877,7 @@
 布	 bu
 帄	 ding
 帅	 shuai
-帆	 fan fan
+帆	 fan
 帇	 nie
 师	 shi
 帉	 fen
@@ -9915,7 +9910,7 @@
 帤	 ru
 帥	 shuai
 带	 dai
-帧	 zheng
+帧	 zhen
 帨	 shui
 帩	 qiao
 帪	 zhen
@@ -10251,7 +10246,7 @@
 彴	 zhuo
 彵	 tuo
 彶	 ji
-彷	 fang
+彷	 pang
 彸	 zhong
 役	 yi
 彺	 wang
@@ -10271,7 +10266,7 @@
 很	 hen
 徉	 yang
 徊	 huai
-律	 lu
+律	 lv
 後	 hou
 徍	 wang
 徎	 cheng
@@ -10313,7 +10308,7 @@
 徲	 ti
 徳	 de
 徴	 zheng
-徵	 zhi zheng
+徵	 zheng
 徶	 bie
 德	 de
 徸	 chong
@@ -10491,7 +10486,7 @@
 恤	 xu
 恥	 chi
 恦	 shang
-恧	 nu
+恧	 nv
 恨	 hen
 恩	 en
 恪	 ke
@@ -10754,7 +10749,7 @@
 慫	 song
 慬	 qin
 慭	 yin
-慮	 lu
+慮	 lv
 慯	 shang
 慰	 wei
 慱	 tuan
@@ -11111,7 +11106,7 @@
 拐	 guai
 拑	 qian
 拒	 ju
-拓	 ta
+拓	 tuo
 拔	 ba
 拕	 tuo
 拖	 tuo
@@ -11176,7 +11171,7 @@
 挑	 tiao
 挒	 lie
 挓	 zha
-挔	 lu
+挔	 lv
 挕	 die
 挖	 wa
 挗	 jue
@@ -11231,7 +11226,7 @@
 捈	 tu
 捉	 zhuo
 捊	 pou
-捋	 lu
+捋	 lv
 捌	 ba
 捍	 han
 捎	 shao
@@ -11247,7 +11242,7 @@
 捘	 zun
 捙	 ye
 捚	 zhai
-捛	 lu
+捛	 lv
 捜	 sou
 捝	 tuo
 捞	 lao
@@ -11316,7 +11311,7 @@
 掝	 huo
 掞	 shan
 掟	 zheng
-掠	 lue
+掠	 lve
 採	 cai
 探	 tan
 掣	 che
@@ -11628,7 +11623,7 @@
 擕	 xie
 擖	 ka
 擗	 pi
-擘	 bai bo
+擘	 bai
 擙	 ao
 據	 ju
 擛	 ye
@@ -11665,7 +11660,7 @@
 擺	 bai
 擻	 sou
 擼	 lu
-擽	 lue
+擽	 lve
 擾	 rao
 擿	 ti
 攀	 pan
@@ -11819,7 +11814,7 @@
 斔	 yu
 斕	 lan
 斖	 wei
-斗	 dou dou
+斗	 dou
 斘	 sheng
 料	 liao
 斚	 jia
@@ -11865,7 +11860,7 @@
 旂	 qi
 旃	 zhan
 旄	 mao
-旅	 lu
+旅	 lv
 旆	 pei
 旇	 pi
 旈	 liu
@@ -12198,7 +12193,7 @@
 朏	 fei
 朐	 qu
 朑	 ti
-朒	 nu
+朒	 nv
 朓	 tiao
 朔	 shuo
 朕	 zhen
@@ -12263,7 +12258,7 @@
 材	 cai
 村	 cun
 杒	 ren
-杓	 biao shao
+杓	 biao
 杔	 tuo
 杕	 di
 杖	 zhang
@@ -12278,7 +12273,7 @@
 束	 shu
 杠	 gang
 条	 tiao
-杢	 jiang
+杢	 jie
 杣	 mian
 杤	 wan
 来	 lai
@@ -12340,7 +12335,7 @@
 枝	 zhi
 枞	 cong
 枟	 yun
-枠	 zui
+枠	 hua
 枡	 sheng
 枢	 shu
 枣	 zao
@@ -12387,7 +12382,7 @@
 柌	 ci
 柍	 yang
 柎	 fu
-柏	 bai bo
+柏	 bai
 某	 mou
 柑	 gan
 柒	 qi
@@ -12595,7 +12590,7 @@
 條	 tiao
 梞	 ji
 梟	 xiao
-梠	 lu
+梠	 lv
 梡	 hun
 梢	 shao
 梣	 cen
@@ -12827,7 +12822,7 @@
 榅	 wen
 榆	 yu
 榇	 chen
-榈	 lu
+榈	 lv
 榉	 ju
 榊	 shen
 榋	 chu
@@ -13161,11 +13156,11 @@
 櫓	 lu
 櫔	 li
 櫕	 cuan
-櫖	 lu
+櫖	 lv
 櫗	 mie
 櫘	 hui
 櫙	 ou
-櫚	 lu
+櫚	 lv
 櫛	 zhi
 櫜	 gao
 櫝	 du
@@ -13459,7 +13454,7 @@
 毽	 jian
 毾	 ta
 毿	 san
-氀	 lu
+氀	 lv
 氁	 mu
 氂	 mao
 氃	 tong
@@ -13506,7 +13501,7 @@
 氬	 ya
 氭	 dong
 氮	 dan
-氯	 lu
+氯	 lv
 氰	 qing
 氱	 yang
 氲	 yun
@@ -13521,7 +13516,7 @@
 氻	 le
 氼	 ni
 氽	 tun
-氾	 fan fan
+氾	 fan
 氿	 gui
 汀	 ting
 汁	 zhi
@@ -13595,7 +13590,7 @@
 沅	 yuan
 沆	 hang
 沇	 yan
-沈	 shen chen
+沈	 shen
 沉	 chen
 沊	 dan
 沋	 you
@@ -13604,9 +13599,9 @@
 沎	 huo
 沏	 qi
 沐	 mu
-沑	 nu
+沑	 nv
 沒	 mei
-沓	 da ta
+沓	 da
 沔	 mian
 沕	 mi
 沖	 chong
@@ -14065,7 +14060,7 @@
 湛	 zhan
 湜	 shi
 湝	 jie
-湞	 cheng
+湞	 zhen
 湟	 huang
 湠	 tan
 湡	 yu
@@ -14199,7 +14194,7 @@
 满	 man
 滢	 ying
 滣	 chun
-滤	 lu
+滤	 lv
 滥	 lan
 滦	 luan
 滧	 yao
@@ -14481,7 +14476,7 @@
 濻	 wei
 濼	 luo
 濽	 zan
-濾	 lu
+濾	 lv
 濿	 li
 瀀	 you
 瀁	 yang
@@ -14756,7 +14751,7 @@
 焏	 ji
 焐	 wu
 焑	 yan
-焒	 lu
+焒	 lv
 焓	 han
 焔	 yan
 焕	 huan
@@ -15002,7 +14997,7 @@
 爅	 mo
 爆	 bao
 爇	 ruo
-爈	 lu
+爈	 lv
 爉	 la
 爊	 ao
 爋	 xun
@@ -15385,7 +15380,7 @@
 玄	 xuan
 玅	 miao
 玆	 zi
-率	 lu
+率	 lv
 玈	 lu
 玉	 yu
 玊	 su
@@ -15813,7 +15808,7 @@
 电	 dian
 甶	 fu
 男	 nan
-甸	 dian dian
+甸	 dian
 甹	 ping
 町	 ting
 画	 hua
@@ -15858,9 +15853,9 @@
 畢	 bi
 畣	 da
 畤	 zhi
-略	 lue
+略	 lve
 畦	 qi
-畧	 lue
+畧	 lve
 畨	 pan
 畩	 yi
 番	 fan
@@ -15916,7 +15911,7 @@
 疜	 xia
 疝	 shan
 疞	 xu
-疟	 nue
+疟	 nve
 疠	 li
 疡	 yang
 疢	 chen
@@ -16052,7 +16047,7 @@
 瘤	 liu
 瘥	 chai
 瘦	 shou
-瘧	 nue
+瘧	 nve
 瘨	 dian
 瘩	 da
 瘪	 bie
@@ -16416,7 +16411,7 @@
 瞐	 mo
 瞑	 ming
 瞒	 man
-瞓	 shui
+瞓	 fen
 瞔	 ze
 瞕	 zhang
 瞖	 yi
@@ -16442,7 +16437,7 @@
 瞪	 deng
 瞫	 shen
 瞬	 shun
-瞭	 liao liao
+瞭	 liao
 瞮	 che
 瞯	 xian
 瞰	 kan
@@ -16645,7 +16640,7 @@
 硵	 lu
 硶	 chen
 硷	 jian
-硸	 nue
+硸	 nve
 硹	 song
 硺	 zhuo
 硻	 keng
@@ -16880,7 +16875,7 @@
 祠	 ci
 祡	 chai
 祢	 mi
-祣	 lu
+祣	 lv
 祤	 yu
 祥	 xiang
 祦	 wu
@@ -17043,7 +17038,7 @@
 稃	 fu
 稄	 xun
 稅	 shui
-稆	 lu
+稆	 lv
 稇	 kun
 稈	 gan
 稉	 jing
@@ -17073,7 +17068,7 @@
 稡	 zui
 稢	 yu
 稣	 su
-稤	 lue
+稤	 lve
 稥	 xiang
 稦	 yi
 稧	 xi
@@ -17131,7 +17126,7 @@
 穛	 zhuo
 穜	 zhong
 穝	 zui
-穞	 lu
+穞	 lv
 穟	 sui
 穠	 nong
 穡	 se
@@ -17146,7 +17141,7 @@
 穪	 cheng
 穫	 huo
 穬	 kuang
-穭	 lu
+穭	 lv
 穮	 biao
 穯	 se
 穰	 rang
@@ -17418,7 +17413,7 @@
 筺	 kuang
 筻	 gang
 筼	 yun
-筽	 ou wu
+筽	 ou
 签	 qian
 筿	 xiao
 简	 jian
@@ -17480,7 +17475,7 @@
 箸	 zhu
 箹	 yue
 箺	 chun
-箻	 lu
+箻	 lv
 箼	 wu
 箽	 dong
 箾	 shuo
@@ -17572,7 +17567,7 @@
 簔	 suo
 簕	 le
 簖	 duan
-簗	 liang
+簗	 zhu
 簘	 xiao
 簙	 bo
 簚	 mi
@@ -17670,7 +17665,7 @@
 籶	 shen
 籷	 zhe
 籸	 shen
-籹	 nu
+籹	 nv
 籺	 he
 类	 lei
 籼	 xian
@@ -17930,7 +17925,7 @@
 絺	 chi
 絻	 mian
 絼	 zhen
-絽	 lu
+絽	 lv
 絾	 cheng
 絿	 qiu
 綀	 shu
@@ -17965,7 +17960,7 @@
 綝	 chen
 綞	 duo
 綟	 li
-綠	 lu
+綠	 lv
 綡	 liang
 綢	 chou
 綣	 quan
@@ -18014,7 +18009,7 @@
 緎	 yu
 総	 zong
 緐	 fan
-緑	 lu
+緑	 lv
 緒	 xu
 緓	 ying
 緔	 shang
@@ -18116,7 +18111,7 @@
 縴	 qian
 縵	 man
 縶	 zhi
-縷	 lu
+縷	 lv
 縸	 mu
 縹	 piao
 縺	 lian
@@ -18127,8 +18122,8 @@
 縿	 shan
 繀	 sui
 繁	 fan
-繂	 lu
-繃	 beng beng
+繂	 lv
+繃	 beng
 繄	 yi
 繅	 sao
 繆	 mou
@@ -18316,7 +18311,7 @@
 综	 zong
 绽	 zhan
 绾	 wan
-绿	 lu
+绿	 lv
 缀	 zhui
 缁	 zi
 缂	 ke
@@ -18338,7 +18333,7 @@
 缒	 zhui
 缓	 huan
 缔	 di
-缕	 lu
+缕	 lv
 编	 bian
 缗	 min
 缘	 yuan
@@ -18598,7 +18593,7 @@
 耖	 chao
 耗	 hao
 耘	 yun
-耙	 ba pa
+耙	 ba
 耚	 pi
 耛	 yi
 耜	 si
@@ -18959,7 +18954,7 @@
 腿	 tui
 膀	 bang
 膁	 qian
-膂	 lu
+膂	 lv
 膃	 wa
 膄	 shou
 膅	 tang
@@ -18973,7 +18968,7 @@
 膍	 pi
 膎	 xie
 膏	 gao
-膐	 lu
+膐	 lv
 膑	 bin
 膒	 ou
 膓	 chang
@@ -18988,10 +18983,10 @@
 膜	 mo
 膝	 xi
 膞	 zhuan
-膟	 lu
+膟	 lv
 膠	 jiao
 膡	 ying
-膢	 lu
+膢	 lv
 膣	 zhi
 膤	 xue
 膥	 cun
@@ -19098,7 +19093,7 @@
 舊	 jiu
 舋	 xin
 舌	 she
-舍	 she she
+舍	 she
 舎	 she
 舏	 jiu
 舐	 shi
@@ -19675,7 +19670,7 @@
 葋	 qu
 葌	 jian
 葍	 fu
-葎	 lu
+葎	 lv
 葏	 jing
 葐	 pen
 葑	 feng
@@ -19684,7 +19679,7 @@
 葔	 hou
 葕	 yan
 葖	 tu
-著	 zhe
+著	 zhu
 葘	 zi
 葙	 xiang
 葚	 ren
@@ -19985,7 +19980,7 @@
 薁	 yu
 薂	 xi
 薃	 hao
-薄	 bao bo
+薄	 bao
 薅	 hao
 薆	 ai
 薇	 wei
@@ -20069,7 +20064,7 @@
 藕	 ou
 藖	 xian
 藗	 su
-藘	 lu
+藘	 lv
 藙	 yi
 藚	 xu
 藛	 xie
@@ -20189,8 +20184,8 @@
 虍	 hu
 虎	 hu
 虏	 lu
-虐	 nue
-虑	 lu
+虐	 nve
+虑	 lv
 虒	 si
 虓	 xiao
 虔	 qian
@@ -20687,9 +20682,9 @@
 蠿	 zhuo
 血	 xue
 衁	 huang
-衂	 nu
+衂	 nv
 衃	 pei
-衄	 nu
+衄	 nv
 衅	 xin
 衆	 zhong
 衇	 mai
@@ -20804,7 +20799,7 @@
 袴	 ku
 袵	 ren
 袶	 jiang
-袷	 qia jia
+袷	 jia
 袸	 jian
 袹	 bo
 袺	 jie
@@ -20904,7 +20899,7 @@
 褘	 hui
 褙	 bei
 褚	 chu
-褛	 lu
+褛	 lv
 褜	 pao
 褝	 dan
 褞	 yun
@@ -20933,7 +20928,7 @@
 褵	 li
 褶	 zhe
 褷	 shi
-褸	 lu
+褸	 lv
 褹	 yi
 褺	 die
 褻	 xie
@@ -21309,7 +21304,7 @@
 読	 du
 誮	 hua
 誯	 chang
-誰	 shui shei
+誰	 shui
 誱	 jie
 課	 ke
 誳	 qu
@@ -21355,7 +21350,7 @@
 諛	 yu
 諜	 die
 諝	 xu
-諞	 pian pian
+諞	 pian
 諟	 shi
 諠	 xuan
 諡	 shi
@@ -21380,7 +21375,7 @@
 諴	 xian
 諵	 nan
 諶	 chen
-諷	 feng feng
+諷	 feng
 諸	 zhu
 諹	 yang
 諺	 yan
@@ -21477,7 +21472,7 @@
 譕	 wu
 譖	 zen
 譗	 zha
-識	 shi shi
+識	 shi
 譙	 qiao
 譚	 tan
 譛	 zen
@@ -21578,7 +21573,7 @@
 论	 lun
 讻	 xiong
 讼	 song
-讽	 feng feng
+讽	 feng
 设	 she
 访	 fang
 诀	 jue
@@ -21587,7 +21582,7 @@
 诃	 he
 评	 ping
 诅	 zu
-识	 shi shi
+识	 shi
 诇	 xiong
 诈	 zha
 诉	 su
@@ -21646,7 +21641,7 @@
 课	 ke
 诿	 wei
 谀	 yu
-谁	 shei
+谁	 shui
 谂	 shen
 调	 diao
 谄	 chan
@@ -22105,7 +22100,7 @@
 跉	 ling
 跊	 mei
 跋	 ba
-跌	 die die
+跌	 die
 跍	 ku
 跎	 tuo
 跏	 jia
@@ -22239,7 +22234,7 @@
 蹏	 ti
 蹐	 ji
 蹑	 nie
-蹒	 man
+蹒	 pan
 蹓	 liu
 蹔	 zan
 蹕	 bi
@@ -22256,7 +22251,7 @@
 蹠	 zhi
 蹡	 qiang
 蹢	 di
-蹣	 pan man
+蹣	 pan
 蹤	 zong
 蹥	 lian
 蹦	 beng
@@ -22265,7 +22260,7 @@
 蹩	 bie
 蹪	 tui
 蹫	 ju
-蹬	 deng deng
+蹬	 deng
 蹭	 ceng
 蹮	 xian
 蹯	 fan
@@ -22418,7 +22413,7 @@
 輂	 ju
 較	 jiao
 輄	 guang
-輅	 he
+輅	 lu
 輆	 kai
 輇	 quan
 輈	 zhou
@@ -22671,7 +22666,7 @@
 迿	 xun
 退	 tui
 送	 song
-适	 shi kuo
+适	 shi
 逃	 tao
 逄	 pang
 逅	 hou
@@ -22885,7 +22880,7 @@
 郕	 cheng
 郖	 dou
 郗	 xi
-郘	 lu
+郘	 lv
 郙	 fu
 郚	 wu
 郛	 fu
@@ -22922,7 +22917,7 @@
 郺	 yong
 郻	 qiao
 郼	 yi
-都	 dou du
+都	 dou
 郾	 yan
 郿	 mei
 鄀	 ruo
@@ -23102,7 +23097,7 @@
 醮	 jiao
 醯	 xi
 醰	 tan
-醱	 fa po
+醱	 fa
 醲	 nong
 醳	 yi
 醴	 li
@@ -23133,10 +23128,10 @@
 重	 zhong
 野	 ye
 量	 liang
-釐	 xi li
+釐	 li
 金	 jin
 釒	 jin
-釓	 qiu
+釓	 ga
 釔	 yi
 釕	 liao
 釖	 dao
@@ -23174,7 +23169,7 @@
 釶	 shi
 釷	 tu
 釸	 xi
-釹	 nu
+釹	 nv
 釺	 qian
 釻	 qiu
 釼	 jian
@@ -23189,7 +23184,7 @@
 鈅	 yue
 鈆	 qian
 鈇	 fu
-鈈	 pi
+鈈	 bu
 鈉	 na
 鈊	 xin
 鈋	 e
@@ -23271,7 +23266,7 @@
 鉗	 qian
 鉘	 fu
 鉙	 zhai
-鉚	 liu
+鉚	 mao
 鉛	 qian
 鉜	 fu
 鉝	 li
@@ -23304,7 +23299,7 @@
 鉸	 jiao
 鉹	 chi
 鉺	 er
-鉻	 luo
+鉻	 ge
 鉼	 bing
 鉽	 shi
 鉾	 mou
@@ -23374,7 +23369,7 @@
 銾	 hong
 銿	 zhong
 鋀	 tou
-鋁	 lu
+鋁	 lv
 鋂	 mei
 鋃	 lang
 鋄	 wan
@@ -23402,18 +23397,18 @@
 鋚	 tiao
 鋛	 kuang
 鋜	 zhuo
-鋝	 lue
+鋝	 lve
 鋞	 xing
 鋟	 qin
 鋠	 shen
 鋡	 han
-鋢	 lue
+鋢	 lve
 鋣	 ye
 鋤	 chu
 鋥	 zeng
 鋦	 ju
 鋧	 xian
-鋨	 tie
+鋨	 e
 鋩	 mang
 鋪	 pu
 鋫	 li
@@ -23455,7 +23450,7 @@
 錏	 ya
 錐	 zhui
 錑	 lei
-錒	 ke
+錒	 a
 錓	 kong
 錔	 ta
 錕	 kun
@@ -23559,7 +23554,7 @@
 鍷	 kui
 鍸	 hu
 鍹	 xuan
-鍺	 duo
+鍺	 zhe
 鍻	 jie
 鍼	 zhen
 鍽	 bian
@@ -23791,7 +23786,7 @@
 鑟	 du
 鑠	 shuo
 鑡	 chuo
-鑢	 lu
+鑢	 lv
 鑣	 biao
 鑤	 bao
 鑥	 lu
@@ -23842,7 +23837,7 @@
 钒	 fan
 钓	 diao
 钔	 men
-钕	 nu
+钕	 nv
 钖	 yang
 钗	 chai
 钘	 xing
@@ -23914,7 +23909,7 @@
 铚	 zhi
 铛	 dang
 铜	 tong
-铝	 lu
+铝	 lv
 铞	 diao
 铟	 yin
 铠	 kai
@@ -23959,7 +23954,7 @@
 锇	 e
 锈	 xiu
 锉	 cuo
-锊	 lue
+锊	 lve
 锋	 feng
 锌	 xin
 锍	 liu
@@ -24122,7 +24117,7 @@
 閪	 se
 閫	 kun
 閬	 lang
-閭	 lu
+閭	 lv
 閮	 ting
 閯	 sha
 閰	 ju
@@ -24203,7 +24198,7 @@
 闻	 wen
 闼	 ta
 闽	 min
-闾	 lu
+闾	 lv
 闿	 kai
 阀	 fa
 阁	 ge
@@ -24271,7 +24266,7 @@
 阿	 a
 陀	 tuo
 陁	 tuo
-陂	 bei pi
+陂	 bei
 陃	 bing
 附	 fu
 际	 ji
@@ -24337,7 +24332,7 @@
 隁	 yan
 隂	 yin
 隃	 shu
-隄	 di ti
+隄	 di
 隅	 yu
 隆	 long
 隇	 wei
@@ -24356,7 +24351,7 @@
 隔	 ge
 隕	 yun
 隖	 wu
-隗	 kui wei
+隗	 kui
 隘	 ai
 隙	 xi
 隚	 tang
@@ -24740,7 +24735,7 @@
 頔	 di
 頕	 dan
 頖	 pan
-頗	 po po
+頗	 po
 領	 ling
 頙	 che
 頚	 jing
@@ -25164,7 +25159,7 @@
 馼	 wen
 馽	 zhi
 馾	 dan
-馿	 lu
+馿	 lv
 駀	 you
 駁	 bo
 駂	 bao
@@ -25327,7 +25322,7 @@
 驟	 zhou
 驠	 yan
 驡	 long
-驢	 lu
+驢	 lv
 驣	 teng
 驤	 xiang
 驥	 ji
@@ -25345,7 +25340,7 @@
 驱	 qu
 驲	 ri
 驳	 bo
-驴	 lu
+驴	 lv
 驵	 zang
 驶	 shi
 驷	 si
@@ -25463,11 +25458,11 @@
 髧	 dan
 髨	 kun
 髩	 bin
-髪	 fa fa
+髪	 fa
 髫	 tiao
 髬	 pi
 髭	 zi
-髮	 fa fa
+髮	 fa
 髯	 ran
 髰	 ti
 髱	 bao
@@ -26217,7 +26212,7 @@
 鷙	 zhi
 鷚	 liu
 鷛	 yong
-鷜	 lu
+鷜	 lv
 鷝	 bi
 鷞	 shuang
 鷟	 zhuo
@@ -26253,7 +26248,7 @@
 鷽	 xue
 鷾	 yi
 鷿	 pi
-鸀	 shu
+鸀	 chu
 鸁	 luo
 鸂	 xi
 鸃	 yi
@@ -26384,7 +26379,7 @@
 麀	 you
 麁	 cu
 麂	 ji
-麃	 pao biao
+麃	 pao
 麄	 cu
 麅	 pao
 麆	 zhu
@@ -26444,7 +26439,7 @@
 麼	 me
 麽	 mo
 麾	 hui
-麿	 mo
+麿	 mi
 黀	 zou
 黁	 nun
 黂	 fen
@@ -26507,7 +26502,7 @@
 黻	 fu
 黼	 fu
 黽	 mian
-黾	 mian
+黾	 min
 黿	 yuan
 鼀	 cu
 鼁	 qu
@@ -26675,7 +26670,15 @@
 龣	 jue
 龤	 xie
 龥	 yu
+龪	 zhan
+龬	 wang
+龰	 zou
+龵	 shou
+龻	 luan
 鿃	 shan
+鿄	 liang
+鿇	 zheng
+鿌	 liang
 鿍	 gang
 鿎	 ta
 鿏	 mai
@@ -26684,6 +26687,91 @@
 鿫	 ao
 鿬	 tian
 鿭	 ni
+鿰	 han
+鿱	 ba
+鿲	 lao
+鿳	 tuo
+鿴	 dong
+鿵	 zhi
+鿶	 lang
+鿷	 an
+鿸	 tuo
+鿹	 mi
+鿺	 mai
+鿻	 bu
+鿼	 jia
+鿾	 lang
+鿿	 xing
+	 ye
+	 zuo
+	 gun
+	 zhou
+	 zhou
+	 jie
+	 wai
+	 han
+	 han
+	 zhou
+	 zhou
+	 shou
+	 gang
+	 kuai
+	 song
+	 song
+	 feng
+	 gong
+	 gang
+	 hui
+	 ta
+	 jian
+	 en
+	 xiao
+	 lou
+	 can
+	 zhu
+	 chou
+	 wang
+	 yang
+	 zai
+	 ba
+	 ba
+	 zhuan
+	 qiong
+	 kui
+	 kui
+	 juan
+	 xin
+	 yan
+	 qing
+	 qing
+	 shan
+	 ye
+	 po
+	 shan
+	 zhuo
+	 shan
+	 jue
+	 chuai
+	 zheng
+	 chuai
+	 zheng
+	 zhuo
+	 ying
+	 yu
+	 yin
+	 chun
+	 qiu
+	 yu
+	 teng
+	 shi
+	 jiao
+	 lie
+	 jing
+	 ju
+	 ti
+	 pi
+	 yan
+	 luan
 礼	 li
 𠀀	 he
 𠀁	 qi
@@ -26726,6 +26814,7 @@
 𠂸	 huang
 𠃊	 yin
 𠃌	 gun
+𠃓	 yang
 𠃖	 jiu
 𠃫	 shen
 𠃺	 jiu
@@ -26838,7 +26927,7 @@
 𠋻	 ji
 𠌕	 gong
 𠌖	 qiong
-𠌚	 rong
+𠌚	 nong
 𠌞	 sou
 𠌟	 sou
 𠌠	 yao
@@ -27128,7 +27217,7 @@
 𠜃	 jiu
 𠜄	 xu
 𠜅	 jiao
-𠜈	 lu
+𠜈	 lv
 𠜉	 jiu
 𠜋	 chou
 𠜎	 xian
@@ -27256,7 +27345,7 @@
 𠢃	 tang
 𠢆	 xia
 𠢇	 han
-𠢌	 lue
+𠢌	 lve
 𠢍	 qian
 𠢓	 mo
 𠢔	 ou
@@ -27281,7 +27370,7 @@
 𠣄	 chan
 𠣇	 nian
 𠣉	 wan
-𠣊	 lu
+𠣊	 lv
 𠣐	 yun
 𠣑	 yao
 𠣒	 bao
@@ -27289,6 +27378,7 @@
 𠣖	 xuan
 𠣘	 zhou
 𠣠	 kui
+𠣡	 feng
 𠣪	 qu
 𠣫	 shao
 𠣬	 sun
@@ -27454,6 +27544,7 @@
 𠬝	 fu
 𠬢	 tao
 𠬣	 bang
+𠬤	 yi
 𠬪	 biao
 𠬬	 xi
 𠬮	 jie
@@ -27673,7 +27764,7 @@
 𠷄	 ke
 𠷅	 zhu
 𠷇	 shi
-𠷈	 lu
+𠷈	 lv
 𠷉	 jia
 𠷊	 pian
 𠷋	 hou
@@ -27771,7 +27862,7 @@
 𠼘	 wu
 𠼝	 li
 𠼞	 a
-𠼟	 lue
+𠼟	 lve
 𠼠	 zhi
 𠼡	 chou
 𠼢	 jiang
@@ -27851,7 +27942,7 @@
 𡀺	 xie
 𡀽	 ye
 𡀾	 e
-𡀿	 lu
+𡀿	 lv
 𡁀	 han
 𡁁	 ye
 𡁆	 luo
@@ -28411,7 +28502,7 @@
 𡡈	 beng
 𡡉	 mo
 𡡊	 chao
-𡡎	 lu
+𡡎	 lv
 𡡏	 shao
 𡡐	 bu
 𡡑	 zeng
@@ -28579,9 +28670,9 @@
 𡬊	 yu
 𡬋	 jiao
 𡬌	 meng
-𡬍	 long
+𡬍	 mi
 𡬎	 qiang
-𡬐	 mi
+𡬐	 yi
 𡬓	 yi
 𡬕	 long
 𡬖	 han
@@ -28938,7 +29029,7 @@
 𡽻	 zhan
 𡽼	 qi
 𡾂	 nao
-𡾅	 lu
+𡾅	 lv
 𡾇	 kuang
 𡾉	 mo
 𡾋	 lei
@@ -29128,7 +29219,7 @@
 𢅚	 biao
 𢅜	 ci
 𢅝	 dian
-𢅞	 lu
+𢅞	 lv
 𢅟	 ni
 𢅠	 yan
 𢅡	 lan
@@ -29198,7 +29289,7 @@
 𢈓	 you
 𢈕	 bai
 𢈙	 xia
-𢈚	 lu
+𢈚	 lv
 𢈛	 kun
 𢈜	 zang
 𢈝	 qiu
@@ -29381,7 +29472,7 @@
 𢐲	 fan
 𢐳	 bie
 𢐾	 bo
-𢐿	 rong
+𢐿	 rang
 𢑅	 ding
 𢑆	 quan
 𢑇	 jiu
@@ -29563,7 +29654,7 @@
 𢙓	 wei
 𢙮	 kan
 𢙱	 long
-𢙲	 lu
+𢙲	 lv
 𢙳	 zhuang
 𢙺	 zhi
 𢙼	 xing
@@ -29648,7 +29739,7 @@
 𢝴	 wu
 𢝸	 guo
 𢝹	 ti
-𢝻	 hong
+𢝻	 hu
 𢞇	 re
 𢞉	 yi
 𢞋	 tun
@@ -29682,7 +29773,7 @@
 𢟯	 zhe
 𢟰	 ai
 𢟱	 teng
-𢟳	 lu
+𢟳	 lv
 𢟴	 tui
 𢟵	 bi
 𢟾	 hui
@@ -29746,7 +29837,8 @@
 𢣞	 bo
 𢣠	 liu
 𢣳	 rui
-𢣻	 lu
+𢣵	 chu
+𢣻	 lv
 𢣼	 cha
 𢣿	 chu
 𢤁	 sao
@@ -29954,7 +30046,7 @@
 𢯫	 duan
 𢯭	 deng
 𢯮	 yu
-𢯰	 lu
+𢯰	 lv
 𢯲	 wan
 𢯳	 xue
 𢯴	 jiao
@@ -30044,6 +30136,7 @@
 𢵇	 yang
 𢵈	 jian
 𢵥	 zao
+𢵮	 lu
 𢶀	 zhuai
 𢶃	 fan
 𢶅	 she
@@ -30254,7 +30347,7 @@
 𣀔	 chuan
 𣀜	 lei
 𣀝	 shuo
-𣀞	 lu
+𣀞	 lv
 𣀣	 fu
 𣀥	 li
 𣀧	 san
@@ -31119,7 +31212,7 @@
 𣬽	 wu
 𣬿	 ze
 𣭀	 bao
-𣭇	 lu
+𣭇	 lv
 𣭖	 hao
 𣭗	 dou
 𣭘	 fu
@@ -31453,7 +31546,7 @@
 𤁰	 di
 𤁱	 cai
 𤁳	 zha
-𤁵	 lu
+𤁵	 lv
 𤁹	 huo
 𤁼	 li
 𤁽	 ying
@@ -31745,7 +31838,7 @@
 𤗨	 die
 𤗪	 shu
 𤗫	 li
-𤗬	 lu
+𤗬	 lv
 𤗭	 xia
 𤗯	 cui
 𤗳	 bo
@@ -31936,7 +32029,7 @@
 𤝸	 bi
 𤝹	 zhu
 𤝻	 yi
-𤝽	 lu
+𤝽	 lv
 𤝿	 kuang
 𤞂	 zhi
 𤞇	 wa
@@ -32071,7 +32164,7 @@
 𤢭	 hao
 𤢮	 yang
 𤢴	 shuo
-𤢵	 ai
+𤢵	 lai
 𤢶	 qiong
 𤢹	 lei
 𤢺	 xie
@@ -32620,7 +32713,7 @@
 𤾭	 long
 𤾲	 lian
 𤾵	 bie
-𤾺	 lu
+𤾺	 lv
 𤾿	 se
 𤿀	 zuo
 𤿄	 cun
@@ -32752,7 +32845,7 @@
 𥄇	 chi
 𥄈	 mu
 𥄉	 jiao
-𥄋	 nu
+𥄋	 nv
 𥄍	 guo
 𥄎	 xue
 𥄑	 fu
@@ -33003,7 +33096,7 @@
 𥍔	 lei
 𥍚	 bian
 𥍝	 shu
-𥍞	 nu
+𥍞	 nv
 𥍟	 xu
 𥍣	 hao
 𥍨	 gui
@@ -33233,7 +33326,7 @@
 𥖵	 yin
 𥖶	 pin
 𥖻	 sou
-𥖼	 lu
+𥖼	 lv
 𥖾	 di
 𥖿	 du
 𥗀	 liao
@@ -33340,6 +33433,7 @@
 𥝄	 wan
 𥝊	 fei
 𥝋	 fei
+𥝌	 ji
 𥝍	 yu
 𥝑	 zhi
 𥝒	 gua
@@ -33427,7 +33521,7 @@
 𥡝	 jian
 𥡟	 chuang
 𥡠	 shuang
-𥡢	 lu
+𥡢	 lv
 𥡣	 jun
 𥡤	 jiao
 𥡦	 ti
@@ -33441,13 +33535,14 @@
 𥢇	 jian
 𥢊	 ben
 𥢌	 fan
-𥢍	 sui
+𥢍	 hu
 𥢎	 zun
 𥢏	 dian
 𥢐	 gao
 𥢑	 gao
 𥢒	 lao
 𥢔	 zhuo
+𥢟	 hu
 𥢢	 tui
 𥢦	 bi
 𥢧	 ju
@@ -33478,6 +33573,7 @@
 𥣯	 you
 𥣰	 bian
 𥣸	 mu
+𥣹	 ran
 𥣺	 ran
 𥤂	 niao
 𥤊	 quan
@@ -33676,7 +33772,7 @@
 𥬼	 wen
 𥭋	 ji
 𥭌	 ji
-𥭐	 lu
+𥭐	 lv
 𥭑	 qiu
 𥭒	 dun
 𥭓	 bao
@@ -33748,7 +33844,7 @@
 𥰝	 xi
 𥰞	 chou
 𥰟	 yuan
-𥰠	 lu
+𥰠	 lv
 𥰡	 ce
 𥰢	 shan
 𥰣	 liu
@@ -33897,10 +33993,10 @@
 𥵯	 sa
 𥵶	 tian
 𥶅	 liu
-𥶆	 lu
+𥶆	 lv
 𥶇	 lu
 𥶈	 zou
-𥶌	 lu
+𥶌	 lv
 𥶍	 huan
 𥶏	 tiao
 𥶐	 tui
@@ -34242,7 +34338,7 @@
 𦆦	 ni
 𦆸	 yao
 𦆻	 la
-𦆾	 lu
+𦆾	 lv
 𦇀	 sui
 𦇁	 fu
 𦇄	 lei
@@ -34333,9 +34429,9 @@
 𦊫	 gong
 𦊬	 gu
 𦊱	 gua
-𦊹	 lue
+𦊹	 lve
 𦊻	 fan
-𦊼	 lu
+𦊼	 lv
 𦊽	 meng
 𦊾	 fu
 𦊿	 liu
@@ -34539,8 +34635,8 @@
 𦓐	 jue
 𦓓	 er
 𦓔	 er
-𦓕	 nu
-𦓖	 nu
+𦓕	 nv
+𦓖	 nv
 𦓝	 zhuan
 𦓢	 nuo
 𦓤	 lie
@@ -34720,7 +34816,7 @@
 𦛔	 xuan
 𦛕	 qu
 𦛖	 che
-𦛗	 lu
+𦛗	 lv
 𦛘	 he
 𦛙	 sheng
 𦛚	 nan
@@ -34786,7 +34882,7 @@
 𦝳	 xu
 𦝴	 yin
 𦝷	 beng
-𦝼	 lu
+𦝼	 lv
 𦞁	 zai
 𦞂	 da
 𦞆	 nie
@@ -35162,7 +35258,7 @@
 𦭥	 yi
 𦭭	 qiong
 𦭮	 zhi
-𦭯	 lu
+𦭯	 lv
 𦭰	 ru
 𦭲	 qi
 𦭳	 yu
@@ -35288,7 +35384,7 @@
 𦳩	 you
 𦳫	 shan
 𦳬	 he
-𦳭	 lu
+𦳭	 lv
 𦳮	 zhi
 𦳲	 jing
 𦳳	 zhen
@@ -35604,7 +35700,7 @@
 𧃏	 chu
 𧃐	 zhi
 𧃑	 qian
-𧃒	 lu
+𧃒	 lv
 𧃔	 zhuo
 𧃘	 zuo
 𧃙	 han
@@ -35711,7 +35807,7 @@
 𧈌	 ge
 𧈍	 xi
 𧈑	 ge
-𧈔	 lu
+𧈔	 lv
 𧈖	 ge
 𧈗	 ke
 𧈙	 shou
@@ -35869,7 +35965,7 @@
 𧍲	 pian
 𧍴	 lian
 𧍵	 hu
-𧍶	 lu
+𧍶	 lv
 𧍿	 dian
 𧎃	 cui
 𧎄	 mou
@@ -35899,7 +35995,7 @@
 𧎹	 zui
 𧎺	 ge
 𧎻	 wu
-𧎾	 lue
+𧎾	 lve
 𧎿	 ji
 𧏂	 xie
 𧏃	 xie
@@ -35924,7 +36020,7 @@
 𧐈	 zu
 𧐉	 zhi
 𧐊	 zhang
-𧐋	 lue
+𧐋	 lve
 𧐌	 wei
 𧐍	 chong
 𧐎	 mi
@@ -35938,13 +36034,13 @@
 𧐙	 wu
 𧐟	 mao
 𧐬	 hong
-𧐯	 lue
+𧐯	 lve
 𧐰	 du
 𧐱	 cong
 𧐲	 chan
 𧐳	 lu
 𧐴	 su
-𧑀	 lue
+𧑀	 lve
 𧑆	 zhong
 𧑇	 li
 𧑈	 fei
@@ -36014,7 +36110,7 @@
 𧓴	 ting
 𧓸	 zhi
 𧓺	 xie
-𧓻	 lu
+𧓻	 lv
 𧓽	 li
 𧓿	 mao
 𧔂	 xia
@@ -36045,7 +36141,7 @@
 𧕇	 xian
 𧕉	 qi
 𧕋	 yue
-𧕌	 lue
+𧕌	 lve
 𧕍	 ying
 𧕎	 qu
 𧕒	 fei
@@ -36094,7 +36190,7 @@
 𧖿	 xiang
 𧗁	 jin
 𧗆	 zheng
-𧗈	 n
+𧗈	 nu
 𧗋	 san
 𧗌	 hu
 𧗎	 zu
@@ -36202,7 +36298,7 @@
 𧜃	 shou
 𧜅	 jie
 𧜉	 gao
-𧜊	 lu
+𧜊	 lv
 𧜔	 xie
 𧜚	 zhi
 𧜞	 man
@@ -36597,7 +36693,7 @@
 𧭔	 teng
 𧭕	 guo
 𧭚	 qiang
-𧭜	 lu
+𧭜	 lv
 𧭝	 sa
 𧭞	 lie
 𧭟	 chi
@@ -36680,6 +36776,7 @@
 𧰇	 yu
 𧰈	 wu
 𧰊	 tian
+𧰎	 lao
 𧰒	 guo
 𧰘	 tan
 𧰙	 qi
@@ -37836,9 +37933,10 @@
 𨞣	 xu
 𨞨	 gai
 𨞩	 que
-𨞪	 chou
+𨞪	 shou
 𨞫	 meng
 𨞲	 shen
+𨞳	 qu
 𨞶	 qiao
 𨞷	 can
 𨞺	 li
@@ -38320,7 +38418,7 @@
 𨵧	 kua
 𨵩	 pi
 𨵪	 xie
-𨵫	 nue
+𨵫	 nve
 𨵬	 xian
 𨵭	 jian
 𨵮	 xu
@@ -38678,7 +38776,7 @@
 𩄺	 long
 𩄻	 mo
 𩄼	 fei
-𩄽	 lu
+𩄽	 lv
 𩄾	 ze
 𩄿	 bo
 𩅀	 dian
@@ -39698,7 +39796,7 @@
 𩥂	 qi
 𩥄	 dian
 𩥅	 tao
-𩥆	 lu
+𩥆	 lv
 𩥇	 zhan
 𩥈	 wen
 𩥉	 ji
@@ -40090,7 +40188,7 @@
 𩲢	 bi
 𩲣	 jia
 𩲤	 tiao
-𩲦	 lu
+𩲦	 lv
 𩲧	 kong
 𩲨	 zui
 𩲩	 ling
@@ -40118,7 +40216,7 @@
 𩳔	 yao
 𩳕	 tui
 𩳝	 gui
-𩳡	 lu
+𩳡	 lv
 𩳢	 yan
 𩳣	 qi
 𩳤	 lang
@@ -40138,7 +40236,7 @@
 𩴈	 mei
 𩴉	 yun
 𩴍	 shou
-𩴐	 lu
+𩴐	 lv
 𩴑	 you
 𩴒	 jiang
 𩴓	 nuo
@@ -40424,6 +40522,7 @@
 𩿽	 tuo
 𩿿	 chu
 𪀁	 ge
+𪀈	 yuan
 𪀉	 ge
 𪀊	 qu
 𪀏	 ju
@@ -40571,7 +40670,7 @@
 𪅂	 zhang
 𪅃	 piao
 𪅄	 su
-𪅅	 lue
+𪅅	 lve
 𪅆	 li
 𪅇	 meng
 𪅈	 chong
@@ -40649,7 +40748,7 @@
 𪈋	 tuan
 𪈑	 hui
 𪈘	 hong
-𪈜	 lu
+𪈜	 lv
 𪈟	 jia
 𪈥	 gui
 𪈨	 yi
@@ -41204,31 +41303,48 @@
 𪛎	 pi
 𪛒	 lian
 𪞝	 duo
-𪟝	 ji ji
+𪟝	 ji
+𪠳	 che
 𪡈	 bai
 𪡏	 zhan
 𪢮	 luan
+𪣝	 zao
 𪣻	 lou
 𪤗	 liao
+𪨇	 tui
 𪨊	 song
 𪨗	 jue
+𪨧	 lun
 𪨰	 qu
 𪨶	 she
 𪩘	 yan
 𪪝	 yong
+𪮋	 xiao
+𪱷	 bei
+𪷽	 zan
 𪺹	 nu
 𪻐	 cong
+𪽇	 ke
+𪾔	 xu
 𪾢	 xian
+𪾦	 lu
 𫁡	 li
 𫂈	 fei
 𫂙	 su
 𫃜	 kou
+𫄛	 jin
+𫄟	 shi
+𫄤	 da
+𫄥	 li
 𫄧	 yan
 𫄨	 chi
 𫄷	 yi
 𫄸	 xun
+𫇦	 ying
 𫇭	 wei
 𫈰	 qia
+𫉁	 ai
+𫋌	 te
 𫋐	 gong
 𫌀	 ji
 𫌨	 luo
@@ -41239,13 +41355,20 @@
 𫍯	 xian
 𫍰	 xi
 𫍲	 xiao
+𫍻	 xi
 𫍽	 xuan
+𫎫	 dan
+𫎬	 gan
 𫏋	 jue
+𫏐	 zan
 𫐄	 yue
 𫐆	 kuai
 𫐉	 ling
 𫐐	 ni
-𫐓	 rou
+𫐑	 guan
+𫐓	 bu
+𫐖	 jiao
+𫐘	 kan
 𫑡	 meng
 𫒶	 han
 𫓧	 fu
@@ -41256,16 +41379,22 @@
 𫔍	 fan
 𫔎	 jue
 𫔶	 nie
+𫖃	 hui
+𫖔	 bai
 𫖮	 yi
 𫖯	 fu
 𫖳	 yun
 𫗠	 zhang
 𫗦	 bu
 𫗧	 su
+𫗩	 luo
+𫗫	 hu
 𫗮	 huang
+𫗰	 dui
 𫗴	 zhan
 𫘜	 wen
 𫘝	 jue
+𫘞	 tuo
 𫘣	 han
 𫘤	 ai
 𫘦	 tao
@@ -41273,6 +41402,7 @@
 𫘨	 ti
 𫘪	 yuan
 𫘬	 xi
+𫘭	 shuang
 𫚈	 xu
 𫚉	 hong
 𫚒	 fu
@@ -41280,13 +41410,18 @@
 𫚕	 shi
 𫚖	 ci
 𫚙	 pu
+𫚥	 xia
 𫚭	 lie
 𫛛	 zhi
 𫛞	 jue
 𫛢	 ning
+𫛣	 yu
 𫛭	 kuang
+𫛳	 fu
 𫛶	 chi
 𫛸	 ti
+𫜨	 ba
+𫜬	 ze
 𫜷	 shou
 𫜸	 hua
 𫞩	 men
@@ -41299,55 +41434,80 @@
 𫠊	 xuan
 𫠜	 ni
 𫠥	 lou
+𫠦	 suo
 𫡑	 yin
+𫢒	 long
 𫢸	 dan
+𫧯	 xie
 𫫇	 e
+𫫦	 dan
 𫭟	 ou
 𫭢	 lun
 𫭼	 lao
 𫮃	 shan
 𫮬	 jiang
+𫰂	 duo
 𫰛	 xing
+𫰡	 hua
+𫵒	 tui
+𫵘	 bi
 𫵷	 li
 𫶇	 die
 𫷷	 xin
 𫸩	 kou
 𫼛	 diao
+𫼝	 chou
 𫽮	 dang
 𬀩	 wei
 𬀪	 xian
 𬀷	 shang
+𬁠	 xiang
 𬂩	 jia
 𬃊	 zhi
+𬄩	 yin
 𬆛	 nao
+𬆮	 kou
 𬇕	 wan
-𬇙	 bei
+𬇘	 tuan
+𬇙	 pei
 𬇹	 guo
+𬈧	 se
+𬉧	 han
 𬉼	 ou
 𬊈	 xun
 𬊤	 chan
 𬌗	 he
+𬍙	 zhan
 𬍛	 li
 𬍡	 dang
 𬍤	 xun
+𬎆	 ying
 𬐚	 hai
 𬑔	 zhong
+𬑗	 jian
 𬑡	 chou
 𬒈	 que
 𬒔	 geng
 𬒗	 lan
 𬒘	 xin
+𬓫	 qiu
 𬓼	 tui
-𬕂	 long
+𬕂	 gong
 𬘓	 xun
+𬘖	 jian
 𬘘	 dan
+𬘜	 zhan
+𬘝	 zhen
 𬘡	 yin
+𬘢	 kuang
 𬘩	 ting
 𬘫	 huan
 𬘬	 qian
-𬘭	 chen
+𬘭	 lin
 𬘯	 zhun
+𬘵	 geng
 𬙂	 yan
+𬙆	 fan
 𬙊	 mo
 𬙋	 xiang
 𬛸	 nie
@@ -41356,24 +41516,32 @@
 𬞟	 pin
 𬟁	 yi
 𬟽	 dong
+𬢊	 si
+𬣀	 wei
 𬣙	 xu
 𬣞	 zhu
 𬣡	 jian
 𬣳	 hen
 𬤇	 yin
 𬤊	 shi
+𬤐	 ge
 𬤝	 hui
 𬤥	 zhuan
+𬤰	 huan
+𬧀	 qiang
 𬨂	 qi
 𬨎	 you
 𬩽	 xun
 𬪩	 nong
 𬬩	 yi
+𬬫	 pi
 𬬭	 lun
 𬬮	 chang
 𬬱	 jin
+𬬲	 pi
 𬬸	 shu
 𬬹	 shen
+𬬺	 chu
 𬬻	 lu
 𬬿	 zhao
 𬭁	 mu
@@ -41381,23 +41549,30 @@
 𬭎	 hong
 𬭚	 chun
 𬭛	 bo
+𬭣	 xian
 𬭤	 hou
 𬭩	 weng
-𬭬	 hui
+𬭬	 wei
 𬭯	 pie
+𬭲	 suo
 𬭳	 xi
+𬭴	 jie
 𬭶	 hei
 𬭸	 lin
 𬭼	 sui
+𬮤	 ge
 𬮱	 yin
-𬮿	 gai
+𬮿	 qi
 𬯀	 ji
+𬯅	 xia
 𬯎	 tui
 𬰃	 mu
 𬱖	 di
 𬱟	 wei
+𬱦	 qi
 𬲜	 cheng
 𬳲	 chan
+𬳳	 fan
 𬳵	 pi
 𬳶	 jiong
 𬳽	 shen
@@ -41405,6 +41580,8 @@
 𬴂	 fei
 𬴃	 huo
 𬴊	 lin
+𬴐	 huan
+𬵨	 mi
 𬶋	 ju
 𬶍	 tuo
 𬶏	 wei
@@ -41415,15 +41592,332 @@
 𬶭	 ji
 𬶮	 xi
 𬷕	 bu
+𬸅	 chu
 𬸘	 yan
 𬸚	 yue
 𬸣	 xian
 𬸦	 zhuo
 𬸪	 fan
+𬸱	 qu
 𬹼	 xie
 𬺈	 yi
 𬺓	 chu
 𭀖	 li
+𭄛	 jian
+𭕆	 suo
+𭘓	 hu
+𭚦	 guo
+𭣇	 dian
+𭤰	 yu
+𭪆	 zhua
+𭱊	 hong
+𭹜	 luo
+𮆏	 lan
+𮉡	 lu
+𮉢	 zhi
+𮉤	 gua
+𮉧	 liang
+𮉨	 gua
+𮉪	 zou
+𮉫	 rui
+𮉬	 cui
+𮉯	 cai
+𮐨	 ying
+𮔂	 jie
+𮔅	 fu
+𮔊	 liang
+𮖁	 liang
+𮖱	 xie
+𮙊	 yin
+𮙋	 du
+𮝴	 gu
+𮝵	 er
+𮝸	 chun
+𮝹	 huan
+𮝺	 ge
+𮠞	 qiang
+𮣲	 gang
+𮣳	 hong
+𮣴	 chan
+𮣵	 zhui
+𮣶	 lv
+𮣷	 ju
+𮤲	 bi
+𮧴	 chang
+𮧵	 wei
+𮩛	 bi
+𮪣	 zong
+𮪥	 dun
+𮫂	 ning
+𮬜	 yi
+𮬝	 gui
+𮬞	 can
+𮬟	 huo
+𮬠	 lu
+𮬡	 hua
+𮬢	 weng
+𮬣	 xian
+𮬤	 zhen
+𮭥	 gong
+𮭦	 chen
+𮭨	 yan
+𮭪	 shuang
+𮭰	 gang
+𮯙	 ke
 灰	 hui
+𰀡	 qian
+𰀢	 jian
+𰁜	 luan
+𰃮	 xue
+𰃷	 chuang
+𰗣	 za
+𰟘	 yan
+𰥛	 fen
+𰧉	 zhi
+𰯲	 jian
+𰱱	 ci
+𰵝	 he
+𰵴	 chu
+𰷠	 yi
+𰷥	 cong
 𰻝	 biang
 𰻞	 biang
+𱂨	 e
+𱂯	 cui
+𱂱	 kan
+𱂻	 qiao
+𱃺	 tian
+𱅈	 bi
+𱆥	 dan
+𱉔	 jue
+𱊈	 yi
+𱍐	 qi
+𱍕	 pa
+𱍛	 ao
+𱎠	 si
+𱎶	 kua
+𱎼	 ge
+𱏅	 ji
+𱏋	 an
+𱏤	 lu
+𱏱	 lao
+𱐏	 gu
+𱐙	 chan
+𱐛	 tuo
+𱐿	 wai
+𱑖	 guan
+𱓰	 ri
+𱔯	 zhan
+𱕰	 lei
+𱖀	 hong
+𱖅	 bian
+𱖇	 gan
+𱖎	 ao
+𱖑	 ju
+𱖒	 shan
+𱖕	 zhuai
+𱖖	 tu
+𱖙	 hen
+𱖝	 zai
+𱖞	 zai
+𱖟	 kuang
+𱖧	 chong
+𱖫	 wu
+𱖭	 gong
+𱖰	 tuo
+𱖲	 jian
+𱖷	 cheng
+𱖼	 pai
+𱖽	 zhong
+𱗂	 sa
+𱗃	 hun
+𱗅	 niao
+𱗉	 wa
+𱗋	 ge
+𱗌	 la
+𱗎	 you
+𱗕	 qiu
+𱗖	 zhong
+𱗚	 yong
+𱗞	 ku
+𱗟	 ling
+𱗢	 huang
+𱗤	 gao
+𱘆	 hai
+𱘉	 lian
+𱘭	 nang
+𱘮	 fen
+𱘲	 tuo
+𱙧	 xu
+𱚝	 zha
+𱚦	 mao
+𱚯	 mo
+𱚱	 a
+𱛆	 niao
+𱛍	 lun
+𱛒	 hong
+𱛓	 long
+𱛔	 le
+𱛧	 hao
+𱛨	 hong
+𱛬	 shi
+𱛹	 ye
+𱛽	 duan
+𱜀	 nang
+𱜒	 xie
+𱜬	 liang
+𱝃	 shua
+𱝄	 sao
+𱝉	 tong
+𱝴	 hu
+𱞌	 hua
+𱞝	 qie
+𱟫	 chan
+𱠏	 kang
+𱠸	 yuan
+𱢡	 huan
+𱣂	 wu
+𱣄	 hui
+𱣑	 rou
+𱣕	 qi
+𱣹	 zang
+𱣻	 he
+𱤑	 gui
+𱤗	 ge
+𱤦	 luan
+𱤭	 peng
+𱤺	 beng
+𱥟	 yue
+𱥣	 ruo
+𱥰	 ya
+𱥷	 na
+𱦈	 gui
+𱧚	 lian
+𱧴	 mai
+𱨙	 zha
+𱨸	 kuo
+𱩂	 ying
+𱩉	 wu
+𱩽	 e
+𱪿	 xun
+𱬏	 lian
+𱭰	 weng
+𱮒	 sang
+𱮜	 tan
+𱮴	 gang
+𱮷	 cang
+𱮿	 bang
+𱯧	 fu
+𱰎	 sheng
+𱰗	 che
+𱰤	 qin
+𱰥	 lei
+𱰭	 zi
+𱰮	 ling
+𱱚	 xi
+𱱭	 yan
+𱱱	 jue
+𱲆	 ce
+𱲎	 ying
+𱳋	 chu
+𱳞	 zi
+𱳢	 hui
+𱳩	 hen
+𱳪	 dai
+𱳳	 wu
+𱴂	 la
+𱴇	 cheng
+𱴐	 chang
+𱴘	 jiang
+𱴞	 hou
+𱴨	 en
+𱴾	 gua
+𱵁	 shen
+𱶡	 gan
+𱶻	 tuo
+𱸂	 ou
+𱸃	 xi
+𱸇	 lao
+𱸖	 yang
+𱸛	 ben
+𱸜	 gan
+𱸡	 hao
+𱸥	 tiao
+𱸧	 lu
+𱹁	 qi
+𱹼	 zi
+𱺨	 mian
+𱺮	 hao
+𱻴	 zha
+𱼞	 han
+𱼷	 zhi
+𱽎	 bei
+𱽕	 dao
+𱽖	 shen
+𱽿	 jiang
+𱾃	 hua
+𱾆	 guan
+𱾎	 xie
+𱾝	 zhui
+𱾾	 pu
+𱿅	 bong
+𱿗	 biang
+𱿣	 ke
+𱿫	 tang
+𱿯	 wai
+𲀃	 bang
+𲀄	 xu
+𲀟	 hang
+𲀯	 xie
+𲁉	 zhen
+𲁓	 biang
+𲂆	 xia
+𲂓	 zao
+𲂔	 zhuo
+𲂻	 ying
+𲄀	 mi
+𲄗	 kuai
+𲄚	 lao
+𲄨	 qian
+𲅂	 rou
+𲆦	 xi
+𲆩	 song
+𲆫	 xun
+𲆰	 xi
+𲆳	 pin
+𲆵	 rong
+𲇊	 xi
+𲇙	 xiu
+𲇰	 ri
+𲈍	 ye
+𲈖	 ga
+𲈼	 chu
+𲉅	 tang
+𲉉	 lun
+𲉨	 kuang
+𲊹	 chai
+𲊽	 ci
+𲋁	 xing
+𲋏	 pao
+𲋶	 mai
+𲌉	 ju
+𲌞	 qian
+𲌡	 qiang
+𲌰	 mao
+𲍇	 yi
+𲍉	 yuan
+𲍏	 xian
+𲍐	 mi
+𲍗	 huan
+𲍭	 zhun
+𲍮	 fang
+𲍯	 jian
+𲍰	 mi
+𲍳	 you
+𲍹	 bao
+𲍾	 zhui
+𲍿	 ye
+𲎅	 chi
+𲎆	 tong
+𲎈	 meng
+𲎉	 mo

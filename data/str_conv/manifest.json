@@ -1,0 +1,41 @@
+{
+  "counts": {
+    "fanjian": 4118,
+    "norm": 6340,
+    "num_norm": 1912,
+    "pinyin": 41923,
+    "text_delete": 11321
+  },
+  "delete_categories": [
+    "Cc",
+    "Cf",
+    "Mc",
+    "Me",
+    "Mn",
+    "Pc",
+    "Pd",
+    "Pe",
+    "Pf",
+    "Pi",
+    "Po",
+    "Ps",
+    "Sc",
+    "Sk",
+    "Sm",
+    "So",
+    "Zl",
+    "Zp",
+    "Zs"
+  ],
+  "dependencies": {
+    "opencc": "1.2.0",
+    "pypinyin": "0.55.0"
+  },
+  "fanjian_configs": [
+    "t2s",
+    "tw2s",
+    "hk2s"
+  ],
+  "python_version": "3.13.12",
+  "unicodedata_version": "15.1.0"
+}

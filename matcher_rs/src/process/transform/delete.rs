@@ -120,7 +120,7 @@ impl<'a> Iterator for DeleteByteIter<'a> {
 /// - **Default**: [`DeleteMatcher::new`] borrows the pre-compiled bitset from
 ///   `constants::DELETE_BITSET_BYTES`.
 /// - **`runtime_build`**: `DeleteMatcher::from_sources` builds the bitset
-///   from source text and whitespace lists.
+///   from the source delete table.
 #[derive(Clone)]
 pub(crate) struct DeleteMatcher {
     /// Full Unicode bitset (one bit per codepoint). Borrowed from a `&'static`
@@ -261,25 +261,21 @@ impl DeleteMatcher {
         }
     }
 
-    /// Builds a matcher from the raw delete-source files and whitespace list.
+    /// Builds a matcher from the raw delete-source file.
     ///
-    /// Parses `text_delete` (one line of characters per entry, from
-    /// `TEXT-DELETE.txt`) and `white_space` (individual whitespace strings from
-    /// [`constants::WHITE_SPACE`]), collecting every unique `char` into a
-    /// `HashSet` and setting the corresponding bits in a freshly allocated
+    /// Parses `text_delete` (`U+XXXX` codepoint tokens, one per line, from
+    /// `TEXT-DELETE.txt`), collecting every unique codepoint into a `HashSet`
+    /// and setting the corresponding bits in a freshly allocated
     /// [`UNICODE_BITSET_SIZE`]-byte bitset.
     #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_sources(text_delete: &str, white_space: &[&str]) -> Self {
+    pub(crate) fn from_sources(text_delete: &str) -> Self {
         let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
-        let mut chars = AHashSet::new();
-        for line in text_delete.trim().lines() {
-            chars.extend(line.chars());
+        let mut codepoints = AHashSet::new();
+        for token in text_delete.trim().lines() {
+            codepoints.insert(parse_delete_codepoint(token));
         }
-        for ws in white_space {
-            chars.extend(ws.chars());
-        }
-        for c in chars {
-            let cp = c as usize;
+        for cp in codepoints {
+            let cp = cp as usize;
             bitset[cp / 8] |= 1 << (cp % 8);
         }
         let mut ascii_lut = [0u8; 16];
@@ -289,6 +285,17 @@ impl DeleteMatcher {
             ascii_lut,
         }
     }
+}
+
+#[cfg(feature = "runtime_build")]
+fn parse_delete_codepoint(token: &str) -> u32 {
+    u32::from_str_radix(
+        token
+            .strip_prefix("U+")
+            .expect("TEXT-DELETE entries must use U+XXXX format"),
+        16,
+    )
+    .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
 }
 
 #[cfg(all(test, not(feature = "runtime_build")))]

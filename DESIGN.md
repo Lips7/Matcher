@@ -51,7 +51,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
 |------|-----|-------------|
 | `None` | `0b00000001` | No transformation; match against the raw input. |
 | `Fanjian` | `0b00000010` | Traditional Chinese to Simplified Chinese conversion. |
-| `Delete` | `0b00000100` | Remove symbols, punctuation, and whitespace from the configured delete tables. |
+| `Delete` | `0b00000100` | Remove codepoints listed in the configured delete tables. |
 | `Normalize` | `0b00001000` | Multi-character replacement via normalization tables (full-width forms, digit-like variants, etc.). |
 | `PinYin` | `0b00010000` | Chinese characters to space-separated Pinyin syllables. |
 | `PinYinChar` | `0b00100000` | Chinese characters to Pinyin with inter-syllable spaces stripped. |
@@ -62,14 +62,13 @@ The default value is `ProcessType::empty()` (no bits set), which differs from `P
 
 Source data for each transformation:
 
-| Map | Source Files | Used By |
+| Map | Source Rule | Used By |
 |-----|-------------|---------|
-| `FANJIAN` | `Unihan_Variants.txt`, `EquivalentUnifiedIdeograph.txt` | `Fanjian` |
-| `TEXT-DELETE` | `DerivedGeneralCategory.txt` (symbols + punctuation) | `Delete` |
-| `WHITE-SPACE` | Hardcoded 27 Unicode whitespace codepoints | `Delete` |
-| `NORM` | `NormalizationTest.txt`, `DerivedGeneralCategory.txt` (alphanumeric + symbol variations) | `Normalize` |
-| `NUM-NORM` | `DerivedNumericValues.txt` | `Normalize` |
-| `PINYIN` / `PINYIN-CHAR` | `Unihan_Readings.txt` | `PinYin`, `PinYinChar` |
+| `FANJIAN` | OpenCC `t2s` base plus `tw2s` / `hk2s` single-codepoint additions | `Fanjian` |
+| `TEXT-DELETE` | `unicodedata.category()` over punctuation, symbol, mark, separator, control, and format categories used by the matcher | `Delete` |
+| `NORM` | `unicodedata.normalize("NFKC", ch).casefold()` | `Normalize` |
+| `NUM-NORM` | `unicodedata.numeric()` rendered to ASCII | `Normalize` |
+| `PINYIN` / `PINYIN-CHAR` | `pypinyin` no-tone single-codepoint romanization | `PinYin`, `PinYinChar` |
 
 ### Transformation Backends
 

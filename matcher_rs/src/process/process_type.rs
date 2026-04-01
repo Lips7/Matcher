@@ -79,8 +79,7 @@ bitflags! {
         /// Uses a page-table lookup compiled from `process_map/FANJIAN.txt`.
         const Fanjian = 0b00000010;
 
-        /// Removes codepoints configured in the Delete tables, including the built-in
-        /// whitespace set.
+        /// Removes codepoints configured in the Delete tables.
         ///
         /// Uses a bitset compiled from `process_map/TEXT-DELETE.txt` with optional
         /// SIMD acceleration for ASCII-heavy input.

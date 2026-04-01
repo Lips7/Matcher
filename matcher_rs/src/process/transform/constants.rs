@@ -17,7 +17,7 @@
 #[cfg(feature = "runtime_build")]
 pub(crate) const FANJIAN: &str = include_str!("../../../process_map/FANJIAN.txt");
 
-/// Newline-separated characters that should be removed by the Delete step.
+/// Newline-separated `U+XXXX` codepoint tokens that should be removed by the Delete step.
 ///
 /// Used under `runtime_build` to populate the Delete BitSet.
 #[cfg(feature = "runtime_build")]
@@ -41,21 +41,6 @@ pub(crate) const NORM: &str = include_str!("../../../process_map/NORM.txt");
 /// Used under `runtime_build` to build the Pinyin 2-stage page table and string buffer.
 #[cfg(feature = "runtime_build")]
 pub(crate) const PINYIN: &str = include_str!("../../../process_map/PINYIN.txt");
-
-/// All Unicode codepoints considered whitespace for the Delete step.
-///
-/// Includes standard ASCII control characters plus selected Unicode space variants
-/// (selected codepoints from U+2000–U+200F such as U+200D/U+200F, line/paragraph separators,
-/// ideographic space, etc.).
-/// Loaded at runtime under `runtime_build` to populate the Delete BitSet alongside
-/// [`TEXT_DELETE`].
-#[cfg(feature = "runtime_build")]
-pub(crate) const WHITE_SPACE: &[&str] = &[
-    "\u{0009}", "\u{000A}", "\u{000B}", "\u{000C}", "\u{000D}", "\u{0020}", "\u{0085}", "\u{00A0}",
-    "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
-    "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{200D}", "\u{200F}", "\u{2028}", "\u{2029}",
-    "\u{202F}", "\u{205F}", "\u{3000}",
-];
 
 // ── default build: pre-compiled normalization automaton ──────────────────────
 
@@ -118,7 +103,7 @@ pub(crate) const PINYIN_STR_BYTES: &str = include_str!(concat!(env!("OUT_DIR"), 
 /// Flat 139 KB bitset (`u8[139264]`) covering all Unicode codepoints 0x0–0x10FFFF.
 ///
 /// Bit `cp % 8` of byte `cp / 8` is set when codepoint `cp` should be removed by the
-/// Delete step. Generated at build time from `TEXT-DELETE.txt` and `WHITE_SPACE`.
+/// Delete step. Generated at build time from `TEXT-DELETE.txt`.
 #[cfg(not(feature = "runtime_build"))]
 pub(crate) const DELETE_BITSET_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/delete_bitset.bin"));
