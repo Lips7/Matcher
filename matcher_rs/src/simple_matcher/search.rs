@@ -156,7 +156,7 @@ impl SimpleMatcher {
     /// as soon as it is produced:
     ///
     /// - **Root**: Scanned directly if it terminates (`pt_index_mask != 0`).
-    /// - **Leaf + no-op** (ASCII text with Fanjian/Normalize/PinYin/PinYinChar step):
+    /// - **Leaf + ASCII no-op** (currently only Fanjian on ASCII text):
     ///   Reuses the parent's text and variant index, scans with the child's mask bits.
     /// - **Leaf + real transform**: Streams a byte iterator directly into the AC engine
     ///   via [`scan_variant_streaming`](Self::scan_variant_streaming), avoiding allocation.
@@ -243,16 +243,11 @@ impl SimpleMatcher {
 
                 if is_leaf {
                     if child.pt_index_mask != 0 {
-                        // Fanjian/Normalize/PinYin only operate on non-ASCII codepoints,
-                        // so pure-ASCII input passes through unchanged.
-                        let is_noop = parent_ascii
-                            && matches!(
-                                step,
-                                TransformStep::Fanjian(_)
-                                    | TransformStep::Normalize(_)
-                                    | TransformStep::PinYin(_)
-                                    | TransformStep::PinYinChar(_)
-                            );
+                        // Fanjian only operates on non-ASCII codepoints, so pure-ASCII
+                        // input passes through unchanged. Normalize and PinYin both have
+                        // ASCII-source entries in their replacement tables, so they must
+                        // still run even when the parent variant is ASCII.
+                        let is_noop = parent_ascii && matches!(step, TransformStep::Fanjian(_));
 
                         stopped = if is_noop {
                             let ctx = ScanContext {

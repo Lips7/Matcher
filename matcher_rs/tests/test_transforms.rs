@@ -264,6 +264,19 @@ fn test_normalize() {
 }
 
 #[test]
+fn test_normalize_leaf_applies_ascii_mappings() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Normalize, 1, "i")
+        .build()
+        .unwrap();
+
+    assert!(
+        matcher.is_match("I"),
+        "Normalize leaf path should apply ASCII mappings like I -> i"
+    );
+}
+
+#[test]
 fn test_pinyin() {
     use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
@@ -280,6 +293,19 @@ fn test_pinyin() {
     assert!(
         !simple_matcher.is_match("现"),
         "PinYin xi an should not match 现 (xian without space)"
+    );
+}
+
+#[test]
+fn test_pinyin_leaf_applies_ascii_digit_mappings() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::PinYin, 1, "yi")
+        .build()
+        .unwrap();
+
+    assert!(
+        matcher.is_match("1"),
+        "PinYin leaf path should apply ASCII digit mappings"
     );
 }
 
@@ -304,6 +330,19 @@ fn test_pinyinchar() {
     assert!(
         simple_matcher.is_match("xian"),
         "PinYinChar should match literal xian"
+    );
+}
+
+#[test]
+fn test_pinyinchar_leaf_applies_ascii_digit_mappings() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::PinYinChar, 1, "yi")
+        .build()
+        .unwrap();
+
+    assert!(
+        matcher.is_match("1"),
+        "PinYinChar leaf path should apply ASCII digit mappings"
     );
 }
 
