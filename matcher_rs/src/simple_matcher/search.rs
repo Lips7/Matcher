@@ -36,7 +36,6 @@ use std::borrow::Cow;
 
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
-use crate::process::transform::simd::multibyte_density;
 
 use super::rule::PatternDispatch;
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
@@ -71,11 +70,9 @@ impl SimpleMatcher {
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
 
-        let use_bytewise =
-            multibyte_density(text.as_bytes()) < self.scan.charwise_density_threshold();
         let _ = self
             .scan
-            .for_each_match_value(text, use_bytewise, |raw_value| {
+            .for_each_match_value(text, text.is_ascii(), |raw_value| {
                 match self.scan.patterns().dispatch(raw_value) {
                     PatternDispatch::DirectRule { rule_idx, .. } => {
                         self.rules.push_result_if_new(rule_idx, state, results);
@@ -108,7 +105,7 @@ impl SimpleMatcher {
         state: &mut SimpleMatchState,
     ) -> bool {
         self.scan
-            .for_each_match_value(processed_text, ctx.use_bytewise, |raw_value| {
+            .for_each_match_value(processed_text, ctx.is_ascii, |raw_value| {
                 self.process_match(raw_value, ctx, state)
             })
     }
@@ -191,7 +188,7 @@ impl SimpleMatcher {
             return false;
         }
 
-        let root_density = multibyte_density(text.as_bytes());
+        let root_is_ascii = text.is_ascii();
 
         // Scan root (ProcessType::None) if it terminates here.
         if tree[0].pt_index_mask != 0 {
@@ -200,7 +197,7 @@ impl SimpleMatcher {
                 process_type_mask: tree[0].pt_index_mask,
                 num_variants,
                 exit_early,
-                use_bytewise: root_density < self.scan.charwise_density_threshold(),
+                is_ascii: root_is_ascii,
             };
             if self.scan_variant(text, ctx, state) {
                 return true;
@@ -217,11 +214,9 @@ impl SimpleMatcher {
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
         let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
         texts.push(Cow::Borrowed(text));
-        // `density_flags[i]` — multi-byte density of the text at arena index `i`.
-        // `density == 0.0` ≡ pure ASCII (used for no-op detection and step.apply).
-        // `density < scan.charwise_density_threshold()` ≡ use bytewise engine.
-        let mut density_flags: Vec<f32> = Vec::with_capacity(num_variants);
-        density_flags.push(root_density);
+        // `ascii_flags[i]` — whether the text at arena index `i` is pure ASCII.
+        let mut ascii_flags: Vec<bool> = Vec::with_capacity(num_variants);
+        ascii_flags.push(root_is_ascii);
 
         // Maps tree node index -> arena index for its text.
         let mut node_arena: Vec<usize> = vec![0; num_variants];
@@ -245,9 +240,7 @@ impl SimpleMatcher {
                     .step
                     .expect("non-root process tree nodes always cache a transform step");
                 let is_leaf = child.children.is_empty();
-                let parent_density = density_flags[parent_aidx];
-                let parent_ascii = parent_density == 0.0;
-                let parent_use_bytewise = parent_density < self.scan.charwise_density_threshold();
+                let parent_ascii = ascii_flags[parent_aidx];
 
                 if is_leaf {
                     if child.pt_index_mask != 0 {
@@ -259,25 +252,18 @@ impl SimpleMatcher {
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
                                 exit_early,
-                                use_bytewise: parent_use_bytewise,
+                                is_ascii: parent_ascii,
                             };
                             self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
                         } else {
                             let vi = variant_counter;
                             variant_counter += 1;
-                            // For streaming leaves, derive use_bytewise from the step's
-                            // output characteristics; ASCII parent → always bytewise.
-                            let child_use_bytewise = if parent_ascii {
-                                true
-                            } else {
-                                step.output_use_bytewise(parent_use_bytewise)
-                            };
                             let ctx = ScanContext {
                                 text_index: vi,
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
                                 exit_early,
-                                use_bytewise: child_use_bytewise,
+                                is_ascii: parent_ascii,
                             };
                             self.scan_variant_streaming(
                                 step,
@@ -293,11 +279,11 @@ impl SimpleMatcher {
                     }
                 } else {
                     // Non-leaf: materialize for children.
-                    let output = step.apply(texts[parent_aidx].as_ref(), parent_density);
+                    let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
                     let (child_aidx, child_vi) = match output.changed {
                         Some(s) => {
                             let idx = texts.len();
-                            density_flags.push(output.output_density);
+                            ascii_flags.push(output.is_ascii);
                             texts.push(Cow::Owned(s));
                             let vi = variant_counter;
                             variant_counter += 1;
@@ -310,13 +296,12 @@ impl SimpleMatcher {
 
                     // Scan if this node terminates.
                     if child.pt_index_mask != 0 {
-                        let child_density = density_flags[child_aidx];
                         let ctx = ScanContext {
                             text_index: child_vi,
                             process_type_mask: child.pt_index_mask,
                             num_variants,
                             exit_early,
-                            use_bytewise: child_density < self.scan.charwise_density_threshold(),
+                            is_ascii: ascii_flags[child_aidx],
                         };
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, state);
                         if stopped {
@@ -363,23 +348,23 @@ impl SimpleMatcher {
             TransformStep::None => self.scan_variant(parent_text, ctx, state),
             TransformStep::Fanjian(matcher) => self.scan.for_each_match_value_from_iter(
                 matcher.byte_iter(parent_text),
-                ctx.use_bytewise,
+                ctx.is_ascii,
                 |raw_value| self.process_match(raw_value, ctx, state),
             ),
             TransformStep::Delete(matcher) => self.scan.for_each_match_value_from_iter(
                 matcher.byte_iter(parent_text),
-                ctx.use_bytewise,
+                ctx.is_ascii,
                 |raw_value| self.process_match(raw_value, ctx, state),
             ),
             TransformStep::Normalize(matcher) => self.scan.for_each_match_value_from_iter(
                 matcher.byte_iter(parent_text),
-                ctx.use_bytewise,
+                ctx.is_ascii,
                 |raw_value| self.process_match(raw_value, ctx, state),
             ),
             TransformStep::PinYin(matcher) | TransformStep::PinYinChar(matcher) => {
                 self.scan.for_each_match_value_from_iter(
                     matcher.byte_iter(parent_text),
-                    ctx.use_bytewise,
+                    ctx.is_ascii,
                     |raw_value| self.process_match(raw_value, ctx, state),
                 )
             }

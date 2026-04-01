@@ -134,11 +134,11 @@ pub(crate) struct DeleteMatcher {
 impl DeleteMatcher {
     /// Removes every configured codepoint from `text`.
     ///
-    /// Returns `Some((result, output_density))` where `result` is the text with all
-    /// deletable codepoints stripped, and `output_density` is the multi-byte density
-    /// (`continuation_bytes / total_bytes`) of the result, tracked incrementally during
-    /// the loop (no extra scan). Returns `None` when nothing was deleted, allowing
-    /// callers to keep borrowing the original `&str`.
+    /// Returns `Some((result, is_ascii))` where `result` is the text with all deletable
+    /// codepoints stripped, and `is_ascii` indicates whether the result is pure ASCII,
+    /// tracked incrementally (if no non-ASCII char was kept, `is_ascii` is `true`).
+    /// Returns `None` when nothing was deleted, allowing callers to keep borrowing the
+    /// original `&str`.
     ///
     /// # Algorithm
     ///
@@ -156,7 +156,7 @@ impl DeleteMatcher {
     /// Uses `get_unchecked` to read the current byte at `offset` after the
     /// `offset < len` / `offset >= len` guards have confirmed it is in bounds.
     /// The byte value is then used to branch into the ASCII or multi-byte path.
-    pub(crate) fn delete(&self, text: &str) -> Option<(String, f32)> {
+    pub(crate) fn delete(&self, text: &str) -> Option<(String, bool)> {
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut offset = 0usize;
@@ -233,12 +233,8 @@ impl DeleteMatcher {
         }
 
         result.push_str(&text[gap_start..]);
-        let output_density = if result.is_empty() {
-            0.0
-        } else {
-            cont_kept as f32 / result.len() as f32
-        };
-        Some((result, output_density))
+        // `cont_kept == 0` means no multi-byte chars were kept → result is pure ASCII.
+        Some((result, cont_kept == 0))
     }
 
     /// Returns a byte-by-byte iterator over delete-transformed text.

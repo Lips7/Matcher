@@ -3,7 +3,7 @@
 //! A [`TransformStep`] wraps one of the low-level transform engines (Fanjian, Delete,
 //! Normalize, PinYin, PinYinChar) and provides a uniform [`apply`](TransformStep::apply)
 //! interface. [`StepOutput`] carries the result: either `changed = None` (the text was
-//! unaffected) or `changed = Some(new_string)` together with an updated `output_density` value.
+//! unaffected) or `changed = Some(new_string)` together with an updated `is_ascii` flag.
 //!
 //! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
 //! [`ProcessType`]. On first access the corresponding [`TransformStep`] is compiled
@@ -24,66 +24,38 @@ use crate::process::transform::replace::{FanjianMatcher, NormalizeMatcher, Pinyi
 /// Result of applying one compiled pipeline step to a text variant.
 ///
 /// `changed` is [`None`] when the step is a no-op for the provided input (the text was
-/// not modified at all). `output_density` always describes the *post-step* text's
-/// multi-byte character density (`continuation_bytes / total_bytes`), regardless of
-/// whether the text changed. `output_density == 0.0` is exactly equivalent to pure ASCII.
-/// Callers use this to decide whether to scan with the bytewise or charwise automaton.
+/// not modified at all). `is_ascii` always describes the *post-step* text, regardless of
+/// whether the text changed. Callers use this to decide whether to scan with the
+/// bytewise or charwise Aho-Corasick automaton.
 pub(crate) struct StepOutput {
     /// The transformed string, or [`None`] if the step did not modify the input.
     pub(crate) changed: Option<String>,
-    /// Multi-byte density of the post-step text (`continuation_bytes / total_bytes`).
-    /// `0.0` for pure ASCII; propagated from parent when the step is a no-op.
-    pub(crate) output_density: f32,
+    /// Whether the post-step text consists entirely of ASCII bytes.
+    pub(crate) is_ascii: bool,
 }
 
 /// Constructors for [`StepOutput`].
 impl StepOutput {
-    /// Creates an unchanged result, propagating the caller-provided density.
+    /// Creates an unchanged result that preserves the caller-provided ASCII flag.
     ///
     /// Used when a step determines that no characters in the input are affected by its
     /// transformation table.
     #[inline(always)]
-    pub(crate) fn unchanged(density: f32) -> Self {
+    pub(crate) fn unchanged(is_ascii: bool) -> Self {
         Self {
             changed: None,
-            output_density: density,
+            is_ascii,
         }
     }
 
-    /// Creates a changed result with the produced `String` and its density.
+    /// Creates a changed result with the produced `String` and its ASCII status.
     #[inline(always)]
-    pub(crate) fn changed(changed: String, density: f32) -> Self {
+    pub(crate) fn changed(changed: String, is_ascii: bool) -> Self {
         Self {
             changed: Some(changed),
-            output_density: density,
+            is_ascii,
         }
     }
-}
-
-/// How one transform behaves when its input text is already known to be ASCII.
-///
-/// Used by [`TransformStep::is_noop_on_ascii_input`] and
-/// [`TransformStep::apply`] to short-circuit work when the parent density is
-/// `0.0` (pure ASCII), avoiding unnecessary page-table or automaton probes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AsciiInputBehavior {
-    /// The transform is guaranteed to leave ASCII input unchanged.
-    ///
-    /// Applies to Fanjian (Traditional→Simplified maps only CJK codepoints),
-    /// PinYin, and PinYinChar (Pinyin tables also only contain CJK entries).
-    /// When `parent_density == 0.0` and this variant is returned, [`TransformStep::apply`]
-    /// returns [`StepOutput::unchanged`] immediately without consulting the
-    /// transform tables.
-    NoOp,
-    /// The transform may change ASCII input, but the output remains ASCII.
-    ///
-    /// Applies to Delete (the delete bitset can contain ASCII codepoints such
-    /// as punctuation) and Normalize (normalization rules include full-width
-    /// ASCII and special numeric forms). When this variant is returned,
-    /// [`TransformStep::apply`] still runs the transform but forces
-    /// `output_density = 0.0` in the returned [`StepOutput`] because ASCII
-    /// input can only produce ASCII output.
-    MayChangeButStaysAscii,
 }
 
 /// Compiled single-bit transformation step.
@@ -110,100 +82,72 @@ pub(crate) enum TransformStep {
 
 /// Execution policy for one cached transform step.
 impl TransformStep {
-    /// Returns the behavior this step guarantees for pure-ASCII input.
-    #[inline(always)]
-    pub(crate) fn ascii_input_behavior(&self) -> AsciiInputBehavior {
-        match self {
-            Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => {
-                AsciiInputBehavior::NoOp
-            }
-            Self::Delete(_) | Self::Normalize(_) => AsciiInputBehavior::MayChangeButStaysAscii,
-        }
-    }
-
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
-    /// Convenience wrapper around [`ascii_input_behavior`](Self::ascii_input_behavior).
     /// Used by `walk_and_scan` to detect the no-op case for leaf nodes: when `true`,
     /// the leaf can reuse its parent's text and variant index instead of streaming
     /// a new byte iterator through the AC engine.
+    ///
+    /// - **Fanjian / PinYin / PinYinChar**: no-op — all keys are non-ASCII codepoints.
+    /// - **Delete / Normalize**: may change ASCII input (punctuation deletion, casefold).
     #[inline(always)]
     pub(crate) fn is_noop_on_ascii_input(&self) -> bool {
-        matches!(self.ascii_input_behavior(), AsciiInputBehavior::NoOp)
-    }
-
-    /// Returns the `use_bytewise` flag appropriate for scanning this step's output.
-    ///
-    /// The `use_bytewise` flag tells `ScanPlan::for_each_match_value` whether to
-    /// route the text through the bytewise Aho-Corasick engine or the charwise one.
-    ///
-    /// Rules:
-    /// - If the **parent is ASCII**, the parent flag is already `true` (bytewise)
-    ///   and this method is never called on the hot path (ASCII no-op detection
-    ///   handles it upstream).
-    /// - **PinYin / PinYinChar**: always return `true`. Pinyin romanization
-    ///   produces pure ASCII output regardless of the parent's CJK content,
-    ///   so bytewise scanning is always correct and faster.
-    /// - **All other steps**: inherit `parent_use_bytewise`. These steps may
-    ///   preserve or reduce the density but cannot increase it above the parent,
-    ///   so the parent's engine choice remains appropriate.
-    #[inline(always)]
-    pub(crate) fn output_use_bytewise(&self, parent_use_bytewise: bool) -> bool {
-        match self {
-            // PinYin/PinYinChar always produce ASCII romanization for non-ASCII input.
-            Self::PinYin(_) | Self::PinYinChar(_) => true,
-            _ => parent_use_bytewise,
-        }
+        matches!(
+            self,
+            Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_)
+        )
     }
 
     /// Applies this step to `text`, returning a [`StepOutput`] indicating what changed.
     ///
-    /// `parent_density` is the multi-byte density (`continuation_bytes / total_bytes`)
-    /// of the parent text variant. `0.0` means pure ASCII.
+    /// `parent_is_ascii` is the ASCII flag inherited from the parent text variant.
     ///
-    /// - **Fanjian / PinYin / PinYinChar** — short-circuit to unchanged on ASCII input.
-    /// - **Delete** — may change ASCII input, but ASCII stays ASCII (density = 0.0).
-    /// - **Normalize** — may change ASCII input, but ASCII stays ASCII (density = 0.0).
-    /// - **Non-ASCII Fanjian** — CJK→CJK substitution; byte widths are equal, so
-    ///   output density equals parent density.
-    /// - **Non-ASCII Delete / Normalize / PinYin / PinYinChar** — density computed by
-    ///   the underlying engine and returned in [`StepOutput::output_density`].
+    /// When `parent_is_ascii` is `true`, ASCII-in → ASCII-out is guaranteed for all
+    /// transforms (proven by process map analysis), so the output `is_ascii` flag is
+    /// forced to `true` without re-scanning the result.
+    ///
+    /// - **Fanjian / PinYin / PinYinChar on ASCII**: always unchanged (no-op).
+    /// - **Delete / Normalize on ASCII**: may change text but output stays ASCII.
+    /// - **Fanjian on non-ASCII**: CJK→CJK, `is_ascii = false`.
+    /// - **Delete / Normalize / PinYin / PinYinChar on non-ASCII**: `is_ascii` determined
+    ///   by the underlying engine via `result.is_ascii()`.
     #[inline(always)]
-    pub(crate) fn apply(&self, text: &str, parent_density: f32) -> StepOutput {
-        if parent_density == 0.0 {
-            return match self.ascii_input_behavior() {
-                AsciiInputBehavior::NoOp => StepOutput::unchanged(0.0),
-                AsciiInputBehavior::MayChangeButStaysAscii => match self {
-                    Self::Delete(matcher) => matcher.delete(text).map_or_else(
-                        || StepOutput::unchanged(0.0),
-                        |(changed, _)| StepOutput::changed(changed, 0.0),
-                    ),
-                    Self::Normalize(matcher) => matcher.replace(text).map_or_else(
-                        || StepOutput::unchanged(0.0),
-                        |(changed, _)| StepOutput::changed(changed, 0.0),
-                    ),
-                    _ => unreachable!("ASCII behavior and step variant must agree"),
-                },
+    pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput {
+        if parent_is_ascii {
+            // ASCII-in → ASCII-out for all transforms; Fanjian/PinYin/PinYinChar are no-ops.
+            return match self {
+                Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => {
+                    StepOutput::unchanged(true)
+                }
+                Self::Delete(matcher) => matcher.delete(text).map_or_else(
+                    || StepOutput::unchanged(true),
+                    |(changed, _)| StepOutput::changed(changed, true),
+                ),
+                Self::Normalize(matcher) => matcher.replace(text).map_or_else(
+                    || StepOutput::unchanged(true),
+                    |(changed, _)| StepOutput::changed(changed, true),
+                ),
             };
         }
 
+        // Non-ASCII parent: use engine-reported is_ascii.
         match self {
-            Self::None => StepOutput::unchanged(parent_density),
+            Self::None => StepOutput::unchanged(false),
             Self::Fanjian(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(parent_density),
-                |changed| StepOutput::changed(changed, parent_density),
+                || StepOutput::unchanged(false),
+                |changed| StepOutput::changed(changed, false), // CJK→CJK
             ),
             Self::Delete(matcher) => matcher.delete(text).map_or_else(
-                || StepOutput::unchanged(parent_density),
-                |(changed, density)| StepOutput::changed(changed, density),
+                || StepOutput::unchanged(false),
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
             Self::Normalize(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(parent_density),
-                |(changed, density)| StepOutput::changed(changed, density),
+                || StepOutput::unchanged(false),
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
             Self::PinYin(matcher) | Self::PinYinChar(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(parent_density),
-                |(changed, density)| StepOutput::changed(changed, density),
+                || StepOutput::unchanged(false),
+                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
             ),
         }
     }

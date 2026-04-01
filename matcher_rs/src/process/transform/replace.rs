@@ -38,7 +38,7 @@ use aho_corasick::{
 };
 
 use crate::process::string_pool::get_string_from_pool;
-use crate::process::transform::simd::{multibyte_density, skip_ascii_simd};
+use crate::process::transform::simd::skip_ascii_simd;
 use crate::process::transform::utf8::decode_utf8_raw;
 
 // ---------------------------------------------------------------------------
@@ -76,15 +76,15 @@ where
     }
 }
 
-/// Like [`replace_scan`] but also returns the multi-byte density of the output.
+/// Like [`replace_scan`] but also returns whether the output is pure ASCII.
 ///
 /// Accepts `(start, end, replacement_str)` triples where each replacement is a `&str`
-/// pushed directly into the result. Density is computed via a single SIMD pass over
-/// the completed result (one sweep, no per-gap overhead).
+/// pushed directly into the result. `is_ascii` is computed via `result.is_ascii()` after
+/// the string is fully assembled (single pass, equivalent cost to a SIMD density scan).
 ///
 /// Used by [`PinyinMatcher::replace`] and [`NormalizeMatcher::replace`].
 #[inline(always)]
-fn replace_spans_with_density<'a, I>(text: &str, mut iter: I) -> Option<(String, f32)>
+fn replace_spans_tracking_ascii<'a, I>(text: &str, mut iter: I) -> Option<(String, bool)>
 where
     I: Iterator<Item = (usize, usize, &'a str)>,
 {
@@ -99,8 +99,8 @@ where
             last_end = end;
         }
         result.push_str(&text[last_end..]);
-        let density = multibyte_density(result.as_bytes());
-        Some((result, density))
+        let is_ascii = result.is_ascii();
+        Some((result, is_ascii))
     } else {
         None
     }
@@ -672,10 +672,10 @@ impl PinyinMatcher {
     /// Replaces every matched codepoint in `text` with its Pinyin syllable string.
     ///
     /// Returns `None` when no codepoint in `text` has a Pinyin mapping,
-    /// allowing callers to continue borrowing the original input. The `f32`
-    /// is the multi-byte density of the output, computed via a single SIMD pass.
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, f32)> {
-        replace_spans_with_density(text, self.iter(text))
+    /// allowing callers to continue borrowing the original input. The `bool`
+    /// indicates whether the output is pure ASCII.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
+        replace_spans_tracking_ascii(text, self.iter(text))
     }
 
     /// Builds a matcher from the precompiled build-time tables and string storage.
@@ -812,11 +812,11 @@ impl NormalizeMatcher {
     /// appends the replacement string from `replace_list[pattern_index]`.
     ///
     /// Returns `None` when no pattern matched, so callers can preserve
-    /// borrowed input without allocation. The `f32` is the multi-byte density
-    /// of the output, computed via a single SIMD pass over the result.
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, f32)> {
+    /// borrowed input without allocation. The `bool` indicates whether the
+    /// output is pure ASCII.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
         let replace_list = &self.replace_list;
-        replace_spans_with_density(
+        replace_spans_tracking_ascii(
             text,
             self.find_iter(text)
                 .map(|m| (m.start(), m.end(), replace_list[m.pattern().as_usize()])),
