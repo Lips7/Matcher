@@ -35,7 +35,7 @@ requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
 [dependency-groups]
-dev = ["pytest", "pip"]
+dev = ["pytest", "pip", "maturin"]
 
 [tool.uv]
 cache-keys = [{ file = "matcher_py.pyi"}, { file = "**/*.rs"}, { file = "**/*.toml"}, { file = "../matcher_rs/**/*.rs"}, { file = "../matcher_rs/**/*.toml"} ]

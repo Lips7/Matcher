@@ -13,6 +13,8 @@ use daachorse::{
 };
 use divan::Bencher;
 use divan::counter::BytesCount;
+#[cfg(feature = "harry")]
+use matcher_rs::HarryMatcher;
 use std::collections::HashSet;
 use std::env;
 use std::hint::black_box;
@@ -27,6 +29,8 @@ enum Engine {
     AcDfa,
     DaacBytewise,
     DaacCharwise,
+    #[cfg(feature = "harry")]
+    Harry,
 }
 
 impl std::fmt::Display for Engine {
@@ -35,16 +39,29 @@ impl std::fmt::Display for Engine {
             Engine::AcDfa => write!(f, "ac_dfa"),
             Engine::DaacBytewise => write!(f, "daac_byte"),
             Engine::DaacCharwise => write!(f, "daac_char"),
+            #[cfg(feature = "harry")]
+            Engine::Harry => write!(f, "harry"),
         }
     }
 }
 
 const ALL_ENGINES: &[Engine] = &[Engine::AcDfa, Engine::DaacBytewise, Engine::DaacCharwise];
+#[cfg(feature = "harry")]
+const ALL_ENGINES_WITH_HARRY: &[Engine] = &[
+    Engine::AcDfa,
+    Engine::DaacBytewise,
+    Engine::DaacCharwise,
+    Engine::Harry,
+];
+#[cfg(not(feature = "harry"))]
+const ALL_ENGINES_WITH_HARRY: &[Engine] = ALL_ENGINES;
 
 enum BuiltEngine {
     AcDfa(AhoCorasick),
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
     DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
+    #[cfg(feature = "harry")]
+    Harry(HarryMatcher),
 }
 
 // ── Pattern preparation ────────────────────────────────────────────────────────
@@ -115,6 +132,19 @@ fn build_engine(engine: Engine, patterns: &[String]) -> BuiltEngine {
                 .build(&strs)
                 .unwrap(),
         ),
+        #[cfg(feature = "harry")]
+        Engine::Harry => {
+            let patvals: Vec<(&str, u32)> = patterns
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (p.as_str(), i as u32))
+                .collect();
+            BuiltEngine::Harry(
+                HarryMatcher::build(&patvals).expect(
+                    "harry build requires ≥64 patterns with at least one length-≥2 pattern",
+                ),
+            )
+        }
     }
 }
 
@@ -124,6 +154,15 @@ fn count_overlapping(engine: &BuiltEngine, text: &str) -> usize {
         BuiltEngine::AcDfa(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacBytewise(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacCharwise(ac) => ac.find_overlapping_iter(text).count(),
+        #[cfg(feature = "harry")]
+        BuiltEngine::Harry(matcher) => {
+            let mut count = 0usize;
+            matcher.for_each_match_value(text, |_| {
+                count += 1;
+                false
+            });
+            count
+        }
     }
 }
 
@@ -133,6 +172,8 @@ fn engine_is_match(engine: &BuiltEngine, text: &str) -> bool {
         BuiltEngine::AcDfa(ac) => ac.is_match(text),
         BuiltEngine::DaacBytewise(ac) => ac.find_iter(text).next().is_some(),
         BuiltEngine::DaacCharwise(ac) => ac.find_iter(text).next().is_some(),
+        #[cfg(feature = "harry")]
+        BuiltEngine::Harry(matcher) => matcher.is_match(text),
     }
 }
 
@@ -143,6 +184,8 @@ fn heap_bytes(engine: &BuiltEngine) -> usize {
         BuiltEngine::AcDfa(ac) => ac.memory_usage(),
         BuiltEngine::DaacBytewise(ac) => ac.heap_bytes(),
         BuiltEngine::DaacCharwise(ac) => ac.heap_bytes(),
+        #[cfg(feature = "harry")]
+        BuiltEngine::Harry(_) => 0, // no introspection API yet
     }
 }
 
@@ -172,11 +215,11 @@ fn print_memory_report() {
 // ── Build benchmarks ───────────────────────────────────────────────────────────
 
 macro_rules! define_build_bench {
-    ($mod_name:ident, $prep_fn:ident, [$($size:expr),+ $(,)?]) => {
+    ($mod_name:ident, $prep_fn:ident, $engines:expr, [$($size:expr),+ $(,)?]) => {
         mod $mod_name {
             use super::*;
 
-            #[divan::bench(args = ALL_ENGINES, consts = [$($size),+], max_time = 3, sample_count = 30)]
+            #[divan::bench(args = $engines, consts = [$($size),+], max_time = 3, sample_count = 30)]
             fn build<const N: usize>(bencher: Bencher, engine: &Engine) {
                 let patterns = $prep_fn(N);
                 bencher.bench_local(|| {
@@ -187,18 +230,33 @@ macro_rules! define_build_bench {
     };
 }
 
-define_build_bench!(build_ascii, ascii_patterns, [500usize, 2000, 10000]);
-define_build_bench!(build_cjk, cjk_patterns, [500usize, 2000, 10000]);
-define_build_bench!(build_mixed, mixed_patterns, [500usize, 2000, 10000]);
+define_build_bench!(
+    build_ascii,
+    ascii_patterns,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000]
+);
+define_build_bench!(
+    build_cjk,
+    cjk_patterns,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000]
+);
+define_build_bench!(
+    build_mixed,
+    mixed_patterns,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000]
+);
 
 // ── Search benchmarks ─────────────────────────────────────────────────────────
 
 macro_rules! define_search_bench {
-    ($mod_name:ident, $prep_fn:ident, $haystack:expr, [$($size:expr),+ $(,)?]) => {
+    ($mod_name:ident, $prep_fn:ident, $haystack:expr, $engines:expr, [$($size:expr),+ $(,)?]) => {
         mod $mod_name {
             use super::*;
 
-            #[divan::bench(args = ALL_ENGINES, consts = [$($size),+], max_time = 3)]
+            #[divan::bench(args = $engines, consts = [$($size),+], max_time = 3)]
             fn search<const N: usize>(bencher: Bencher, engine: &Engine) {
                 let patterns = $prep_fn(N);
                 let built = build_engine(*engine, &patterns);
@@ -221,6 +279,7 @@ define_search_bench!(
     search_ascii_en,
     ascii_patterns,
     EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [
         500usize, 1000, 1500, 2000, 3000, 5000, 6000, 7000, 8000, 10000, 50000
     ]
@@ -229,41 +288,46 @@ define_search_bench!(
     search_ascii_cn,
     ascii_patterns,
     CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_cjk_cn,
     cjk_patterns,
     CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_cjk_en,
     cjk_patterns,
     EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_mixed_en,
     mixed_patterns,
     EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_mixed_cn,
     mixed_patterns,
     CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 5000, 10000, 50000]
 );
 
 // ── is_match benchmarks ───────────────────────────────────────────────────────
 
 macro_rules! define_is_match_bench {
-    ($mod_name:ident, $prep_fn:ident, $haystack:expr, [$($size:expr),+ $(,)?]) => {
+    ($mod_name:ident, $prep_fn:ident, $haystack:expr, $engines:expr, [$($size:expr),+ $(,)?]) => {
         mod $mod_name {
             use super::*;
 
-            #[divan::bench(args = ALL_ENGINES, consts = [$($size),+], max_time = 3)]
+            #[divan::bench(args = $engines, consts = [$($size),+], max_time = 3)]
             fn is_match<const N: usize>(bencher: Bencher, engine: &Engine) {
                 let patterns = $prep_fn(N);
                 let built = build_engine(*engine, &patterns);
@@ -286,13 +350,43 @@ define_is_match_bench!(
     is_match_ascii_en,
     ascii_patterns,
     EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 1500, 2000, 3000, 5000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_ascii_cn,
     ascii_patterns,
     CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
     [500usize, 1000, 2000, 5000, 10000, 50000]
+);
+define_is_match_bench!(
+    is_match_cjk_cn,
+    cjk_patterns,
+    CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000, 50000]
+);
+define_is_match_bench!(
+    is_match_cjk_en,
+    cjk_patterns,
+    EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000, 50000]
+);
+define_is_match_bench!(
+    is_match_mixed_cn,
+    mixed_patterns,
+    CN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000, 50000]
+);
+define_is_match_bench!(
+    is_match_mixed_en,
+    mixed_patterns,
+    EN_HAYSTACK,
+    ALL_ENGINES_WITH_HARRY,
+    [500usize, 2000, 10000, 50000]
 );
 
 // ── Pattern-mix benchmark ─────────────────────────────────────────────────────

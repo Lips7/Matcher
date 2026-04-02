@@ -23,11 +23,15 @@ use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
 mod engine;
+#[cfg(feature = "harry")]
+mod harry;
 mod rule;
 mod search;
 mod state;
 
 use engine::ScanPlan;
+#[cfg(feature = "harry")]
+pub use harry::HarryMatcher;
 use rule::RuleSet;
 pub use rule::{SimpleTable, SimpleTableSerde};
 

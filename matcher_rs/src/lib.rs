@@ -81,8 +81,10 @@
 //!
 //! | Flag | Default | Effect |
 //! |------|---------|--------|
-//! | `dfa` | on | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
-//! | `simd_runtime_dispatch` | on | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
+//! | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
+//! | `dfa` | via `perf` | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
+//! | `simd_runtime_dispatch` | via `perf` | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
+//! | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK patterns/haystacks |
 //! | `runtime_build` | off | Parses the source transform maps at runtime instead of loading build-time artifacts lazily on first use |
 
 /// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
@@ -175,4 +177,6 @@ mod process;
 pub use process::{ProcessType, reduce_text_process, reduce_text_process_emit, text_process};
 
 mod simple_matcher;
+#[cfg(feature = "harry")]
+pub use simple_matcher::HarryMatcher;
 pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};

@@ -38,6 +38,8 @@ use daachorse::{
 
 use crate::MatcherError;
 
+#[cfg(feature = "harry")]
+use super::harry::HarryMatcher;
 use super::rule::{PatternEntry, PatternIndex};
 
 /// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
@@ -78,6 +80,14 @@ pub(super) struct ScanPlan {
     /// `None` when no non-ASCII patterns exist and no ASCII patterns need charwise
     /// coverage.
     charwise_matcher: Option<CharwiseMatcher>,
+    /// Harry column-vector SIMD engine for `is_match` fast path.
+    ///
+    /// Built from the full pattern set (ASCII + non-ASCII). When present, `is_match`
+    /// dispatches here instead of to the AC engines — Harry has no state table and
+    /// is faster at large pattern counts on both ASCII and CJK haystacks.
+    /// `None` when the pattern set is too small (< 64) or has no length-≥2 pattern.
+    #[cfg(feature = "harry")]
+    harry_matcher: Option<Box<HarryMatcher>>,
     /// Flat index mapping automaton raw values back to rule-entry metadata.
     patterns: PatternIndex,
 }
@@ -124,7 +134,8 @@ impl ScanPlan {
     ///
     /// 1. Builds a [`PatternIndex`] from the raw entry buckets.
     /// 2. Builds the value map (direct-rule encoding where possible).
-    /// 3. Delegates to [`compile_automata`] for actual automaton construction.
+    /// 3. Delegates to [`compile_automata`] for AC automaton construction.
+    /// 4. Attempts to build a [`HarryMatcher`] from the full pattern set for `is_match`.
     pub(super) fn compile(
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
@@ -133,9 +144,21 @@ impl ScanPlan {
         let value_map = patterns.build_value_map();
         let (bytewise_matcher, charwise_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
+        #[cfg(feature = "harry")]
+        let harry_matcher = {
+            let patvals: Vec<(&str, u32)> = dedup_patterns
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (p.as_ref(), value_map[i]))
+                .collect();
+            HarryMatcher::build(&patvals).map(Box::new)
+        };
+
         Ok(Self {
             bytewise_matcher,
             charwise_matcher,
+            #[cfg(feature = "harry")]
+            harry_matcher,
             patterns,
         })
     }
@@ -148,11 +171,17 @@ impl ScanPlan {
 
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// Selects the engine based on whether a charwise engine exists and whether `text`
-    /// is pure ASCII. When no charwise engine is present, always uses the bytewise engine
-    /// (skipping the `text.is_ascii()` scan).
+    /// When the `harry` feature is enabled and a [`HarryMatcher`] was compiled,
+    /// it is used unconditionally — it covers both ASCII and non-ASCII haystacks
+    /// across the full pattern set. Otherwise, engine selection falls back to AC:
+    /// bytewise when the text is ASCII or no charwise engine exists; charwise otherwise.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
+        #[cfg(feature = "harry")]
+        if let Some(ref harry) = self.harry_matcher {
+            return harry.is_match(text);
+        }
+
         if self.charwise_matcher.is_none() || text.is_ascii() {
             self.bytewise_matcher
                 .as_ref()
@@ -371,14 +400,10 @@ fn compile_automata(
     let cap = dedup_patterns.len();
     let mut ascii_patvals: Vec<(&str, u32)> = Vec::with_capacity(cap);
     let mut non_ascii_patvals: Vec<(&str, u32)> = Vec::with_capacity(cap);
-    #[cfg(feature = "dfa")]
-    let mut ascii_ac_to_value: Vec<u32> = Vec::with_capacity(cap);
 
     for (dedup_idx, pattern) in dedup_patterns.iter().enumerate() {
         let value = value_map[dedup_idx];
         if pattern.as_ref().is_ascii() {
-            #[cfg(feature = "dfa")]
-            ascii_ac_to_value.push(value);
             ascii_patvals.push((pattern.as_ref(), value));
         } else {
             non_ascii_patvals.push((pattern.as_ref(), value));
@@ -405,24 +430,7 @@ fn compile_automata(
         .unwrap_or(non_ascii_patvals.as_slice());
 
     let build_bytewise = move || -> Result<BytewiseMatcher, MatcherError> {
-        #[cfg(feature = "dfa")]
-        if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
-            return Ok(BytewiseMatcher::AcDfa {
-                matcher: Box::new(
-                    AcDfaEngine::builder()
-                        .match_kind(AhoCorasickMatchKind::Standard)
-                        .build(ascii_patvals.iter().map(|(p, _)| p))
-                        .map_err(MatcherError::automaton_build)?,
-                ),
-                to_value: ascii_ac_to_value,
-            });
-        }
-        Ok(BytewiseMatcher::DaacBytewise(
-            DoubleArrayAhoCorasickBuilder::new()
-                .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                .build_with_values(ascii_patvals)
-                .map_err(MatcherError::automaton_build)?,
-        ))
+        build_current_bytewise(ascii_patvals, value_map.len())
     };
 
     let build_charwise = || -> Result<CharwiseMatcher, MatcherError> {
@@ -446,5 +454,92 @@ fn compile_automata(
                 .expect("bytewise automaton build panicked")?;
             Ok((Some(bytewise), Some(charwise)))
         }),
+    }
+}
+
+fn build_current_bytewise(
+    ascii_patvals: Vec<(&str, u32)>,
+    _value_map_len: usize,
+) -> Result<BytewiseMatcher, MatcherError> {
+    #[cfg(feature = "dfa")]
+    let mut ascii_ac_to_value: Vec<u32> = Vec::with_capacity(ascii_patvals.len());
+
+    #[cfg(feature = "dfa")]
+    for &(_, value) in &ascii_patvals {
+        ascii_ac_to_value.push(value);
+    }
+
+    #[cfg(feature = "dfa")]
+    if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+        return Ok(BytewiseMatcher::AcDfa {
+            matcher: Box::new(
+                AcDfaEngine::builder()
+                    .match_kind(AhoCorasickMatchKind::Standard)
+                    .build(ascii_patvals.iter().map(|(p, _)| p))
+                    .map_err(MatcherError::automaton_build)?,
+            ),
+            to_value: ascii_ac_to_value,
+        });
+    }
+
+    Ok(BytewiseMatcher::DaacBytewise(
+        DoubleArrayAhoCorasickBuilder::new()
+            .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+            .build_with_values(ascii_patvals)
+            .map_err(MatcherError::automaton_build)?,
+    ))
+}
+
+#[cfg(all(test, feature = "harry"))]
+impl ScanPlan {
+    /// Returns whether a Harry matcher was compiled for this plan.
+    pub(super) fn has_harry(&self) -> bool {
+        self.harry_matcher.is_some()
+    }
+}
+
+#[cfg(all(test, feature = "harry"))]
+mod tests {
+    use super::*;
+
+    fn compile_from_strings(patterns: &[&str]) -> ScanPlan {
+        let dedup_patterns: Vec<Cow<'_, str>> =
+            patterns.iter().map(|&p| Cow::Borrowed(p)).collect();
+        let dedup_entries: Vec<Vec<PatternEntry>> = patterns.iter().map(|_| vec![]).collect();
+        ScanPlan::compile(&dedup_patterns, dedup_entries).expect("compile should succeed")
+    }
+
+    #[test]
+    fn harry_built_for_large_ascii_sets() {
+        let patterns: Vec<String> = (0..64).map(|i| format!("token{i:02}")).collect();
+        let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+        let plan = compile_from_strings(&refs);
+        assert!(plan.has_harry(), "should build Harry for 64 ASCII patterns");
+    }
+
+    #[test]
+    fn harry_not_built_for_small_sets() {
+        let patterns: Vec<String> = (0..8).map(|i| format!("token{i:02}")).collect();
+        let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+        let plan = compile_from_strings(&refs);
+        assert!(
+            !plan.has_harry(),
+            "should not build Harry for < 64 patterns"
+        );
+    }
+
+    #[test]
+    fn harry_built_for_mixed_pattern_sets() {
+        let ascii: Vec<String> = (0..32).map(|i| format!("token{i:02}")).collect();
+        let cjk: Vec<String> = (0..32).map(|i| format!("测试{i:02}")).collect();
+        let patterns: Vec<String> = ascii.into_iter().chain(cjk).collect();
+        let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+        let plan = compile_from_strings(&refs);
+        assert!(plan.has_harry(), "should build Harry for 64 mixed patterns");
+        // AC engines are also built for for_each_match_value
+        assert!(
+            plan.charwise_matcher.is_some(),
+            "charwise engine should exist for CJK patterns"
+        );
     }
 }

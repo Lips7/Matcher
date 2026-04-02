@@ -483,4 +483,28 @@ mod tests {
         assert_eq!(parsed.dedup_entries[0].len(), 2);
         assert_eq!(parsed.rules.len(), 2);
     }
+
+    #[cfg(feature = "harry")]
+    #[test]
+    fn test_harry_matches_ac_on_ascii_literals() {
+        let mut literal_map = HashMap::new();
+        for i in 0..64u32 {
+            literal_map.insert(i + 1, format!("token{i:02}"));
+        }
+        let table = HashMap::from([(ProcessType::None, literal_map)]);
+        let matcher = SimpleMatcher::new(&table).unwrap();
+
+        let haystack = "token00 xx token17 yy token63 zz";
+        assert!(matcher.is_match(haystack));
+
+        let results = matcher.process(haystack);
+        let ids: Vec<u32> = {
+            let mut ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
+            ids.sort_unstable();
+            ids
+        };
+        assert!(ids.contains(&1)); // token00 → id 1
+        assert!(ids.contains(&18)); // token17 → id 18
+        assert!(ids.contains(&64)); // token63 → id 64
+    }
 }

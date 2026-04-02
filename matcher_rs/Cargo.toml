@@ -36,16 +36,21 @@ proptest = "1.11.0"
 serde_json = "1.0"
 
 [features]
-default = ["dfa", "simd_runtime_dispatch"]
+default = ["perf"]
+# Enables all performance features: DFA automaton, SIMD transform dispatch, and Harry ASCII scan backend.
+perf = ["dfa", "simd_runtime_dispatch", "harry"]
 # By enabling the runtime_build feature, process matchers are built at startup from source text maps, increasing startup time.
 runtime_build = []
 # By enabling the dfa feature, DFA-backed Aho-Corasick automata are used for matching, significantly increasing memory usage.
 dfa = []
 # By enabling the simd_runtime_dispatch feature, the best available transform kernel is selected at runtime (AVX2/NEON/portable).
 simd_runtime_dispatch = []
+# By enabling the harry feature, the Harry column-vector SIMD scan backend is compiled and auto-selected for is_match
+# when the pattern set has ≥ 64 patterns. Handles both ASCII and non-ASCII (CJK) patterns and haystacks.
+harry = []
 
 [package.metadata.cargo-all-features]
-skip_feature_sets = [["simd_runtime_dispatch"]]
+allowlist = ["perf", "runtime_build"]
 
 [[bench]]
 name = "bench"

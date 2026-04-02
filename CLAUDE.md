@@ -30,11 +30,11 @@ make test-rs                        # All feature combos + doctests (no lint)
 make test                           # All languages (Rust + Python + Java + C)
 make ci-rs                          # lint + doc + test (CI equivalent)
 cargo nextest run                   # Default features
-cargo all-features nextest run      # All feature combinations
-cargo test --doc                    # Doctests (nextest doesn't run these)
-cargo nextest run <test_name>       # Single test by name
-cargo nextest run --no-default-features  # Without DFA
-cargo nextest run --test test_simple_matcher  # Single test file by name
+cargo all-features nextest run -p matcher_rs            # All feature combinations
+cargo test --doc -p matcher_rs                          # Doctests (nextest doesn't run these)
+cargo nextest run -p matcher_rs <test_name>             # Single test by name
+cargo nextest run -p matcher_rs --no-default-features   # Without DFA
+cargo nextest run -p matcher_rs --test test_simple_matcher  # Single test file by name
 
 # Lint/Format
 make lint                           # All languages
