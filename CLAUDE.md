@@ -92,8 +92,10 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `dfa` | on | Aho-Corasick DFA — faster but ~10x memory vs NFA |
-| `simd_runtime_dispatch` | on | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
+| `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
+| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~10x memory vs NFA; only preferred for pure-ASCII sets ≤ 7,000 patterns (cache cliff above that) |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
+| `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
 | `runtime_build` | off | Build transformation tables at runtime — slower init, dynamic rules |
 
 ### Workspace Layout
@@ -108,7 +110,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores three components: `ProcessPlan` (transform tree + `SearchMode`), `ScanPlan` (AC automata + pattern index), `RuleSet` (rule metadata + state transitions).
 - `mod.rs` — `SimpleMatcher`, `SimpleResult`, `ProcessPlan`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
-- `engine.rs` — `ScanPlan`, `AsciiMatcher`, `NonAsciiMatcher`, `PatternIndex` — AC automaton compilation and scan iteration
+- `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise for ASCII), `CharwiseMatcher` (DAAC charwise), `PatternIndex` — AC automaton compilation and scan iteration
+- `harry.rs` — `HarryMatcher` — column-vector SIMD scan engine (Harry12b dual-index encoding); NEON on AArch64, AVX512-VBMI on x86-64, scalar fallback; auto-selected for `is_match` via `ScanPlan` when ≥ 64 patterns exist
 - `rule.rs` — `RuleSet`, `RuleHot`, `RuleCold`, `PatternEntry`, `PatternKind`, `PatternDispatch`, `DIRECT_RULE_BIT`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
 - `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified streaming tree walk), `process_simple`, `scan_variant`, `scan_variant_streaming`, `process_match`
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
