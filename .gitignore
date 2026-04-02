@@ -47,3 +47,6 @@ matcher_java/.project
 
 # Local benchmark run sets
 matcher_rs/bench_records/*/
+
+# AI
+.claude/
