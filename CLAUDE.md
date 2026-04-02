@@ -10,8 +10,6 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 
 **Prerequisites:** `cargo-all-features` (`cargo install cargo-all-features`), `cargo-nextest` (`cargo install cargo-nextest`), `uv` (Python env manager), `prek` (pre-commit runner).
 
-**Note:** `cargo-all-features` skips `simd_runtime_dispatch` alone (see `skip_feature_sets` in `matcher_rs/Cargo.toml`) — it's only tested in combination with other features.
-
 ## Commands
 
 ```bash
@@ -26,47 +24,38 @@ make fmt                            # Auto-format
 make fmt-check                      # Check formatting without modifying
 
 # Test
-make test-rs                        # All feature combos + doctests (no lint)
 make test                           # All languages (Rust + Python + Java + C)
-make ci-rs                          # lint + doc + test (CI equivalent)
-cargo nextest run                   # Default features
-cargo all-features nextest run -p matcher_rs            # All feature combinations
-cargo test --doc -p matcher_rs                          # Doctests (nextest doesn't run these)
-cargo nextest run -p matcher_rs <test_name>             # Single test by name
-cargo nextest run -p matcher_rs --no-default-features   # Without DFA
-cargo nextest run -p matcher_rs --test test_simple_matcher  # Single test file by name
+make test-rs                        # All feature combos + doctests + docs
+make test-py                        # Python bindings
+make test-java                      # Java bindings
+make test-c                         # C bindings
+cd matcher_rs && cargo nextest run <test_name>                  # Single test by name
+cd matcher_rs && cargo nextest run --no-default-features        # Without DFA
+cd matcher_rs && cargo nextest run --test test_simple_matcher   # Single test file by name
 
 # Lint/Format
-make lint                           # All languages
-make lint-rs                        # cargo fmt + cargo clippy
-make lint-py                        # ruff + ty check
-make lint-java                      # mvn checkstyle:check
-cargo fmt --all
-cargo all-features clippy --workspace --all-targets -- -D warnings
-
-# Python bindings
-cd matcher_py && uv sync && uv run pytest
-cd matcher_py && uv run ruff check --fix && uv run ty check
+make lint                           # All languages (rs + py + java)
+make lint-rs                        # cargo fmt + cargo clippy (matcher_rs)
+make lint-py                        # cargo fmt + cargo clippy + ruff + ty check (matcher_py)
+make lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
+make lint-c                         # cargo fmt + cargo clippy (matcher_c)
 
 # Benchmarks (harness: divan, two targets: bench, bench_engine)
-python3 matcher_rs/scripts/run_benchmarks.py --preset search         # Main throughput workflow
-python3 matcher_rs/scripts/run_benchmarks.py --preset build          # Matcher construction workflow
-python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search  # Raw engine throughput workflow
-python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build   # Raw engine build workflow
-python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick # Quick directional signal (~2-3 min)
-python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev     # Faster rebuild (thin LTO)
-python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>
-make bench-compare BASELINE=<baseline_dir> CANDIDATE=<candidate_dir>  # Makefile shortcut
-python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt # Raw file-to-file fallback
+make bench-search                   # Main throughput workflow
+make bench-build                    # Matcher construction workflow
+make bench-engine-search            # Raw engine throughput workflow
+make bench-engine-build             # Raw engine build workflow
+python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick  # Quick directional signal (~2-3 min)
+python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev      # Faster rebuild (thin LTO)
+make bench-compare BASELINE=<baseline_dir> CANDIDATE=<candidate_dir>
+python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>  # direct invocation
+python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt                # raw file-to-file fallback
 
 # Profiling (uses release + debug symbols)
-cargo build --profile profiling -p matcher_rs
+cd matcher_rs && cargo build --profile profiling
 
 # Coverage
-make coverage                       # cargo tarpaulin → tarpaulin-report.html
-
-# Docs
-make doc                            # cargo doc
+make coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html
 
 # Dependency updates
 make update                         # cargo update --breaking + cargo upgrade

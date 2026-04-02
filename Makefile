@@ -4,8 +4,9 @@ EXT := $(shell \
 	elif [ "$(OS)" = "linux" ]; then echo "so"; \
 	else echo "dll"; fi)
 
-.PHONY: build update check check-rs lint lint-rs lint-py lint-java \
-	test test-rs test-py test-java test-c test-quick ci-rs doc fmt fmt-check \
+.PHONY: build update check fmt fmt-check \
+	lint lint-rs lint-py lint-java lint-c \
+	test test-rs test-py test-java test-c test-quick \
 	bench-search bench-build bench-engine-search bench-engine-build bench-compare \
 	coverage
 
@@ -28,8 +29,6 @@ update:
 check:
 	cargo check --workspace --all-targets
 
-check-rs: check
-
 fmt:
 	cargo fmt --all
 
@@ -41,14 +40,22 @@ fmt-check:
 lint: lint-rs lint-py lint-java
 
 lint-rs:
-	cargo fmt --all
-	cargo all-features clippy --workspace --all-targets -- -D warnings
+	cd matcher_rs && cargo fmt --all
+	cd matcher_rs && cargo all-features clippy -- -D warnings
 
 lint-py:
+	cd matcher_py && cargo fmt --all
+	cd matcher_py && cargo clippy -- -D warnings
 	cd matcher_py && uv run ruff check --fix && uv run ty check
 
 lint-java:
+	cd matcher_java && cargo fmt --all
+	cd matcher_java && cargo clippy -- -D warnings
 	cd matcher_java && mvn checkstyle:check
+
+lint-c:
+	cd matcher_c && cargo fmt --all
+	cd matcher_c && cargo clippy -- -D warnings
 
 # -- Test ----------------------------------------------------------------------
 
@@ -56,7 +63,8 @@ test: test-rs test-py test-java test-c
 
 test-rs:
 	cd matcher_rs && cargo all-features nextest run
-	cargo test --doc
+	cd matcher_rs && cargo test --doc
+	cd matcher_rs && cargo doc
 
 test-quick:
 	cd matcher_rs && cargo nextest run
@@ -65,20 +73,17 @@ test-py:
 	cd matcher_py && uv run pytest
 
 test-java:
-	cargo build --release
+	cargo build --release -p matcher_java
 	mkdir -p ./matcher_java/src/main/resources
 	cp ./target/release/libmatcher_java.$(EXT) ./matcher_java/src/main/resources/libmatcher_java.$(EXT)
 	cd matcher_java && mvn test
 
 test-c:
+	cargo build --release -p matcher_c
+	cp ./target/release/libmatcher_c.$(EXT) ./matcher_c/libmatcher_c.$(EXT)
 	$(CC) -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
 		matcher_c/tests/test_matcher.c -o matcher_c/tests/test_matcher
 	./matcher_c/tests/test_matcher
-
-ci-rs: lint-rs doc test-rs
-
-doc:
-	cargo doc
 
 # -- Bench ---------------------------------------------------------------------
 
@@ -102,5 +107,5 @@ bench-compare:
 # -- Coverage ------------------------------------------------------------------
 
 coverage:
-	cargo tarpaulin -p matcher_rs --all-features --out html
-	@echo "Coverage report: tarpaulin-report.html"
+	cd matcher_rs && cargo tarpaulin --all-features --out html
+	@echo "Coverage report: matcher_rs/tarpaulin-report.html"
