@@ -7,13 +7,13 @@ from matcher_py import ProcessType, SimpleMatcher
 
 def test_init_with_non_bytes():
     with pytest.raises(TypeError):
-        SimpleMatcher(1)  # ty: ignore[invalid-argument-type, unused-ignore-comment]
+        SimpleMatcher(1)  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
-        SimpleMatcher("")  # ty: ignore[invalid-argument-type, unused-ignore-comment]
+        SimpleMatcher("")  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
-        SimpleMatcher([])  # ty: ignore[invalid-argument-type, unused-ignore-comment]
+        SimpleMatcher([])  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
-        SimpleMatcher({})  # ty: ignore[invalid-argument-type, unused-ignore-comment]
+        SimpleMatcher({})  # ty: ignore[invalid-argument-type]
 
 
 def test_init_with_invalid_bytes():
@@ -75,11 +75,13 @@ def test_delete():
 
 def test_normalize():
     simple_matcher = SimpleMatcher(
-        json.dumps({
-            ProcessType.NORMALIZE: {
-                1: "ab41°f",
+        json.dumps(
+            {
+                ProcessType.NORMALIZE: {
+                    1: "ab41°f",
+                }
             }
-        }).encode()
+        ).encode()
     )
     assert simple_matcher.is_match("ＡＢⅣ①℉")
     assert simple_matcher.process("ＡＢⅣ①℉")[0].word_id == 1
@@ -88,11 +90,13 @@ def test_normalize():
 
 def test_pinyin():
     simple_matcher = SimpleMatcher(
-        json.dumps({
-            ProcessType.PINYIN: {
-                1: "西安",
+        json.dumps(
+            {
+                ProcessType.PINYIN: {
+                    1: "西安",
+                }
             }
-        }).encode()
+        ).encode()
     )
     assert simple_matcher.is_match("洗按")
     assert not simple_matcher.is_match("现")
@@ -100,11 +104,13 @@ def test_pinyin():
 
 def test_pinyinchar():
     simple_matcher = SimpleMatcher(
-        json.dumps({
-            ProcessType.PINYIN_CHAR: {
-                1: "西安",
+        json.dumps(
+            {
+                ProcessType.PINYIN_CHAR: {
+                    1: "西安",
+                }
             }
-        }).encode()
+        ).encode()
     )
     assert simple_matcher.is_match("洗按")
     assert simple_matcher.is_match("现")
