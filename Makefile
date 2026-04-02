@@ -41,7 +41,7 @@ lint: lint-rs lint-py lint-java
 
 lint-rs:
 	cd matcher_rs && cargo fmt --all
-	cd matcher_rs && cargo all-features clippy -- -D warnings
+	cd matcher_rs && cargo all-features clippy -- -- -D warnings
 
 lint-py:
 	cd matcher_py && cargo fmt --all
