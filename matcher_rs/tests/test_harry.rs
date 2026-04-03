@@ -299,6 +299,62 @@ fn cjk_patterns_no_false_negatives_vs_naive() {
     assert_eq!(harry, naive, "Harry CJK missed a match vs naive scan");
 }
 
+#[test]
+fn is_match_matches_for_each_any_on_ascii_and_cjk_inputs() {
+    let mut patterns = big_set();
+    patterns.push(("x".to_owned(), 900));
+    patterns.push(("关键词".to_owned(), 901));
+    patterns.push(("averyverylongliteral".to_owned(), 902));
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+
+    for haystack in [
+        "",
+        "x",
+        "纯中文内容",
+        "this line contains token42",
+        "这段文本包含关键词",
+        "prefix averyverylongliteral suffix",
+        "中中中x中中",
+    ] {
+        let expected = matcher.for_each_match_value(haystack, |_| true);
+        assert_eq!(
+            matcher.is_match(haystack),
+            expected,
+            "haystack={haystack:?}"
+        );
+    }
+}
+
+#[test]
+fn is_match_handles_ascii_only_patterns_on_pure_cjk_line() {
+    let patterns = big_set();
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+
+    assert!(!matcher.is_match("这是一整行纯中文，没有任何 ASCII 字符"));
+}
+
+#[test]
+fn is_match_matches_for_each_any_on_ascii_only_patterns() {
+    let mut patterns = big_set();
+    patterns.push(("x".to_owned(), 900));
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+
+    for haystack in [
+        "x",
+        "token42 in ascii text",
+        "plain ascii with no token",
+        "ascii-prefix中文token63",
+        "ascii-prefix中文x后缀",
+    ] {
+        let expected = matcher.for_each_match_value(haystack, |_| true);
+        assert_eq!(
+            matcher.is_match(haystack),
+            expected,
+            "haystack={haystack:?}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Overlapping matches
 // ---------------------------------------------------------------------------

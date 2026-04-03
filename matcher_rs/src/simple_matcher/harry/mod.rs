@@ -116,6 +116,8 @@ struct BucketVerify {
 #[derive(Clone)]
 pub struct HarryMatcher {
     single_byte_values: Box<[Vec<u32>; ASCII_BYTES]>,
+    single_byte_keys: Box<[u8]>,
+    single_byte_match_mask: [u64; 2],
     has_single_byte: bool,
     /// Low-index mask table: indexed by `byte & 0x3F` (bits \[0:5\]).
     low_mask: Box<[[u8; MASK_ROWS]; MAX_SCAN_LEN]>,
@@ -137,7 +139,12 @@ impl HarryMatcher {
     /// Returns `true` if `text` contains any registered pattern.
     #[inline(always)]
     pub fn is_match(&self, text: &str) -> bool {
-        self.for_each_match_value(text, |_| true)
+        let haystack = text.as_bytes();
+        if haystack.is_empty() {
+            return false;
+        }
+
+        self.is_match_bytes(haystack)
     }
 
     /// Calls `on_value` for every match (one call per matching position × pattern).
@@ -156,6 +163,38 @@ impl HarryMatcher {
         }
 
         self.scan_multi_dispatch(haystack, &mut on_value)
+    }
+
+    #[inline(always)]
+    fn is_match_bytes(&self, haystack: &[u8]) -> bool {
+        #[cfg(any(
+            all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
+            all(feature = "simd_runtime_dispatch", target_arch = "x86_64")
+        ))]
+        {
+            if self.has_single_byte && haystack.len() == 1 {
+                return self.single_byte_contains(haystack[0]);
+            }
+
+            if self.all_patterns_ascii {
+                if haystack[0] < 0x80 {
+                    if self.has_single_byte && self.scan_single_byte_any_ascii_haystack(haystack) {
+                        return true;
+                    }
+                    return self.scan_multi_dispatch_any_ascii_lead(haystack);
+                }
+
+                return self.scan_multi_dispatch_any(haystack);
+            }
+
+            if haystack[0] >= 0x80 && self.has_single_byte {
+                return self.scan_multi_dispatch_any(haystack);
+            }
+        }
+
+        // SAFETY: Harry only scans bytes originating from valid `&str` inputs produced by the
+        // matcher pipeline, so this fallback haystack slice is still valid UTF-8.
+        self.for_each_match_value(unsafe { std::str::from_utf8_unchecked(haystack) }, |_| true)
     }
 
     /// Checks all single-byte patterns against the haystack.
@@ -185,6 +224,44 @@ impl HarryMatcher {
         false
     }
 
+    #[inline(always)]
+    fn single_byte_contains(&self, byte: u8) -> bool {
+        if byte >= ASCII_BYTES as u8 {
+            return false;
+        }
+        let word = (byte >> 6) as usize;
+        let bit = byte & 0x3F;
+        (self.single_byte_match_mask[word] >> bit) & 1 != 0
+    }
+
+    #[inline(always)]
+    fn scan_single_byte_any_ascii_haystack(&self, haystack: &[u8]) -> bool {
+        debug_assert!(self.all_patterns_ascii);
+        if self.single_byte_keys.is_empty() {
+            return false;
+        }
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+        if self.single_byte_keys.len() <= 4 && haystack.len() >= 16 {
+            // SAFETY: NEON is baseline on AArch64, and the helper only reads within `haystack`.
+            return unsafe { self.scan_single_byte_any_ascii_haystack_neon(haystack) };
+        }
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+        if self.single_byte_keys.len() <= 4
+            && haystack.len() >= 64
+            && is_x86_feature_detected!("avx512vbmi")
+        {
+            // SAFETY: AVX512-VBMI support was confirmed at runtime, and the helper is bounds-safe.
+            return unsafe { self.scan_single_byte_any_ascii_haystack_avx512(haystack) };
+        }
+
+        haystack
+            .iter()
+            .copied()
+            .any(|byte| self.single_byte_contains(byte))
+    }
+
     /// Single-byte literal scan with SIMD-accelerated non-ASCII skip.
     ///
     /// When all patterns are ASCII, the single_byte_values table only has ASCII
@@ -196,43 +273,36 @@ impl HarryMatcher {
         haystack: &[u8],
         on_value: &mut impl FnMut(u32) -> bool,
     ) -> bool {
-        let mut i = 0;
-
         #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
         {
-            // Safety: NEON is baseline on AArch64; intrinsics require no special precondition.
-            let ascii_hi_bit = unsafe { std::arch::aarch64::vdupq_n_u8(0x80) };
-            while i + 16 <= haystack.len() {
-                // Safety: loop condition guarantees haystack[i..i+16] is valid.
-                let raw = unsafe { std::arch::aarch64::vld1q_u8(haystack.as_ptr().add(i)) };
-                // Safety: operates on the NEON register loaded above.
-                let has_ascii = unsafe {
-                    std::arch::aarch64::vminvq_u8(std::arch::aarch64::vandq_u8(raw, ascii_hi_bit))
-                };
-                if has_ascii == 0x80 {
-                    // All 16 bytes are non-ASCII — skip.
-                    i += 16;
-                    continue;
-                }
-                // Some ASCII bytes present — check them individually.
-                let end = (i + 16).min(haystack.len());
-                while i < end {
-                    let byte = haystack[i];
-                    if byte < 128 {
-                        for &value in &self.single_byte_values[byte as usize] {
-                            if on_value(value) {
-                                return true;
-                            }
-                        }
-                    }
-                    i += 1;
-                }
-            }
+            // SAFETY: NEON is baseline on AArch64, and the helper only reads within `haystack`.
+            unsafe { self.scan_single_byte_literals_ascii_neon(haystack, on_value) }
         }
 
-        // Scalar tail (or non-SIMD fallback).
-        while i < haystack.len() {
-            let byte = haystack[i];
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx512vbmi") {
+                // SAFETY: AVX512-VBMI support was confirmed at runtime, and the helper is bounds-safe.
+                return unsafe { self.scan_single_byte_literals_ascii_avx512(haystack, on_value) };
+            }
+            return self.scan_single_byte_literals_ascii_scalar(haystack, on_value);
+        }
+
+        #[cfg(not(any(
+            all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
+            all(feature = "simd_runtime_dispatch", target_arch = "x86_64")
+        )))]
+        self.scan_single_byte_literals_ascii_scalar(haystack, on_value)
+    }
+
+    #[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+    #[inline(always)]
+    fn scan_single_byte_literals_ascii_scalar(
+        &self,
+        haystack: &[u8],
+        on_value: &mut impl FnMut(u32) -> bool,
+    ) -> bool {
+        for &byte in haystack {
             if byte < 128 {
                 for &value in &self.single_byte_values[byte as usize] {
                     if on_value(value) {
@@ -240,8 +310,8 @@ impl HarryMatcher {
                     }
                 }
             }
-            i += 1;
         }
+
         false
     }
 
@@ -284,6 +354,83 @@ impl HarryMatcher {
         return self.scan_scalar_range(haystack, 0, haystack.len() - 1, on_value);
     }
 
+    #[inline(always)]
+    fn scan_multi_dispatch_any(&self, haystack: &[u8]) -> bool {
+        if self.has_single_byte && haystack.len() == 1 {
+            return self.single_byte_contains(haystack[0]);
+        }
+
+        if haystack.len() < 2 {
+            return false;
+        }
+
+        if self.all_patterns_ascii && haystack[0] >= 0x80 {
+            #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+            // SAFETY: NEON is baseline on AArch64.
+            return unsafe { self.scan_neon_ascii_any(haystack) };
+
+            #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+            if is_x86_feature_detected!("avx512vbmi") {
+                // SAFETY: AVX512-VBMI support was confirmed at runtime.
+                return unsafe { self.scan_avx512vbmi_ascii_any(haystack) };
+            }
+
+            #[cfg(not(any(
+                all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
+                all(feature = "simd_runtime_dispatch", target_arch = "x86_64")
+            )))]
+            return self.scan_scalar_range_any_ascii(haystack, 0, haystack.len() - 1);
+        }
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+        // SAFETY: NEON is baseline on AArch64.
+        return unsafe { self.scan_neon_any(haystack) };
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("avx512vbmi") {
+            // SAFETY: AVX512-VBMI support was confirmed at runtime.
+            return unsafe { self.scan_avx512vbmi_any(haystack) };
+        }
+
+        #[cfg(not(any(
+            all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
+            all(feature = "simd_runtime_dispatch", target_arch = "x86_64")
+        )))]
+        return self.scan_scalar_range_any(haystack, 0, haystack.len() - 1);
+
+        #[allow(unreachable_code)]
+        self.scan_scalar_range_any(haystack, 0, haystack.len() - 1)
+    }
+
+    #[inline(always)]
+    fn scan_multi_dispatch_any_ascii_lead(&self, haystack: &[u8]) -> bool {
+        debug_assert!(self.all_patterns_ascii);
+        debug_assert!(!haystack.is_empty() && haystack[0] < 0x80);
+
+        if haystack.len() < 2 {
+            return false;
+        }
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+        // SAFETY: NEON is baseline on AArch64.
+        return unsafe { self.scan_neon_ascii_lead_any(haystack) };
+
+        #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("avx512vbmi") {
+            // SAFETY: AVX512-VBMI support was confirmed at runtime.
+            return unsafe { self.scan_avx512vbmi_ascii_lead_any(haystack) };
+        }
+
+        #[cfg(not(any(
+            all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
+            all(feature = "simd_runtime_dispatch", target_arch = "x86_64")
+        )))]
+        return self.scan_scalar_range_any_no_single_byte(haystack, 0, haystack.len() - 1);
+
+        #[allow(unreachable_code)]
+        self.scan_scalar_range_any_no_single_byte(haystack, 0, haystack.len() - 1)
+    }
+
     /// Scalar fallback: scans positions `start..=end` through column mask tables.
     ///
     /// When patterns contain non-ASCII bytes, skips UTF-8 continuation bytes (0x80-0xBF)
@@ -310,6 +457,44 @@ impl HarryMatcher {
         false
     }
 
+    #[inline(always)]
+    fn scan_scalar_range_any(&self, haystack: &[u8], start: usize, end: usize) -> bool {
+        for pos in start..=end {
+            let byte = haystack[pos];
+            if self.single_byte_contains(byte) {
+                return true;
+            }
+            if !self.all_patterns_ascii && (byte & 0xC0) == 0x80 {
+                continue;
+            }
+            let hit_mask = self.match_mask_at(haystack, pos);
+            if hit_mask != 0 && self.verify_hits_any(haystack, pos, hit_mask) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline(always)]
+    fn scan_scalar_range_any_no_single_byte(
+        &self,
+        haystack: &[u8],
+        start: usize,
+        end: usize,
+    ) -> bool {
+        for pos in start..=end {
+            let byte = haystack[pos];
+            if !self.all_patterns_ascii && (byte & 0xC0) == 0x80 {
+                continue;
+            }
+            let hit_mask = self.match_mask_at(haystack, pos);
+            if hit_mask != 0 && self.verify_hits_any(haystack, pos, hit_mask) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Scalar scan that skips non-ASCII haystack positions.
     #[inline(always)]
     fn scan_scalar_range_ascii(
@@ -325,6 +510,25 @@ impl HarryMatcher {
             }
             let hit_mask = self.match_mask_at(haystack, pos);
             if hit_mask != 0 && self.verify_hits(haystack, pos, hit_mask, on_value) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[inline(always)]
+    fn scan_scalar_range_any_ascii(&self, haystack: &[u8], start: usize, end: usize) -> bool {
+        for pos in start..=end {
+            let byte = haystack[pos];
+            if byte >= 0x80 {
+                continue;
+            }
+            if self.single_byte_contains(byte) {
+                return true;
+            }
+            let hit_mask = self.match_mask_at(haystack, pos);
+            if hit_mask != 0 && self.verify_hits_any(haystack, pos, hit_mask) {
                 return true;
             }
         }
@@ -365,6 +569,20 @@ impl HarryMatcher {
             hit_mask &= hit_mask - 1;
 
             if self.verify_bucket(haystack, start, bucket, on_value) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[inline(always)]
+    fn verify_hits_any(&self, haystack: &[u8], start: usize, mut hit_mask: u8) -> bool {
+        while hit_mask != 0 {
+            let bucket = hit_mask.trailing_zeros() as usize;
+            hit_mask &= hit_mask - 1;
+
+            if self.verify_bucket_any(haystack, start, bucket) {
                 return true;
             }
         }
@@ -413,6 +631,44 @@ impl HarryMatcher {
                 if haystack[start + prefix_len..start + len] == literal.bytes[prefix_len..]
                     && on_value(literal.value)
                 {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    #[inline(always)]
+    fn verify_bucket_any(&self, haystack: &[u8], start: usize, bucket: usize) -> bool {
+        let bv = &self.bucket_verify[bucket];
+        let mut lengths = bv.length_mask;
+
+        while lengths != 0 {
+            let len_idx = lengths.trailing_zeros() as usize;
+            lengths &= lengths - 1;
+            let prefix_len = len_idx + 2;
+
+            if start + prefix_len > haystack.len() {
+                continue;
+            }
+
+            let key = prefix_key(&haystack[start..start + prefix_len]);
+            let Some(group) = bv.groups[len_idx].get(key) else {
+                continue;
+            };
+
+            if !group.exact_values.is_empty() {
+                return true;
+            }
+
+            for literal in &group.long_literals {
+                let len = literal.bytes.len();
+                if start + len > haystack.len() {
+                    continue;
+                }
+
+                if haystack[start + prefix_len..start + len] == literal.bytes[prefix_len..] {
                     return true;
                 }
             }

@@ -22,6 +22,8 @@ impl HarryMatcher {
         }
 
         let mut single_byte_values = Box::new(std::array::from_fn(|_| Vec::new()));
+        let mut single_byte_keys = Vec::new();
+        let mut single_byte_match_mask = [0u64; 2];
         let mut has_single_byte = false;
         let mut low_mask = Box::new([[0xFFu8; MASK_ROWS]; MAX_SCAN_LEN]);
         let mut high_mask = Box::new([[0xFFu8; MASK_ROWS]; MAX_SCAN_LEN]);
@@ -38,6 +40,8 @@ impl HarryMatcher {
             let bytes = pattern.as_bytes();
             if bytes.len() == 1 {
                 single_byte_values[bytes[0] as usize].push(value);
+                single_byte_keys.push(bytes[0]);
+                single_byte_match_mask[(bytes[0] >> 6) as usize] |= 1u64 << (bytes[0] & 0x3F);
                 has_single_byte = true;
                 continue;
             }
@@ -107,6 +111,8 @@ impl HarryMatcher {
 
         Some(Self {
             single_byte_values,
+            single_byte_keys: single_byte_keys.into_boxed_slice(),
+            single_byte_match_mask,
             has_single_byte,
             low_mask,
             high_mask,
