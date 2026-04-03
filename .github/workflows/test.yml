@@ -54,6 +54,11 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      # Override .cargo/config.toml target-cpu=native which may emit
+      # instructions unsupported by the CI runner.
+      RUSTFLAGS: -Z threads=8
+      RUSTDOCFLAGS: --document-private-items
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -113,6 +118,8 @@ jobs:
           tool: cargo-all-features,cargo-nextest
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
+        env:
+          RUSTFLAGS: -Z threads=8
 
       - name: Test
         run: |
@@ -121,6 +128,7 @@ jobs:
         working-directory: matcher_rs
         env:
           RUST_BACKTRACE: 1
+          RUSTFLAGS: -Z threads=8
 
       - name: Rename & move
         shell: bash
