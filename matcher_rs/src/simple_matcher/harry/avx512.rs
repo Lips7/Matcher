@@ -3,6 +3,11 @@ use std::arch::x86_64::*;
 use super::{HarryMatcher, MAX_SCAN_LEN};
 
 impl HarryMatcher {
+    /// AVX512 fast path for ASCII haystacks when matching single-byte patterns.
+    ///
+    /// # Safety
+    ///
+    /// Requires runtime-confirmed AVX512F + AVX512BW + AVX512VBMI support.
     #[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
     pub(super) unsafe fn scan_single_byte_any_ascii_haystack_avx512(
         &self,
@@ -18,6 +23,7 @@ impl HarryMatcher {
         let mut i = 0usize;
 
         while i + 64 <= haystack.len() {
+            // SAFETY: `i + 64 <= haystack.len()` guarantees the 64-byte unaligned load is in bounds.
             let raw = unsafe { _mm512_loadu_si512(haystack.as_ptr().add(i).cast()) };
             let mut hits = _mm512_cmpeq_epi8_mask(raw, k0);
             if let Some(key) = k1 {
@@ -41,6 +47,11 @@ impl HarryMatcher {
             .any(|byte| self.single_byte_contains(byte))
     }
 
+    /// AVX512 fast path for dispatching ASCII single-byte literal values.
+    ///
+    /// # Safety
+    ///
+    /// Requires runtime-confirmed AVX512F + AVX512BW + AVX512VBMI support.
     #[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
     pub(super) unsafe fn scan_single_byte_literals_ascii_avx512(
         &self,
@@ -50,6 +61,7 @@ impl HarryMatcher {
         let mut i = 0usize;
 
         while i + 64 <= haystack.len() {
+            // SAFETY: `i + 64 <= haystack.len()` guarantees the 64-byte unaligned load is in bounds.
             let raw = unsafe { _mm512_loadu_si512(haystack.as_ptr().add(i).cast()) };
             let sign_mask = _mm512_movepi8_mask(raw);
             if sign_mask == u64::MAX {
@@ -86,8 +98,15 @@ impl HarryMatcher {
         false
     }
 
+    /// AVX512-VBMI scan that only reports whether any match exists.
+    ///
+    /// # Safety
+    ///
+    /// Requires runtime-confirmed AVX512F + AVX512BW + AVX512VBMI support.
     #[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
     pub(super) unsafe fn scan_avx512vbmi_any(&self, haystack: &[u8]) -> bool {
+        // SAFETY: The caller guarantees the required AVX512 features; dispatch only selects
+        // the const-generic specialization for the already-validated matcher shape.
         unsafe {
             match self.max_prefix_len {
                 2 => self.scan_avx512vbmi_inner_any::<2, false>(haystack),
@@ -101,8 +120,15 @@ impl HarryMatcher {
         }
     }
 
+    /// AVX512-VBMI scan for ASCII-only pattern sets that only reports whether any match exists.
+    ///
+    /// # Safety
+    ///
+    /// Requires runtime-confirmed AVX512F + AVX512BW + AVX512VBMI support.
     #[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
     pub(super) unsafe fn scan_avx512vbmi_ascii_any(&self, haystack: &[u8]) -> bool {
+        // SAFETY: The caller guarantees the required AVX512 features; dispatch only selects
+        // the const-generic specialization for the already-validated matcher shape.
         unsafe {
             match self.max_prefix_len {
                 2 => self.scan_avx512vbmi_inner_any::<2, true>(haystack),
@@ -116,8 +142,15 @@ impl HarryMatcher {
         }
     }
 
+    /// AVX512-VBMI scan for ASCII-leading pattern sets that only reports whether any match exists.
+    ///
+    /// # Safety
+    ///
+    /// Requires runtime-confirmed AVX512F + AVX512BW + AVX512VBMI support.
     #[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
     pub(super) unsafe fn scan_avx512vbmi_ascii_lead_any(&self, haystack: &[u8]) -> bool {
+        // SAFETY: The caller guarantees the required AVX512 features; dispatch only selects
+        // the const-generic specialization for the already-validated matcher shape.
         unsafe {
             match self.max_prefix_len {
                 2 => self.scan_avx512vbmi_inner_ascii_lead_any::<2>(haystack),
@@ -146,6 +179,8 @@ impl HarryMatcher {
         haystack: &[u8],
         on_value: &mut impl FnMut(u32) -> bool,
     ) -> bool {
+        // SAFETY: The caller guarantees the required AVX512 features; dispatch only selects
+        // the const-generic specialization for the already-validated matcher shape.
         unsafe {
             match self.max_prefix_len {
                 2 => self.scan_avx512vbmi_inner::<2, false>(haystack, on_value),
@@ -173,6 +208,8 @@ impl HarryMatcher {
         haystack: &[u8],
         on_value: &mut impl FnMut(u32) -> bool,
     ) -> bool {
+        // SAFETY: The caller guarantees the required AVX512 features; dispatch only selects
+        // the const-generic specialization for the already-validated matcher shape.
         unsafe {
             match self.max_prefix_len {
                 2 => self.scan_avx512vbmi_inner::<2, true>(haystack, on_value),
@@ -289,11 +326,12 @@ impl HarryMatcher {
                 // ── Column-1 progressive early exit ──
                 // After columns 0+1, check again. On non-ASCII patterns where column 0
                 // is ~50% selective (bit 7 lost), 0+1 together may reach ~90%.
-                if PREFIX_LEN >= 3 && !self.all_patterns_ascii {
-                    if _mm512_cmpneq_epi8_mask(state, all_ff) as u64 & valid_lane_mask == 0 {
-                        start += M;
-                        continue;
-                    }
+                if PREFIX_LEN >= 3
+                    && !self.all_patterns_ascii
+                    && _mm512_cmpneq_epi8_mask(state, all_ff) as u64 & valid_lane_mask == 0
+                {
+                    start += M;
+                    continue;
                 }
 
                 if PREFIX_LEN >= 3 {
@@ -383,6 +421,9 @@ impl HarryMatcher {
             };
         }
 
+        // SAFETY: All AVX512 intrinsics below require AVX512F + AVX512BW + AVX512VBMI,
+        // guaranteed by this function's #[target_feature] attribute. Pointer arithmetic
+        // is bounded by the loop condition `start + M + MAX_SCAN_LEN - 1 <= haystack.len()`.
         unsafe {
             let low_cols: [__m512i; PREFIX_LEN] = std::array::from_fn(|column| {
                 _mm512_loadu_si512(self.low_mask[column].as_ptr().cast())
@@ -446,11 +487,12 @@ impl HarryMatcher {
 
                 apply_col_avx!(1);
 
-                if PREFIX_LEN >= 3 && !self.all_patterns_ascii {
-                    if _mm512_cmpneq_epi8_mask(state, all_ff) as u64 & valid_lane_mask == 0 {
-                        start += M;
-                        continue;
-                    }
+                if PREFIX_LEN >= 3
+                    && !self.all_patterns_ascii
+                    && _mm512_cmpneq_epi8_mask(state, all_ff) as u64 & valid_lane_mask == 0
+                {
+                    start += M;
+                    continue;
                 }
 
                 if PREFIX_LEN >= 3 {
@@ -537,6 +579,9 @@ impl HarryMatcher {
             return self.scan_scalar_range_any_no_single_byte(haystack, 0, haystack.len() - 1);
         }
 
+        // SAFETY: All AVX512 intrinsics below require AVX512F + AVX512BW + AVX512VBMI,
+        // guaranteed by this function's #[target_feature] attribute. Pointer arithmetic
+        // is bounded by the loop condition `start + M + MAX_SCAN_LEN - 1 <= haystack.len()`.
         unsafe {
             let low_cols: [__m512i; PREFIX_LEN] = std::array::from_fn(|column| {
                 _mm512_loadu_si512(self.low_mask[column].as_ptr().cast())

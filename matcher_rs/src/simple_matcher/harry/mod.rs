@@ -285,7 +285,7 @@ impl HarryMatcher {
                 // SAFETY: AVX512-VBMI support was confirmed at runtime, and the helper is bounds-safe.
                 return unsafe { self.scan_single_byte_literals_ascii_avx512(haystack, on_value) };
             }
-            return self.scan_single_byte_literals_ascii_scalar(haystack, on_value);
+            self.scan_single_byte_literals_ascii_scalar(haystack, on_value)
         }
 
         #[cfg(not(any(
