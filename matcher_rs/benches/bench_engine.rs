@@ -365,7 +365,7 @@ define_is_match_bench!(
     cjk_patterns,
     CN_HAYSTACK,
     ALL_ENGINES_WITH_HARRY,
-    [500usize, 2000, 10000, 50000]
+    [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_cjk_en,

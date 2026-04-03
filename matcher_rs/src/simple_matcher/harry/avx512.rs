@@ -62,8 +62,20 @@ impl HarryMatcher {
             let hi0 = unsafe { _mm512_permutexvar_epi8(high_idx, high_cols[0]) };
             let mut state = unsafe { _mm512_or_si512(lo0, hi0) };
 
-            // Early exit: if no valid lane has any bucket bit cleared after column 0,
-            // no bucket can match any start position in this chunk.
+            // UTF-8 continuation-byte mask: mark lanes starting at continuation
+            // bytes (0x80-0xBF) as "no match". A valid match can never begin at a
+            // continuation byte. Skipped when all patterns are ASCII (column scan
+            // self-filters since non-ASCII bytes never have bucket bits set).
+            if !self.all_patterns_ascii {
+                let cont_mask = unsafe {
+                    let masked = _mm512_and_si512(raw, _mm512_set1_epi8(0xC0_u8 as i8));
+                    _mm512_cmpeq_epi8_mask(masked, _mm512_set1_epi8(0x80_u8 as i8))
+                };
+                state = unsafe { _mm512_mask_set1_epi8(state, cont_mask, -1_i8) };
+            }
+
+            // Early exit: if no valid lane has any bucket bit cleared after column 0
+            // + continuation mask, no bucket can match any start position in this chunk.
             if unsafe { _mm512_cmpneq_epi8_mask(state, all_ff) as u64 } & valid_lane_mask == 0 {
                 start += M;
                 continue;

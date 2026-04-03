@@ -249,6 +249,9 @@ impl HarryMatcher {
     }
 
     /// Scalar fallback: scans positions `start..=end` through column mask tables.
+    ///
+    /// When patterns contain non-ASCII bytes, skips UTF-8 continuation bytes (0x80-0xBF)
+    /// since no valid match can start there.
     #[inline(always)]
     fn scan_scalar_range(
         &self,
@@ -258,6 +261,11 @@ impl HarryMatcher {
         on_value: &mut impl FnMut(u32) -> bool,
     ) -> bool {
         for pos in start..=end {
+            // Skip continuation bytes — matches can only start at lead or ASCII bytes.
+            // When all patterns are ASCII, column scan self-filters non-ASCII bytes.
+            if !self.all_patterns_ascii && (haystack[pos] & 0xC0) == 0x80 {
+                continue;
+            }
             let hit_mask = self.match_mask_at(haystack, pos);
             if hit_mask != 0 && self.verify_hits(haystack, pos, hit_mask, on_value) {
                 return true;
