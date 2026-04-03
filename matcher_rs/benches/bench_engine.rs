@@ -45,16 +45,15 @@ impl std::fmt::Display for Engine {
     }
 }
 
-const ALL_ENGINES: &[Engine] = &[Engine::AcDfa, Engine::DaacBytewise, Engine::DaacCharwise];
 #[cfg(feature = "harry")]
-const ALL_ENGINES_WITH_HARRY: &[Engine] = &[
+const ALL_ENGINES: &[Engine] = &[
     Engine::AcDfa,
     Engine::DaacBytewise,
     Engine::DaacCharwise,
     Engine::Harry,
 ];
 #[cfg(not(feature = "harry"))]
-const ALL_ENGINES_WITH_HARRY: &[Engine] = ALL_ENGINES;
+const ALL_ENGINES: &[Engine] = &[Engine::AcDfa, Engine::DaacBytewise, Engine::DaacCharwise];
 
 enum BuiltEngine {
     AcDfa(AhoCorasick),
@@ -209,7 +208,7 @@ fn heap_bytes(engine: &BuiltEngine) -> usize {
         BuiltEngine::DaacBytewise(ac) => ac.heap_bytes(),
         BuiltEngine::DaacCharwise(ac) => ac.heap_bytes(),
         #[cfg(feature = "harry")]
-        BuiltEngine::Harry(_) => 0, // no introspection API yet
+        BuiltEngine::Harry(m) => m.heap_bytes(),
     }
 }
 
@@ -224,6 +223,10 @@ fn print_memory_report() {
             };
             for &engine in ALL_ENGINES {
                 if matches!(engine, Engine::AcDfa) && kind == "cjk" {
+                    continue;
+                }
+                #[cfg(feature = "harry")]
+                if matches!(engine, Engine::Harry) && size < 64 {
                     continue;
                 }
                 let built = build_engine(engine, &patterns);
@@ -257,19 +260,19 @@ macro_rules! define_build_bench {
 define_build_bench!(
     build_ascii,
     ascii_patterns,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000]
 );
 define_build_bench!(
     build_cjk,
     cjk_patterns,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000]
 );
 define_build_bench!(
     build_mixed,
     mixed_patterns,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000]
 );
 
@@ -303,7 +306,7 @@ define_search_bench!(
     search_ascii_en,
     ascii_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [
         500usize, 1000, 1500, 2000, 3000, 5000, 6000, 7000, 8000, 10000, 50000
     ]
@@ -312,35 +315,35 @@ define_search_bench!(
     search_ascii_cn,
     ascii_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_cjk_cn,
     cjk_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_cjk_en,
     cjk_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_mixed_en,
     mixed_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 5000, 10000, 50000]
 );
 define_search_bench!(
     search_mixed_cn,
     mixed_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 5000, 10000, 50000]
 );
 
@@ -374,42 +377,42 @@ define_is_match_bench!(
     is_match_ascii_en,
     ascii_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 1500, 2000, 3000, 5000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_ascii_cn,
     ascii_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_cjk_cn,
     cjk_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 1000, 2000, 5000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_cjk_en,
     cjk_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_mixed_cn,
     mixed_patterns,
     CN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000, 50000]
 );
 define_is_match_bench!(
     is_match_mixed_en,
     mixed_patterns,
     EN_HAYSTACK,
-    ALL_ENGINES_WITH_HARRY,
+    ALL_ENGINES,
     [500usize, 2000, 10000, 50000]
 );
 

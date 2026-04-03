@@ -172,6 +172,17 @@ impl ScanPlan {
         &self.patterns
     }
 
+    /// Returns the estimated heap memory in bytes owned by all scan engines.
+    pub(super) fn heap_bytes(&self) -> usize {
+        let bw = self.bytewise_matcher.as_ref().map_or(0, |m| m.heap_bytes());
+        let cw = self.charwise_matcher.as_ref().map_or(0, |m| m.heap_bytes());
+        #[cfg(feature = "harry")]
+        let harry = self.harry_matcher.as_ref().map_or(0, |m| m.heap_bytes());
+        #[cfg(not(feature = "harry"))]
+        let harry = 0;
+        bw + cw + harry + self.patterns.heap_bytes()
+    }
+
     /// Returns whether the bytewise engine is a DFA.
     #[cfg(feature = "harry")]
     #[inline(always)]
@@ -352,6 +363,16 @@ impl BytewiseMatcher {
             }
         }
     }
+
+    fn heap_bytes(&self) -> usize {
+        match self {
+            #[cfg(feature = "dfa")]
+            Self::AcDfa { matcher, to_value } => {
+                matcher.memory_usage() + to_value.capacity() * size_of::<u32>()
+            }
+            Self::DaacBytewise(matcher) => matcher.heap_bytes(),
+        }
+    }
 }
 
 /// Query helpers for the charwise scan engine.
@@ -402,6 +423,12 @@ impl CharwiseMatcher {
                 }
                 false
             }
+        }
+    }
+
+    fn heap_bytes(&self) -> usize {
+        match self {
+            Self::DaacCharwise(matcher) => matcher.heap_bytes(),
         }
     }
 }

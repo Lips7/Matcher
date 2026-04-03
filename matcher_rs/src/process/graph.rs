@@ -81,6 +81,18 @@ impl ProcessTypeBitNode {
     ///
     /// Called by [`SimpleMatcher::new()`](crate::SimpleMatcher) after
     /// [`build_process_type_tree`] returns.
+    pub(crate) fn heap_bytes(&self) -> usize {
+        let ptl = match &self.process_type_list {
+            TinyVec::Heap(v) => v.capacity() * size_of::<ProcessType>(),
+            _ => 0,
+        };
+        let ch = match &self.children {
+            TinyVec::Heap(v) => v.capacity() * size_of::<usize>(),
+            _ => 0,
+        };
+        ptl + ch
+    }
+
     pub(crate) fn recompute_mask_with_index(&mut self, pt_index_table: &[u8; 64]) {
         self.pt_index_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
             acc | (1u64 << pt_index_table[pt.bits() as usize])

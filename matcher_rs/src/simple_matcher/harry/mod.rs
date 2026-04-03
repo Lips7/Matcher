@@ -73,6 +73,24 @@ struct PrefixMap {
     values: Box<[PrefixGroup]>,
 }
 
+impl BucketLiteral {
+    fn heap_bytes(&self) -> usize {
+        self.bytes.len()
+    }
+}
+
+impl PrefixGroup {
+    fn heap_bytes(&self) -> usize {
+        self.exact_values.capacity() * size_of::<u32>()
+            + self.long_literals.capacity() * size_of::<BucketLiteral>()
+            + self
+                .long_literals
+                .iter()
+                .map(|l| l.heap_bytes())
+                .sum::<usize>()
+    }
+}
+
 impl PrefixMap {
     /// Builds from an unsorted iterator of `(key, group)` pairs.
     fn from_unsorted(iter: impl Iterator<Item = (u64, PrefixGroup)>) -> Self {
@@ -86,6 +104,12 @@ impl PrefixMap {
             keys: keys.into_boxed_slice(),
             values: values.into_boxed_slice(),
         }
+    }
+
+    fn heap_bytes(&self) -> usize {
+        self.keys.len() * size_of::<u64>()
+            + self.values.len() * size_of::<PrefixGroup>()
+            + self.values.iter().map(|g| g.heap_bytes()).sum::<usize>()
     }
 
     /// Looks up a prefix group by key via binary search on the keys array.
@@ -105,6 +129,12 @@ struct BucketVerify {
     length_mask: u8,
     /// Indexed by `prefix_len - 2` (index 0 = length 2, index 6 = length 8).
     groups: [PrefixMap; MAX_SCAN_LEN - 1],
+}
+
+impl BucketVerify {
+    fn heap_bytes(&self) -> usize {
+        self.groups.iter().map(|m| m.heap_bytes()).sum()
+    }
 }
 
 /// SIMD column-vector scan engine for literal pattern sets.
@@ -136,6 +166,21 @@ pub struct HarryMatcher {
 }
 
 impl HarryMatcher {
+    /// Returns the estimated heap memory in bytes owned by this matcher.
+    pub fn heap_bytes(&self) -> usize {
+        // Box<[Vec<u32>; 128]>: the box itself + each inner Vec's buffer
+        let sbv = ASCII_BYTES * size_of::<Vec<u32>>()
+            + self
+                .single_byte_values
+                .iter()
+                .map(|v| v.capacity() * size_of::<u32>())
+                .sum::<usize>();
+        let sbk = self.single_byte_keys.len();
+        let masks = 2 * MAX_SCAN_LEN * MASK_ROWS; // low_mask + high_mask
+        let buckets: usize = self.bucket_verify.iter().map(|b| b.heap_bytes()).sum();
+        sbv + sbk + masks + buckets
+    }
+
     /// Returns `true` if `text` contains any registered pattern.
     #[inline(always)]
     pub fn is_match(&self, text: &str) -> bool {

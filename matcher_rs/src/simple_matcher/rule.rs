@@ -324,6 +324,20 @@ impl RuleSet {
         Self { hot, cold }
     }
 
+    /// Returns the estimated heap memory in bytes owned by this rule set.
+    pub(super) fn heap_bytes(&self) -> usize {
+        let hot_inner: usize = self
+            .hot
+            .iter()
+            .map(|r| r.segment_counts.capacity() * size_of::<i32>())
+            .sum();
+        let cold_inner: usize = self.cold.iter().map(|r| r.word.capacity()).sum();
+        self.hot.capacity() * size_of::<RuleHot>()
+            + hot_inner
+            + self.cold.capacity() * size_of::<RuleCold>()
+            + cold_inner
+    }
+
     /// Returns the number of compiled rules.
     #[inline(always)]
     pub(super) fn len(&self) -> usize {
@@ -575,6 +589,12 @@ impl PatternIndex {
         }
 
         Self { entries, ranges }
+    }
+
+    /// Returns the estimated heap memory in bytes owned by the pattern index.
+    pub(super) fn heap_bytes(&self) -> usize {
+        self.entries.capacity() * size_of::<PatternEntry>()
+            + self.ranges.capacity() * size_of::<(usize, usize)>()
     }
 
     /// Returns whether there are no deduplicated patterns to scan.

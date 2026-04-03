@@ -209,6 +209,12 @@ impl ProcessPlan {
         self.mode
     }
 
+    /// Returns the estimated heap memory in bytes owned by the process plan.
+    pub(super) fn heap_bytes(&self) -> usize {
+        self.tree.capacity() * size_of::<ProcessTypeBitNode>()
+            + self.tree.iter().map(|n| n.heap_bytes()).sum::<usize>()
+    }
+
     /// Returns whether the matcher can use the simplest no-state fast path.
     #[inline(always)]
     pub(super) fn is_all_simple(&self) -> bool {
@@ -329,5 +335,15 @@ impl SimpleMatcher {
             return self.process_simple(text, results);
         }
         self.walk_and_scan(text, false, Some(results));
+    }
+
+    /// Returns the estimated heap memory in bytes owned by this matcher.
+    ///
+    /// Includes the AC automata, Harry tables, rule metadata, and the process-type
+    /// tree. Does **not** include thread-local scan state or global transform caches
+    /// (those are shared infrastructure, not per-matcher).
+    #[must_use]
+    pub fn heap_bytes(&self) -> usize {
+        self.process.heap_bytes() + self.scan.heap_bytes() + self.rules.heap_bytes()
     }
 }
