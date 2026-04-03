@@ -27,7 +27,12 @@ fmt-check:
 
 # -- Lint ----------------------------------------------------------------------
 
-lint: lint-rs lint-py lint-java lint-c
+lint: lint-all lint-rs lint-py lint-java lint-c
+
+lint-all:
+    cargo fmt --all --check
+    cargo all-features clippy --workspace --all-targets -- -D warnings
+    cargo doc --workspace --all-features --no-deps
 
 [working-directory: 'matcher_rs']
 lint-rs:
@@ -59,7 +64,6 @@ test: test-rs test-py test-java test-c
 test-rs:
     cargo all-features nextest run
     cargo test --doc
-    cargo doc
 
 [working-directory: 'matcher_rs']
 test-quick:

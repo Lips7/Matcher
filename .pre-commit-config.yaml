@@ -1,9 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: just-lint-rs
-        name: just lint-rs
-        entry: just lint-rs
+      - id: just-lint-all
+        name: just lint-all
+        entry: just lint-all
         language: system
         files: \.rs$
         pass_filenames: false
