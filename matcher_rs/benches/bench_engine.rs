@@ -66,26 +66,52 @@ enum BuiltEngine {
 
 // ── Pattern preparation ────────────────────────────────────────────────────────
 
-fn ascii_patterns(n: usize) -> Vec<String> {
+/// Samples `n` unique words from a sorted word list using stride-997.
+/// Produces a uniform first-byte distribution representative of real workloads.
+fn sample_words(source: &str, n: usize, ascii_only: bool) -> Vec<String> {
+    let mut words: Vec<&str> = source.lines().filter(|s| !s.is_empty()).collect();
+    words.sort_unstable();
+    words.dedup();
+    if ascii_only {
+        words.retain(|s| s.is_ascii());
+    }
+    let mut out = Vec::with_capacity(n);
     let mut seen = HashSet::new();
-    EN_WORD_LIST
-        .lines()
-        .filter(|s| s.is_ascii() && !s.is_empty())
-        .filter(|s| seen.insert(*s))
-        .take(n)
-        .map(str::to_owned)
-        .collect()
+    for i in 0.. {
+        if out.len() >= n {
+            break;
+        }
+        let idx = (i * 997) % words.len();
+        if seen.insert(idx) {
+            out.push(words[idx].to_owned());
+        }
+    }
+    out
+}
+
+fn ascii_patterns(n: usize) -> Vec<String> {
+    sample_words(EN_WORD_LIST, n, true)
 }
 
 fn cjk_patterns(n: usize) -> Vec<String> {
-    let mut seen = HashSet::new();
-    CN_WORD_LIST
+    let mut words: Vec<&str> = CN_WORD_LIST
         .lines()
         .filter(|s| !s.is_ascii() && !s.is_empty())
-        .filter(|s| seen.insert(*s))
-        .take(n)
-        .map(str::to_owned)
-        .collect()
+        .collect();
+    words.sort_unstable();
+    words.dedup();
+    let mut out = Vec::with_capacity(n);
+    let mut seen = HashSet::new();
+    for i in 0.. {
+        if out.len() >= n {
+            break;
+        }
+        let idx = (i * 997) % words.len();
+        if seen.insert(idx) {
+            out.push(words[idx].to_owned());
+        }
+    }
+    out
 }
 
 fn mixed_patterns(n: usize) -> Vec<String> {

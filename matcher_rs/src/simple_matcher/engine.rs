@@ -82,10 +82,11 @@ pub(super) struct ScanPlan {
     charwise_matcher: Option<CharwiseMatcher>,
     /// Harry column-vector SIMD engine for `is_match` fast path.
     ///
-    /// Built from the full pattern set (ASCII + non-ASCII). When present, `is_match`
-    /// dispatches here instead of to the AC engines — Harry has no state table and
-    /// is faster at large pattern counts on both ASCII and CJK haystacks.
-    /// `None` when the pattern set is too small (< 64) or has no length-≥2 pattern.
+    /// Only built when all patterns are pure ASCII (`charwise_matcher` is `None`).
+    /// When present and no DFA exists (pattern count > [`AC_DFA_PATTERN_THRESHOLD`]),
+    /// `is_match` dispatches here instead of to the AC engines.
+    /// `None` when non-ASCII patterns exist, the set is too small (< 64), or every
+    /// pattern has length < 2.
     #[cfg(feature = "harry")]
     harry_matcher: Option<Box<HarryMatcher>>,
     /// Flat index mapping automaton raw values back to rule-entry metadata.
@@ -145,13 +146,15 @@ impl ScanPlan {
         let (bytewise_matcher, charwise_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
         #[cfg(feature = "harry")]
-        let harry_matcher = {
+        let harry_matcher = if charwise_matcher.is_none() {
             let patvals: Vec<(&str, u32)> = dedup_patterns
                 .iter()
                 .enumerate()
                 .map(|(i, p)| (p.as_ref(), value_map[i]))
                 .collect();
             HarryMatcher::build(&patvals).map(Box::new)
+        } else {
+            None
         };
 
         Ok(Self {
@@ -184,12 +187,15 @@ impl ScanPlan {
     ///
     /// Engine selection for `is_match`:
     ///
-    /// 1. **Harry** — used when available, all patterns are ASCII (`charwise_matcher`
-    ///    is `None`), and no DFA engine exists (pattern count > [`AC_DFA_PATTERN_THRESHOLD`]).
-    ///    Harry's dual-index encoding covers all 7 ASCII bits (zero encoding false
-    ///    positives). With non-ASCII patterns bit 7 is lost, causing 1.5–2.7× more
-    ///    false positives than AC. Below the DFA threshold the DFA's state table fits
-    ///    in L2 cache and outperforms Harry by 10–20%.
+    /// 1. **Harry** — used when present (pure-ASCII patterns only, see
+    ///    [`ScanPlan::compile`]) and either:
+    ///    - no DFA engine exists (N > [`AC_DFA_PATTERN_THRESHOLD`]), **or**
+    ///    - `text` contains non-ASCII bytes (`!text.is_ascii()`).
+    ///
+    ///    On non-ASCII haystacks Harry's column-0 early exit filters ~95% of
+    ///    chunks, giving 3–4× throughput over AC at every pattern count. On
+    ///    ASCII haystacks with diverse patterns the DFA's zero-false-positive
+    ///    verification wins at N ≤ 7 k; above that its state table exceeds L2.
     ///
     /// 2. **AC bytewise** — when text is ASCII or no charwise engine exists.
     ///
@@ -198,11 +204,9 @@ impl ScanPlan {
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "harry")]
-        if self
-            .harry_matcher
-            .as_ref()
-            .is_some_and(|_| self.charwise_matcher.is_none() && !self.uses_dfa())
-        {
+        if self.harry_matcher.as_ref().is_some_and(|_| {
+            self.charwise_matcher.is_none() && (!self.uses_dfa() || !text.is_ascii())
+        }) {
             return self.harry_matcher.as_ref().unwrap().is_match(text);
         }
 
@@ -553,14 +557,16 @@ mod tests {
     }
 
     #[test]
-    fn harry_built_for_mixed_pattern_sets() {
+    fn harry_not_built_for_mixed_pattern_sets() {
         let ascii: Vec<String> = (0..32).map(|i| format!("token{i:02}")).collect();
         let cjk: Vec<String> = (0..32).map(|i| format!("测试{i:02}")).collect();
         let patterns: Vec<String> = ascii.into_iter().chain(cjk).collect();
         let refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
         let plan = compile_from_strings(&refs);
-        assert!(plan.has_harry(), "should build Harry for 64 mixed patterns");
-        // AC engines are also built for for_each_match_value
+        assert!(
+            !plan.has_harry(),
+            "should not build Harry for mixed ASCII+CJK patterns"
+        );
         assert!(
             plan.charwise_matcher.is_some(),
             "charwise engine should exist for CJK patterns"

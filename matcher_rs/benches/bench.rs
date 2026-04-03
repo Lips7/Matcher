@@ -38,7 +38,25 @@ fn word_list(lang: &str) -> Vec<&str> {
 }
 
 fn build_literal_map(lang: &str, size: usize, match_scenario: bool) -> HashMap<u32, String> {
-    let patterns = word_list(lang);
+    build_literal_map_inner(lang, size, match_scenario, false)
+}
+
+fn build_literal_map_ascii(lang: &str, size: usize, match_scenario: bool) -> HashMap<u32, String> {
+    build_literal_map_inner(lang, size, match_scenario, true)
+}
+
+fn build_literal_map_inner(
+    lang: &str,
+    size: usize,
+    match_scenario: bool,
+    ascii_only: bool,
+) -> HashMap<u32, String> {
+    let all_patterns = word_list(lang);
+    let patterns: Vec<&str> = if ascii_only {
+        all_patterns.into_iter().filter(|s| s.is_ascii()).collect()
+    } else {
+        all_patterns
+    };
     let mut map = HashMap::with_capacity(size);
     for i in 0..size {
         let word_idx = (i * 997) % patterns.len();
@@ -336,6 +354,30 @@ mod scaling {
         let table = wrap_table(ProcessType::None, build_literal_map("cn", size, true));
         let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = CN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.process(line));
+            }
+        });
+    }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn is_match_en_ascii(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map_ascii("en", size, true));
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let haystack = EN_HAYSTACK;
+        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
+            for line in haystack.lines() {
+                let _ = black_box(matcher.is_match(line));
+            }
+        });
+    }
+
+    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
+    fn process_en_ascii(bencher: Bencher, size: usize) {
+        let table = wrap_table(ProcessType::None, build_literal_map_ascii("en", size, true));
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(matcher.process(line));
