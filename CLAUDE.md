@@ -31,7 +31,7 @@ make test-java                      # Java bindings
 make test-c                         # C bindings
 cd matcher_rs && cargo nextest run <test_name>                  # Single test by name
 cd matcher_rs && cargo nextest run --no-default-features        # Without DFA
-cd matcher_rs && cargo nextest run --test test_simple_matcher   # Single test file by name
+cd matcher_rs && cargo nextest run --test test_engine           # Single test file by name
 
 # Lint/Format
 make lint                           # All languages (rs + py + java)
