@@ -101,10 +101,9 @@ use std::fmt;
 
 /// Error returned when [`SimpleMatcher`] construction fails.
 ///
-/// This is an opaque struct (not an enum) to avoid coupling the public API to
-/// third-party error types and to allow adding new error variants in the future
-/// without breaking callers. The human-readable message is available via the
-/// [`Display`](fmt::Display) implementation.
+/// Each variant describes a specific failure mode. The enum is
+/// `#[non_exhaustive]`, so new variants may be added in future minor releases
+/// without breaking callers who use a wildcard arm.
 ///
 /// # When does construction fail?
 ///
@@ -127,46 +126,40 @@ use std::fmt;
 ///     Err(e) => panic!("unexpected error: {e}"),
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
-pub struct MatcherError {
-    message: String,
-}
+pub enum MatcherError {
+    /// The underlying Aho-Corasick library (`daachorse` or `aho-corasick`)
+    /// failed to compile the pattern set.
+    #[error("automaton build failed: {reason}")]
+    AutomatonBuild {
+        /// Human-readable description from the third-party builder.
+        reason: String,
+    },
 
-/// Formats the error as a human-readable message describing what went wrong
-/// during [`SimpleMatcher`] construction.
-impl fmt::Display for MatcherError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
+    /// A [`ProcessType`] value contained undefined bits (bits 6–7 set).
+    #[error(
+        "invalid ProcessType bits: {bits:#04x} \
+         (only bits 0\u{2013}5 are defined; bits 6\u{2013}7 must be zero)"
+    )]
+    InvalidProcessType {
+        /// The raw bitflag value that was rejected.
+        bits: u8,
+    },
 }
-
-/// Enables use with `?` and the standard error-handling ecosystem.
-impl std::error::Error for MatcherError {}
 
 impl MatcherError {
     /// Wraps a third-party automaton build error (from `daachorse` or
     /// `aho-corasick`) into a [`MatcherError`].
-    ///
-    /// The `source` message is prefixed with `"automaton build failed: "`.
     fn automaton_build(source: impl fmt::Display) -> Self {
-        Self {
-            message: format!("automaton build failed: {source}"),
+        Self::AutomatonBuild {
+            reason: source.to_string(),
         }
     }
 
     /// Creates an error for a [`ProcessType`] value with undefined bits set.
-    ///
-    /// Bits 6–7 are reserved; passing them to [`SimpleMatcher::new`] would
-    /// cause out-of-bounds indexing in downstream lookup tables sized for the
-    /// 6-bit flag space.
     pub(crate) fn invalid_process_type(bits: u8) -> Self {
-        Self {
-            message: format!(
-                "invalid ProcessType bits: {bits:#04x} (only bits 0–5 are defined; \
-                 bits 6–7 must be zero)"
-            ),
-        }
+        Self::InvalidProcessType { bits }
     }
 }
 

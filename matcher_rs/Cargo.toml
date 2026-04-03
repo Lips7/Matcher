@@ -28,6 +28,7 @@ bitflags = "2.11.0"
 daachorse = "1.0.1"
 mimalloc = { version = "0.1.48", features = ["v3"] }
 serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2"
 tinyvec = { version = "1.11.0", features = ["alloc"] }
 
 [dev-dependencies]

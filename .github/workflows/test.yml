@@ -116,8 +116,8 @@ jobs:
 
       - name: Test
         run: |
-          cargo all-features nextest run --profile ci
-          cargo test --doc
+          cargo all-features nextest run --profile ci --verbose
+          cargo test --doc -- --show-output
         working-directory: matcher_rs
         env:
           RUST_BACKTRACE: 1
@@ -137,7 +137,7 @@ jobs:
         shell: bash
         run: |
           uv sync
-          uv run pytest
+          uv run pytest -v
         working-directory: matcher_py
 
       - name: Set up JDK 21
@@ -147,5 +147,5 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
       - name: Java Test
-        run: mvn test
+        run: mvn test -e
         working-directory: matcher_java

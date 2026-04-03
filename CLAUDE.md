@@ -61,6 +61,9 @@ just coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-r
 
 # Dependency updates
 just update                         # cargo update --breaking + cargo upgrade
+
+# Release
+scripts/bump-version.sh <version>   # Update version in all manifests + CHANGELOG
 ```
 
 **Pre-commit:** `.pre-commit-config.yaml` exists — run `prek run` before committing.

@@ -42,6 +42,50 @@ This document describes the internal architecture of `matcher_rs` as it exists i
 
 ---
 
+## Architecture Overview
+
+```
+                        ┌─────────────────────────────────────────────────┐
+  CONSTRUCTION          │  SimpleMatcher::new(rules)                      │
+  (one-time)            │                                                 │
+                        │  1. parse_rules ──► ParsedRules                 │
+                        │     split &/~ operators, dedup patterns          │
+                        │                                                 │
+                        │  2. build_process_type_tree ──► ProcessPlan     │
+                        │     shared-prefix trie + SearchMode             │
+                        │                                                 │
+                        │  3. ScanPlan::compile ──► ScanPlan              │
+                        │     AC automata (bytewise/charwise/Harry)       │
+                        │     + PatternIndex (value → rule mapping)       │
+                        │                                                 │
+                        │  4. Assemble RuleSet (hot/cold rule metadata)   │
+                        └─────────────────────────────────────────────────┘
+                                            │
+                     ┌──────────────────────┼──────────────────────┐
+                     ▼                      ▼                      ▼
+              ┌─────────────┐      ┌──────────────┐      ┌──────────────┐
+              │ ProcessPlan │      │   ScanPlan   │      │   RuleSet    │
+              │             │      │              │      │              │
+              │ • trie nodes│      │ • bytewise AC│      │ • RuleHot[]  │
+              │ • SearchMode│      │ • charwise AC│      │ • RuleCold[] │
+              │             │      │ • Harry      │      │              │
+              │             │      │ • PatternIdx │      │              │
+              └──────┬──────┘      └──────┬───────┘      └──────┬───────┘
+                     │                    │                      │
+  QUERY              └──────────┬─────────┘──────────────────────┘
+  (per call)                    ▼
+                ┌───────────────────────────────────┐
+                │ AllSimple?                         │
+                │   YES → ScanPlan::is_match (fast)  │
+                │   NO  → walk_and_scan:             │
+                │         walk trie, transform text, │
+                │         scan each variant (Pass 1),│
+                │         evaluate rules (Pass 2)    │
+                └───────────────────────────────────┘
+```
+
+---
+
 ## Text Transformation Pipeline
 
 ### ProcessType Bitflags
@@ -329,6 +373,27 @@ Engine selection at query time is driven by a simple `is_ascii: bool` flag compu
 
 3. **AC charwise** — used when the text contains non-ASCII characters and a charwise engine was compiled (mixed ASCII + non-ASCII patterns).
 
+```
+  ScanPlan::is_match(text)
+          │
+          ▼
+  ┌─ Harry present? ──┐
+  │  YES               │ NO
+  ▼                    │
+  ┌─ No DFA OR ──┐     │
+  │  !is_ascii?   │     │
+  │ YES      NO   │     │
+  ▼          │    │     │
+ Harry       │    │     │
+             ▼    ▼     ▼
+        ┌─ is_ascii OR no charwise? ──┐
+        │  YES                         │ NO
+        ▼                              ▼
+    AC bytewise                   AC charwise
+    (DFA or DAAC)                 (DAAC, full
+                                   pattern set)
+```
+
 ### Harry Column-Vector SIMD Backend
 
 `HarryMatcher` (in `simple_matcher/harry/`) is a column-vector SIMD scan engine implementing the Harry paper with a dual-index encoding. It serves as a fast path for `is_match` when the pattern set is large (≥ 64 patterns) and purely ASCII.
@@ -336,6 +401,26 @@ Engine selection at query time is driven by a simple `is_ascii: bool` flag compu
 #### Architecture
 
 Patterns are grouped into 8 buckets by `byte[0] & 0x07`. A **single unified matcher** covers all prefix lengths in the range 2..=8 (`MAX_SCAN_LEN`). Two mask tables per column — `low_mask` indexed by `byte & 0x3F` (bits [0:5]) and `high_mask` indexed by `(byte >> 1) & 0x3F` (bits [1:6]) — are ORed per lane. A hit fires only when BOTH tables have the bucket bit cleared, giving 7-bit coverage per byte. For ASCII patterns this dual-index scheme is zero-false-positive; for non-ASCII bytes, bit 7 is lost, creating false positives between bytes X and X^0x80, all caught by exact-match verification.
+
+```
+  Dual-Index Encoding — per column, per haystack byte
+
+  Example: byte = 0x68 ('h') = 0b_0110_1000
+
+  low_mask  index:  byte & 0x3F        = 0b_10_1000 = 40
+  high_mask index:  (byte >> 1) & 0x3F = 0b_11_0100 = 52
+
+     low_mask[col][40]  ──┐
+                          OR ──► state[col]    (8 bits, one per bucket)
+     high_mask[col][52] ──┘
+
+  After all columns:  hit_mask = !state
+  Bit k set in hit_mask ═► bucket k has a candidate match
+
+  Coverage: low covers bits [0:5], high covers bits [1:6]
+            Together they see 7 of 8 bits (bit 7 is lost)
+            ASCII bytes use only bits [0:6] → zero false positives
+```
 
 #### Column-0 Early Exit
 
@@ -348,6 +433,31 @@ Columns beyond a pattern's actual prefix length are wildcarded (bucket bit clear
 #### Verification
 
 Bucket hits are verified via `BucketVerify`, which stores a `length_mask: u8` (bit `k-2` set ↔ prefix length `k` has entries) and a `PrefixMap` per registered prefix length. `PrefixMap` stores sorted parallel `keys: Box<[u64]>` and `values: Box<[PrefixGroup]>` arrays — binary search runs over the compact keys (contiguous `u64`s), then indexes into `PrefixGroup` only on a hit. Each `PrefixGroup` splits patterns into `exact_values` (prefix == full pattern) and `long_literals` (need suffix comparison).
+
+```
+  Verification Pipeline
+
+  hit_mask (e.g. 0b00100010)
+      │
+      ├─► bucket 1 (bit 1)
+      │       │
+      │       ▼
+      │   BucketVerify[1]
+      │   length_mask = 0b00000101  (prefix lengths 2 and 4 registered)
+      │       │
+      │       ├─► len=2: PrefixMap.get(key) ── binary search on keys[]
+      │       │     hit? ──► PrefixGroup
+      │       │                ├─ exact_values[] ──► emit value
+      │       │                └─ long_literals[] ──► compare suffix ──► emit
+      │       │
+      │       └─► len=4: PrefixMap.get(key) ── binary search on keys[]
+      │             hit? ──► PrefixGroup (same as above)
+      │
+      └─► bucket 5 (bit 5)
+              │
+              ▼
+          BucketVerify[5] ... (same structure)
+```
 
 #### SIMD Kernels
 
@@ -454,6 +564,31 @@ All accesses use `get_unchecked` guarded by `debug_assert!`.
 `DIRECT_RULE_BIT = 1 << 31` is used to encode the rule index directly in the automaton's raw value for single-entry simple patterns. When `PatternIndex::build_value_map` detects that a deduplicated pattern has exactly one `PatternEntry` with `kind == PatternKind::Simple`, it stores `rule_idx | DIRECT_RULE_BIT` instead of the dedup index.
 
 At scan time, `PatternIndex::dispatch` checks the high bit first. If set, it returns `PatternDispatch::DirectRule(rule_idx)`, skipping the entry table entirely. This eliminates two indirections (range lookup + entry access) for the common case of simple single-pattern rules.
+
+### Rule Evaluation Path Selection
+
+Each rule is routed to one of three evaluation strategies at construction time, based on its pattern structure:
+
+```
+  Rule parsed from pattern string
+          │
+          ▼
+  ┌─ and_count == 1, no NOT, no matrix? ──┐
+  │  YES                                    │ NO
+  ▼                                         ▼
+ Simple                          ┌─ and_count ≤ 64 AND
+ (PatternKind::Simple)           │  total segs ≤ 64 AND
+  • first hit sets               │  no repeated AND  AND
+    positive_generation          │  no repeated NOT?
+  • no counters, no mask         │  YES            NO
+                                 ▼                  ▼
+                             Bitmask             Matrix
+                              • satisfied_mask    • TinyVec<[i32;16]>
+                                (u64 bit per      • [segs × variants]
+                                 AND segment)       counter grid
+                              • remaining_and     • matrix_status[]
+                                (countdown)         tracks thresholds
+```
 
 ### Bitmask Fast Path
 
