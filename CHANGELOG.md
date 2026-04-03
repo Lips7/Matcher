@@ -1,5 +1,30 @@
 # Changelog
 
+
+## 0.13.0 - 2026-04-03
+
+### Features
+- Add `heap_bytes()` to `HarryMatcher` and `SimpleMatcher` for heap memory introspection across all matcher components (AC automata, Harry tables, rule metadata, process-type trie).
+
+### Performance
+- Unify HarryMatcher into a single matcher with wildcarded columns, eliminating per-prefix-length scans (6x on CJK, 3-4x on mixed haystacks).
+- Column-0 early exit in NEON/AVX512 kernels skips columns 1-7 for ~95% of non-ASCII chunks.
+- Replace AHashMap with sorted split-array PrefixMap in Harry verification for L1-friendly binary search.
+- Gate Harry dispatch on ASCII-only patterns and DFA absence; improve non-ASCII haystack routing.
+- Const-generic SIMD kernels with PREFIX_LEN-scoped column loading.
+
+### Testing
+- Add 15 targeted coverage tests (process type display, streaming scan paths, NEON edge cases, threaded compilation).
+- Coverage: 86% of testable lines (excluding platform-gated AVX512, binding crates, benchmarks).
+
+### CI
+- Fix SIGILL on x86_64 CI runners by overriding `target-cpu=native` from `.cargo/config.toml`.
+- Add separate coverage workflow with tarpaulin and Codecov integration.
+- Replace Makefile with Justfile for all build/test/bench/lint commands.
+
+### Build
+- Add `scripts/bump-version.sh` and `scripts/dev-setup.sh` for release and onboarding automation.
+
 ## 0.12.3 - 2026-04-02
 
 ### Performance
