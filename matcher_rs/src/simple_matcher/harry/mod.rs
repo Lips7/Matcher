@@ -425,9 +425,15 @@ impl HarryMatcher {
 /// Packs `bytes` (up to 8) into a little-endian `u64` for fast prefix comparison.
 #[inline(always)]
 fn prefix_key(bytes: &[u8]) -> u64 {
+    const { assert!(cfg!(target_endian = "little")) };
+    debug_assert!(!bytes.is_empty() && bytes.len() <= 8);
     let mut key = 0u64;
-    for (shift, &byte) in bytes.iter().enumerate() {
-        key |= u64::from(byte) << (shift * 8);
+    // SAFETY: `bytes.len()` is 1..=8 (callers pass prefix slices of length 2..=8
+    // for multi-byte patterns, or 1 for single-byte). The destination `key` is 8
+    // bytes. On little-endian targets the raw copy produces the same value as the
+    // manual shift-and-OR loop. The remaining upper bytes stay zero from init.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), (&raw mut key).cast::<u8>(), bytes.len());
     }
     key
 }

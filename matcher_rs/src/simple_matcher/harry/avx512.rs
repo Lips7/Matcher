@@ -81,13 +81,15 @@ impl HarryMatcher {
                 continue;
             }
 
+            // permute(idx, a) | permute(idx, b) == permute(idx, a | b): merge two
+            // alignment permutes into one.
             unsafe {
                 for column in 1..self.max_prefix_len {
                     let lo_lookup = _mm512_permutexvar_epi8(low_idx, low_cols[column]);
-                    let lo_aligned = _mm512_permutexvar_epi8(shift_idx[column], lo_lookup);
                     let hi_lookup = _mm512_permutexvar_epi8(high_idx, high_cols[column]);
-                    let hi_aligned = _mm512_permutexvar_epi8(shift_idx[column], hi_lookup);
-                    state = _mm512_or_si512(state, _mm512_or_si512(lo_aligned, hi_aligned));
+                    let combined = _mm512_or_si512(lo_lookup, hi_lookup);
+                    let aligned = _mm512_permutexvar_epi8(shift_idx[column], combined);
+                    state = _mm512_or_si512(state, aligned);
                 }
             }
 
@@ -186,13 +188,15 @@ impl HarryMatcher {
                 continue;
             }
 
+            // permute(idx, a) | permute(idx, b) == permute(idx, a | b): merge two
+            // alignment permutes into one.
             unsafe {
                 for column in 1..self.max_prefix_len {
                     let lo_lookup = _mm512_permutexvar_epi8(low_idx, low_cols[column]);
-                    let lo_aligned = _mm512_permutexvar_epi8(shift_idx[column], lo_lookup);
                     let hi_lookup = _mm512_permutexvar_epi8(high_idx, high_cols[column]);
-                    let hi_aligned = _mm512_permutexvar_epi8(shift_idx[column], hi_lookup);
-                    state = _mm512_or_si512(state, _mm512_or_si512(lo_aligned, hi_aligned));
+                    let combined = _mm512_or_si512(lo_lookup, hi_lookup);
+                    let aligned = _mm512_permutexvar_epi8(shift_idx[column], combined);
+                    state = _mm512_or_si512(state, aligned);
                 }
             }
 

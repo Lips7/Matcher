@@ -175,10 +175,8 @@ impl HarryMatcher {
                 ($shift:literal) => {{
                     let lo = vqtbl4q_u8(low_cols[$shift], low_idx);
                     let hi = vqtbl4q_u8(high_cols[$shift], high_idx);
-                    state = vorrq_u8(
-                        state,
-                        vorrq_u8(vextq_u8(lo, zero, $shift), vextq_u8(hi, zero, $shift)),
-                    );
+                    // ext(a, n) | ext(b, n) == ext(a | b, n): merge two shifts into one.
+                    state = vorrq_u8(state, vextq_u8(vorrq_u8(lo, hi), zero, $shift));
                 }};
             }
 
