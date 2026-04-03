@@ -459,7 +459,7 @@ impl<'a> FanjianByteIter<'a> {
 /// the Unicode codepoint of the Simplified equivalent.
 ///
 /// Construction is feature-gated:
-/// - **Default**: [`FanjianMatcher::new`] decodes the binary tables emitted by
+/// - **Default**: `FanjianMatcher` decodes the binary tables emitted by
 ///   `build.rs`.
 /// - **`runtime_build`**: `FanjianMatcher::from_map` builds the tables from a
 ///   `HashMap<u32, u32>` parsed from source text at startup.
@@ -625,7 +625,7 @@ pub(crate) type PinyinByteIter<'a> = SliceReplacingByteIter<'a, PinyinFindAdapte
 /// buffer (`strings`) that contains all Pinyin syllables concatenated.
 ///
 /// Two construction modes mirror those of `FanjianMatcher`:
-/// - **Default**: [`PinyinMatcher::new`] decodes build-time binary tables.
+/// - **Default**: `PinyinMatcher` decodes build-time binary tables.
 /// - **`runtime_build`**: `PinyinMatcher::from_map` builds tables from a
 ///   `HashMap<u32, &str>`.
 ///

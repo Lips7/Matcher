@@ -383,7 +383,7 @@ fn ascii_patterns_boundary_alignment() {
     let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
 
     for pad_chars in 0..20 {
-        let prefix: String = std::iter::repeat('中').take(pad_chars).collect();
+        let prefix: String = "中".repeat(pad_chars);
         let haystack = format!("{prefix}needle");
         let hits = collect_unique_hits(&matcher, &haystack);
         assert!(

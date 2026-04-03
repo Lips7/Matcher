@@ -117,7 +117,7 @@ impl<'a> Iterator for DeleteByteIter<'a> {
 /// without touching the full bitset.
 ///
 /// Construction is feature-gated:
-/// - **Default**: [`DeleteMatcher::new`] borrows the pre-compiled bitset from
+/// - **Default**: `DeleteMatcher` borrows the pre-compiled bitset from
 ///   `constants::DELETE_BITSET_BYTES`.
 /// - **`runtime_build`**: `DeleteMatcher::from_sources` builds the bitset
 ///   from the source delete table.

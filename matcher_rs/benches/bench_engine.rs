@@ -61,7 +61,7 @@ enum BuiltEngine {
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
     DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
     #[cfg(feature = "harry")]
-    Harry(HarryMatcher),
+    Harry(Box<HarryMatcher>),
 }
 
 // ── Pattern preparation ────────────────────────────────────────────────────────
@@ -139,11 +139,9 @@ fn build_engine(engine: Engine, patterns: &[String]) -> BuiltEngine {
                 .enumerate()
                 .map(|(i, p)| (p.as_str(), i as u32))
                 .collect();
-            BuiltEngine::Harry(
-                HarryMatcher::build(&patvals).expect(
-                    "harry build requires ≥64 patterns with at least one length-≥2 pattern",
-                ),
-            )
+            BuiltEngine::Harry(Box::new(HarryMatcher::build(&patvals).expect(
+                "harry build requires ≥64 patterns with at least one length-≥2 pattern",
+            )))
         }
     }
 }
