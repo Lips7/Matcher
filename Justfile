@@ -117,7 +117,7 @@ bench-compare-raw baseline candidate *args:
 # -- Coverage ------------------------------------------------------------------
 
 coverage:
-    cargo tarpaulin --fail-under 75 --out xml \
+    cargo tarpaulin -p matcher_rs --fail-under 75 --out xml \
         --exclude-files 'matcher_rs/src/simple_matcher/harry/avx512.rs' \
         --exclude-files 'matcher_rs/benches/*' \
         --exclude-files 'matcher_rs/examples/*' \
