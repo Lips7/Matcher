@@ -34,8 +34,6 @@ mod neon;
 #[cfg(test)]
 mod tests;
 
-use ahash::AHashMap;
-
 const ASCII_BYTES: usize = 128;
 const N_BUCKETS: usize = 8;
 const MAX_SCAN_LEN: usize = 8;
@@ -62,13 +60,51 @@ struct PrefixGroup {
     long_literals: Vec<BucketLiteral>,
 }
 
+/// Sorted prefix-key → `PrefixGroup` map for one prefix length within a bucket.
+///
+/// Keys and values are stored in parallel arrays: binary search runs over the
+/// compact `keys` slice (contiguous `u64`s — 16 KB for 2000 entries, fits L1 cache),
+/// then indexes into `values` only on a hit. This avoids both hash computation
+/// (the `u64` key IS the raw prefix bytes) and the cache pollution of interleaving
+/// large `PrefixGroup` structs with small `u64` keys.
+#[derive(Clone, Default)]
+struct PrefixMap {
+    keys: Box<[u64]>,
+    values: Box<[PrefixGroup]>,
+}
+
+impl PrefixMap {
+    /// Builds from an unsorted iterator of `(key, group)` pairs.
+    fn from_unsorted(iter: impl Iterator<Item = (u64, PrefixGroup)>) -> Self {
+        let mut pairs: Vec<(u64, PrefixGroup)> = iter.collect();
+        if pairs.is_empty() {
+            return Self::default();
+        }
+        pairs.sort_unstable_by_key(|(k, _)| *k);
+        let (keys, values): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+        Self {
+            keys: keys.into_boxed_slice(),
+            values: values.into_boxed_slice(),
+        }
+    }
+
+    /// Looks up a prefix group by key via binary search on the keys array.
+    #[inline(always)]
+    fn get(&self, key: u64) -> Option<&PrefixGroup> {
+        self.keys
+            .binary_search(&key)
+            .ok()
+            .map(|idx| &self.values[idx])
+    }
+}
+
 /// Per-bucket verification data across all registered prefix lengths.
 #[derive(Clone, Default)]
 struct BucketVerify {
     /// Bitmask of which prefix lengths have entries: bit `k-2` set ↔ prefix_len `k` exists.
     length_mask: u8,
     /// Indexed by `prefix_len - 2` (index 0 = length 2, index 6 = length 8).
-    groups: [AHashMap<u64, PrefixGroup>; MAX_SCAN_LEN - 1],
+    groups: [PrefixMap; MAX_SCAN_LEN - 1],
 }
 
 /// SIMD column-vector scan engine for literal pattern sets.
@@ -358,7 +394,7 @@ impl HarryMatcher {
             }
 
             let key = prefix_key(&haystack[start..start + prefix_len]);
-            let Some(group) = bv.groups[len_idx].get(&key) else {
+            let Some(group) = bv.groups[len_idx].get(key) else {
                 continue;
             };
 

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use super::{
     BucketLiteral, BucketVerify, HARRY_MIN_PATTERN_COUNT, HarryMatcher, MASK_ROWS, MAX_SCAN_LEN,
-    N_BUCKETS, prefix_key,
+    N_BUCKETS, PrefixGroup, PrefixMap, prefix_key,
 };
 
 impl HarryMatcher {
@@ -23,8 +25,14 @@ impl HarryMatcher {
         let mut has_single_byte = false;
         let mut low_mask = Box::new([[0xFFu8; MASK_ROWS]; MAX_SCAN_LEN]);
         let mut high_mask = Box::new([[0xFFu8; MASK_ROWS]; MAX_SCAN_LEN]);
-        let mut bucket_verify: [BucketVerify; N_BUCKETS] =
-            std::array::from_fn(|_| Default::default());
+
+        // Use a temporary HashMap during build, then convert to sorted PrefixMap.
+        let mut build_groups: [_; N_BUCKETS] = std::array::from_fn(|_| {
+            std::array::from_fn::<HashMap<u64, PrefixGroup>, { MAX_SCAN_LEN - 1 }, _>(|_| {
+                HashMap::new()
+            })
+        });
+        let mut build_length_masks = [0u8; N_BUCKETS];
 
         for &(pattern, value) in patterns {
             let bytes = pattern.as_bytes();
@@ -43,11 +51,10 @@ impl HarryMatcher {
                 high_mask[column][((byte >> 1) & 0x3F) as usize] &= bit;
             }
 
-            let bv = &mut bucket_verify[bucket];
             let len_idx = actual_prefix_len - 2;
-            bv.length_mask |= 1u8 << len_idx;
+            build_length_masks[bucket] |= 1u8 << len_idx;
             let key = prefix_key(&bytes[..actual_prefix_len]);
-            let group = bv.groups[len_idx].entry(key).or_default();
+            let group = build_groups[bucket][len_idx].entry(key).or_default();
             if bytes.len() == actual_prefix_len {
                 group.exact_values.push(value);
             } else {
@@ -58,11 +65,19 @@ impl HarryMatcher {
             }
         }
 
+        // Convert temporary HashMaps to sorted PrefixMaps.
+        let bucket_verify: [BucketVerify; N_BUCKETS] = std::array::from_fn(|bucket| {
+            let groups = std::array::from_fn(|len_idx| {
+                let map = &mut build_groups[bucket][len_idx];
+                PrefixMap::from_unsorted(map.drain())
+            });
+            BucketVerify {
+                length_mask: build_length_masks[bucket],
+                groups,
+            }
+        });
+
         // Wildcard each bucket's columns beyond its shortest pattern length.
-        // This makes columns irrelevant for matching that bucket when the haystack
-        // byte at that column offset is beyond the pattern — any byte passes.
-        // The consequence is more false positives in verification, but zero false
-        // negatives, and a single unified scan pass replaces one pass per length.
         for (bucket, bv) in bucket_verify.iter().enumerate() {
             let length_mask = bv.length_mask;
             if length_mask == 0 {
