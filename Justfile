@@ -27,7 +27,7 @@ fmt-check:
 
 # -- Lint ----------------------------------------------------------------------
 
-lint: lint-rs lint-py lint-java
+lint: lint-rs lint-py lint-java lint-c
 
 [working-directory: 'matcher_rs']
 lint-rs:
