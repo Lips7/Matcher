@@ -88,20 +88,31 @@ test-c:
 
 # -- Bench ---------------------------------------------------------------------
 
-bench-search:
-    python3 matcher_rs/scripts/run_benchmarks.py --preset search
+_bench_script := "matcher_rs/scripts/run_benchmarks.py"
 
-bench-build:
-    python3 matcher_rs/scripts/run_benchmarks.py --preset build
+bench-search *args:
+    python3 {{_bench_script}} --preset search {{args}}
 
-bench-engine-search:
-    python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search
+bench-build *args:
+    python3 {{_bench_script}} --preset build {{args}}
 
-bench-engine-build:
-    python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build
+bench-engine-search *args:
+    python3 {{_bench_script}} --preset engine-search {{args}}
 
-bench-compare baseline candidate:
-    python3 matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}"
+bench-engine-build *args:
+    python3 {{_bench_script}} --preset engine-build {{args}}
+
+bench-engine-is-match *args:
+    python3 {{_bench_script}} --preset engine-is-match {{args}}
+
+bench-all *args:
+    python3 {{_bench_script}} --preset all {{args}}
+
+bench-compare baseline candidate *args:
+    python3 matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}" {{args}}
+
+bench-compare-raw baseline candidate *args:
+    python3 matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
 # -- Coverage ------------------------------------------------------------------
 

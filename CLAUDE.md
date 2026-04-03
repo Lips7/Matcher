@@ -41,15 +41,17 @@ just lint-java                      # cargo fmt + cargo clippy + mvn checkstyle 
 just lint-c                         # cargo fmt + cargo clippy (matcher_c)
 
 # Benchmarks (harness: divan, two targets: bench, bench_engine)
-just bench-search                   # Main throughput workflow
-just bench-build                    # Matcher construction workflow
-just bench-engine-search            # Raw engine throughput workflow
-just bench-engine-build             # Raw engine build workflow
-python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick  # Quick directional signal (~2-3 min)
-python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev      # Faster rebuild (thin LTO)
-just bench-compare <baseline_dir> <candidate_dir>
-python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>  # direct invocation
-python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt                # raw file-to-file fallback
+# All bench recipes accept pass-through args: --quick, --profile, --repeats, etc.
+just bench-search                          # Main throughput workflow
+just bench-search --quick                  # Quick directional signal (~2-3 min)
+just bench-search --profile bench-dev      # Faster rebuild (thin LTO)
+just bench-build                           # Matcher construction workflow
+just bench-engine-search                   # Raw engine throughput workflow
+just bench-engine-build                    # Raw engine build workflow
+just bench-engine-is-match                 # Engine is_match (Harry) workflow
+just bench-all                             # All presets
+just bench-compare <baseline_dir> <candidate_dir>      # aggregated run-set comparison
+just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file-to-file comparison
 
 # Profiling (uses release + debug symbols)
 cd matcher_rs && cargo build --profile profiling
