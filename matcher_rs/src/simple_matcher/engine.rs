@@ -169,17 +169,41 @@ impl ScanPlan {
         &self.patterns
     }
 
+    /// Returns whether the bytewise engine is a DFA.
+    #[cfg(feature = "harry")]
+    #[inline(always)]
+    fn uses_dfa(&self) -> bool {
+        #[cfg(feature = "dfa")]
+        if let Some(BytewiseMatcher::AcDfa { .. }) = &self.bytewise_matcher {
+            return true;
+        }
+        false
+    }
+
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// When the `harry` feature is enabled and a [`HarryMatcher`] was compiled,
-    /// it is used unconditionally — it covers both ASCII and non-ASCII haystacks
-    /// across the full pattern set. Otherwise, engine selection falls back to AC:
-    /// bytewise when the text is ASCII or no charwise engine exists; charwise otherwise.
+    /// Engine selection for `is_match`:
+    ///
+    /// 1. **Harry** — used when available, all patterns are ASCII (`charwise_matcher`
+    ///    is `None`), and no DFA engine exists (pattern count > [`AC_DFA_PATTERN_THRESHOLD`]).
+    ///    Harry's dual-index encoding covers all 7 ASCII bits (zero encoding false
+    ///    positives). With non-ASCII patterns bit 7 is lost, causing 1.5–2.7× more
+    ///    false positives than AC. Below the DFA threshold the DFA's state table fits
+    ///    in L2 cache and outperforms Harry by 10–20%.
+    ///
+    /// 2. **AC bytewise** — when text is ASCII or no charwise engine exists.
+    ///
+    /// 3. **AC charwise** — when text contains multi-byte characters and a charwise
+    ///    engine was compiled.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "harry")]
-        if let Some(ref harry) = self.harry_matcher {
-            return harry.is_match(text);
+        if self
+            .harry_matcher
+            .as_ref()
+            .is_some_and(|_| self.charwise_matcher.is_none() && !self.uses_dfa())
+        {
+            return self.harry_matcher.as_ref().unwrap().is_match(text);
         }
 
         if self.charwise_matcher.is_none() || text.is_ascii() {
