@@ -88,18 +88,20 @@ let results = matcher.process(text);
 For more detailed usage examples, please refer to the [test_simple_matcher.rs](./tests/test_simple_matcher.rs) file.
 
 ## Feature Flags
+
+* `perf` *(default)*: Meta-feature enabling `dfa`, `simd_runtime_dispatch`, and `harry`.
+* `dfa` *(via `perf`)*: Use `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and count ≤ 7,000. ~10x more memory than NFA but higher throughput up to the cache boundary.
+* `simd_runtime_dispatch` *(via `perf`)*: Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere). Also enables NEON and AVX512-VBMI kernels in the Harry backend.
+* `harry` *(via `perf`)*: Column-vector SIMD scan backend, auto-selected for `is_match` when ≥ 64 patterns exist. Handles both ASCII and non-ASCII (CJK) haystacks.
 * `runtime_build`: Build transformation tables from the source text maps at runtime instead of loading build-time artifacts.
-* `dfa`: Use `aho-corasick` DFA mode in the parts of the matcher that opt into it. This is enabled by default.
-* `simd_runtime_dispatch`: Enabled by default. Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere).
 
 ### Feature Comparison & Recommendation
 
-| Feature | Engine | Search Speed | Memory Usage | External Dependency | Best For |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Default** | Mixed bytewise/charwise engines with `dfa` enabled where applicable | **Fast** | Higher | None | General purpose use. |
-| `simd_runtime_dispatch` | Runtime-selected transform kernels | **Fastest preprocess** | Neutral | None | Portable builds that should exploit the host CPU automatically. |
-| `--no-default-features` | `daachorse`-first matching plus portable transform kernels | Good | Lower | None | Leaner builds and feature debugging. |
-| `dfa` | Adds DFA-backed `aho-corasick` where this crate selects it | **Fast** | Higher | None | Custom feature sets that still want the default automaton choices. |
+| Feature | Engine | Search Speed | Memory Usage | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **Default (`perf`)** | DFA + Harry + SIMD transforms | **Fastest** | Higher | General purpose use. |
+| `--no-default-features --features dfa` | DFA without Harry or SIMD transforms | Fast | Higher | When Harry is not needed. |
+| `--no-default-features` | `daachorse`-only matching, portable transforms, no Harry | Good | Lower | Leaner builds and feature debugging. |
 
 ## Benchmarks
 
@@ -108,12 +110,16 @@ Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) again
 
 Full records are stored in [bench_records/](./bench_records/). Latest: [latest.txt](./bench_records/latest.txt).
 
-For local benchmarking, use the helper script or the matching `Makefile` target instead of ad hoc `cargo bench` runs:
+For local benchmarking, use `just` recipes from the repository root instead of ad hoc `cargo bench` runs. All bench recipes accept pass-through args (`--quick`, `--profile`, `--repeats`, etc.):
 
 ```shell
-python3 matcher_rs/scripts/run_benchmarks.py --preset search
-make bench-build
-make bench-engine-search
+just bench-search                          # Main throughput workflow
+just bench-search --quick                  # Quick directional signal (~2-3 min)
+just bench-search --profile bench-dev      # Faster rebuild (thin LTO)
+just bench-build                           # Matcher construction workflow
+just bench-engine-search                   # Raw engine throughput workflow
+just bench-engine-is-match                 # Engine is_match (Harry) workflow
+just bench-all                             # All presets
 ```
 
 The local protocol is:
@@ -130,20 +136,20 @@ Each run creates a timestamped directory under `matcher_rs/bench_records/` with 
 To compare two aggregated run sets:
 
 ```shell
-python3 matcher_rs/scripts/compare_benchmark_runs.py \
+just bench-compare \
   "matcher_rs/bench_records/2026-03-29_17-00-00_search" \
   "matcher_rs/bench_records/2026-03-29_17-20-00_search"
 ```
 
-If you need a direct comparison between two single raw benchmark outputs, keep using:
+For a direct comparison between two single raw benchmark outputs:
 
 ```shell
-python3 matcher_rs/scripts/compare_benchmarks.py \
-  "matcher_rs/bench_records/2026-03-10 12:22:24.txt" \
-  "matcher_rs/bench_records/2026-03-11 23:16:38.txt"
+just bench-compare-raw \
+  "matcher_rs/bench_records/2026-03-10_12-22-24_search/raw/search-run01.txt" \
+  "matcher_rs/bench_records/2026-03-11_23-16-38_search/raw/search-run01.txt"
 ```
 
-The single-file script treats the first file as the baseline and prints `Regression` and `Improvement`. The run-set script suppresses noisy rows by default and compares aggregate medians across repeats.
+The raw comparison treats the first file as the baseline and prints `Regression` and `Improvement`. The run-set comparison suppresses noisy rows by default and compares aggregate medians across repeats.
 
 ## Contributing
 

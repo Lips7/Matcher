@@ -17,10 +17,10 @@ Requires the Rust **nightly** toolchain.
 git clone https://github.com/Lips7/Matcher.git
 cd Matcher
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
-cargo build --release
+just build
 ```
 
-After building, you will find the dynamic library in the `target/release` directory:
+`just build` compiles all packages and copies the dynamic library into the `matcher_c/` directory automatically. You can also build manually with `cargo build --release` — the library will be in `target/release/`:
 - Linux: `libmatcher_c.so`
 - macOS: `libmatcher_c.dylib`
 - Windows: `matcher_c.dll`

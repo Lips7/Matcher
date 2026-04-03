@@ -19,12 +19,16 @@ Requires the Rust **nightly** toolchain.
 git clone https://github.com/Lips7/Matcher.git
 cd Matcher
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
+just build
+```
+
+`just build` compiles all packages and copies the dynamic library to the right location automatically. You can also build manually:
+
+```shell
 cargo build --release
 mkdir -p matcher_java/src/main/resources
 cp target/release/libmatcher_java.dylib matcher_java/src/main/resources/  # .so on Linux, .dll on Windows
 ```
-
-Or use `make build` from the repository root, which handles the copy step automatically.
 
 ### Maven coordinates
 

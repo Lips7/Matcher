@@ -19,6 +19,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
   - [SearchMode](#searchmode)
   - [Two-Pass Matching](#two-pass-matching)
   - [Scan Engine Selection](#scan-engine-selection)
+  - [Harry Column-Vector SIMD Backend](#harry-column-vector-simd-backend)
   - [Pass 1: Pattern Scanning](#pass-1-pattern-scanning)
   - [Pass 2: Logical Evaluation](#pass-2-logical-evaluation)
 - [State Management](#state-management)
@@ -128,22 +129,22 @@ This is combined (OR) with the non-ASCII mask to produce a stop mask; the first 
 
 ### TransformStep and StepOutput
 
-`TransformStep` (in `step.rs`) wraps one of the low-level engines and provides a uniform `apply(&self, text: &str, parent_density: f32) -> StepOutput` interface. The six variants are: `None`, `Fanjian(FanjianMatcher)`, `Delete(DeleteMatcher)`, `Normalize(NormalizeMatcher)`, `PinYin(PinyinMatcher)`, `PinYinChar(PinyinMatcher)`.
+`TransformStep` (in `step.rs`) wraps one of the low-level engines and provides a uniform `apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput` interface. The six variants are: `None`, `Fanjian(FanjianMatcher)`, `Delete(DeleteMatcher)`, `Normalize(NormalizeMatcher)`, `PinYin(PinyinMatcher)`, `PinYinChar(PinyinMatcher)`.
 
-`parent_density` is the multi-byte density (`continuation_bytes / total_bytes`) of the incoming text. `0.0` means pure ASCII.
+`parent_is_ascii` indicates whether the incoming text is pure ASCII.
 
 `StepOutput` carries two fields:
 - `changed: Option<String>` — `None` when the step is a no-op (the text was unmodified). `Some(result)` when the text was transformed.
-- `output_density: f32` — always describes the *post-step* text's multi-byte density, regardless of whether the text changed. Callers use this to select the bytewise or charwise AC engine for the next scan.
+- `is_ascii: bool` — always describes whether the *post-step* text is pure ASCII, regardless of whether the text changed. Callers use this to select the bytewise or charwise AC engine for the next scan.
 
-The `output_density` policy per step:
-- **Fanjian** — CJK-to-CJK substitution; all replacements are the same byte width (3-byte UTF-8), so `output_density = parent_density`.
-- **Delete** — ASCII input stays ASCII (`output_density = 0.0`); otherwise the underlying `DeleteMatcher::delete` computes the exact density after deletion.
-- **Normalize** — ASCII input stays ASCII (`output_density = 0.0`); otherwise the underlying `NormalizeMatcher::replace` computes density via a single SIMD pass over the result.
-- **PinYin / PinYinChar** — always produces pure ASCII romanization for non-ASCII input (`output_density = 0.0` from the underlying `PinyinMatcher::replace`); ASCII input is a no-op.
-- **None** — propagates `parent_density` unchanged.
+The `is_ascii` policy per step:
+- **Fanjian** — CJK-to-CJK substitution; output is never ASCII (`is_ascii = false`). ASCII input is a guaranteed no-op.
+- **Delete** — ASCII input stays ASCII (`is_ascii = true`); otherwise `is_ascii` is determined by `result.is_ascii()`.
+- **Normalize** — ASCII input stays ASCII (`is_ascii = true`); otherwise `is_ascii` is determined by `result.is_ascii()`.
+- **PinYin / PinYinChar** — always produces pure ASCII romanization for non-ASCII input (`is_ascii` from `result.is_ascii()`); ASCII input is a no-op.
+- **None** — propagates `parent_is_ascii` unchanged.
 
-ASCII fast-path: when `parent_density == 0.0`, steps that can't modify ASCII (`Fanjian`, `PinYin`, `PinYinChar`) return `StepOutput::unchanged(0.0)` immediately. Steps that may modify ASCII (`Delete`, `Normalize`) still run but force `output_density = 0.0` in the result. This is tracked via the `AsciiInputBehavior` enum (`NoOp` vs `MayChangeButStaysAscii`).
+ASCII fast-path: when `parent_is_ascii` is `true`, steps that can't modify ASCII (`Fanjian`, `PinYin`, `PinYinChar`) return `StepOutput::unchanged(true)` immediately. Steps that may modify ASCII (`Delete`, `Normalize`) still run but force `is_ascii = true` in the result, since ASCII-in → ASCII-out is guaranteed for all transforms (proven by process map analysis).
 
 ### Step Registry
 
@@ -187,9 +188,9 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 
 `SimpleMatcher` uses `walk_and_scan` (in `search.rs`) to walk the trie and scan each variant immediately after production. The flat-array invariant guarantees every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
-- **Leaf + no-op** (parent density is `0.0` and step is guaranteed no-op on ASCII): reuses the parent's text and variant index, scanning with the child's `pt_index_mask` instead of materializing new text.
+- **Leaf + no-op** (parent is ASCII and step is guaranteed no-op on ASCII): reuses the parent's text and variant index, scanning with the child's `pt_index_mask` instead of materializing new text.
 - **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation).
-- **Non-leaf**: materializes via `TransformStep::apply` into a `Vec<Cow<str>>` arena. `output_density` from `StepOutput` is stored per arena slot for downstream `use_bytewise` decisions. Scans immediately if the node terminates.
+- **Non-leaf**: materializes via `TransformStep::apply` into a `Vec<Cow<str>>` arena. `is_ascii` from `StepOutput` is stored per arena slot for downstream engine selection. Scans immediately if the node terminates.
 
 The standalone public APIs (`text_process`, `reduce_text_process`) in `api.rs` iterate `ProcessType` bits directly without the trie.
 
@@ -248,10 +249,11 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
 5. **Compile scan engines.** `ScanPlan::compile` (in `engine.rs`) receives the deduplicated patterns and entries:
    - Builds a `PatternIndex` from the entry buckets (flattens into contiguous storage with parallel `ranges`).
    - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. Single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
-   - Delegates to `compile_automata` which builds **both engines over the full pattern set**:
+   - Delegates to `compile_automata` which builds AC engines:
      - **Bytewise engine** (`BytewiseMatcher`): With the `dfa` feature, all patterns ASCII, and count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000), uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Otherwise uses `daachorse` bytewise DAAC with user-supplied `u32` values.
-     - **Charwise engine** (`CharwiseMatcher`): `daachorse` charwise DAAC compiled over the entire pattern set. Non-ASCII patterns are naturally handled; ASCII patterns work correctly because charwise transitions on their Unicode codepoints (which happen to be single-byte ASCII codepoints).
-   - Both engines are `None` only when the pattern list is completely empty.
+     - **Charwise engine** (`CharwiseMatcher`): `daachorse` charwise DAAC compiled over the entire pattern set. Only built when non-ASCII patterns exist. When both ASCII and non-ASCII patterns are present, the charwise engine contains the **full** pattern set so a single charwise pass covers everything on non-ASCII input.
+   - **Harry engine** (with `harry` feature): After AC compilation, if `charwise_matcher` is `None` (all patterns are pure ASCII), builds a `HarryMatcher` from the full pattern set. Only succeeds when ≥ 64 patterns exist and at least one pattern has length ≥ 2.
+   - AC engines are `None` when the corresponding pattern class is absent.
 
 6. **Assemble matcher.** The final `SimpleMatcher` stores three immutable components: `ProcessPlan` (tree + `SearchMode`), `ScanPlan` (automata + `PatternIndex`), and `RuleSet` (hot + cold rule metadata).
 
@@ -269,7 +271,7 @@ struct SimpleMatcher {
 
 **`ProcessPlan`** bundles the precomputed transformation trie (`Vec<ProcessTypeBitNode>`) and the `SearchMode` selected at construction time. It provides `tree()`, `mode()`, and `is_all_simple()` accessors.
 
-**`ScanPlan`** bundles the optional bytewise and charwise engines with the `PatternIndex` that maps raw automaton values back to rule metadata. It provides `is_match(text, use_bytewise)`, `for_each_match_value(text, use_bytewise, callback)`, `for_each_match_value_from_iter(iter, use_bytewise, callback)`, `charwise_density_threshold()`, and `patterns()`.
+**`ScanPlan`** bundles the optional bytewise, charwise, and Harry engines with the `PatternIndex` that maps raw automaton values back to rule metadata. It provides `is_match(text)`, `for_each_match_value(text, is_ascii, callback)`, `for_each_match_value_from_iter(iter, is_ascii, callback)`, and `patterns()`.
 
 **`RuleSet`** stores parallel `Vec<RuleHot>` and `Vec<RuleCold>` indexed by rule id. It provides `process_entry`, `has_match`, `collect_matches`, and `push_result_if_new`.
 
@@ -292,7 +294,7 @@ struct SimpleMatcher {
 │   ↓                                                            │
 │ ┌─── Pass 1: Pattern Scanning ───────────────────────────────┐ │
 │ │ For each text variant:                                     │ │
-│ │   Select bytewise or charwise engine via use_bytewise flag │ │
+│ │   Select engine via is_ascii flag (bytewise / charwise)    │ │
 │ │   For each overlapping hit:                                │ │
 │ │     Dispatch raw value via PatternIndex::dispatch          │ │
 │ │     → DirectRule: mark_positive immediately                │ │
@@ -311,15 +313,58 @@ struct SimpleMatcher {
 
 ### Scan Engine Selection
 
-Both `BytewiseMatcher` and `CharwiseMatcher` are compiled over the **full** pattern set. Engine selection at query time is a pure throughput decision driven by the text's multi-byte character density.
+Engine selection at query time is driven by a simple `is_ascii: bool` flag computed once per text variant via `text.is_ascii()`.
 
-`search.rs` computes `multibyte_density(text.as_bytes())` once per text variant and passes a `use_bytewise: bool` flag to `ScanPlan::for_each_match_value`. The flag is `true` when the density is below `ScanPlan::charwise_density_threshold()`.
+`ScanPlan::for_each_match_value` and `ScanPlan::for_each_match_value_from_iter` accept `is_ascii: bool`. When `true` or when no charwise engine exists, the bytewise engine is used; otherwise the charwise engine handles the scan. If either engine is `None` (no patterns in that class), the call is a no-op.
 
-The `charwise_density_threshold` is a per-plan constant set at compile time:
-- **`BytewiseMatcher::AcDfa` plan**: `f32::MAX` — charwise is never selected, because AcDfa beats the charwise engine at every density (including pure CJK).
-- **`BytewiseMatcher::DaacBytewise` plan**: `CHARWISE_DENSITY_THRESHOLD` (0.1) — charwise wins when ≥ ~10% of bytes are continuation bytes.
+`ScanPlan::is_match` uses a three-tier dispatch:
 
-`ScanPlan::for_each_match_value` and `ScanPlan::is_match` both accept `use_bytewise: bool` and delegate to the corresponding engine. If either engine is `None` (no patterns), the call is a no-op.
+1. **Harry** (with `harry` feature) — used when the Harry matcher is present (pure-ASCII pattern set only) and either:
+   - No DFA engine exists (pattern count > `AC_DFA_PATTERN_THRESHOLD`), **or**
+   - The text contains non-ASCII bytes (`!text.is_ascii()`).
+
+   On non-ASCII haystacks, Harry's column-0 early exit filters ~95% of chunks, giving 3–4× throughput over AC. On ASCII haystacks the DFA's zero-false-positive verification wins at N ≤ 7,000; above that its state table exceeds L2 and Harry wins.
+
+2. **AC bytewise** — used when the text is ASCII or no charwise engine exists. This covers the DFA fast path for small ASCII pattern sets on ASCII text.
+
+3. **AC charwise** — used when the text contains non-ASCII characters and a charwise engine was compiled (mixed ASCII + non-ASCII patterns).
+
+### Harry Column-Vector SIMD Backend
+
+`HarryMatcher` (in `simple_matcher/harry/`) is a column-vector SIMD scan engine implementing the Harry paper with a dual-index encoding. It serves as a fast path for `is_match` when the pattern set is large (≥ 64 patterns) and purely ASCII.
+
+#### Architecture
+
+Patterns are grouped into 8 buckets by `byte[0] & 0x07`. A **single unified matcher** covers all prefix lengths in the range 2..=8 (`MAX_SCAN_LEN`). Two mask tables per column — `low_mask` indexed by `byte & 0x3F` (bits [0:5]) and `high_mask` indexed by `(byte >> 1) & 0x3F` (bits [1:6]) — are ORed per lane. A hit fires only when BOTH tables have the bucket bit cleared, giving 7-bit coverage per byte. For ASCII patterns this dual-index scheme is zero-false-positive; for non-ASCII bytes, bit 7 is lost, creating false positives between bytes X and X^0x80, all caught by exact-match verification.
+
+#### Column-0 Early Exit
+
+After applying column 0, the SIMD kernels check if every lane's state byte is 0xFF (no bucket has any candidate first byte). When true the entire chunk is skipped. This fires ~95% of the time on CJK haystacks with ASCII patterns, yielding 3–6× speedup over AC engines.
+
+#### Wildcarding
+
+Columns beyond a pattern's actual prefix length are wildcarded (bucket bit cleared for all 64 row entries in that column). This means patterns of different lengths coexist in the same unified mask tables without separate per-length matchers. A per-bucket `min_prefix_len` determines where wildcarding starts.
+
+#### Verification
+
+Bucket hits are verified via `BucketVerify`, which stores a `length_mask: u8` (bit `k-2` set ↔ prefix length `k` has entries) and a `PrefixMap` per registered prefix length. `PrefixMap` stores sorted parallel `keys: Box<[u64]>` and `values: Box<[PrefixGroup]>` arrays — binary search runs over the compact keys (contiguous `u64`s), then indexes into `PrefixGroup` only on a hit. Each `PrefixGroup` splits patterns into `exact_values` (prefix == full pattern) and `long_literals` (need suffix comparison).
+
+#### SIMD Kernels
+
+Three dispatch tiers:
+- **AArch64 (NEON)**: compile-time intrinsics. 16-byte chunks via `uint8x16_t`. Early-exit via `vmaxvq_u8`. `max_prefix_len` determines lanes per chunk: `M = 16 - max_prefix_len + 1`.
+- **x86-64 (AVX512-VBMI)**: runtime detection via `is_x86_feature_detected!("avx512vbmi")`. 64-byte chunks via `__m512i`. Uses `_mm512_permutexvar_epi8` for the dual-index lookup.
+- **Scalar fallback**: byte-at-a-time through `match_mask_at` (column mask OR loop).
+
+When `all_patterns_ascii` is true, dedicated ASCII-skip variants skip non-ASCII haystack bytes entirely (matches can only start at ASCII bytes).
+
+#### Single-Byte Handling
+
+Patterns of length 1 bypass the column-vector scan and are matched via a `single_byte_values: Box<[Vec<u32>; 128]>` lookup table. A `single_byte_match_mask: [u64; 2]` bitmask enables O(1) `is_match` for single-byte patterns. SIMD-accelerated single-byte scanning (NEON/AVX512) is used for `is_match` on ASCII haystacks with ≤ 4 distinct single-byte patterns.
+
+#### Threading
+
+`HarryMatcher` is immutable after construction. All mask tables and verification data are read-only. No thread-local state is needed — pure computation from pattern tables.
 
 ### Pass 1: Pattern Scanning
 
@@ -438,7 +483,7 @@ Matrix and status arrays are stored per-rule in `SimpleMatchState::matrix` and `
 
 When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_and_scan` entirely:
 
-- **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text, use_bytewise)` where `use_bytewise` is computed from `multibyte_density(text.as_bytes())`. This uses `find_iter(...).next().is_some()` or `AhoCorasick::is_match(...)` directly. Completely bypasses TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
+- **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text)`. This dispatches to Harry (when present and applicable), the AC DFA, or the DAAC bytewise engine — completely bypassing TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
 - **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids tree walk overhead while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ---
@@ -478,8 +523,10 @@ The crate replaces the system allocator with `mimalloc` (v3) globally for improv
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `dfa` | on | Enables `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and pattern count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput up to the cache boundary. Note: `NormalizeMatcher` always uses `aho-corasick` DFA regardless of this flag. |
-| `simd_runtime_dispatch` | on | Dynamically selects the best SIMD instruction set at runtime for transformation skip functions and `multibyte_density` (AVX2 on x86-64 via `SimdDispatch` + `OnceLock`, NEON on aarch64 at compile time, portable `std::simd` fallback). Without this flag, only the portable path is compiled. |
+| `perf` | on | Meta-feature enabling all performance optimizations: `dfa`, `simd_runtime_dispatch`, and `harry`. This is the default feature. |
+| `dfa` | on (via `perf`) | Enables `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and pattern count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput up to the cache boundary. Note: `NormalizeMatcher` always uses `aho-corasick` DFA regardless of this flag. |
+| `simd_runtime_dispatch` | on (via `perf`) | Dynamically selects the best SIMD instruction set at runtime for transformation skip functions (AVX2 on x86-64 via `SimdDispatch` + `OnceLock`, NEON on aarch64 at compile time, portable `std::simd` fallback). Also enables the NEON and AVX512-VBMI kernels in the Harry backend. Without this flag, only the portable/scalar paths are compiled. |
+| `harry` | on (via `perf`) | Enables the Harry column-vector SIMD scan backend. When present, `ScanPlan::is_match` dispatches to Harry for large pure-ASCII pattern sets (≥ 64 patterns) on non-ASCII haystacks or when no DFA exists. See [Harry Column-Vector SIMD Backend](#harry-column-vector-simd-backend). |
 | `runtime_build` | off | Builds transformation tables at runtime from source text files in `process_map/` instead of loading precompiled binary artifacts from `build.rs`. Slower initialization but allows custom or updated transformation data without recompiling the library. |
 
 ---
