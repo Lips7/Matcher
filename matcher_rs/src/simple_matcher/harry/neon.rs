@@ -94,11 +94,18 @@ impl HarryMatcher {
             };
         }
 
-        let load_cols = |tbl: &[[u8; MASK_ROWS]; MAX_SCAN_LEN]| {
+        /// Loads exactly `N` column mask tables as NEON quad-register groups.
+        ///
+        /// Only loads the columns that will actually be used (determined by
+        /// `PREFIX_LEN`), avoiding register spills from pre-loading unused columns.
+        #[inline(always)]
+        unsafe fn load_cols_n<const N: usize>(
+            tbl: &[[u8; MASK_ROWS]; MAX_SCAN_LEN],
+        ) -> [uint8x16x4_t; N] {
             std::array::from_fn(|column| {
                 let ptr = tbl[column].as_ptr();
-                // SAFETY: `tbl[column]` is `[u8; 64]`; the four loads cover
-                // offsets 0..16, 16..32, 32..48, 48..64 — all within the array.
+                // SAFETY: `column < N <= MAX_SCAN_LEN`, so `tbl[column]` is valid.
+                // Each `[u8; 64]` array covers offsets 0..64 — all four loads are in-bounds.
                 unsafe {
                     uint8x16x4_t(
                         vld1q_u8(ptr),
@@ -108,9 +115,12 @@ impl HarryMatcher {
                     )
                 }
             })
-        };
-        let low_cols: [uint8x16x4_t; MAX_SCAN_LEN] = load_cols(&self.low_mask);
-        let high_cols: [uint8x16x4_t; MAX_SCAN_LEN] = load_cols(&self.high_mask);
+        }
+        // SAFETY: NEON is baseline on AArch64; `load_cols_n` calls `vld1q_u8`
+        // on valid `[u8; 64]` arrays within `self.low_mask`.
+        let low_cols: [uint8x16x4_t; PREFIX_LEN] = unsafe { load_cols_n(&self.low_mask) };
+        // SAFETY: Same as above — `self.high_mask` has the same layout.
+        let high_cols: [uint8x16x4_t; PREFIX_LEN] = unsafe { load_cols_n(&self.high_mask) };
 
         let zero = vdupq_n_u8(0);
         let mask_6b = vdupq_n_u8(0x3F);
@@ -148,21 +158,12 @@ impl HarryMatcher {
             let mut state = vorrq_u8(lo0, hi0);
 
             // ── UTF-8 continuation-byte mask ──
-            // Mark lanes starting at continuation bytes (0x80-0xBF) as "no match"
-            // by ORing 0xFF into their state — a valid match can never start at a
-            // continuation byte regardless of pattern content.
-            //
-            // Skipped in ASCII_ONLY mode (handled by the 16-byte non-ASCII skip)
-            // and when all patterns are ASCII (column scan self-filters since
-            // non-ASCII bytes never have bucket bits set in the mask tables).
             if !ASCII_ONLY && !self.all_patterns_ascii {
                 let cont_mask = vceqq_u8(vandq_u8(raw, mask_c0), val_80);
                 state = vorrq_u8(state, cont_mask);
             }
 
             // ── Column-0 early exit ──
-            // If every lane's state is 0xFF, no bucket has a candidate first-byte
-            // match in this chunk. Skip remaining columns entirely.
             if vminvq_u8(state) == 0xFF {
                 start += m;
                 continue;
