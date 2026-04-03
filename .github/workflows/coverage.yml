@@ -42,7 +42,14 @@ jobs:
       - name: Install tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin
       - name: Generate code coverage
-        run: cargo tarpaulin -p matcher_rs --all-features --fail-under 75 --out xml
+        run: >
+          cargo tarpaulin --fail-under 75 --out xml
+          --exclude-files 'matcher_rs/src/simple_matcher/harry/avx512.rs'
+          --exclude-files 'matcher_rs/benches/*'
+          --exclude-files 'matcher_rs/examples/*'
+          --exclude-files 'matcher_py/*'
+          --exclude-files 'matcher_java/*'
+          --exclude-files 'matcher_c/*'
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
         with:

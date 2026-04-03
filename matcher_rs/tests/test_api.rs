@@ -301,6 +301,38 @@ fn test_invalid_process_type_in_construction() {
 }
 
 // ---------------------------------------------------------------------------
+// Debug + Display formatting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_debug_format() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "world")
+        .build()
+        .unwrap();
+
+    let debug = format!("{matcher:?}");
+    assert!(debug.contains("SimpleMatcher"), "debug output: {debug}");
+    assert!(debug.contains("search_mode"), "debug output: {debug}");
+    assert!(debug.contains("rule_count"), "debug output: {debug}");
+}
+
+#[test]
+fn test_process_into_empty_text() {
+    // General mode (not AllSimple) to exercise the General early-return path in process_into.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::Fanjian, 2, "你好")
+        .build()
+        .unwrap();
+
+    let mut results = vec![];
+    matcher.process_into("", &mut results);
+    assert!(results.is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // Stress and edge cases
 // ---------------------------------------------------------------------------
 

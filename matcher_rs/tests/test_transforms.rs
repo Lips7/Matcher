@@ -527,6 +527,96 @@ fn test_pinyin_non_ascii_pattern_match() {
 }
 
 // ===========================================================================
+// ProcessType Display formatting
+// ===========================================================================
+
+#[test]
+fn test_process_type_display() {
+    assert_eq!(format!("{}", ProcessType::None), "none");
+    assert_eq!(format!("{}", ProcessType::Fanjian), "fanjian");
+    assert_eq!(format!("{}", ProcessType::Delete), "delete");
+    assert_eq!(format!("{}", ProcessType::Normalize), "normalize");
+    assert_eq!(format!("{}", ProcessType::PinYin), "pinyin");
+    assert_eq!(format!("{}", ProcessType::PinYinChar), "pinyinchar");
+    assert_eq!(
+        format!("{}", ProcessType::Fanjian | ProcessType::Delete),
+        "fanjian_delete"
+    );
+    assert_eq!(
+        format!("{}", ProcessType::FanjianDeleteNormalize),
+        "fanjian_delete_normalize"
+    );
+    assert_eq!(format!("{}", ProcessType::empty()), "");
+}
+
+// ===========================================================================
+// PinYinChar passthrough for unmapped scripts
+// ===========================================================================
+
+#[test]
+fn test_pinyinchar_passthrough_unmapped() {
+    // Korean has no Pinyin mapping — passes through PinYinChar unchanged.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::PinYinChar, 1, "한글")
+        .build()
+        .unwrap();
+    assert!(matcher.is_match("한글"));
+    assert!(!matcher.is_match("hangul"));
+}
+
+// ===========================================================================
+// Streaming scan paths (search.rs coverage)
+// ===========================================================================
+
+#[test]
+fn test_streaming_scan_normalize() {
+    // Normalize + Fanjian forces General mode; the Normalize leaf uses
+    // scan_variant_streaming through the NormalizeMatcher byte iterator.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Normalize, 1, "ab")
+        .add_word(ProcessType::Fanjian, 2, "测试")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("ＡＢ"), "fullwidth -> normalized to ab");
+    assert!(
+        matcher.is_match("測試"),
+        "traditional -> simplified via Fanjian"
+    );
+    let results = matcher.process("ＡＢ 測試");
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_streaming_scan_pinyin() {
+    // PinYin + Fanjian forces General mode; the PinYin leaf uses
+    // scan_variant_streaming through the PinyinMatcher byte iterator.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::PinYin, 1, "xi an")
+        .add_word(ProcessType::Fanjian, 2, "测试")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("西安"), "pinyin conversion");
+    assert!(matcher.is_match("測試"), "fanjian conversion");
+}
+
+#[test]
+fn test_leaf_ascii_noop_optimization() {
+    // Fanjian is a no-op on pure ASCII. When parent text is ASCII and the leaf
+    // step is Fanjian, the scan reuses parent text (no materialization).
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Fanjian, 1, "hello")
+        .add_word(ProcessType::None, 2, "world")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("hello world"));
+    let results = matcher.process("hello world");
+    assert_eq!(results.len(), 2);
+}
+
+// ===========================================================================
 // Unicode edge cases
 // ===========================================================================
 

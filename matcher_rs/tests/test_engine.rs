@@ -320,6 +320,74 @@ fn test_mixed_ascii_and_cjk_rules_on_non_ascii_text() {
 }
 
 // ---------------------------------------------------------------------------
+// Threaded compilation: both ASCII and non-ASCII engines
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_compile_both_ascii_and_non_ascii_engines() {
+    // 150 ASCII + 150 CJK patterns forces the (has_ascii=true, has_non_ascii=true)
+    // branch in compile_automata, which uses thread::scope for parallel construction.
+    let ascii_words: Vec<String> = (0..150u32).map(|i| format!("ascii{i:03}")).collect();
+    let cjk_words: Vec<String> = (0..150u32).map(|i| format!("测试{i:03}")).collect();
+    let mut builder = SimpleMatcherBuilder::new();
+    for (i, word) in ascii_words.iter().enumerate() {
+        builder = builder.add_word(ProcessType::None, i as u32, word);
+    }
+    for (i, word) in cjk_words.iter().enumerate() {
+        builder = builder.add_word(ProcessType::None, i as u32 + 1000, word);
+    }
+    let matcher = builder.build().unwrap();
+
+    assert!(matcher.is_match("ascii042"));
+    assert!(matcher.is_match("测试099"));
+    assert!(!matcher.is_match("missing"));
+
+    let results = matcher.process("ascii000 测试000 some text");
+    let mut ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
+    ids.sort();
+    assert!(ids.contains(&0));
+    assert!(ids.contains(&1000));
+}
+
+// ---------------------------------------------------------------------------
+// DFA/AC streaming iteration paths
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dfa_streaming_via_fanjian() {
+    // ASCII patterns under Fanjian: on ASCII text the Fanjian leaf is a no-op,
+    // but the streaming codepath in BytewiseMatcher::for_each_match_value_from_iter
+    // is exercised because the tree walk visits the Fanjian leaf with an iterator.
+    let words: Vec<String> = (0..100u32).map(|i| format!("word{i:03}")).collect();
+    let mut builder = SimpleMatcherBuilder::new();
+    for (i, word) in words.iter().enumerate() {
+        builder = builder.add_word(ProcessType::Fanjian, i as u32, word);
+    }
+    let matcher = builder.build().unwrap();
+
+    assert!(matcher.is_match("word042"));
+    let results = matcher.process("word000 word099");
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_charwise_streaming_via_fanjian_delete() {
+    // Non-ASCII patterns under Fanjian|Delete: the charwise engine's streaming
+    // iterator path is exercised when the Delete leaf emits bytes through
+    // CharwiseMatcher::for_each_match_value_from_iter.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "测试")
+        .add_word(ProcessType::Fanjian | ProcessType::Delete, 2, "你好")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("測！試"), "traditional + noise");
+    assert!(matcher.is_match("你！好"), "simplified + noise");
+    let results = matcher.process("測！試 你！好");
+    assert_eq!(results.len(), 2);
+}
+
+// ---------------------------------------------------------------------------
 // ASCII engine routing
 // ---------------------------------------------------------------------------
 

@@ -116,7 +116,12 @@ bench-compare-raw baseline candidate *args:
 
 # -- Coverage ------------------------------------------------------------------
 
-[working-directory: 'matcher_rs']
 coverage:
-    cargo tarpaulin --all-features --out html
-    @echo "Coverage report: matcher_rs/tarpaulin-report.html"
+    cargo tarpaulin --fail-under 75 --out xml \
+        --exclude-files 'matcher_rs/src/simple_matcher/harry/avx512.rs' \
+        --exclude-files 'matcher_rs/benches/*' \
+        --exclude-files 'matcher_rs/examples/*' \
+        --exclude-files 'matcher_py/*' \
+        --exclude-files 'matcher_java/*' \
+        --exclude-files 'matcher_c/*'
+    @echo "Coverage report: cobertura.xml"

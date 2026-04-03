@@ -451,6 +451,66 @@ fn ascii_patterns_boundary_alignment() {
 }
 
 // ---------------------------------------------------------------------------
+// NEON/scalar edge cases and dispatch paths
+// ---------------------------------------------------------------------------
+
+#[test]
+fn single_byte_haystack_early_return() {
+    // Exercises the `has_single_byte && haystack.len() == 1` early return in is_match_bytes.
+    let mut patterns = big_set();
+    patterns.push(("x".to_owned(), 900));
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+    assert!(matcher.is_match("x"));
+    assert!(!matcher.is_match("y"));
+}
+
+#[test]
+fn neon_short_haystack_fallback() {
+    // Haystack shorter than 16 bytes triggers scalar fallback in NEON scan functions.
+    let patterns = big_set();
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+    assert!(matcher.is_match("token00"));
+    assert!(!matcher.is_match("miss"));
+    let hits = collect_unique_hits(&matcher, "token00");
+    assert_eq!(hits, vec![0]);
+}
+
+#[test]
+fn ascii_patterns_non_ascii_lead_haystack() {
+    // ASCII patterns with haystack starting with non-ASCII byte exercises
+    // scan_multi_dispatch_any (the non-ASCII-lead dispatch).
+    let patterns = big_set();
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+    assert!(matcher.is_match("中文token42后续"));
+    assert!(!matcher.is_match("中文日本語韓國語"));
+}
+
+#[test]
+fn neon_non_ascii_patterns_continuation_mask() {
+    // CJK patterns on a large CJK haystack exercises UTF-8 continuation byte
+    // masking in the NEON kernel (the `!ASCII_ONLY && !all_patterns_ascii` branch).
+    let mut patterns: Vec<(String, u32)> = (0u32..64).map(|i| (format!("词{i:02}"), i)).collect();
+    patterns.push(("x".to_owned(), 900));
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+    let haystack = format!("{}词42{}", "中文".repeat(20), "其他".repeat(20));
+    let hits = collect_unique_hits(&matcher, &haystack);
+    assert!(hits.contains(&42));
+}
+
+#[test]
+fn neon_single_byte_in_large_haystack() {
+    // Single-byte pattern "z" in a 200+ byte haystack exercises the has_single_byte
+    // check inside the NEON scan loop.
+    let mut patterns = big_set();
+    patterns.push(("z".to_owned(), 900));
+    let matcher = HarryMatcher::build(&refs(&patterns)).unwrap();
+    let haystack = format!("{}z{}", "a".repeat(100), "b".repeat(100));
+    assert!(matcher.is_match(&haystack));
+    let hits = collect_unique_hits(&matcher, &haystack);
+    assert!(hits.contains(&900));
+}
+
+// ---------------------------------------------------------------------------
 // Harry through SimpleMatcher end-to-end
 // ---------------------------------------------------------------------------
 
