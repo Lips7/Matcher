@@ -1,13 +1,5 @@
 use super::*;
 
-fn make_patterns(words: &[&str]) -> Vec<(String, u32)> {
-    words
-        .iter()
-        .enumerate()
-        .map(|(i, &word)| (word.to_owned(), i as u32))
-        .collect()
-}
-
 fn refs(patterns: &[(String, u32)]) -> Vec<(&str, u32)> {
     patterns
         .iter()
