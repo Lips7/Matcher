@@ -8,46 +8,46 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 
 **Toolchain:** nightly Rust (see `rust-toolchain.toml`), edition 2024. Nightly is required — do not change this. Edition 2024 has behavioral changes: `gen` is reserved, `unsafe` blocks required inside `unsafe fn`, etc.
 
-**Prerequisites:** `cargo-all-features` (`cargo install cargo-all-features`), `cargo-nextest` (`cargo install cargo-nextest`), `uv` (Python env manager), `prek` (pre-commit runner).
+**Prerequisites:** `just` (command runner), `cargo-all-features` (`cargo install cargo-all-features`), `cargo-nextest` (`cargo install cargo-nextest`), `uv` (Python env manager), `prek` (pre-commit runner).
 
 ## Commands
 
 ```bash
 # Build
-make build                          # Full workspace + copy bindings artifacts
+just build                          # Full workspace + copy bindings artifacts
 cargo build --release               # Rust only
 
 # Quick iteration
-make check                          # Fast type-check (no codegen)
-make test-quick                     # Default-features tests only
-make fmt                            # Auto-format
-make fmt-check                      # Check formatting without modifying
+just check                          # Fast type-check (no codegen)
+just test-quick                     # Default-features tests only
+just fmt                            # Auto-format
+just fmt-check                      # Check formatting without modifying
 
 # Test
-make test                           # All languages (Rust + Python + Java + C)
-make test-rs                        # All feature combos + doctests + docs
-make test-py                        # Python bindings
-make test-java                      # Java bindings
-make test-c                         # C bindings
+just test                           # All languages (Rust + Python + Java + C)
+just test-rs                        # All feature combos + doctests + docs
+just test-py                        # Python bindings
+just test-java                      # Java bindings
+just test-c                         # C bindings
 cd matcher_rs && cargo nextest run <test_name>                  # Single test by name
 cd matcher_rs && cargo nextest run --no-default-features        # Without DFA
 cd matcher_rs && cargo nextest run --test test_engine           # Single test file by name
 
 # Lint/Format
-make lint                           # All languages (rs + py + java)
-make lint-rs                        # cargo fmt + cargo clippy (matcher_rs)
-make lint-py                        # cargo fmt + cargo clippy + ruff + ty check (matcher_py)
-make lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
-make lint-c                         # cargo fmt + cargo clippy (matcher_c)
+just lint                           # All languages (rs + py + java)
+just lint-rs                        # cargo fmt + cargo clippy (matcher_rs)
+just lint-py                        # cargo fmt + cargo clippy + ruff + ty check (matcher_py)
+just lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
+just lint-c                         # cargo fmt + cargo clippy (matcher_c)
 
 # Benchmarks (harness: divan, two targets: bench, bench_engine)
-make bench-search                   # Main throughput workflow
-make bench-build                    # Matcher construction workflow
-make bench-engine-search            # Raw engine throughput workflow
-make bench-engine-build             # Raw engine build workflow
+just bench-search                   # Main throughput workflow
+just bench-build                    # Matcher construction workflow
+just bench-engine-search            # Raw engine throughput workflow
+just bench-engine-build             # Raw engine build workflow
 python3 matcher_rs/scripts/run_benchmarks.py --preset search --quick  # Quick directional signal (~2-3 min)
 python3 matcher_rs/scripts/run_benchmarks.py --profile bench-dev      # Faster rebuild (thin LTO)
-make bench-compare BASELINE=<baseline_dir> CANDIDATE=<candidate_dir>
+just bench-compare <baseline_dir> <candidate_dir>
 python3 matcher_rs/scripts/compare_benchmark_runs.py <baseline_dir> <candidate_dir>  # direct invocation
 python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt                # raw file-to-file fallback
 
@@ -55,10 +55,10 @@ python3 matcher_rs/scripts/compare_benchmarks.py baseline.txt new.txt           
 cd matcher_rs && cargo build --profile profiling
 
 # Coverage
-make coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html
+just coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html
 
 # Dependency updates
-make update                         # cargo update --breaking + cargo upgrade
+just update                         # cargo update --breaking + cargo upgrade
 ```
 
 **Pre-commit:** `.pre-commit-config.yaml` exists — run `prek run` before committing.

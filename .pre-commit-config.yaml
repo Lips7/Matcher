@@ -1,21 +1,21 @@
 repos:
   - repo: local
     hooks:
-      - id: make-lint-rs
-        name: make lint-rs
-        entry: make lint-rs
+      - id: just-lint-rs
+        name: just lint-rs
+        entry: just lint-rs
         language: system
         files: \.rs$
         pass_filenames: false
-      - id: make-lint-py
-        name: make lint-py
-        entry: make lint-py
+      - id: just-lint-py
+        name: just lint-py
+        entry: just lint-py
         language: system
         files: \.py$
         pass_filenames: false
-      - id: make-lint-java
-        name: make lint-java
-        entry: make lint-java
+      - id: just-lint-java
+        name: just lint-java
+        entry: just lint-java
         language: system
         files: \.java$
         pass_filenames: false

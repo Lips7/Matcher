@@ -58,7 +58,7 @@ We provide dynamic library to link. See the [C README](./matcher_c/README.md) an
 git clone https://github.com/Lips7/Matcher.git
 cd Matcher
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly -y
-make build
+just build
 ```
 
 This builds all packages and copies the dynamic libraries to the right locations. You can also run `cargo build --release` directly — the C and Java libraries will be in `target/release/`:

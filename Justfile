@@ -1,0 +1,107 @@
+ext := if os() == "macos" { "dylib" } else if os() == "linux" { "so" } else { "dll" }
+
+# -- Build ---------------------------------------------------------------------
+
+build:
+    cargo update
+    cargo build --release
+    cp ./target/release/libmatcher_c.{{ext}} ./matcher_c/libmatcher_c.{{ext}}
+    mkdir -p ./matcher_java/src/main/resources
+    cp ./target/release/libmatcher_java.{{ext}} ./matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    cd matcher_py && uv sync
+
+update:
+    cargo update --verbose --recursive --breaking -Z unstable-options
+    cargo upgrade --verbose --recursive
+
+# -- Check / Format ------------------------------------------------------------
+
+check:
+    cargo check --workspace --all-targets
+
+fmt:
+    cargo fmt --all
+
+fmt-check:
+    cargo fmt --all --check
+
+# -- Lint ----------------------------------------------------------------------
+
+lint: lint-rs lint-py lint-java
+
+[working-directory: 'matcher_rs']
+lint-rs:
+    cargo fmt --all
+    cargo all-features clippy -- -- -D warnings
+
+[working-directory: 'matcher_py']
+lint-py:
+    cargo fmt --all
+    cargo clippy -- -D warnings
+    uv run ruff check --fix && uv run ty check
+
+[working-directory: 'matcher_java']
+lint-java:
+    cargo fmt --all
+    cargo clippy -- -D warnings
+    mvn checkstyle:check
+
+[working-directory: 'matcher_c']
+lint-c:
+    cargo fmt --all
+    cargo clippy -- -D warnings
+
+# -- Test ----------------------------------------------------------------------
+
+test: test-rs test-py test-java test-c
+
+[working-directory: 'matcher_rs']
+test-rs:
+    cargo all-features nextest run
+    cargo test --doc
+    cargo doc
+
+[working-directory: 'matcher_rs']
+test-quick:
+    cargo nextest run
+
+[working-directory: 'matcher_py']
+test-py:
+    uv run pytest
+
+test-java:
+    cargo build --release -p matcher_java
+    mkdir -p ./matcher_java/src/main/resources
+    cp ./target/release/libmatcher_java.{{ext}} ./matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    cd matcher_java && mvn test
+
+test-c:
+    cargo build --release -p matcher_c
+    cp ./target/release/libmatcher_c.{{ext}} ./matcher_c/libmatcher_c.{{ext}}
+    {{env("CC", "cc")}} -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
+        matcher_c/tests/test_matcher.c -o matcher_c/tests/test_matcher
+    ./matcher_c/tests/test_matcher
+
+# -- Bench ---------------------------------------------------------------------
+
+bench-search:
+    python3 matcher_rs/scripts/run_benchmarks.py --preset search
+
+bench-build:
+    python3 matcher_rs/scripts/run_benchmarks.py --preset build
+
+bench-engine-search:
+    python3 matcher_rs/scripts/run_benchmarks.py --preset engine-search
+
+bench-engine-build:
+    python3 matcher_rs/scripts/run_benchmarks.py --preset engine-build
+
+bench-compare baseline candidate:
+    python3 matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}"
+
+# -- Coverage ------------------------------------------------------------------
+
+[working-directory: 'matcher_rs']
+coverage:
+    cargo tarpaulin --all-features --out html
+    @echo "Coverage report: matcher_rs/tarpaulin-report.html"
