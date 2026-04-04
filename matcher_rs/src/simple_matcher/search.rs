@@ -61,8 +61,8 @@ impl SimpleMatcher {
     /// via [`RuleSet::push_result_if_new`](super::rule::RuleSet::push_result_if_new).
     /// Deduplication is handled by the generation stamp in [`SimpleMatchState::mark_positive`].
     ///
-    /// All patterns have [`DIRECT_RULE_BIT`](super::rule::DIRECT_RULE_BIT) encoding
-    /// in all-simple mode, so every hit resolves to [`PatternDispatch::DirectRule`].
+    /// All patterns have [`DIRECT_RULE_BIT`] encoding
+    /// in all-simple mode, so every hit is resolved inline via the bit-packed value.
     ///
     /// # Safety
     ///
@@ -165,8 +165,8 @@ impl SimpleMatcher {
     /// - **Root**: Scanned directly if it terminates (`pt_index_mask != 0`).
     /// - **Leaf + ASCII no-op** (currently only Fanjian on ASCII text):
     ///   Reuses the parent's text and variant index, scans with the child's mask bits.
-    /// - **Leaf + real transform**: Streams a byte iterator directly into the AC engine
-    ///   via [`scan_variant_streaming`](Self::scan_variant_streaming), avoiding allocation.
+    /// - **Leaf + real transform**: Materializes the transform output, scans, and returns
+    ///   the string to the pool.
     /// - **Non-leaf**: Materializes the transform output for children, scans if the node
     ///   also terminates.
     ///
@@ -185,7 +185,7 @@ impl SimpleMatcher {
         exit_early: bool,
         results: Option<&mut Vec<SimpleResult<'a>>>,
     ) -> bool {
-        let tree = self.process.tree();
+        let tree = &self.tree;
         let num_variants = tree.len();
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
@@ -228,9 +228,7 @@ impl SimpleMatcher {
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
-        // Capacity hint from TLS avoids allocator probing after the first call.
-        let mut texts: Vec<Cow<'_, str>> =
-            Vec::with_capacity(state.walk_arena_capacity.max(num_variants));
+        let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
         texts.push(Cow::Borrowed(text));
         // `ascii_flags[i]` — whether the text at arena index `i` is pure ASCII.
         // TinyVec inlines up to 16 entries, covering all practical trees.
@@ -357,8 +355,7 @@ impl SimpleMatcher {
             }
         }
 
-        // Remember capacity for next call, then return owned strings to pool.
-        state.walk_arena_capacity = texts.capacity();
+        // Return owned strings to pool.
         for cow in texts {
             if let Cow::Owned(s) = cow {
                 return_string_to_pool(s);

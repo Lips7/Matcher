@@ -51,7 +51,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
                         │  1. parse_rules ──► ParsedRules                 │
                         │     split &/~ operators, dedup patterns          │
                         │                                                 │
-                        │  2. build_process_type_tree ──► ProcessPlan     │
+                        │  2. build_process_type_tree ──► tree + mode     │
                         │     shared-prefix trie + SearchMode             │
                         │                                                 │
                         │  3. ScanPlan::compile ──► ScanPlan              │
@@ -64,7 +64,7 @@ This document describes the internal architecture of `matcher_rs` as it exists i
                      ┌──────────────────────┼──────────────────────┐
                      ▼                      ▼                      ▼
               ┌─────────────┐      ┌──────────────┐      ┌──────────────┐
-              │ ProcessPlan │      │   ScanPlan   │      │   RuleSet    │
+              │ tree + mode │      │   ScanPlan   │      │   RuleSet    │
               │             │      │              │      │              │
               │ • trie nodes│      │ • bytewise AC│      │ • RuleHot[]  │
               │ • SearchMode│      │ • charwise AC│      │ • RuleCold[] │
@@ -219,14 +219,13 @@ Root (None)
 
 Each node (`ProcessTypeBitNode`) stores:
 - `process_type_bit` — the single-bit transformation step this edge represents.
-- `process_type_list: TinyVec<[ProcessType; 4]>` — which composite `ProcessType` values terminate at this node.
 - `children: TinyVec<[usize; 4]>` — flat-array indices of the next transformation steps reachable from here.
 - `step: Option<&'static TransformStep>` — a cached reference to the compiled step for this node (fetched from the registry at construction time). The root stores `None`.
-- `pt_index_mask: u64` — pre-computed OR of `1u64 << pt.bits()` for every composite type in `process_type_list`. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
+- `pt_index_mask: u64` — pre-computed bitmask of compact sequential process-type indices that terminate at this node. Used to tag output text variants so the scan phase can filter hits by process type without re-deriving the mask.
 
 The "sequential index" (`pt_index`) deserves explanation. Raw `ProcessType::bits()` values can use bits up to position 5, and composite types produce values up to 0b00111111 = 63. Storing a full `u64` mask per `PatternEntry` would waste space. Instead, `build_pt_index_table` assigns each composite type used in the current matcher a sequential index 0, 1, 2, ... (with `ProcessType::None` always at 0). These compact indices let `PatternEntry.pt_index` fit in a `u8` while `pt_index_mask` stays a `u64` with small bit positions.
 
-After tree construction, `recompute_mask_with_index` rewrites every node's `pt_index_mask` from raw-bit encoding to sequential-index encoding so it matches the `pt_index` stored in `PatternEntry`.
+The `pt_index_mask` is computed directly during tree construction: `build_process_type_tree` accepts the index table and encodes `1u64 << pt_index_table[pt.bits()]` for each composite type that passes through or terminates at a node.
 
 ### Trie Traversal
 
@@ -238,7 +237,7 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 
 #### Walk Allocation Strategy
 
-The walk uses `TinyVec<[T; 16]>` for bookkeeping arrays (`ascii_flags`, `node_arena`, `node_variant`), keeping them stack-allocated for trees with ≤16 nodes (the practical maximum). The `texts` arena remains a `Vec<Cow<str>>` (lifetime-tied to input), but its capacity is cached in `SimpleMatchState::walk_arena_capacity` so that subsequent calls skip allocator probing. Combined with the string pool, the walk is effectively zero-allocation after the first call on a given thread.
+The walk uses `TinyVec<[T; 16]>` for bookkeeping arrays (`ascii_flags`, `node_arena`, `node_variant`), keeping them stack-allocated for trees with ≤16 nodes (the practical maximum). The `texts` arena is a `Vec<Cow<str>>` pre-allocated to `tree.len()`. Combined with the string pool, the walk is effectively zero-allocation after warmup.
 
 #### Variant-Level Early Termination
 
@@ -303,11 +302,11 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
    - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. Single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
    - Delegates to `compile_automata` which builds AC engines:
      - **Bytewise engine** (`BytewiseMatcher`): With the `dfa` feature, all patterns ASCII, and count ≤ `AC_DFA_PATTERN_THRESHOLD` (7,000), uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Otherwise uses `daachorse` bytewise DAAC with user-supplied `u32` values.
-     - **Charwise engine** (`CharwiseMatcher`): `daachorse` charwise DAAC compiled over the entire pattern set. Only built when non-ASCII patterns exist. When both ASCII and non-ASCII patterns are present, the charwise engine contains the **full** pattern set so a single charwise pass covers everything on non-ASCII input.
-   - **Harry engine** (with `harry` feature): After AC compilation, if `charwise_matcher` is `None` (all patterns are pure ASCII), builds a `HarryMatcher` from the full pattern set. Only succeeds when ≥ 64 patterns exist and at least one pattern has length ≥ 2.
+     - **Charwise engine** (`CharwiseDoubleArrayAhoCorasick<u32>`): `daachorse` charwise DAAC compiled over the entire pattern set. Always built so non-ASCII haystacks benefit from character-granularity scanning (~1.6–1.9× on CJK text vs bytewise).
+   - **Harry engine** (with `harry` feature): After AC compilation, if all patterns are pure ASCII, builds a `HarryMatcher` from the full pattern set. Only succeeds when ≥ 64 patterns exist and at least one pattern has length ≥ 2.
    - AC engines are `None` when the corresponding pattern class is absent.
 
-6. **Assemble matcher.** The final `SimpleMatcher` stores three immutable components: `ProcessPlan` (tree + `SearchMode`), `ScanPlan` (automata + `PatternIndex`), and `RuleSet` (hot + cold rule metadata).
+6. **Assemble matcher.** The final `SimpleMatcher` stores its immutable components directly: the transformation tree (`Vec<ProcessTypeBitNode>`), `SearchMode`, `ScanPlan` (automata + `PatternIndex`), and `RuleSet` (hot + cold rule metadata).
 
 ### Three-Component Architecture
 
@@ -315,13 +314,14 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
 
 ```rust
 struct SimpleMatcher {
-    process: ProcessPlan,  // transform tree + SearchMode
-    scan: ScanPlan,        // AC automata + PatternIndex
-    rules: RuleSet,        // hot/cold rule metadata
+    tree: Vec<ProcessTypeBitNode>,  // transform tree
+    mode: SearchMode,                // dispatch mode
+    scan: ScanPlan,                  // AC automata + PatternIndex
+    rules: RuleSet,                  // hot/cold rule metadata
 }
 ```
 
-**`ProcessPlan`** bundles the precomputed transformation trie (`Vec<ProcessTypeBitNode>`) and the `SearchMode` selected at construction time. It provides `tree()`, `mode()`, and `is_all_simple()` accessors.
+The **transformation tree** (`Vec<ProcessTypeBitNode>`) and `SearchMode` are stored directly on `SimpleMatcher`. The tree is the precomputed trie walked once per query to produce all required text variants.
 
 **`ScanPlan`** bundles the optional bytewise, charwise, and Harry engines with the `PatternIndex` that maps raw automaton values back to rule metadata. It provides `is_match(text)`, `for_each_match_value(text, is_ascii, callback)`, `for_each_match_value_from_iter(iter, is_ascii, callback)`, and `patterns()`.
 
@@ -640,7 +640,7 @@ Two TLS slots are used, both declared with `#[thread_local]` (a nightly attribut
 
 | Slot | Type | Module | Purpose |
 |------|------|--------|---------|
-| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, touched-index list, `resolved_count` for variant-level early termination, and `walk_arena_capacity` for allocation-free tree walks. Reused across calls. |
+| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, touched-index list, and `resolved_count` for variant-level early termination. Reused across calls. |
 | `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/string_pool.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.

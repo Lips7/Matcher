@@ -28,15 +28,10 @@ use crate::process::step::{TransformStep, get_transform_step};
 /// A node in the flat-array transformation trie.
 ///
 /// Built once by [`build_process_type_tree`] and stored in
-/// [`SimpleMatcher`](crate::SimpleMatcher)'s `ProcessPlan`. Each node represents a single
+/// [`SimpleMatcher`](crate::SimpleMatcher). Each node represents a single
 /// transformation step reachable from its parent.
 #[derive(Clone)]
 pub(crate) struct ProcessTypeBitNode {
-    /// Composite [`ProcessType`] values that terminate at or pass through this node.
-    ///
-    /// Used by [`recompute_mask_with_index`](Self::recompute_mask_with_index) to
-    /// rebuild `pt_index_mask` from sequential indices.
-    process_type_list: TinyVec<[ProcessType; 4]>,
     /// The single-bit [`ProcessType`] transformation step this node represents.
     ///
     /// The root node always has `ProcessType::None`; all other nodes have exactly
@@ -59,44 +54,16 @@ pub(crate) struct ProcessTypeBitNode {
     /// Bit `i` is set when the composite [`ProcessType`] whose compact index is
     /// `i` terminates at (or passes through) this node. A non-zero mask means
     /// this node's text variant should be scanned by the AC automaton.
-    /// Initially encoded as `1u64 << pt.bits()` during construction, then
-    /// re-encoded via [`recompute_mask_with_index`](Self::recompute_mask_with_index)
-    /// to use sequential indices.
+    /// Encoded using sequential indices from `pt_index_table` during construction.
     pub(crate) pt_index_mask: u64,
 }
 
-/// Post-construction helpers for [`ProcessTypeBitNode`].
 impl ProcessTypeBitNode {
-    /// Re-encodes [`pt_index_mask`](Self::pt_index_mask) using a sequential index table.
-    ///
-    /// The default encoding stores `1u64 << pt.bits()`, which can scatter bits across the
-    /// full `u64` range for composite [`ProcessType`] values. A sequential index keeps bit
-    /// positions small (`0..N` where `N` is the number of unique composite types) so that
-    /// downstream data structures (e.g. `PatternEntry`) can store the index as a `u8`
-    /// rather than a `u64`, halving entry size.
-    ///
-    /// `pt_index_table[pt.bits()]` must contain the sequential index for every composite
-    /// [`ProcessType`] that terminates at any node (i.e. every type in the original
-    /// `process_type_set` plus [`ProcessType::None`]).
-    ///
-    /// Called by [`SimpleMatcher::new()`](crate::SimpleMatcher) after
-    /// [`build_process_type_tree`] returns.
     pub(crate) fn heap_bytes(&self) -> usize {
-        let ptl = match &self.process_type_list {
-            TinyVec::Heap(v) => v.capacity() * size_of::<ProcessType>(),
-            _ => 0,
-        };
-        let ch = match &self.children {
+        match &self.children {
             TinyVec::Heap(v) => v.capacity() * size_of::<usize>(),
             _ => 0,
-        };
-        ptl + ch
-    }
-
-    pub(crate) fn recompute_mask_with_index(&mut self, pt_index_table: &[u8; 64]) {
-        self.pt_index_mask = self.process_type_list.iter().fold(0u64, |acc, pt| {
-            acc | (1u64 << pt_index_table[pt.bits() as usize])
-        });
+        }
     }
 }
 
@@ -109,37 +76,17 @@ impl ProcessTypeBitNode {
 /// where the path overlaps with previously inserted types and creating new child nodes
 /// when a path diverges.
 ///
+/// `pt_index_table` maps raw `ProcessType::bits()` to compact sequential indices (0..N).
+/// The `pt_index_mask` on each node is computed directly using these indices, so no
+/// post-construction reindexing is needed.
+///
 /// The resulting `Vec<ProcessTypeBitNode>` is indexed by node position in the trie. The
 /// root (index 0) represents the raw input; each subsequent node represents one
 /// transformation step. Node indices are used by `walk_and_scan` to traverse the trie at
 /// match time.
-///
-/// After construction, callers must call
-/// [`ProcessTypeBitNode::recompute_mask_with_index`] on each node to convert
-/// the raw bitflag-based `pt_index_mask` into compact sequential indices.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use std::collections::HashSet;
-/// use matcher_rs::ProcessType;
-///
-/// let set: HashSet<ProcessType> = [
-///     ProcessType::Fanjian,
-///     ProcessType::Fanjian | ProcessType::Delete,
-/// ]
-/// .into_iter()
-/// .collect();
-///
-/// let tree = build_process_type_tree(&set);
-/// // tree[0] = root (None)
-/// // tree[1] = Fanjian  ← shared prefix
-/// // tree[2] = Delete   ← child of Fanjian
-/// assert_eq!(tree.len(), 3);
-/// assert_eq!(tree[0].children.len(), 1); // root → Fanjian
-/// ```
 pub(crate) fn build_process_type_tree(
     process_type_set: &HashSet<ProcessType>,
+    pt_index_table: &[u8; 64],
 ) -> Vec<ProcessTypeBitNode> {
     let max_nodes: usize = 1 + process_type_set
         .iter()
@@ -147,18 +94,17 @@ pub(crate) fn build_process_type_tree(
         .sum::<usize>();
     let mut process_type_tree = Vec::with_capacity(max_nodes);
     let mut root = ProcessTypeBitNode {
-        process_type_list: TinyVec::new(),
         process_type_bit: ProcessType::None,
         children: TinyVec::new(),
         step: None,
         pt_index_mask: 0,
     };
     if process_type_set.contains(&ProcessType::None) {
-        root.process_type_list.push(ProcessType::None);
-        root.pt_index_mask |= 1u64 << ProcessType::None.bits();
+        root.pt_index_mask |= 1u64 << pt_index_table[ProcessType::None.bits() as usize];
     }
     process_type_tree.push(root);
     for &process_type in process_type_set.iter() {
+        let pt_mask_bit = 1u64 << pt_index_table[process_type.bits() as usize];
         let mut current_node_index = 0;
         for process_type_bit in process_type.iter() {
             let current_node = &process_type_tree[current_node_index];
@@ -174,20 +120,14 @@ pub(crate) fn build_process_type_tree(
 
             if let Some(child_idx) = found_child {
                 current_node_index = child_idx;
-                process_type_tree[current_node_index]
-                    .process_type_list
-                    .push(process_type);
-                process_type_tree[current_node_index].pt_index_mask |= 1u64 << process_type.bits();
+                process_type_tree[current_node_index].pt_index_mask |= pt_mask_bit;
             } else {
-                let mut child = ProcessTypeBitNode {
-                    process_type_list: TinyVec::new(),
+                let child = ProcessTypeBitNode {
                     process_type_bit,
                     children: TinyVec::new(),
                     step: Some(get_transform_step(process_type_bit)),
-                    pt_index_mask: 0,
+                    pt_index_mask: pt_mask_bit,
                 };
-                child.process_type_list.push(process_type);
-                child.pt_index_mask |= 1u64 << process_type.bits();
                 process_type_tree.push(child);
                 let new_node_index = process_type_tree.len() - 1;
                 process_type_tree[current_node_index]
@@ -205,10 +145,18 @@ mod tests {
     use super::*;
     use crate::process::ProcessType;
 
+    fn identity_index_table() -> [u8; 64] {
+        let mut table = [u8::MAX; 64];
+        for i in 0..64u8 {
+            table[i as usize] = i;
+        }
+        table
+    }
+
     #[test]
     fn test_tree_single_none() {
         let set: HashSet<ProcessType> = [ProcessType::None].into_iter().collect();
-        let tree = build_process_type_tree(&set);
+        let tree = build_process_type_tree(&set, &identity_index_table());
 
         assert_eq!(tree.len(), 1); // root only
         assert!(tree[0].children.is_empty());
@@ -227,7 +175,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let tree = build_process_type_tree(&set);
+        let tree = build_process_type_tree(&set, &identity_index_table());
 
         // Root + Fanjian + Delete = 3 nodes
         assert_eq!(tree.len(), 3);
@@ -247,7 +195,7 @@ mod tests {
         let set: HashSet<ProcessType> = [ProcessType::Fanjian, ProcessType::Delete]
             .into_iter()
             .collect();
-        let tree = build_process_type_tree(&set);
+        let tree = build_process_type_tree(&set, &identity_index_table());
 
         // Root + 2 children = 3 nodes
         assert_eq!(tree.len(), 3);
@@ -262,20 +210,16 @@ mod tests {
     }
 
     #[test]
-    fn test_recompute_mask_with_index() {
+    fn test_mask_with_index() {
         let set: HashSet<ProcessType> = [ProcessType::None, ProcessType::Fanjian]
             .into_iter()
             .collect();
-        let mut tree = build_process_type_tree(&set);
 
-        // Build a mock index table: None=0, Fanjian=1
         let mut pt_index_table = [u8::MAX; 64];
         pt_index_table[ProcessType::None.bits() as usize] = 0;
         pt_index_table[ProcessType::Fanjian.bits() as usize] = 1;
 
-        for node in &mut tree {
-            node.recompute_mask_with_index(&pt_index_table);
-        }
+        let tree = build_process_type_tree(&set, &pt_index_table);
 
         // Root should have bit 0 set (for None)
         assert!(tree[0].pt_index_mask & (1u64 << 0) != 0);

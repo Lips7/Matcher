@@ -127,15 +127,7 @@ enum BytewiseMatcher {
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
 }
 
-/// Charwise scan engine chosen at build time.
-///
-/// Currently only one variant exists. The enum wrapper allows future extension (e.g.,
-/// an `aho-corasick` charwise DFA) without changing call sites.
-#[derive(Clone)]
-enum CharwiseMatcher {
-    /// `daachorse` charwise double-array engine with user-supplied `u32` values.
-    DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
-}
+type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
 
 /// Construction and query helpers for compiled scan engines.
 impl ScanPlan {
@@ -195,17 +187,6 @@ impl ScanPlan {
         bw + cw + harry + self.patterns.heap_bytes()
     }
 
-    /// Returns whether the bytewise engine is a DFA.
-    #[cfg(feature = "harry")]
-    #[inline(always)]
-    fn uses_dfa(&self) -> bool {
-        #[cfg(feature = "dfa")]
-        if let Some(BytewiseMatcher::AcDfa { .. }) = &self.bytewise_matcher {
-            return true;
-        }
-        false
-    }
-
     /// Returns whether any compiled pattern matches `text`.
     ///
     /// Engine selection for `is_match`:
@@ -224,11 +205,17 @@ impl ScanPlan {
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "harry")]
-        if self
-            .harry_matcher
-            .as_ref()
-            .is_some_and(|_| self.all_patterns_ascii && (!self.uses_dfa() || !text.is_ascii()))
-        {
+        if self.harry_matcher.as_ref().is_some_and(|_| {
+            self.all_patterns_ascii
+                && ({
+                    #[cfg(feature = "dfa")]
+                    let is_dfa =
+                        matches!(self.bytewise_matcher, Some(BytewiseMatcher::AcDfa { .. }));
+                    #[cfg(not(feature = "dfa"))]
+                    let is_dfa = false;
+                    !is_dfa || !text.is_ascii()
+                })
+        }) {
             return self.harry_matcher.as_ref().unwrap().is_match(text);
         }
 
@@ -239,7 +226,7 @@ impl ScanPlan {
         } else {
             self.charwise_matcher
                 .as_ref()
-                .is_some_and(|m| m.is_match(text))
+                .is_some_and(|m| m.is_match_text(text))
         }
     }
 
@@ -345,34 +332,25 @@ impl BytewiseMatcher {
 }
 
 /// Query helpers for the charwise scan engine.
-impl CharwiseMatcher {
-    /// Returns whether the charwise engine matches `text`.
+trait CharwiseMatcherExt {
+    fn is_match_text(&self, text: &str) -> bool;
+    fn for_each_match_value(&self, text: &str, on_value: impl FnMut(u32) -> bool) -> bool;
+}
+
+impl CharwiseMatcherExt for CharwiseMatcher {
     #[inline(always)]
-    fn is_match(&self, text: &str) -> bool {
-        match self {
-            Self::DaacCharwise(matcher) => matcher.find_iter(text).next().is_some(),
-        }
+    fn is_match_text(&self, text: &str) -> bool {
+        self.find_iter(text).next().is_some()
     }
 
-    /// Calls `on_value` for each raw match value produced by the charwise engine.
     #[inline(always)]
     fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
-        match self {
-            Self::DaacCharwise(matcher) => {
-                for hit in matcher.find_overlapping_iter(text) {
-                    if on_value(hit.value()) {
-                        return true;
-                    }
-                }
-                false
+        for hit in self.find_overlapping_iter(text) {
+            if on_value(hit.value()) {
+                return true;
             }
         }
-    }
-
-    fn heap_bytes(&self) -> usize {
-        match self {
-            Self::DaacCharwise(matcher) => matcher.heap_bytes(),
-        }
+        false
     }
 }
 
@@ -420,12 +398,10 @@ fn compile_automata(
     };
 
     let build_charwise = |source: Vec<(&str, u32)>| -> Result<CharwiseMatcher, MatcherError> {
-        Ok(CharwiseMatcher::DaacCharwise(
-            CharwiseDoubleArrayAhoCorasickBuilder::new()
-                .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                .build_with_values(source)
-                .map_err(MatcherError::automaton_build)?,
-        ))
+        CharwiseDoubleArrayAhoCorasickBuilder::new()
+            .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+            .build_with_values(source)
+            .map_err(MatcherError::automaton_build)
     };
 
     let has_patterns = has_ascii || has_non_ascii;

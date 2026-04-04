@@ -8,7 +8,7 @@
 //! segment offset.
 //!
 //! At scan time the hot path reads raw match values from the automaton, dispatches them
-//! through [`PatternIndex::dispatch`] into [`PatternDispatch`] variants, and feeds each
+//! through [`PatternIndex::dispatch_indirect`] into [`PatternDispatch`] variants, and feeds each
 //! hit into [`RuleSet::process_entry`] — the core state machine that tracks bitmasks,
 //! matrix counters, and generation stamps in the thread-local [`super::state::SimpleMatchState`].
 

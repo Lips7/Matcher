@@ -15,7 +15,7 @@
 //!    the deduplicated patterns and wires up the value map that connects automaton hits
 //!    back to rule entries.
 //!
-//! The final [`SimpleMatcher`] stores three immutable pieces: the [`ProcessPlan`] tree
+//! The final [`SimpleMatcher`] stores three immutable pieces: the process-type tree
 //! for text transformation, the [`ScanPlan`] automata for pattern scanning, and the
 //! [`RuleSet`] for result production.
 
@@ -32,7 +32,7 @@ use super::rule::{
     BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, PatternKind, RuleCold, RuleHot,
     RuleSet, RuleShape,
 };
-use super::{ProcessPlan, SearchMode, SimpleMatcher};
+use super::{SearchMode, SimpleMatcher};
 
 /// Fully parsed matcher construction output before scan-engine compilation.
 ///
@@ -114,10 +114,7 @@ impl SimpleMatcher {
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
-        let mut process_type_tree = build_process_type_tree(&process_type_set);
-        for node in &mut process_type_tree {
-            node.recompute_mask_with_index(&pt_index_table);
-        }
+        let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
 
         let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
         let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
@@ -127,7 +124,8 @@ impl SimpleMatcher {
         };
 
         Ok(SimpleMatcher {
-            process: ProcessPlan::new(process_type_tree, mode),
+            tree: process_type_tree,
+            mode,
             scan,
             rules: parsed.rules,
         })

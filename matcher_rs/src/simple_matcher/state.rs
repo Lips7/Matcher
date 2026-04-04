@@ -106,11 +106,6 @@ pub(super) struct SimpleMatchState {
     pub(super) resolved_count: usize,
     /// Monotonic generation id used to avoid clearing full state between calls.
     generation: u32,
-    /// Remembered capacity for the `texts` arena in `walk_and_scan`.
-    ///
-    /// Grows monotonically to the largest tree size seen on this thread, so that
-    /// subsequent calls skip allocator capacity probing.
-    pub(super) walk_arena_capacity: usize,
 }
 
 /// Thread-local reusable scan state shared by all matchers on the current thread.
@@ -178,7 +173,6 @@ impl SimpleMatchState {
             touched_indices: Vec::new(),
             resolved_count: 0,
             generation: 0,
-            walk_arena_capacity: 0,
         }
     }
 

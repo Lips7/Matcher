@@ -145,7 +145,8 @@ pub struct SimpleResult<'a> {
 #[must_use]
 #[derive(Clone)]
 pub struct SimpleMatcher {
-    process: ProcessPlan,
+    tree: Vec<ProcessTypeBitNode>,
+    mode: SearchMode,
     scan: ScanPlan,
     rules: RuleSet,
 }
@@ -158,21 +159,10 @@ pub struct SimpleMatcher {
 impl fmt::Debug for SimpleMatcher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SimpleMatcher")
-            .field("search_mode", &self.process.mode())
+            .field("search_mode", &self.mode)
             .field("rule_count", &self.rules.len())
             .finish_non_exhaustive()
     }
-}
-
-/// Immutable process-type traversal plan cached inside a [`SimpleMatcher`].
-///
-/// Stores the precomputed transformation trie and the [`SearchMode`] selected at
-/// construction time. The trie is walked once per query to produce all required
-/// text variants before scanning.
-#[derive(Clone)]
-pub(super) struct ProcessPlan {
-    tree: Vec<ProcessTypeBitNode>,
-    mode: SearchMode,
 }
 
 /// Dispatch mode selected at construction time to unlock fast paths during scanning.
@@ -187,39 +177,6 @@ pub(super) enum SearchMode {
     AllSimple,
     /// Rules require text transformation and/or the full state machine.
     General,
-}
-
-/// Accessors for the immutable process plan stored inside a matcher.
-impl ProcessPlan {
-    /// Creates a new immutable process plan.
-    #[inline(always)]
-    pub(super) fn new(tree: Vec<ProcessTypeBitNode>, mode: SearchMode) -> Self {
-        Self { tree, mode }
-    }
-
-    /// Returns the cached process-type traversal tree.
-    #[inline(always)]
-    pub(super) fn tree(&self) -> &[ProcessTypeBitNode] {
-        &self.tree
-    }
-
-    /// Returns the search mode selected at construction time.
-    #[inline(always)]
-    pub(super) fn mode(&self) -> SearchMode {
-        self.mode
-    }
-
-    /// Returns the estimated heap memory in bytes owned by the process plan.
-    pub(super) fn heap_bytes(&self) -> usize {
-        self.tree.capacity() * size_of::<ProcessTypeBitNode>()
-            + self.tree.iter().map(|n| n.heap_bytes()).sum::<usize>()
-    }
-
-    /// Returns whether the matcher can use the simplest no-state fast path.
-    #[inline(always)]
-    pub(super) fn is_all_simple(&self) -> bool {
-        matches!(self.mode, SearchMode::AllSimple)
-    }
 }
 
 /// Public query and result APIs for the compiled matcher.
@@ -251,7 +208,7 @@ impl SimpleMatcher {
         if text.is_empty() {
             return false;
         }
-        if self.process.is_all_simple() {
+        if matches!(self.mode, SearchMode::AllSimple) {
             return self.is_match_simple(text);
         }
         self.walk_and_scan(text, true, None)
@@ -331,7 +288,7 @@ impl SimpleMatcher {
         if text.is_empty() {
             return;
         }
-        if self.process.is_all_simple() {
+        if matches!(self.mode, SearchMode::AllSimple) {
             return self.process_simple(text, results);
         }
         self.walk_and_scan(text, false, Some(results));
@@ -344,6 +301,9 @@ impl SimpleMatcher {
     /// (those are shared infrastructure, not per-matcher).
     #[must_use]
     pub fn heap_bytes(&self) -> usize {
-        self.process.heap_bytes() + self.scan.heap_bytes() + self.rules.heap_bytes()
+        self.tree.capacity() * size_of::<ProcessTypeBitNode>()
+            + self.tree.iter().map(|n| n.heap_bytes()).sum::<usize>()
+            + self.scan.heap_bytes()
+            + self.rules.heap_bytes()
     }
 }
