@@ -91,31 +91,31 @@ test-c:
 _bench_script := "matcher_rs/scripts/run_benchmarks.py"
 
 bench-search *args:
-    python3 {{_bench_script}} --preset search {{args}}
+    uv run {{_bench_script}} --preset search {{args}}
 
 bench-build *args:
-    python3 {{_bench_script}} --preset build {{args}}
+    uv run {{_bench_script}} --preset build {{args}}
 
 bench-engine-search *args:
-    python3 {{_bench_script}} --preset engine-search {{args}}
+    uv run {{_bench_script}} --preset engine-search {{args}}
 
 bench-engine-build *args:
-    python3 {{_bench_script}} --preset engine-build {{args}}
+    uv run {{_bench_script}} --preset engine-build {{args}}
 
 bench-engine-is-match *args:
-    python3 {{_bench_script}} --preset engine-is-match {{args}}
+    uv run {{_bench_script}} --preset engine-is-match {{args}}
 
 bench-all *args:
-    python3 {{_bench_script}} --preset all {{args}}
+    uv run {{_bench_script}} --preset all {{args}}
 
 bench-compare baseline candidate *args:
-    python3 matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}" {{args}}
+    uv run matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}" {{args}}
 
 bench-compare-raw baseline candidate *args:
-    python3 matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
+    uv run matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
 bench-viz *args:
-    python3 matcher_rs/scripts/visualize_benchmarks.py {{args}}
+    uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
 
 # -- Coverage ------------------------------------------------------------------
 
