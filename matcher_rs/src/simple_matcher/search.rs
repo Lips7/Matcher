@@ -81,8 +81,7 @@ impl SimpleMatcher {
                     let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
                     self.rules.push_result_if_new(rule_idx, state, results);
                 } else {
-                    match self.scan.patterns().dispatch(raw_value) {
-                        PatternDispatch::DirectRule { .. } => unreachable!(),
+                    match self.scan.patterns().dispatch_indirect(raw_value) {
                         PatternDispatch::SingleEntry(entry) => {
                             self.rules
                                 .push_result_if_new(entry.rule_idx as usize, state, results);
@@ -122,15 +121,10 @@ impl SimpleMatcher {
 
     /// Processes one raw match value reported by the scan engine.
     ///
-    /// Dispatches the raw value through [`PatternIndex::dispatch`](super::rule::PatternIndex::dispatch)
-    /// and handles each [`PatternDispatch`] variant:
-    ///
-    /// - [`DirectRule`](PatternDispatch::DirectRule) — marks the rule positive immediately
-    ///   and returns `exit_early` (no state machine needed).
-    /// - [`SingleEntry`](PatternDispatch::SingleEntry) — feeds the single entry into
-    ///   [`RuleSet::process_entry`](super::rule::RuleSet::process_entry).
-    /// - [`Entries`](PatternDispatch::Entries) — iterates all entries, short-circuiting
-    ///   if any one triggers early exit.
+    /// Checks [`DIRECT_RULE_BIT`] inline for the common direct-rule case (marks positive
+    /// immediately, returns `exit_early`). Falls through to
+    /// [`PatternIndex::dispatch_indirect`](super::rule::PatternIndex::dispatch_indirect)
+    /// for non-direct values (`SingleEntry` / `Entries`).
     ///
     /// Returns `true` when the caller should stop scanning (early exit satisfied).
     #[inline(always)]
@@ -151,8 +145,7 @@ impl SimpleMatcher {
             }
             return ctx.exit_early;
         }
-        match self.scan.patterns().dispatch(raw_value) {
-            PatternDispatch::DirectRule { .. } => unreachable!(),
+        match self.scan.patterns().dispatch_indirect(raw_value) {
             PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, state),
             PatternDispatch::Entries(entries) => {
                 for entry in entries {

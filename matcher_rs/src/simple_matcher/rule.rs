@@ -84,8 +84,8 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 /// High bit used to encode the direct-rule fast path in raw scan values.
 ///
 /// When a deduplicated pattern is attached to exactly one [`PatternKind::Simple`] rule,
-/// the automaton stores an encoded value with this bit set so that
-/// [`PatternIndex::dispatch`] can skip the indirection through the entry table entirely.
+/// the automaton stores an encoded value with this bit set so that callers can
+/// extract `rule_idx` and `pt_index` inline without the entry table indirection.
 ///
 /// The encoding packs both `rule_idx` and `pt_index` into 31 bits:
 ///
@@ -299,23 +299,13 @@ pub(super) struct PatternIndex {
     ranges: Vec<(usize, usize)>,
 }
 
-/// Dispatch result for one raw scan value.
+/// Dispatch result for a non-direct raw scan value.
 ///
-/// Returned by [`PatternIndex::dispatch`] to tell the caller how to interpret an
-/// automaton hit. The three variants are ordered by decreasing fast-path likelihood:
-///
-/// 1. [`DirectRule`](Self::DirectRule) — the automaton value already encodes the rule index
-///    (only possible for single-entry [`PatternKind::Simple`] patterns in
-///    [`AllSimple`](super::SearchMode::AllSimple) mode).
-/// 2. [`SingleEntry`](Self::SingleEntry) — one entry to process.
-/// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
+/// Returned by [`PatternIndex::dispatch_indirect`] for values that do **not** have
+/// [`DIRECT_RULE_BIT`] set. Callers handle direct-rule values inline (checking
+/// `DIRECT_RULE_BIT` and extracting `rule_idx` / `pt_index` from the bit-packed
+/// value) before falling through to `dispatch_indirect` for the remaining cases.
 pub(super) enum PatternDispatch<'a> {
-    /// Direct simple-rule fast path — carries rule index and process-type index.
-    ///
-    /// Hot-path callers inline the `DIRECT_RULE_BIT` check and extract fields directly,
-    /// so this variant is only reached via `dispatch()` in tests and fallback paths.
-    #[cfg_attr(not(test), expect(dead_code))]
-    DirectRule { rule_idx: usize, pt_index: u8 },
     /// Exactly one attached pattern entry.
     SingleEntry(&'a PatternEntry),
     /// Multiple attached entries sharing the same deduplicated pattern string.
@@ -673,28 +663,18 @@ impl PatternIndex {
         value_map
     }
 
-    /// Resolves one raw scan value back into rule-attachment metadata.
+    /// Dispatches a non-direct raw scan value into a [`PatternDispatch`] variant.
     ///
-    /// When the high bit ([`DIRECT_RULE_BIT`]) is set, the value encodes both `rule_idx`
-    /// and `pt_index` directly — no indirection through the entry table. Otherwise, the
-    /// value is a deduplicated pattern index looked up in `ranges` and `entries`.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked` on `self.ranges` and `self.entries`. All accesses are guarded
-    /// by preceding `debug_assert!` bounds checks.
-    ///
-    /// # Panics
-    ///
-    /// Debug-asserts that the pattern index is within `self.ranges` and that the resulting
-    /// entry slice is within `self.entries`.
+    /// The caller **must** have already checked that `raw_value & DIRECT_RULE_BIT == 0`.
+    /// Direct-rule values are handled inline by the caller (extracting `rule_idx` and
+    /// `pt_index` from the bit-packed value). This function handles the remaining cases
+    /// where the value is a deduplicated pattern index into the entry table.
     #[inline(always)]
-    pub(super) fn dispatch(&self, raw_value: u32) -> PatternDispatch<'_> {
-        if raw_value & DIRECT_RULE_BIT != 0 {
-            let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
-            let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
-            return PatternDispatch::DirectRule { rule_idx, pt_index };
-        }
+    pub(super) fn dispatch_indirect(&self, raw_value: u32) -> PatternDispatch<'_> {
+        debug_assert!(
+            raw_value & DIRECT_RULE_BIT == 0,
+            "dispatch_indirect called with DIRECT_RULE_BIT set"
+        );
 
         let pattern_idx = raw_value as usize;
         debug_assert!(pattern_idx < self.ranges.len());
@@ -744,7 +724,7 @@ mod tests {
     // --- PatternIndex dispatch tests ---
 
     #[test]
-    fn test_pattern_index_dispatch_direct_rule() {
+    fn test_pattern_index_direct_rule_encoding() {
         let entries = vec![vec![PatternEntry {
             rule_idx: 5,
             offset: 0,
@@ -756,18 +736,13 @@ mod tests {
         let value_map = index.build_value_map();
 
         assert_eq!(value_map.len(), 1);
-        assert!(
-            value_map[0] & DIRECT_RULE_BIT != 0,
-            "should set DIRECT_RULE_BIT"
-        );
+        let raw = value_map[0];
+        assert!(raw & DIRECT_RULE_BIT != 0, "should set DIRECT_RULE_BIT");
 
-        match index.dispatch(value_map[0]) {
-            PatternDispatch::DirectRule { rule_idx, pt_index } => {
-                assert_eq!(rule_idx, 5);
-                assert_eq!(pt_index, 2);
-            }
-            _ => panic!("expected DirectRule dispatch"),
-        }
+        let rule_idx = (raw & DIRECT_RULE_MASK) as usize;
+        let pt_index = ((raw & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
+        assert_eq!(rule_idx, 5);
+        assert_eq!(pt_index, 2);
     }
 
     #[test]
@@ -788,7 +763,7 @@ mod tests {
             "And kind should not get DIRECT_RULE_BIT"
         );
 
-        match index.dispatch(value_map[0]) {
+        match index.dispatch_indirect(value_map[0]) {
             PatternDispatch::SingleEntry(entry) => {
                 assert_eq!(entry.rule_idx, 0);
                 assert_eq!(entry.kind, PatternKind::And);
@@ -821,7 +796,7 @@ mod tests {
         // Multi-entry patterns never get DIRECT_RULE_BIT
         assert!(value_map[0] & DIRECT_RULE_BIT == 0);
 
-        match index.dispatch(value_map[0]) {
+        match index.dispatch_indirect(value_map[0]) {
             PatternDispatch::Entries(slice) => assert_eq!(slice.len(), 2),
             _ => panic!("expected Entries dispatch"),
         }
