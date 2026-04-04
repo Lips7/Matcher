@@ -1,8 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project
+# Project
 
 High-performance multi-language word/text matcher in Rust with Python, C, and Java bindings. Solves precision/recall problems in pattern matching via logical operators (`&`/`~`) and text normalization pipelines.
 
@@ -137,46 +133,9 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `matcher_rs/src/builder.rs` — `SimpleMatcherBuilder` fluent API
 - `matcher_rs/process_map/` — Source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs` and `runtime_build`
 
-### Threading
-
-`SimpleMatcher` is `Send + Sync`. All mutable match state is thread-local — pools per thread:
-- `SIMPLE_MATCH_STATE` (`SimpleMatchState`) — generation-stamped word states and counter matrix, reused across calls
-- `STRING_POOL` — recycled `String` allocations for transformation output
-
-`TRANSFORM_STEP_CACHE` is a static `[OnceLock<TransformStep>; 8]` — each single-bit `ProcessType` initializes its step once per process and shares it across all `SimpleMatcher` instances.
-
-**Allocator:** `mimalloc` (v3) replaces the system allocator globally for improved multi-threaded allocation throughput.
-
-## Ruled-Out Optimization Ideas
-
-Ideas investigated and rejected, with reasons. Kept here to avoid re-exploring dead ends.
-
-### Won't help: SIMD prefilter for daachorse (overlapping AC)
-aho-corasick explicitly disables prefilters in overlapping search mode (`automaton.rs:1527`: "currently call overlapping search with a 'None' prefilter"). Since both engines use `Standard` (overlapping) match kind, a Teddy-style SIMD prefilter cannot be applied. The DFA-vs-daachorse gap is purely structural (1 vs 2+ memory accesses per byte), not prefilter-related.
-
-### Won't help: Extend Harry `for_each_match_value` to `process`/`General` mode
-Harry's `for_each_match_value` is 4–11× **slower** than AC DFA for full match enumeration (benchmarked 2026-04-03). Harry excels at `is_match` (early exit on first match) but its per-position verification (binary search on `PrefixMap`) is O(log N) per candidate, which dominates when match density is high. AC's state machine reports matches as a free side-effect of traversal at O(1) per match. Extending Harry to `process` mode would be a regression for most workloads. Only `ascii_cn` (ASCII patterns on CJK text) benefits from Harry in search mode.
-
-### Won't help: Vectorized NFA / bit-parallel AC
-Theoretical elegance but impractical: AC NFA for 10K patterns has ~50K states → requires ~100 SIMD registers for full parallel simulation. Memory-based bitvectors bring back bandwidth issues.
-
-### Won't help: Raise DFA threshold to 50K
-Tested 2026-04-04. DFA at 50K uses 35 MB; combined with always-built charwise (~2.6 MB), total ~38 MB exceeds L3 on most machines. Caused +20–30% regression on 50K-pattern benchmarks. Threshold 15K is the sweet spot: DFA fits (~13 MB combined) and captures 1.7× improvement over daachorse for 7K–15K patterns.
-
-### Won't help: All-direct pattern flag to skip DIRECT_RULE_BIT check
-Tested 2026-04-04. Added `all_direct: bool` to `ScanPlan`, computed at build time (`value_map.iter().all(|&v| v & DIRECT_RULE_BIT != 0)`). When true, `process_match` and `process_simple` skip the `raw_value & DIRECT_RULE_BIT` check. Result: zero measurable improvement. The single AND+compare is essentially free on modern CPUs; the branch predictor learns the always-taken pattern within a few iterations.
-
-### Won't help: Void callback for process-mode DFA scan loop
-Tested 2026-04-04. Added `for_each_match_value_void` taking `impl FnMut(u32)` (no return) to eliminate the `if on_value(value) { return true }` branch in process mode where the callback always returns false. Result: zero measurable improvement. The compiler already constant-folds the `false` return through monomorphized closures and eliminates the dead branch.
-
-### Excluded by user (not investigated)
-- **Prefetch** — excluded from scope
-- **Vectorscan / Hyperscan** — excluded from scope
-- **JIT / AOT compiled hit actions** — excluded from scope
-- **PGO (Profile-Guided Optimization)** — excluded from scope
-
 ## Important Notes
 
 - ALWAYS run benchmarks to measure baseline performance before making optimizations, run them again after changes, and compare repeated-run aggregates with `run_benchmarks.py` plus `compare_benchmark_runs.py`.
+- ALWAYS update `DESIGN.md` after making any non-trivial code changes to keep documentation accurate.
 - Benchmarks use `divan` (not `criterion`) — write new benchmarks with `#[divan::bench]` attributes.
 - `proptest` is available for property-based testing in `matcher_rs`.
