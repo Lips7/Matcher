@@ -316,11 +316,18 @@ impl BytewiseMatcher {
         match self {
             #[cfg(feature = "dfa")]
             Self::AcDfa { matcher, to_value } => {
-                for hit in matcher.try_find_overlapping_iter(Input::new(text)).unwrap() {
-                    // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
-                    let value = unsafe { *to_value.get_unchecked(hit.pattern().as_usize()) };
-                    if on_value(value) {
-                        return true;
+                let mut sid = matcher.start_state(Anchored::No).unwrap();
+                for &byte in text.as_bytes() {
+                    sid = matcher.next_state(Anchored::No, sid, byte);
+                    if matcher.is_special(sid) && matcher.is_match(sid) {
+                        for i in 0..matcher.match_len(sid) {
+                            let pid = matcher.match_pattern(sid, i);
+                            // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
+                            if on_value(value) {
+                                return true;
+                            }
+                        }
                     }
                 }
                 false

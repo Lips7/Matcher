@@ -273,6 +273,11 @@ pub(super) struct PatternEntry {
 pub(super) struct RuleSet {
     hot: Vec<RuleHot>,
     cold: Vec<RuleCold>,
+    /// `true` when at least one rule contains a NOT (`~`) segment.
+    ///
+    /// When false, `positive_generation == generation` permanently resolves a rule,
+    /// enabling variant-level early termination in `walk_and_scan`.
+    has_not_rules: bool,
 }
 
 /// Flat storage for deduplicated pattern entries plus their original bucket ranges.
@@ -320,8 +325,18 @@ impl RuleSet {
     /// # Panics
     ///
     /// Debug-asserts that `hot.len() == cold.len()`.
-    pub(super) fn new(hot: Vec<RuleHot>, cold: Vec<RuleCold>) -> Self {
-        Self { hot, cold }
+    pub(super) fn new(hot: Vec<RuleHot>, cold: Vec<RuleCold>, has_not_rules: bool) -> Self {
+        Self {
+            hot,
+            cold,
+            has_not_rules,
+        }
+    }
+
+    /// Returns `true` when at least one rule contains a NOT segment.
+    #[inline(always)]
+    pub(super) fn has_not_rules(&self) -> bool {
+        self.has_not_rules
     }
 
     /// Returns the estimated heap memory in bytes owned by this rule set.
@@ -447,6 +462,7 @@ impl RuleSet {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = generation;
                     state.touched_indices.push(rule_idx);
+                    state.resolved_count += 1;
                     return ctx.exit_early;
                 }
             }
@@ -485,11 +501,13 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
+                            state.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
                 } else if matches!(shape, RuleShape::SingleAnd | RuleShape::SingleAndNot) {
                     word_state.positive_generation = generation;
+                    state.resolved_count += 1;
                     true
                 } else {
                     let bit = 1u64 << offset;
@@ -498,6 +516,7 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
+                            state.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
@@ -714,6 +733,7 @@ mod tests {
                 word_id,
                 word: word.to_owned(),
             }],
+            false,
         )
     }
 
@@ -863,6 +883,7 @@ mod tests {
                 word_id: 1,
                 word: "a&b&c".to_owned(),
             }],
+            false,
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);
@@ -903,6 +924,7 @@ mod tests {
                 word_id: 1,
                 word: "a~b".to_owned(),
             }],
+            true,
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);
@@ -944,6 +966,7 @@ mod tests {
                 word_id: 1,
                 word: "a&a&b".to_owned(),
             }],
+            false,
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);

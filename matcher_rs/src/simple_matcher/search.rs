@@ -34,6 +34,8 @@
 
 use std::borrow::Cow;
 
+use tinyvec::TinyVec;
+
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
@@ -135,7 +137,9 @@ impl SimpleMatcher {
                 if ctx.process_type_mask & (1u64 << pt_index) == 0 {
                     return false;
                 }
-                state.mark_positive(rule_idx);
+                if state.mark_positive(rule_idx) {
+                    state.resolved_count += 1;
+                }
                 ctx.exit_early
             }
             PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, state),
@@ -202,6 +206,15 @@ impl SimpleMatcher {
             if self.scan_variant(text, ctx, state) {
                 return true;
             }
+            if !exit_early
+                && !self.rules.has_not_rules()
+                && state.resolved_count >= self.rules.len()
+            {
+                if let Some(results) = results {
+                    self.rules.collect_matches(state, results);
+                }
+                return self.rules.has_match(state);
+            }
         }
 
         if tree[0].children.is_empty() {
@@ -212,16 +225,21 @@ impl SimpleMatcher {
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
-        let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
+        // Capacity hint from TLS avoids allocator probing after the first call.
+        let mut texts: Vec<Cow<'_, str>> =
+            Vec::with_capacity(state.walk_arena_capacity.max(num_variants));
         texts.push(Cow::Borrowed(text));
         // `ascii_flags[i]` — whether the text at arena index `i` is pure ASCII.
-        let mut ascii_flags: Vec<bool> = Vec::with_capacity(num_variants);
+        // TinyVec inlines up to 16 entries, covering all practical trees.
+        let mut ascii_flags: TinyVec<[bool; 16]> = TinyVec::new();
         ascii_flags.push(root_is_ascii);
 
         // Maps tree node index -> arena index for its text.
-        let mut node_arena: Vec<usize> = vec![0; num_variants];
+        let mut node_arena: TinyVec<[usize; 16]> = TinyVec::new();
+        node_arena.resize(num_variants, 0);
         // Maps tree node index -> variant index used in ScanContext::text_index.
-        let mut node_variant: Vec<usize> = vec![0; num_variants];
+        let mut node_variant: TinyVec<[usize; 16]> = TinyVec::new();
+        node_variant.resize(num_variants, 0);
         let mut variant_counter = 1usize;
         let mut stopped = false;
 
@@ -276,6 +294,12 @@ impl SimpleMatcher {
                         if stopped {
                             break 'walk;
                         }
+                        if !exit_early
+                            && !self.rules.has_not_rules()
+                            && state.resolved_count >= self.rules.len()
+                        {
+                            break 'walk;
+                        }
                     }
                 } else {
                     // Non-leaf: materialize for children.
@@ -307,12 +331,19 @@ impl SimpleMatcher {
                         if stopped {
                             break 'walk;
                         }
+                        if !exit_early
+                            && !self.rules.has_not_rules()
+                            && state.resolved_count >= self.rules.len()
+                        {
+                            break 'walk;
+                        }
                     }
                 }
             }
         }
 
-        // Return owned strings to pool.
+        // Remember capacity for next call, then return owned strings to pool.
+        state.walk_arena_capacity = texts.capacity();
         for cow in texts {
             if let Cow::Owned(s) = cow {
                 return_string_to_pool(s);

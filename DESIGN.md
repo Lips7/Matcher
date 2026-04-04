@@ -236,6 +236,14 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 - **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation).
 - **Non-leaf**: materializes via `TransformStep::apply` into a `Vec<Cow<str>>` arena. `is_ascii` from `StepOutput` is stored per arena slot for downstream engine selection. Scans immediately if the node terminates.
 
+#### Walk Allocation Strategy
+
+The walk uses `TinyVec<[T; 16]>` for bookkeeping arrays (`ascii_flags`, `node_arena`, `node_variant`), keeping them stack-allocated for trees with ≤16 nodes (the practical maximum). The `texts` arena remains a `Vec<Cow<str>>` (lifetime-tied to input), but its capacity is cached in `SimpleMatchState::walk_arena_capacity` so that subsequent calls skip allocator probing. Combined with the string pool, the walk is effectively zero-allocation after the first call on a given thread.
+
+#### Variant-Level Early Termination
+
+In `process` mode (`exit_early=false`), the walk tracks a `resolved_count` in `SimpleMatchState`. Each time a rule first reaches `positive_generation == generation` (via `mark_positive`, bitmask, matrix, or single-and paths), the counter increments. After each variant scan, if `resolved_count >= rules.len()` and no rules have NOT segments (`!has_not_rules`), the walk breaks early — skipping remaining tree variants. This is safe because without NOT segments, a positively-satisfied rule cannot be vetoed by a later variant. For matchers where most rules are simple literals under `ProcessType::None`, this can skip the majority of variant scans after the root.
+
 The standalone public APIs (`text_process`, `reduce_text_process`) in `api.rs` iterate `ProcessType` bits directly without the trie.
 
 The thread-local string pool (`STRING_POOL`) recycles `String` allocations across calls.
@@ -480,13 +488,15 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 
 `search.rs` implements the runtime half. The unified entry point is `walk_and_scan`, which walks the process-type trie and scans each variant immediately after production:
 
-- `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Leaf nodes stream their transform's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation). Non-leaf nodes materialize their output into a `Vec<Cow<str>>` arena for children, scanning immediately if the node terminates. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), exhausts all variants and calls `RuleSet::collect_matches`.
+- `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Leaf nodes stream their transform's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation). Non-leaf nodes materialize their output into a `Vec<Cow<str>>` arena for children, scanning immediately if the node terminates. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), breaks early when all rules are resolved (see [Variant-Level Early Termination](#variant-level-early-termination)), otherwise exhausts all variants and calls `RuleSet::collect_matches`.
 - `scan_variant` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
 - `scan_variant_streaming` — Feeds a `TransformStep`'s byte iterator into `ScanPlan::for_each_match_value_from_iter`.
 - `process_match` — Dispatches the raw value via `PatternIndex::dispatch`:
-  - `DirectRule(rule_idx)` → checks process-type mask, then `state.mark_positive(rule_idx)`, returns `ctx.exit_early`.
+  - `DirectRule(rule_idx)` → checks process-type mask, then `state.mark_positive(rule_idx)` (incrementing `resolved_count` on first positive), returns `ctx.exit_early`.
   - `SingleEntry(entry)` → `RuleSet::process_entry(entry, ctx, state)`.
   - `Entries(entries)` → Iterates entries, short-circuiting if any `process_entry` returns `true`.
+
+For the AC DFA bytewise engine, `for_each_match_value` uses a hand-written state-stepping loop (`next_state` / `is_special` / `is_match` per byte) rather than the `try_find_overlapping_iter` iterator API. This eliminates iterator protocol overhead: all overlapping matches at a given DFA state are processed in one tight inner loop without re-entry. The DFA pre-computes per-state match lists, so `match_len(sid)` / `match_pattern(sid, i)` enumerate all overlapping matches at O(1) per match.
 
 ### Pass 2: Logical Evaluation
 
@@ -633,7 +643,7 @@ Two TLS slots are used, both declared with `#[thread_local]` (a nightly attribut
 
 | Slot | Type | Module | Purpose |
 |------|------|--------|---------|
-| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, and touched-index list. Reused across calls. |
+| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, touched-index list, `resolved_count` for variant-level early termination, and `walk_arena_capacity` for allocation-free tree walks. Reused across calls. |
 | `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/string_pool.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.

@@ -98,8 +98,19 @@ pub(super) struct SimpleMatchState {
     /// [`RuleSet::has_match`](super::rule::RuleSet::has_match) to iterate only over
     /// rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
+    /// Number of rules whose outcome is permanently decided in the current generation.
+    ///
+    /// Incremented when a rule first reaches `positive_generation == generation` (for
+    /// matchers without NOT rules, this is final). Used by `walk_and_scan` to skip
+    /// remaining tree variants when all rules are resolved.
+    pub(super) resolved_count: usize,
     /// Monotonic generation id used to avoid clearing full state between calls.
     generation: u32,
+    /// Remembered capacity for the `texts` arena in `walk_and_scan`.
+    ///
+    /// Grows monotonically to the largest tree size seen on this thread, so that
+    /// subsequent calls skip allocator capacity probing.
+    pub(super) walk_arena_capacity: usize,
 }
 
 /// Thread-local reusable scan state shared by all matchers on the current thread.
@@ -165,7 +176,9 @@ impl SimpleMatchState {
             matrix: Vec::new(),
             matrix_status: Vec::new(),
             touched_indices: Vec::new(),
+            resolved_count: 0,
             generation: 0,
+            walk_arena_capacity: 0,
         }
     }
 
@@ -193,6 +206,7 @@ impl SimpleMatchState {
         }
 
         self.touched_indices.clear();
+        self.resolved_count = 0;
     }
 
     /// Returns the current scan generation id.

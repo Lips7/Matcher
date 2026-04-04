@@ -197,6 +197,7 @@ impl SimpleMatcher {
 
         let mut next_pattern_id: usize = 0;
         let mut dedup_patterns = Vec::with_capacity(word_size);
+        let mut any_has_not = false;
         let mut pattern_id_map: AHashMap<Cow<'_, str>, usize> = AHashMap::with_capacity(word_size);
 
         let mut and_splits: AHashMap<&str, i32> = AHashMap::new();
@@ -262,6 +263,7 @@ impl SimpleMatcher {
                     || segment_counts[..and_count].iter().any(|&value| value != 1)
                     || segment_counts[and_count..].iter().any(|&value| value != 0);
                 let has_not = and_count != segment_counts.len();
+                any_has_not |= has_not;
 
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
@@ -346,7 +348,7 @@ impl SimpleMatcher {
         ParsedRules {
             dedup_patterns,
             dedup_entries,
-            rules: RuleSet::new(rule_hot, rule_cold),
+            rules: RuleSet::new(rule_hot, rule_cold, any_has_not),
         }
     }
 }
