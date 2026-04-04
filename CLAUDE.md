@@ -98,7 +98,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | Flag | Default | Notes |
 |------|---------|-------|
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
-| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~10x memory vs NFA; only preferred for pure-ASCII sets ≤ 7,000 patterns (cache cliff above that) |
+| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 15,000 patterns (combined DFA+charwise exceeds L3 above that) |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
 | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
 | `runtime_build` | off | Build transformation tables at runtime — slower init, dynamic rules |
@@ -146,6 +146,28 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 `TRANSFORM_STEP_CACHE` is a static `[OnceLock<TransformStep>; 8]` — each single-bit `ProcessType` initializes its step once per process and shares it across all `SimpleMatcher` instances.
 
 **Allocator:** `mimalloc` (v3) replaces the system allocator globally for improved multi-threaded allocation throughput.
+
+## Ruled-Out Optimization Ideas
+
+Ideas investigated and rejected, with reasons. Kept here to avoid re-exploring dead ends.
+
+### Won't help: SIMD prefilter for daachorse (overlapping AC)
+aho-corasick explicitly disables prefilters in overlapping search mode (`automaton.rs:1527`: "currently call overlapping search with a 'None' prefilter"). Since both engines use `Standard` (overlapping) match kind, a Teddy-style SIMD prefilter cannot be applied. The DFA-vs-daachorse gap is purely structural (1 vs 2+ memory accesses per byte), not prefilter-related.
+
+### Won't help: Extend Harry `for_each_match_value` to `process`/`General` mode
+Harry's `for_each_match_value` is 4–11× **slower** than AC DFA for full match enumeration (benchmarked 2026-04-03). Harry excels at `is_match` (early exit on first match) but its per-position verification (binary search on `PrefixMap`) is O(log N) per candidate, which dominates when match density is high. AC's state machine reports matches as a free side-effect of traversal at O(1) per match. Extending Harry to `process` mode would be a regression for most workloads. Only `ascii_cn` (ASCII patterns on CJK text) benefits from Harry in search mode.
+
+### Won't help: Vectorized NFA / bit-parallel AC
+Theoretical elegance but impractical: AC NFA for 10K patterns has ~50K states → requires ~100 SIMD registers for full parallel simulation. Memory-based bitvectors bring back bandwidth issues.
+
+### Won't help: Raise DFA threshold to 50K
+Tested 2026-04-04. DFA at 50K uses 35 MB; combined with always-built charwise (~2.6 MB), total ~38 MB exceeds L3 on most machines. Caused +20–30% regression on 50K-pattern benchmarks. Threshold 15K is the sweet spot: DFA fits (~13 MB combined) and captures 1.7× improvement over daachorse for 7K–15K patterns.
+
+### Excluded by user (not investigated)
+- **Prefetch** — excluded from scope
+- **Vectorscan / Hyperscan** — excluded from scope
+- **JIT / AOT compiled hit actions** — excluded from scope
+- **PGO (Profile-Guided Optimization)** — excluded from scope
 
 ## Important Notes
 

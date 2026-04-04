@@ -9,9 +9,9 @@
 //!   `daachorse`'s bytewise double-array Aho-Corasick.
 //!
 //! - **Charwise engine** ([`CharwiseMatcher`]) — scans character-wise using `daachorse`'s
-//!   charwise automaton. When both ASCII and non-ASCII patterns exist, this engine is built
-//!   over the **full** pattern set so a single charwise pass covers everything on non-ASCII
-//!   input.
+//!   charwise automaton. Always built over the **full** pattern set so a single charwise
+//!   pass covers everything on non-ASCII input. CJK characters are 3 UTF-8 bytes, so
+//!   charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on CJK text.
 //!
 //! The [`ScanPlan`] struct bundles both engines together with the [`PatternIndex`] that
 //! maps raw automaton values back to rule metadata.
@@ -20,8 +20,8 @@
 //!
 //! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] accept an `is_ascii`
 //! flag (computed once per text variant by [`super::search`] via `str::is_ascii()`).
-//! When no charwise engine exists (all patterns are ASCII), the bytewise engine is always
-//! used and the `is_ascii` check is skipped entirely.
+//! The charwise engine is always built, so `is_ascii` determines which engine is used:
+//! bytewise for ASCII text, charwise for non-ASCII text.
 
 use std::borrow::Cow;
 
@@ -44,45 +44,54 @@ use super::rule::{PatternEntry, PatternIndex};
 
 /// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
 ///
-/// Benchmarked on Apple M3 Max (`search_ascii_en`, 580 KB English haystack):
+/// Benchmarked on Apple M3 Max (`search_ascii_en`, 580 KB English haystack,
+/// `find_overlapping_iter` — full-text scan counting all hits):
 ///
-///   N=5,000 → AcDfa 418 MB/s vs DaacBytewise 353 MB/s (+18%)
-///   N=6,000 → AcDfa 395 MB/s vs DaacBytewise 356 MB/s (+11%)
-///   N=7,000 → AcDfa 386 MB/s vs DaacBytewise 340 MB/s (+14%)
-///   N=8,000 → AcDfa 273 MB/s vs DaacBytewise 322 MB/s (-15%) ← cache cliff
+///   N=7,000  → AcDfa 2.536 ms vs DaacBytewise 4.818 ms (DFA 1.9× faster)
+///   N=8,000  → AcDfa 2.588 ms vs DaacBytewise 4.586 ms (DFA 1.8× faster)
+///   N=10,000 → AcDfa 2.699 ms vs DaacBytewise 4.541 ms (DFA 1.7× faster)
+///   N=50,000 → AcDfa 5.473 ms vs DaacBytewise 5.827 ms (DFA 1.07× faster)
 ///
-/// The sharp reversal at 8,000 indicates the DFA state table crosses the per-core L2
-/// cache boundary at ~7k–8k ASCII patterns. Threshold set to 7,000: AcDfa leads by
-/// 11–14% at 6k–7k and DaacBytewise wins decisively at 8k+.
+/// Memory (heap bytes, ASCII patterns only):
+///   N=10,000 → AcDfa 9.7 MB vs DaacBytewise 553 KB (DFA 17× larger)
+///   N=50,000 → AcDfa 35 MB  vs DaacBytewise 2.1 MB (DFA 17× larger)
+///
+/// The DFA is faster at all measured pattern counts (up to 50 K). However, at 50 K
+/// the DFA + charwise combined footprint (~38 MB) causes L3 cache pressure and a
+/// net regression. Threshold raised from 7,000 to 15,000: DFA fits comfortably at
+/// 15 K (~13 MB combined with charwise) while capturing a ~1.7× improvement over
+/// daachorse for the 7 K–15 K range.
 ///
 /// Only used when all patterns are pure ASCII; for mixed or non-ASCII pattern sets the
 /// DFA state table would be much larger (3-byte UTF-8 sequences), so DaacBytewise is
 /// always used in that case. Only relevant when the `dfa` feature is enabled.
 #[cfg(feature = "dfa")]
-const AC_DFA_PATTERN_THRESHOLD: usize = 7_000;
+const AC_DFA_PATTERN_THRESHOLD: usize = 15_000;
 
 /// Compiled scan engines together with the pattern metadata they report into.
 ///
 /// Immutable after construction. Shared across all threads via `Arc` or by virtue of
 /// [`SimpleMatcher`](super::SimpleMatcher) being `Send + Sync`.
 ///
-/// Either or both engines may be `None` when the corresponding pattern class is absent.
-/// For example, if all patterns are pure ASCII, `charwise_matcher` will be `None`.
+/// The charwise engine is always built (even for pure-ASCII pattern sets) so that
+/// non-ASCII haystacks can be scanned at character granularity for ~1.6–1.9× throughput
+/// over bytewise scanning (CJK characters are 3 UTF-8 bytes → 3 bytewise transitions
+/// vs 1 charwise transition).
 #[derive(Clone)]
 pub(super) struct ScanPlan {
     /// Bytewise engine for ASCII patterns.
     /// `None` when no ASCII patterns exist.
     bytewise_matcher: Option<BytewiseMatcher>,
-    /// Charwise engine for text containing multi-byte characters.
-    ///
-    /// When both ASCII and non-ASCII patterns exist, this engine contains the full
-    /// pattern set so a single pass handles everything on non-ASCII input.
-    /// `None` when no non-ASCII patterns exist and no ASCII patterns need charwise
-    /// coverage.
+    /// Charwise engine for non-ASCII text. Always built from the **full** pattern set
+    /// so a single charwise pass covers everything. `None` only when no patterns exist.
     charwise_matcher: Option<CharwiseMatcher>,
+    /// `true` when every compiled pattern is pure ASCII. Gates Harry dispatch now
+    /// that `charwise_matcher` is always present.
+    #[cfg(feature = "harry")]
+    all_patterns_ascii: bool,
     /// Harry column-vector SIMD engine for `is_match` fast path.
     ///
-    /// Only built when all patterns are pure ASCII (`charwise_matcher` is `None`).
+    /// Only built when all patterns are pure ASCII.
     /// When present and no DFA exists (pattern count > [`AC_DFA_PATTERN_THRESHOLD`]),
     /// `is_match` dispatches here instead of to the AC engines.
     /// `None` when non-ASCII patterns exist, the set is too small (< 64), or every
@@ -146,7 +155,9 @@ impl ScanPlan {
         let (bytewise_matcher, charwise_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
         #[cfg(feature = "harry")]
-        let harry_matcher = if charwise_matcher.is_none() {
+        let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
+        #[cfg(feature = "harry")]
+        let harry_matcher = if all_patterns_ascii {
             let patvals: Vec<(&str, u32)> = dedup_patterns
                 .iter()
                 .enumerate()
@@ -160,6 +171,8 @@ impl ScanPlan {
         Ok(Self {
             bytewise_matcher,
             charwise_matcher,
+            #[cfg(feature = "harry")]
+            all_patterns_ascii,
             #[cfg(feature = "harry")]
             harry_matcher,
             patterns,
@@ -204,24 +217,23 @@ impl ScanPlan {
     ///    - `text` contains non-ASCII bytes (`!text.is_ascii()`).
     ///
     ///    On non-ASCII haystacks Harry's column-0 early exit filters ~95% of
-    ///    chunks, giving 3–4× throughput over AC at every pattern count. On
-    ///    ASCII haystacks with diverse patterns the DFA's zero-false-positive
-    ///    verification wins at N ≤ 7 k; above that its state table exceeds L2.
+    ///    chunks, giving 3–4× throughput over AC at every pattern count.
     ///
-    /// 2. **AC bytewise** — when text is ASCII or no charwise engine exists.
+    /// 2. **AC bytewise** — when text is ASCII.
     ///
-    /// 3. **AC charwise** — when text contains multi-byte characters and a charwise
-    ///    engine was compiled.
+    /// 3. **AC charwise** — when text contains multi-byte characters.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "harry")]
-        if self.harry_matcher.as_ref().is_some_and(|_| {
-            self.charwise_matcher.is_none() && (!self.uses_dfa() || !text.is_ascii())
-        }) {
+        if self
+            .harry_matcher
+            .as_ref()
+            .is_some_and(|_| self.all_patterns_ascii && (!self.uses_dfa() || !text.is_ascii()))
+        {
             return self.harry_matcher.as_ref().unwrap().is_match(text);
         }
 
-        if self.charwise_matcher.is_none() || text.is_ascii() {
+        if text.is_ascii() {
             self.bytewise_matcher
                 .as_ref()
                 .is_some_and(|m| m.is_match(text))
@@ -235,9 +247,8 @@ impl ScanPlan {
     /// Calls `on_value` for each raw match value produced by the chosen engine.
     ///
     /// Returns `true` if the callback requests early exit (i.e., `on_value` returned
-    /// `true`). The `is_ascii` flag determines engine selection: when `true` or when no
-    /// charwise engine exists, the bytewise engine is used; otherwise the charwise engine
-    /// handles the full scan.
+    /// `true`). The `is_ascii` flag determines engine selection: bytewise for ASCII text,
+    /// charwise for non-ASCII text.
     ///
     /// # Engine selection invariant
     ///
@@ -253,8 +264,7 @@ impl ScanPlan {
         is_ascii: bool,
         on_value: impl FnMut(u32) -> bool,
     ) -> bool {
-        let use_bytewise = self.charwise_matcher.is_none() || is_ascii;
-        if use_bytewise {
+        if is_ascii {
             if let Some(ref matcher) = self.bytewise_matcher {
                 return matcher.for_each_match_value(text, on_value);
             }
@@ -277,8 +287,7 @@ impl ScanPlan {
         is_ascii: bool,
         on_value: impl FnMut(u32) -> bool,
     ) -> bool {
-        let use_bytewise = self.charwise_matcher.is_none() || is_ascii;
-        if use_bytewise {
+        if is_ascii {
             if let Some(ref matcher) = self.bytewise_matcher {
                 return matcher.for_each_match_value_from_iter(iter, on_value);
             }
@@ -435,14 +444,10 @@ impl CharwiseMatcher {
 
 /// Compiles the bytewise and charwise automata from the deduplicated pattern list.
 ///
-/// Patterns are partitioned by `is_ascii()`:
-///
-/// - **ASCII-only patterns** → [`BytewiseMatcher`] (DFA or DAAC bytewise).
-/// - **Non-ASCII patterns** → [`CharwiseMatcher`] (DAAC charwise).
-///
-/// When both classes are present, the charwise engine is built over the **full** pattern
-/// set (ASCII + non-ASCII) so that a single charwise scan on non-ASCII input covers
-/// everything without needing the bytewise engine.
+/// - **ASCII patterns** → [`BytewiseMatcher`] (DFA or DAAC bytewise).
+/// - **All patterns** → [`CharwiseMatcher`] (DAAC charwise), always built from the
+///   full pattern set so that non-ASCII haystacks benefit from character-granularity
+///   scanning (~1.6–1.9× faster on CJK text vs bytewise).
 ///
 /// # Errors
 ///
@@ -468,47 +473,40 @@ fn compile_automata(
     let has_ascii = !ascii_patvals.is_empty();
     let has_non_ascii = !non_ascii_patvals.is_empty();
 
-    // When both classes are present, build the charwise engine over the full set.
-    let full_charwise_patvals: Option<Vec<(&str, u32)>> = if has_ascii && has_non_ascii {
-        Some(
-            dedup_patterns
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (p.as_ref(), value_map[i]))
-                .collect(),
-        )
-    } else {
-        None
-    };
-    let charwise_source = full_charwise_patvals
-        .as_deref()
-        .unwrap_or(non_ascii_patvals.as_slice());
+    // Always build charwise over the full pattern set so non-ASCII haystacks
+    // benefit from character-granularity scanning (~1.6–1.9× on CJK text).
+    let all_patvals: Vec<(&str, u32)> = dedup_patterns
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.as_ref(), value_map[i]))
+        .collect();
 
     let build_bytewise = move || -> Result<BytewiseMatcher, MatcherError> {
         build_current_bytewise(ascii_patvals, value_map.len())
     };
 
-    let build_charwise = || -> Result<CharwiseMatcher, MatcherError> {
+    let build_charwise = |source: Vec<(&str, u32)>| -> Result<CharwiseMatcher, MatcherError> {
         Ok(CharwiseMatcher::DaacCharwise(
             CharwiseDoubleArrayAhoCorasickBuilder::new()
                 .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-                .build_with_values(charwise_source.iter().copied())
+                .build_with_values(source)
                 .map_err(MatcherError::automaton_build)?,
         ))
     };
 
-    match (has_ascii, has_non_ascii) {
-        (false, false) => Ok((None, None)),
-        (true, false) => Ok((Some(build_bytewise()?), None)),
-        (false, true) => Ok((None, Some(build_charwise()?))),
+    let has_patterns = has_ascii || has_non_ascii;
+
+    match (has_ascii, has_patterns) {
+        (_, false) => Ok((None, None)),
         (true, true) => std::thread::scope(|s| {
             let bytewise_handle = s.spawn(build_bytewise);
-            let charwise = build_charwise()?;
+            let charwise = build_charwise(all_patvals)?;
             let bytewise = bytewise_handle
                 .join()
                 .expect("bytewise automaton build panicked")?;
             Ok((Some(bytewise), Some(charwise)))
         }),
+        (false, true) => Ok((None, Some(build_charwise(all_patvals)?))),
     }
 }
 
