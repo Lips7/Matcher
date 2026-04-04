@@ -20,10 +20,10 @@
 //!
 //! The general path uses [`walk_and_scan`](SimpleMatcher::walk_and_scan), which walks the
 //! process-type trie once, scanning each variant as soon as it is produced. Leaf nodes
-//! stream transform byte iterators directly into the AC engine (zero allocation), while
-//! non-leaf nodes materialize their output for children. An `exit_early` flag controls
-//! whether the walk stops on the first satisfied rule (`is_match`) or exhausts all
-//! variants (`process`).
+//! that are no-ops on ASCII input reuse the parent text; otherwise they materialize via
+//! `TransformStep::apply`. Non-leaf nodes materialize their output for children. An
+//! `exit_early` flag controls whether the walk stops on the first satisfied rule
+//! (`is_match`) or exhausts all variants (`process`).
 //!
 //! # Safety
 //!
@@ -265,7 +265,29 @@ impl SimpleMatcher {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
-                        stopped = if is_noop {
+                        // Try to produce a changed variant; skip apply() entirely
+                        // when the step is a known no-op on ASCII input.
+                        let changed = if !is_noop {
+                            let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
+                            output.changed.map(|s| (s, output.is_ascii))
+                        } else {
+                            None
+                        };
+
+                        stopped = if let Some((s, is_ascii)) = changed {
+                            let vi = variant_counter;
+                            variant_counter += 1;
+                            let ctx = ScanContext {
+                                text_index: vi,
+                                process_type_mask: child.pt_index_mask,
+                                num_variants,
+                                exit_early,
+                                is_ascii,
+                            };
+                            let result = self.scan_variant(&s, ctx, state);
+                            return_string_to_pool(s);
+                            result
+                        } else {
                             let ctx = ScanContext {
                                 text_index: parent_vi,
                                 process_type_mask: child.pt_index_mask,
@@ -274,34 +296,6 @@ impl SimpleMatcher {
                                 is_ascii: parent_ascii,
                             };
                             self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
-                        } else {
-                            let vi = variant_counter;
-                            variant_counter += 1;
-                            let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
-                            match output.changed {
-                                Some(s) => {
-                                    let ctx = ScanContext {
-                                        text_index: vi,
-                                        process_type_mask: child.pt_index_mask,
-                                        num_variants,
-                                        exit_early,
-                                        is_ascii: output.is_ascii,
-                                    };
-                                    let result = self.scan_variant(&s, ctx, state);
-                                    return_string_to_pool(s);
-                                    result
-                                }
-                                None => {
-                                    let ctx = ScanContext {
-                                        text_index: parent_vi,
-                                        process_type_mask: child.pt_index_mask,
-                                        num_variants,
-                                        exit_early,
-                                        is_ascii: parent_ascii,
-                                    };
-                                    self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
-                                }
-                            }
                         };
 
                         if stopped {
