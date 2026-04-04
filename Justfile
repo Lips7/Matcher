@@ -114,6 +114,9 @@ bench-compare baseline candidate *args:
 bench-compare-raw baseline candidate *args:
     python3 matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
+bench-viz *args:
+    python3 matcher_rs/scripts/visualize_benchmarks.py {{args}}
+
 # -- Coverage ------------------------------------------------------------------
 
 coverage:

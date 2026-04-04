@@ -48,6 +48,8 @@ just bench-engine-is-match                 # Engine is_match (Harry) workflow
 just bench-all                             # All presets
 just bench-compare <baseline_dir> <candidate_dir>      # aggregated run-set comparison
 just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file-to-file comparison
+just bench-viz <run_dir>                               # interactive HTML dashboard (Plotly)
+just bench-viz <baseline_dir> <candidate_dir>          # comparison visualization
 
 # Profiling (uses release + debug symbols)
 cd matcher_rs && cargo build --profile profiling
