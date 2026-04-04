@@ -96,7 +96,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | Flag | Default | Notes |
 |------|---------|-------|
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
-| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 15,000 patterns (combined DFA+charwise exceeds L3 above that) |
+| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 25,000 patterns (above that combined DFA+charwise exceeds L2/cache budget) |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
 | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
 | `runtime_build` | off | Build transformation tables at runtime — slower init, dynamic rules |

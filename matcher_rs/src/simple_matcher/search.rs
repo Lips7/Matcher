@@ -73,30 +73,9 @@ impl SimpleMatcher {
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
 
-        let _ = self
-            .scan
-            .for_each_match_value(text, text.is_ascii(), |raw_value| {
-                if raw_value & DIRECT_RULE_BIT != 0 {
-                    let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
-                    self.rules.push_result_if_new(rule_idx, state, results);
-                } else {
-                    match self.scan.patterns().dispatch_indirect(raw_value) {
-                        PatternDispatch::SingleEntry(entry) => {
-                            self.rules
-                                .push_result_if_new(entry.rule_idx as usize, state, results);
-                        }
-                        PatternDispatch::Entries(entries) => {
-                            for entry in entries {
-                                self.rules.push_result_if_new(
-                                    entry.rule_idx as usize,
-                                    state,
-                                    results,
-                                );
-                            }
-                        }
-                    }
-                }
-                false
+        self.scan
+            .for_each_rule_idx_simple(text, text.is_ascii(), |rule_idx| {
+                self.rules.push_result_if_new(rule_idx, state, results);
             });
     }
 

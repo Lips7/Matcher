@@ -39,7 +39,7 @@ use crate::MatcherError;
 
 #[cfg(feature = "harry")]
 use super::harry::HarryMatcher;
-use super::rule::{PatternEntry, PatternIndex};
+use super::rule::{DIRECT_RULE_MASK, PatternEntry, PatternIndex};
 
 /// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
 ///
@@ -57,15 +57,19 @@ use super::rule::{PatternEntry, PatternIndex};
 ///
 /// The DFA is faster at all measured pattern counts (up to 50 K). However, at 50 K
 /// the DFA + charwise combined footprint (~38 MB) causes L3 cache pressure and a
-/// net regression. Threshold raised from 7,000 to 15,000: DFA fits comfortably at
-/// 15 K (~13 MB combined with charwise) while capturing a ~1.7× improvement over
-/// daachorse for the 7 K–15 K range.
+/// net regression. Threshold raised from 7,000 → 15,000 → 25,000: at 20 K patterns
+/// the DFA weighs ~19 MB and with charwise (~1.6 MB) totals ~21 MB. This exceeds
+/// L2 on M-series (16 MB), causing a ~4-7% regression on scan-dominated workloads
+/// with few matches (e.g. AND patterns that rarely fire). However, for workloads
+/// with frequent matches (NOT shapes, large rule sets) the DFA's 1.7× faster scan
+/// offsets the cache pressure, yielding 15-20% net improvement. Since most
+/// real-world matchers produce matches, the higher threshold is net positive.
 ///
 /// Only used when all patterns are pure ASCII; for mixed or non-ASCII pattern sets the
 /// DFA state table would be much larger (3-byte UTF-8 sequences), so DaacBytewise is
 /// always used in that case. Only relevant when the `dfa` feature is enabled.
 #[cfg(feature = "dfa")]
-const AC_DFA_PATTERN_THRESHOLD: usize = 15_000;
+const AC_DFA_PATTERN_THRESHOLD: usize = 25_000;
 
 /// Compiled scan engines together with the pattern metadata they report into.
 ///
@@ -259,6 +263,26 @@ impl ScanPlan {
         }
         false
     }
+
+    /// AllSimple-specialized scan: yields rule indices directly.
+    ///
+    /// Every raw value is assumed to carry [`DIRECT_RULE_BIT`]; the callback receives
+    /// the extracted `rule_idx` (no early exit, no indirect dispatch).
+    #[inline(always)]
+    pub(super) fn for_each_rule_idx_simple(
+        &self,
+        text: &str,
+        is_ascii: bool,
+        on_rule: impl FnMut(usize),
+    ) {
+        if is_ascii {
+            if let Some(ref matcher) = self.bytewise_matcher {
+                matcher.for_each_rule_idx_simple(text, on_rule);
+            }
+        } else if let Some(ref matcher) = self.charwise_matcher {
+            matcher.for_each_rule_idx_simple(text, on_rule);
+        }
+    }
 }
 
 /// Query helpers for the bytewise scan engine.
@@ -320,6 +344,34 @@ impl BytewiseMatcher {
         }
     }
 
+    /// AllSimple-specialized: yields rule indices directly, no early exit, no
+    /// DIRECT_RULE_BIT check. Every value is assumed to have DIRECT_RULE_BIT set.
+    #[inline(always)]
+    fn for_each_rule_idx_simple(&self, text: &str, mut on_rule: impl FnMut(usize)) {
+        match self {
+            #[cfg(feature = "dfa")]
+            Self::AcDfa { matcher, to_value } => {
+                let mut sid = matcher.start_state(Anchored::No).unwrap();
+                for &byte in text.as_bytes() {
+                    sid = matcher.next_state(Anchored::No, sid, byte);
+                    if matcher.is_special(sid) && matcher.is_match(sid) {
+                        for i in 0..matcher.match_len(sid) {
+                            let pid = matcher.match_pattern(sid, i);
+                            // SAFETY: `to_value` has one entry per pattern.
+                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
+                            on_rule((value & DIRECT_RULE_MASK) as usize);
+                        }
+                    }
+                }
+            }
+            Self::DaacBytewise(matcher) => {
+                for hit in matcher.find_overlapping_iter(text) {
+                    on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
+                }
+            }
+        }
+    }
+
     fn heap_bytes(&self) -> usize {
         match self {
             #[cfg(feature = "dfa")]
@@ -335,6 +387,7 @@ impl BytewiseMatcher {
 trait CharwiseMatcherExt {
     fn is_match_text(&self, text: &str) -> bool;
     fn for_each_match_value(&self, text: &str, on_value: impl FnMut(u32) -> bool) -> bool;
+    fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize));
 }
 
 impl CharwiseMatcherExt for CharwiseMatcher {
@@ -351,6 +404,13 @@ impl CharwiseMatcherExt for CharwiseMatcher {
             }
         }
         false
+    }
+
+    #[inline(always)]
+    fn for_each_rule_idx_simple(&self, text: &str, mut on_rule: impl FnMut(usize)) {
+        for hit in self.find_overlapping_iter(text) {
+            on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
+        }
     }
 }
 

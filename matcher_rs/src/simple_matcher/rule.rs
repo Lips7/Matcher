@@ -465,7 +465,8 @@ impl RuleSet {
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                 let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
 
-                if word_state.not_generation == generation {
+                // Skip not_generation read for pure AND rules (no NOT segments).
+                if shape.has_not() && word_state.not_generation == generation {
                     return false;
                 }
                 if word_state.positive_generation == generation {
