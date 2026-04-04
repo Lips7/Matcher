@@ -117,6 +117,13 @@ bench-compare-raw baseline candidate *args:
 bench-viz *args:
     uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
 
+# Profile with samply + source-line attribution via atos
+# Examples:
+#   just profile record --mode process --shape literal --dict en --analyze
+#   just profile analyze /tmp/prof_*.json.gz
+profile *args:
+    uv run matcher_rs/scripts/analyze_profile.py {{args}}
+
 # -- Coverage ------------------------------------------------------------------
 
 coverage:
