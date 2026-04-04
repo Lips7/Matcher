@@ -27,8 +27,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    Anchored, Input, MatchKind as AhoCorasickMatchKind, automaton::Automaton,
-    dfa::DFA as AcDfaEngine,
+    Anchored, MatchKind as AhoCorasickMatchKind, automaton::Automaton, dfa::DFA as AcDfaEngine,
 };
 use daachorse::{
     DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
@@ -305,7 +304,21 @@ impl BytewiseMatcher {
     fn is_match(&self, text: &str) -> bool {
         match self {
             #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, .. } => matcher.try_find(&Input::new(text)).unwrap().is_some(),
+            Self::AcDfa { matcher, .. } => {
+                let mut sid = matcher.start_state(Anchored::No).unwrap();
+                for &byte in text.as_bytes() {
+                    sid = matcher.next_state(Anchored::No, sid, byte);
+                    if matcher.is_special(sid) {
+                        if matcher.is_match(sid) {
+                            return true;
+                        }
+                        if matcher.is_dead(sid) {
+                            return false;
+                        }
+                    }
+                }
+                false
+            }
             Self::DaacBytewise(matcher) => matcher.find_iter(text).next().is_some(),
         }
     }

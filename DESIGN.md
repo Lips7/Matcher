@@ -491,12 +491,10 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 - `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Leaf nodes stream their transform's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation). Non-leaf nodes materialize their output into a `Vec<Cow<str>>` arena for children, scanning immediately if the node terminates. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), breaks early when all rules are resolved (see [Variant-Level Early Termination](#variant-level-early-termination)), otherwise exhausts all variants and calls `RuleSet::collect_matches`.
 - `scan_variant` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
 - `scan_variant_streaming` — Feeds a `TransformStep`'s byte iterator into `ScanPlan::for_each_match_value_from_iter`.
-- `process_match` — Dispatches the raw value via `PatternIndex::dispatch`:
-  - `DirectRule(rule_idx)` → checks process-type mask, then `state.mark_positive(rule_idx)` (incrementing `resolved_count` on first positive), returns `ctx.exit_early`.
-  - `SingleEntry(entry)` → `RuleSet::process_entry(entry, ctx, state)`.
-  - `Entries(entries)` → Iterates entries, short-circuiting if any `process_entry` returns `true`.
+- `process_match` — Checks `DIRECT_RULE_BIT` inline to handle the common DirectRule case without calling `dispatch()`: extracts `pt_index` and `rule_idx` directly from the bit-packed value, checks `process_type_mask`, calls `mark_positive` (incrementing `resolved_count` on first positive), and returns `ctx.exit_early`. Falls through to `PatternIndex::dispatch` only for the rare non-DirectRule values (`SingleEntry` / `Entries`).
+- `process_simple` — AllSimple fast path. Also checks `DIRECT_RULE_BIT` inline and extracts `rule_idx` directly (skipping `pt_index` entirely since AllSimple matchers have a single ProcessType). Falls through to `dispatch()` only for shared-pattern entries.
 
-For the AC DFA bytewise engine, `for_each_match_value` uses a hand-written state-stepping loop (`next_state` / `is_special` / `is_match` per byte) rather than the `try_find_overlapping_iter` iterator API. This eliminates iterator protocol overhead: all overlapping matches at a given DFA state are processed in one tight inner loop without re-entry. The DFA pre-computes per-state match lists, so `match_len(sid)` / `match_pattern(sid, i)` enumerate all overlapping matches at O(1) per match.
+For the AC DFA bytewise engine, both `for_each_match_value` and `is_match` use hand-written state-stepping loops (`next_state` / `is_special` / `is_match` per byte) rather than the `try_find_overlapping_iter` or `try_find` iterator APIs. This eliminates iterator protocol overhead: all overlapping matches at a given DFA state are processed in one tight inner loop without re-entry. The `is_match` loop additionally checks `is_dead(sid)` for early exit. The DFA pre-computes per-state match lists, so `match_len(sid)` / `match_pattern(sid, i)` enumerate all overlapping matches at O(1) per match.
 
 ### Pass 2: Logical Evaluation
 

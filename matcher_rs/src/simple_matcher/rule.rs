@@ -97,13 +97,13 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
 
 /// Bit shift for the process-type index inside a direct-rule encoded value.
-const DIRECT_PT_SHIFT: u32 = 26;
+pub(super) const DIRECT_PT_SHIFT: u32 = 26;
 
 /// Mask for extracting the process-type index from a direct-rule encoded value.
-const DIRECT_PT_MASK: u32 = 0x1F << DIRECT_PT_SHIFT;
+pub(super) const DIRECT_PT_MASK: u32 = 0x1F << DIRECT_PT_SHIFT;
 
 /// Mask for extracting the rule index from a direct-rule encoded value.
-const DIRECT_RULE_MASK: u32 = (1 << DIRECT_PT_SHIFT) - 1;
+pub(super) const DIRECT_RULE_MASK: u32 = (1 << DIRECT_PT_SHIFT) - 1;
 
 /// Maximum number of segments handled by the bitmask fast path.
 ///
@@ -311,6 +311,10 @@ pub(super) struct PatternIndex {
 /// 3. [`Entries`](Self::Entries) — multiple rules share this pattern string.
 pub(super) enum PatternDispatch<'a> {
     /// Direct simple-rule fast path — carries rule index and process-type index.
+    ///
+    /// Hot-path callers inline the `DIRECT_RULE_BIT` check and extract fields directly,
+    /// so this variant is only reached via `dispatch()` in tests and fallback paths.
+    #[cfg_attr(not(test), expect(dead_code))]
     DirectRule { rule_idx: usize, pt_index: u8 },
     /// Exactly one attached pattern entry.
     SingleEntry(&'a PatternEntry),

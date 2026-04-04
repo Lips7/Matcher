@@ -39,7 +39,9 @@ use tinyvec::TinyVec;
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
-use super::rule::PatternDispatch;
+use super::rule::{
+    DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT, DIRECT_RULE_MASK, PatternDispatch,
+};
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
 use super::{SimpleMatcher, SimpleResult};
 
@@ -75,18 +77,24 @@ impl SimpleMatcher {
         let _ = self
             .scan
             .for_each_match_value(text, text.is_ascii(), |raw_value| {
-                match self.scan.patterns().dispatch(raw_value) {
-                    PatternDispatch::DirectRule { rule_idx, .. } => {
-                        self.rules.push_result_if_new(rule_idx, state, results);
-                    }
-                    PatternDispatch::SingleEntry(entry) => {
-                        self.rules
-                            .push_result_if_new(entry.rule_idx as usize, state, results);
-                    }
-                    PatternDispatch::Entries(entries) => {
-                        for entry in entries {
+                if raw_value & DIRECT_RULE_BIT != 0 {
+                    let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
+                    self.rules.push_result_if_new(rule_idx, state, results);
+                } else {
+                    match self.scan.patterns().dispatch(raw_value) {
+                        PatternDispatch::DirectRule { .. } => unreachable!(),
+                        PatternDispatch::SingleEntry(entry) => {
                             self.rules
                                 .push_result_if_new(entry.rule_idx as usize, state, results);
+                        }
+                        PatternDispatch::Entries(entries) => {
+                            for entry in entries {
+                                self.rules.push_result_if_new(
+                                    entry.rule_idx as usize,
+                                    state,
+                                    results,
+                                );
+                            }
                         }
                     }
                 }
@@ -132,16 +140,19 @@ impl SimpleMatcher {
         ctx: ScanContext,
         state: &mut SimpleMatchState,
     ) -> bool {
-        match self.scan.patterns().dispatch(raw_value) {
-            PatternDispatch::DirectRule { rule_idx, pt_index } => {
-                if ctx.process_type_mask & (1u64 << pt_index) == 0 {
-                    return false;
-                }
-                if state.mark_positive(rule_idx) {
-                    state.resolved_count += 1;
-                }
-                ctx.exit_early
+        if raw_value & DIRECT_RULE_BIT != 0 {
+            let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
+            if ctx.process_type_mask & (1u64 << pt_index) == 0 {
+                return false;
             }
+            let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
+            if state.mark_positive(rule_idx) {
+                state.resolved_count += 1;
+            }
+            return ctx.exit_early;
+        }
+        match self.scan.patterns().dispatch(raw_value) {
+            PatternDispatch::DirectRule { .. } => unreachable!(),
             PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, state),
             PatternDispatch::Entries(entries) => {
                 for entry in entries {
