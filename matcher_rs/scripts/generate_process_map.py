@@ -110,10 +110,15 @@ def build_text_delete_codepoints(chars: list[str]) -> list[int]:
 
 
 def build_norm_map(chars: list[str]) -> dict[str, str]:
+    combining_categories = frozenset({"Mn", "Mc", "Me"})
     mapping: dict[str, str] = {}
     for char in chars:
-        normalized = unicodedata.normalize("NFKC", char).casefold()
-        if normalized != char:
+        nfkd = unicodedata.normalize("NFKD", char)
+        stripped = "".join(
+            c for c in nfkd if unicodedata.category(c) not in combining_categories
+        )
+        normalized = unicodedata.normalize("NFKC", stripped).casefold()
+        if normalized and normalized != char:
             mapping[char] = normalized
     return mapping
 

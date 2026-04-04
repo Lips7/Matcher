@@ -275,6 +275,20 @@ fn test_normalize() {
 }
 
 #[test]
+fn test_normalize_strips_diacritics() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Normalize, 1, "cafe")
+        .add_word(ProcessType::Normalize, 2, "c")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("Café"), "should strip precomposed acute");
+    assert!(matcher.is_match("café"), "should strip lowercase acute");
+    assert!(matcher.is_match("CAFÉ"), "should strip uppercase acute");
+    assert!(matcher.is_match("Ć"), "Ć should normalize to c");
+}
+
+#[test]
 fn test_normalize_leaf_applies_ascii_mappings() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Normalize, 1, "i")
