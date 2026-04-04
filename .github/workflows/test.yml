@@ -57,7 +57,7 @@ jobs:
     env:
       # Override .cargo/config.toml target-cpu=native which may emit
       # instructions unsupported by the CI runner.
-      RUSTFLAGS: -Z threads=8
+      RUSTFLAGS: -Z threads=0
       RUSTDOCFLAGS: --document-private-items
     steps:
       - uses: actions/checkout@v4
@@ -119,7 +119,7 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.platform.target }}
         env:
-          RUSTFLAGS: -Z threads=8
+          RUSTFLAGS: -Z threads=0
 
       - name: Test
         run: |
@@ -128,7 +128,7 @@ jobs:
         working-directory: matcher_rs
         env:
           RUST_BACKTRACE: 1
-          RUSTFLAGS: -Z threads=8
+          RUSTFLAGS: -Z threads=0
 
       - name: Rename & move
         shell: bash

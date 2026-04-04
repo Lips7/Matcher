@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["matcher_rs", "matcher_py", "matcher_c", "matcher_java"]
+default-members = ["matcher_rs"]
 
 [workspace.package]
 authors = ["Foster Guo <f975793771@gmail.com>"]
