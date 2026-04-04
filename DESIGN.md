@@ -233,7 +233,7 @@ After tree construction, `recompute_mask_with_index` rewrites every node's `pt_i
 `SimpleMatcher` uses `walk_and_scan` (in `search.rs`) to walk the trie and scan each variant immediately after production. The flat-array invariant guarantees every parent node has a lower index than its children, so a single forward pass visits parents before children.
 
 - **Leaf + no-op** (parent is ASCII and step is guaranteed no-op on ASCII): reuses the parent's text and variant index, scanning with the child's `pt_index_mask` instead of materializing new text.
-- **Leaf + real transform**: streams the step's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation).
+- **Leaf + real transform**: materializes via `TransformStep::apply` into a pooled `String`, scans the result, and returns the string to pool. The materialization path benefits from SIMD-optimized bulk processing in the transform engines.
 - **Non-leaf**: materializes via `TransformStep::apply` into a `Vec<Cow<str>>` arena. `is_ascii` from `StepOutput` is stored per arena slot for downstream engine selection. Scans immediately if the node terminates.
 
 #### Walk Allocation Strategy
@@ -488,9 +488,8 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 
 `search.rs` implements the runtime half. The unified entry point is `walk_and_scan`, which walks the process-type trie and scans each variant immediately after production:
 
-- `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Leaf nodes stream their transform's `ByteIter` directly into the AC engine via `scan_variant_streaming` (zero allocation). Non-leaf nodes materialize their output into a `Vec<Cow<str>>` arena for children, scanning immediately if the node terminates. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), breaks early when all rules are resolved (see [Variant-Level Early Termination](#variant-level-early-termination)), otherwise exhausts all variants and calls `RuleSet::collect_matches`.
+- `walk_and_scan(text, exit_early, results)` — Walks the `ProcessTypeBitNode` trie once. Both leaf and non-leaf nodes materialize their transform output via `TransformStep::apply` (benefiting from SIMD-optimized bulk processing), then scan the result via `scan_variant`. Leaf nodes use a pooled `String` returned immediately after scanning; non-leaf nodes store their output in a `Vec<Cow<str>>` arena for children. When `exit_early=true` (`is_match`), stops on first satisfied rule. When `exit_early=false` (`process`), breaks early when all rules are resolved (see [Variant-Level Early Termination](#variant-level-early-termination)), otherwise exhausts all variants and calls `RuleSet::collect_matches`.
 - `scan_variant` — Calls `ScanPlan::for_each_match_value` with `process_match` as the callback.
-- `scan_variant_streaming` — Feeds a `TransformStep`'s byte iterator into `ScanPlan::for_each_match_value_from_iter`.
 - `process_match` — Checks `DIRECT_RULE_BIT` inline to handle the common DirectRule case without calling `dispatch()`: extracts `pt_index` and `rule_idx` directly from the bit-packed value, checks `process_type_mask`, calls `mark_positive` (incrementing `resolved_count` on first positive), and returns `ctx.exit_early`. Falls through to `PatternIndex::dispatch` only for the rare non-DirectRule values (`SingleEntry` / `Entries`).
 - `process_simple` — AllSimple fast path. Also checks `DIRECT_RULE_BIT` inline and extracts `rule_idx` directly (skipping `pt_index` entirely since AllSimple matchers have a single ProcessType). Falls through to `dispatch()` only for shared-pattern entries.
 

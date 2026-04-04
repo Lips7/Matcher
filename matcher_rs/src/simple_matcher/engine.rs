@@ -272,29 +272,6 @@ impl ScanPlan {
         }
         false
     }
-
-    /// Calls `on_value` for each raw match value produced by streaming a byte
-    /// iterator through the chosen engine.
-    ///
-    /// Same semantics as [`for_each_match_value`](Self::for_each_match_value)
-    /// but accepts an `Iterator<Item = u8>` instead of a `&str`, enabling
-    /// zero-allocation transform-to-scan fusion.
-    #[inline(always)]
-    pub(super) fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
-        &self,
-        iter: I,
-        is_ascii: bool,
-        on_value: impl FnMut(u32) -> bool,
-    ) -> bool {
-        if is_ascii {
-            if let Some(ref matcher) = self.bytewise_matcher {
-                return matcher.for_each_match_value_from_iter(iter, on_value);
-            }
-        } else if let Some(ref matcher) = self.charwise_matcher {
-            return matcher.for_each_match_value_from_iter(iter, on_value);
-        }
-        false
-    }
 }
 
 /// Query helpers for the bytewise scan engine.
@@ -356,43 +333,6 @@ impl BytewiseMatcher {
         }
     }
 
-    /// Streams a byte iterator through the bytewise engine, calling `on_value` per hit.
-    #[inline(always)]
-    fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
-        &self,
-        iter: I,
-        mut on_value: impl FnMut(u32) -> bool,
-    ) -> bool {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, to_value } => {
-                let mut sid = matcher.start_state(Anchored::No).unwrap();
-                for byte in iter {
-                    sid = matcher.next_state(Anchored::No, sid, byte);
-                    if matcher.is_special(sid) && matcher.is_match(sid) {
-                        for i in 0..matcher.match_len(sid) {
-                            let pid = matcher.match_pattern(sid, i);
-                            // SAFETY: `to_value` has one entry per pattern.
-                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
-                            if on_value(value) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-                false
-            }
-            Self::DaacBytewise(matcher) => {
-                for hit in matcher.find_overlapping_iter_from_iter(iter) {
-                    if on_value(hit.value()) {
-                        return true;
-                    }
-                }
-                false
-            }
-        }
-    }
-
     fn heap_bytes(&self) -> usize {
         match self {
             #[cfg(feature = "dfa")]
@@ -420,32 +360,6 @@ impl CharwiseMatcher {
         match self {
             Self::DaacCharwise(matcher) => {
                 for hit in matcher.find_overlapping_iter(text) {
-                    if on_value(hit.value()) {
-                        return true;
-                    }
-                }
-                false
-            }
-        }
-    }
-
-    /// Streams a byte iterator through the charwise engine, calling `on_value` per hit.
-    ///
-    /// # Safety (internal)
-    ///
-    /// The `unsafe` call to `find_overlapping_iter_from_iter` requires that
-    /// the byte iterator produces valid UTF-8. This is guaranteed because the
-    /// transform byte iterators preserve UTF-8 validity of the source text.
-    #[inline(always)]
-    fn for_each_match_value_from_iter<I: Iterator<Item = u8>>(
-        &self,
-        iter: I,
-        mut on_value: impl FnMut(u32) -> bool,
-    ) -> bool {
-        match self {
-            Self::DaacCharwise(matcher) => {
-                // SAFETY: byte iterator produces valid UTF-8 (transforms preserve validity).
-                for hit in unsafe { matcher.find_overlapping_iter_from_iter(iter) } {
                     if on_value(hit.value()) {
                         return true;
                     }

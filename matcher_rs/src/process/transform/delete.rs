@@ -29,84 +29,6 @@ use crate::process::transform::utf8::decode_utf8_raw;
 #[cfg(feature = "runtime_build")]
 const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
-/// Byte-by-byte iterator over delete-transformed text.
-///
-/// Yields the UTF-8 bytes of `text` with all deletable codepoints removed.
-/// Uses the same bitset + ASCII LUT as [`DeleteMatcher::delete`], but yields
-/// bytes one at a time instead of building a `String`.
-///
-/// For multi-byte non-deleted codepoints, the first byte is returned directly
-/// from `next()` and the remaining continuation bytes are buffered in a small
-/// stack array.
-pub(crate) struct DeleteByteIter<'a> {
-    source: &'a [u8],
-    bitset: &'a [u8],
-    ascii_lut: &'a [u8; 16],
-    pos: usize,
-    /// Continuation bytes of a non-deleted multi-byte char being yielded.
-    buf: [u8; 3],
-    buf_pos: u8,
-    buf_len: u8,
-}
-
-impl<'a> Iterator for DeleteByteIter<'a> {
-    type Item = u8;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<u8> {
-        // Drain continuation buffer for multi-byte chars
-        if self.buf_pos < self.buf_len {
-            let b = self.buf[self.buf_pos as usize];
-            self.buf_pos += 1;
-            return Some(b);
-        }
-
-        loop {
-            if self.pos >= self.source.len() {
-                return None;
-            }
-
-            // SAFETY: pos < source.len() checked above.
-            let b = unsafe { *self.source.get_unchecked(self.pos) };
-
-            if b < 0x80 {
-                // ASCII fast path
-                self.pos += 1;
-                if (self.ascii_lut[(b as usize) >> 3] & (1 << (b & 7))) != 0 {
-                    continue; // deleted
-                }
-                return Some(b);
-            }
-
-            // Multi-byte: decode codepoint and check bitset
-            // SAFETY: `b >= 0x80` means non-ASCII in a valid UTF-8 `&str`, so `pos` is a
-            // valid multi-byte lead byte.
-            let (cp, char_len) = unsafe { decode_utf8_raw(self.source, self.pos) };
-            let cp_usize = cp as usize;
-            if cp_usize / 8 < self.bitset.len()
-                && (self.bitset[cp_usize / 8] & (1 << (cp_usize % 8))) != 0
-            {
-                // Deleted codepoint — skip all its bytes
-                self.pos += char_len;
-                continue;
-            }
-
-            // Non-deleted multi-byte: yield first byte, buffer rest
-            let first = b;
-            self.pos += 1;
-            let rest = char_len - 1;
-            for i in 0..rest {
-                // SAFETY: valid UTF-8 guarantees continuation bytes exist.
-                self.buf[i] = unsafe { *self.source.get_unchecked(self.pos) };
-                self.pos += 1;
-            }
-            self.buf_pos = 0;
-            self.buf_len = rest as u8;
-            return Some(first);
-        }
-    }
-}
-
 /// Bitset-backed matcher for the delete transform.
 ///
 /// The bitset covers all Unicode scalar values (0x0 through 0x10FFFF). Bit
@@ -237,23 +159,6 @@ impl DeleteMatcher {
         Some((result, cont_kept == 0))
     }
 
-    /// Returns a byte-by-byte iterator over delete-transformed text.
-    ///
-    /// Equivalent output to `delete()` followed by iterating the result's
-    /// bytes, but without allocating an intermediate `String`.
-    #[inline(always)]
-    pub(crate) fn byte_iter<'a>(&'a self, text: &'a str) -> DeleteByteIter<'a> {
-        DeleteByteIter {
-            source: text.as_bytes(),
-            bitset: &self.bitset,
-            ascii_lut: &self.ascii_lut,
-            pos: 0,
-            buf: [0; 3],
-            buf_pos: 0,
-            buf_len: 0,
-        }
-    }
-
     /// Builds a matcher from the precompiled delete bitset.
     ///
     /// `bitset` is the raw byte slice from `constants::DELETE_BITSET_BYTES`,
@@ -305,42 +210,4 @@ fn parse_delete_codepoint(token: &str) -> u32 {
         16,
     )
     .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
-}
-
-#[cfg(all(test, not(feature = "runtime_build")))]
-mod tests {
-    use super::*;
-
-    use super::super::constants;
-
-    fn delete_matcher() -> DeleteMatcher {
-        DeleteMatcher::new(constants::DELETE_BITSET_BYTES)
-    }
-
-    fn assert_byte_iter_eq_delete(matcher: &DeleteMatcher, text: &str) {
-        let materialized: Vec<u8> = match matcher.delete(text) {
-            Some((s, _)) => s.into_bytes(),
-            None => text.as_bytes().to_vec(),
-        };
-        let streamed: Vec<u8> = matcher.byte_iter(text).collect();
-        assert_eq!(materialized, streamed, "delete mismatch for: {:?}", text);
-    }
-
-    #[test]
-    fn delete_byte_iter_matches_delete() {
-        let m = delete_matcher();
-        for text in ["", "hello", "hello world", "a b c", "\t\n", "中 文"] {
-            assert_byte_iter_eq_delete(&m, text);
-        }
-    }
-
-    proptest::proptest! {
-        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(500))]
-
-        #[test]
-        fn prop_delete_byte_iter(text in "\\PC{0,200}") {
-            let m = delete_matcher();
-            assert_byte_iter_eq_delete(&m, &text);
-        }
-    }
 }

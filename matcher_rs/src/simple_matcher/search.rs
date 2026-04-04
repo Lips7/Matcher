@@ -36,7 +36,6 @@ use std::borrow::Cow;
 
 use tinyvec::TinyVec;
 
-use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
 use super::rule::{
@@ -280,19 +279,31 @@ impl SimpleMatcher {
                         } else {
                             let vi = variant_counter;
                             variant_counter += 1;
-                            let ctx = ScanContext {
-                                text_index: vi,
-                                process_type_mask: child.pt_index_mask,
-                                num_variants,
-                                exit_early,
-                                is_ascii: parent_ascii,
-                            };
-                            self.scan_variant_streaming(
-                                step,
-                                texts[parent_aidx].as_ref(),
-                                ctx,
-                                state,
-                            )
+                            let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
+                            match output.changed {
+                                Some(s) => {
+                                    let ctx = ScanContext {
+                                        text_index: vi,
+                                        process_type_mask: child.pt_index_mask,
+                                        num_variants,
+                                        exit_early,
+                                        is_ascii: output.is_ascii,
+                                    };
+                                    let result = self.scan_variant(&s, ctx, state);
+                                    return_string_to_pool(s);
+                                    result
+                                }
+                                None => {
+                                    let ctx = ScanContext {
+                                        text_index: parent_vi,
+                                        process_type_mask: child.pt_index_mask,
+                                        num_variants,
+                                        exit_early,
+                                        is_ascii: parent_ascii,
+                                    };
+                                    self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
+                                }
+                            }
                         };
 
                         if stopped {
@@ -362,47 +373,5 @@ impl SimpleMatcher {
             self.rules.collect_matches(state, results);
         }
         self.rules.has_match(state)
-    }
-
-    /// Streams a transform step's byte iterator through the AC scan engine.
-    ///
-    /// Instead of materializing the transform output into a `String` and scanning it,
-    /// creates a byte-by-byte iterator from the step's inner matcher and feeds it into
-    /// [`ScanPlan::for_each_match_value_from_iter`](super::engine::ScanPlan::for_each_match_value_from_iter).
-    ///
-    /// For [`TransformStep::None`], falls back to scanning `parent_text` directly.
-    #[inline(always)]
-    fn scan_variant_streaming(
-        &self,
-        step: &TransformStep,
-        parent_text: &str,
-        ctx: ScanContext,
-        state: &mut SimpleMatchState,
-    ) -> bool {
-        match step {
-            TransformStep::None => self.scan_variant(parent_text, ctx, state),
-            TransformStep::Fanjian(matcher) => self.scan.for_each_match_value_from_iter(
-                matcher.byte_iter(parent_text),
-                ctx.is_ascii,
-                |raw_value| self.process_match(raw_value, ctx, state),
-            ),
-            TransformStep::Delete(matcher) => self.scan.for_each_match_value_from_iter(
-                matcher.byte_iter(parent_text),
-                ctx.is_ascii,
-                |raw_value| self.process_match(raw_value, ctx, state),
-            ),
-            TransformStep::Normalize(matcher) => self.scan.for_each_match_value_from_iter(
-                matcher.byte_iter(parent_text),
-                ctx.is_ascii,
-                |raw_value| self.process_match(raw_value, ctx, state),
-            ),
-            TransformStep::PinYin(matcher) | TransformStep::PinYinChar(matcher) => {
-                self.scan.for_each_match_value_from_iter(
-                    matcher.byte_iter(parent_text),
-                    ctx.is_ascii,
-                    |raw_value| self.process_match(raw_value, ctx, state),
-                )
-            }
-        }
     }
 }
