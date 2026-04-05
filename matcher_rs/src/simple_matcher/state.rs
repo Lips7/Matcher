@@ -19,8 +19,6 @@ use std::cell::UnsafeCell;
 
 use tinyvec::TinyVec;
 
-use super::rule::RuleHot;
-
 /// Per-rule mutable state reused across scans.
 ///
 /// Each rule has one `WordState` slot in [`SimpleMatchState::word_states`], indexed by
@@ -126,6 +124,24 @@ pub(super) struct SimpleMatchState {
 pub(super) static SIMPLE_MATCH_STATE: UnsafeCell<SimpleMatchState> =
     UnsafeCell::new(SimpleMatchState::new());
 
+/// Split-borrow view into [`SimpleMatchState`] for the scan hot path.
+///
+/// Created by [`SimpleMatchState::as_scan_state`] after [`prepare`](SimpleMatchState::prepare).
+/// By storing mutable slices (not `Vec`s), the compiler can cache base pointers in
+/// registers — eliminating repeated `Vec::get_unchecked_mut` pointer resolution that
+/// otherwise accounts for 10–16% of runtime in profiled `process` workloads.
+///
+/// Disjoint field borrows (e.g. `self.word_states[i]` and `self.touched_indices.push()`)
+/// are sound because the compiler can see they target different struct fields.
+pub(super) struct ScanState<'a> {
+    pub(super) word_states: &'a mut [WordState],
+    pub(super) touched_indices: &'a mut Vec<usize>,
+    pub(super) resolved_count: usize,
+    pub(super) matrix: &'a mut [TinyVec<[i32; 16]>],
+    pub(super) matrix_status: &'a mut [TinyVec<[u8; 16]>],
+    pub(super) generation: u32,
+}
+
 /// Scan metadata passed through the hot match-processing path.
 ///
 /// One `ScanContext` is constructed per text variant and threaded through
@@ -158,6 +174,101 @@ pub(super) struct ScanContext {
     /// Passed through to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
     /// to select the bytewise or charwise automaton.
     pub(super) is_ascii: bool,
+}
+
+/// Hot-path methods on the split-borrow scan state.
+impl ScanState<'_> {
+    /// Returns the rules touched during the current generation.
+    #[inline(always)]
+    pub(super) fn touched_indices(&self) -> &[usize] {
+        self.touched_indices
+    }
+
+    /// Returns whether `rule_idx` is satisfied in the current generation.
+    #[inline(always)]
+    pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
+        debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
+        let word_state = unsafe { self.word_states.get_unchecked(rule_idx) };
+        word_state.positive_generation == self.generation
+            && word_state.not_generation != self.generation
+    }
+
+    /// Marks a simple rule as positive for the current generation.
+    ///
+    /// Returns `true` only when this is the first positive hit for the rule in the current
+    /// generation. If the rule has not been touched at all, it is also added to
+    /// `touched_indices`.
+    #[inline(always)]
+    pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
+        let generation = self.generation;
+        debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
+        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        if word_state.positive_generation == generation {
+            return false;
+        }
+        if word_state.matrix_generation != generation {
+            word_state.matrix_generation = generation;
+            self.touched_indices.push(rule_idx);
+        }
+        word_state.positive_generation = generation;
+        true
+    }
+
+    /// Marks a simple rule as positive for the current generation (lightweight).
+    ///
+    /// Like [`mark_positive`](Self::mark_positive) but skips the `matrix_generation`
+    /// check and `touched_indices` bookkeeping. Only safe to call from code paths
+    /// that never read `touched_indices` afterward (i.e., `process_simple`).
+    #[inline(always)]
+    pub(super) fn mark_positive_simple(&mut self, rule_idx: usize) -> bool {
+        let generation = self.generation;
+        debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
+        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        if word_state.positive_generation == generation {
+            return false;
+        }
+        word_state.positive_generation = generation;
+        true
+    }
+}
+
+/// Test-only convenience methods. The hot path inlines these operations directly
+/// to preserve `&mut WordState` references across disjoint field borrows.
+#[cfg(test)]
+impl ScanState<'_> {
+    pub(super) fn generation(&self) -> u32 {
+        self.generation
+    }
+
+    pub(super) fn init_rule(
+        &mut self,
+        rule: &super::rule::RuleHot,
+        rule_idx: usize,
+        ctx: ScanContext,
+    ) {
+        let generation = self.generation;
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
+        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        word_state.matrix_generation = generation;
+        word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
+        word_state.remaining_and = rule.and_count as u16;
+        word_state.satisfied_mask = 0;
+        self.touched_indices.push(rule_idx);
+
+        if rule.use_matrix {
+            init_matrix(
+                // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match word_states.
+                unsafe { self.matrix.get_unchecked_mut(rule_idx) },
+                // SAFETY: `rule_idx` is in bounds — matrix_status is sized identically.
+                unsafe { self.matrix_status.get_unchecked_mut(rule_idx) },
+                &rule.segment_counts,
+                ctx.num_variants,
+            );
+        }
+    }
 }
 
 /// Lifecycle helpers for the thread-local scan state.
@@ -203,132 +314,20 @@ impl SimpleMatchState {
         self.resolved_count = 0;
     }
 
-    /// Returns the current scan generation id.
+    /// Creates a [`ScanState`] split-borrow view for the scan hot path.
+    ///
+    /// Must be called after [`prepare`](Self::prepare). The returned `ScanState` borrows
+    /// individual fields as mutable slices, allowing the compiler to cache base pointers
+    /// in registers instead of re-resolving Vec metadata on every access.
     #[inline(always)]
-    pub(super) fn generation(&self) -> u32 {
-        self.generation
-    }
-
-    /// Returns the rules touched during the current generation.
-    #[inline(always)]
-    pub(super) fn touched_indices(&self) -> &[usize] {
-        &self.touched_indices
-    }
-
-    /// Returns whether `rule_idx` is satisfied in the current generation.
-    ///
-    /// A rule is satisfied when all its AND segments have been observed
-    /// (`positive_generation == generation`) and no NOT segment has vetoed it
-    /// (`not_generation != generation`).
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked` on `self.word_states`. Guarded by a preceding `debug_assert!`.
-    ///
-    /// # Panics
-    ///
-    /// Debug-asserts that `rule_idx < self.word_states.len()`.
-    #[inline(always)]
-    pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked(rule_idx) };
-        word_state.positive_generation == self.generation
-            && word_state.not_generation != self.generation
-    }
-
-    /// Marks a simple rule as positive for the current generation.
-    ///
-    /// Returns `true` only when this is the first positive hit for the rule in the current
-    /// generation — used by the all-simple fast path to deduplicate results.
-    ///
-    /// If the rule has not been touched at all in this generation, it is also added to
-    /// `touched_indices`.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked_mut` on `self.word_states`. Guarded by a preceding `debug_assert!`.
-    ///
-    /// # Panics
-    ///
-    /// Debug-asserts that `rule_idx < self.word_states.len()`.
-    #[inline(always)]
-    pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
-        let generation = self.generation;
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
-        if word_state.positive_generation == generation {
-            return false;
-        }
-        if word_state.matrix_generation != generation {
-            word_state.matrix_generation = generation;
-            self.touched_indices.push(rule_idx);
-        }
-        word_state.positive_generation = generation;
-        true
-    }
-
-    /// Marks a simple rule as positive for the current generation (lightweight).
-    ///
-    /// Like [`mark_positive`](Self::mark_positive) but skips the `matrix_generation`
-    /// check and `touched_indices` bookkeeping. Only safe to call from code paths
-    /// that never read `touched_indices` afterward (i.e., `process_simple`).
-    ///
-    /// Returns `true` only when this is the first positive hit for the rule in the
-    /// current generation.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked_mut` on `self.word_states`. Guarded by a preceding `debug_assert!`.
-    #[inline(always)]
-    pub(super) fn mark_positive_simple(&mut self, rule_idx: usize) -> bool {
-        let generation = self.generation;
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
-        if word_state.positive_generation == generation {
-            return false;
-        }
-        word_state.positive_generation = generation;
-        true
-    }
-
-    /// Initializes one complex rule the first time it is touched in a generation.
-    ///
-    /// Sets up the generation stamp, resets the remaining-AND counter and bitmask, adds
-    /// the rule to `touched_indices`, and — for matrix-mode rules — initializes the
-    /// per-variant counter matrix via [`init_matrix`].
-    ///
-    /// If the rule has zero AND segments (pure NOT rule), it is immediately marked
-    /// positive since there is nothing to satisfy.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked_mut` on `self.word_states`, `self.matrix`, and
-    /// `self.matrix_status`. All accesses are for `rule_idx` which was bounds-checked
-    /// by the caller.
-    #[inline(always)]
-    pub(super) fn init_rule(&mut self, rule: &RuleHot, rule_idx: usize, ctx: ScanContext) {
-        let generation = self.generation;
-        // SAFETY: `rule_idx` is in bounds — caller guarantees it via `RuleSet` indexing.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
-        word_state.matrix_generation = generation;
-        word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
-        word_state.remaining_and = rule.and_count as u16;
-        word_state.satisfied_mask = 0;
-        self.touched_indices.push(rule_idx);
-
-        if rule.use_matrix {
-            init_matrix(
-                // SAFETY: `rule_idx` is in bounds — `matrix` is resized to match
-                // `word_states` in `prepare`.
-                unsafe { self.matrix.get_unchecked_mut(rule_idx) },
-                // SAFETY: `matrix_status` is resized identically to `matrix` in `prepare`.
-                unsafe { self.matrix_status.get_unchecked_mut(rule_idx) },
-                &rule.segment_counts,
-                ctx.num_variants,
-            );
+    pub(super) fn as_scan_state(&mut self) -> ScanState<'_> {
+        ScanState {
+            word_states: &mut self.word_states,
+            touched_indices: &mut self.touched_indices,
+            resolved_count: self.resolved_count,
+            matrix: &mut self.matrix,
+            matrix_status: &mut self.matrix_status,
+            generation: self.generation,
         }
     }
 }
@@ -343,7 +342,7 @@ impl SimpleMatchState {
 /// fast path.
 #[cold]
 #[inline(never)]
-fn init_matrix(
+pub(super) fn init_matrix(
     flat_matrix: &mut TinyVec<[i32; 16]>,
     flat_status: &mut TinyVec<[u8; 16]>,
     segment_counts: &[i32],
@@ -378,43 +377,41 @@ mod tests {
     #[test]
     fn test_prepare_grows_storage() {
         let mut state = SimpleMatchState::new();
-        assert_eq!(state.generation(), 0);
+        assert_eq!(state.generation, 0);
         state.prepare(10);
         assert!(state.word_states.len() >= 10);
         assert!(state.matrix.len() >= 10);
         assert!(state.matrix_status.len() >= 10);
-        assert_eq!(state.generation(), 1);
-        assert!(state.touched_indices().is_empty());
+        assert_eq!(state.generation, 1);
+        assert!(state.touched_indices.is_empty());
     }
 
     #[test]
     fn test_prepare_generation_increments() {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
-        assert_eq!(state.generation(), 1);
+        assert_eq!(state.generation, 1);
         state.prepare(1);
-        assert_eq!(state.generation(), 2);
+        assert_eq!(state.generation, 2);
         state.prepare(1);
-        assert_eq!(state.generation(), 3);
+        assert_eq!(state.generation, 3);
     }
 
     #[test]
     fn test_prepare_generation_wraparound() {
         let mut state = SimpleMatchState::new();
         state.prepare(3);
-        let current = state.generation();
+        let current = state.generation;
         state.word_states[0].positive_generation = current;
         state.word_states[1].matrix_generation = current;
         state.word_states[2].not_generation = current;
 
-        // Force generation to u32::MAX - 1 so next prepare hits MAX
         state.generation = u32::MAX - 1;
         state.prepare(3);
-        assert_eq!(state.generation(), u32::MAX);
+        assert_eq!(state.generation, u32::MAX);
 
-        // Next prepare should wraparound: reset all stamps to 0, generation = 1
         state.prepare(3);
-        assert_eq!(state.generation(), 1);
+        assert_eq!(state.generation, 1);
         for ws in &state.word_states {
             assert_eq!(ws.matrix_generation, 0);
             assert_eq!(ws.positive_generation, 0);
@@ -426,26 +423,34 @@ mod tests {
     fn test_mark_positive_dedup() {
         let mut state = SimpleMatchState::new();
         state.prepare(2);
+        let mut ss = state.as_scan_state();
 
-        assert!(state.mark_positive(0), "first mark should return true");
-        assert!(!state.mark_positive(0), "second mark should return false");
-        assert_eq!(state.touched_indices(), &[0]);
+        assert!(ss.mark_positive(0), "first mark should return true");
+        assert!(!ss.mark_positive(0), "second mark should return false");
+        assert_eq!(ss.touched_indices(), &[0]);
     }
 
     #[test]
     fn test_rule_is_satisfied() {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
-        let current = state.generation();
-
-        assert!(!state.rule_is_satisfied(0));
+        let current = state.generation;
 
         state.word_states[0].positive_generation = current;
-        assert!(state.rule_is_satisfied(0));
+        let ss = state.as_scan_state();
+        assert!(ss.rule_is_satisfied(0));
+    }
 
-        // NOT veto overrides positive
+    #[test]
+    fn test_rule_is_satisfied_not_veto() {
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let current = state.generation;
+
+        state.word_states[0].positive_generation = current;
         state.word_states[0].not_generation = current;
-        assert!(!state.rule_is_satisfied(0));
+        let ss = state.as_scan_state();
+        assert!(!ss.rule_is_satisfied(0));
     }
 
     #[test]
@@ -453,24 +458,23 @@ mod tests {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
 
-        let rule = RuleHot {
+        let rule = super::super::rule::RuleHot {
             segment_counts: vec![1, 1, 0],
             and_count: 2,
             use_matrix: true,
         };
         let ctx = make_ctx(2, false);
-        state.init_rule(&rule, 0, ctx);
+        let mut ss = state.as_scan_state();
+        ss.init_rule(&rule, 0, ctx);
 
-        assert_eq!(state.word_states[0].matrix_generation, state.generation());
-        assert_eq!(state.word_states[0].remaining_and, 2);
-        assert_eq!(state.word_states[0].satisfied_mask, 0);
-        assert_eq!(state.touched_indices(), &[0]);
+        assert_eq!(ss.word_states[0].matrix_generation, ss.generation());
+        assert_eq!(ss.word_states[0].remaining_and, 2);
+        assert_eq!(ss.word_states[0].satisfied_mask, 0);
+        assert_eq!(ss.touched_indices(), &[0]);
 
-        // Matrix should be 3 segments × 2 variants = 6 cells
-        assert_eq!(state.matrix[0].len(), 6);
-        // Row 0: [1, 1], Row 1: [1, 1], Row 2 (NOT): [0, 0]
-        assert_eq!(&state.matrix[0][..], &[1, 1, 1, 1, 0, 0]);
-        assert_eq!(state.matrix_status[0].len(), 3);
-        assert!(state.matrix_status[0].iter().all(|&s| s == 0));
+        assert_eq!(ss.matrix[0].len(), 6);
+        assert_eq!(&ss.matrix[0][..], &[1, 1, 1, 1, 0, 0]);
+        assert_eq!(ss.matrix_status[0].len(), 3);
+        assert!(ss.matrix_status[0].iter().all(|&s| s == 0));
     }
 }

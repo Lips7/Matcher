@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use crate::process::ProcessType;
 
 use super::SimpleResult;
-use super::state::{ScanContext, SimpleMatchState};
+use super::state::{ScanContext, ScanState, init_matrix};
 
 /// Raw table format accepted by [`SimpleMatcher::new`](super::SimpleMatcher::new).
 ///
@@ -354,45 +354,36 @@ impl RuleSet {
     }
 
     /// Returns whether any touched rule is satisfied in the current generation.
-    ///
-    /// Iterates only over rule indices that were touched (had at least one pattern hit),
-    /// not over the full rule set.
     #[inline(always)]
-    pub(super) fn has_match(&self, state: &SimpleMatchState) -> bool {
-        state
-            .touched_indices()
+    pub(super) fn has_match(&self, ss: &ScanState<'_>) -> bool {
+        ss.touched_indices()
             .iter()
-            .any(|&rule_idx| state.rule_is_satisfied(rule_idx))
+            .any(|&rule_idx| ss.rule_is_satisfied(rule_idx))
     }
 
     /// Pushes one result when `rule_idx` becomes positive for the first time in this generation.
     ///
     /// Used by the all-simple fast path where every hit is immediately a completed rule.
-    /// Deduplication is handled by [`SimpleMatchState::mark_positive`]: if the rule was
-    /// already marked positive in this generation, no result is emitted.
     #[inline(always)]
     pub(super) fn push_result_if_new<'a>(
         &'a self,
         rule_idx: usize,
-        state: &mut SimpleMatchState,
+        ss: &mut ScanState<'_>,
         results: &mut Vec<SimpleResult<'a>>,
     ) {
-        if state.mark_positive_simple(rule_idx) {
+        if ss.mark_positive_simple(rule_idx) {
             self.push_result(rule_idx, results);
         }
     }
 
     /// Appends every satisfied touched rule to `results`.
-    ///
-    /// Called after all variants have been scanned (Pass 2). Only rules whose AND
-    /// segments are all satisfied and whose NOT segments were never triggered are emitted.
     pub(super) fn collect_matches<'a>(
         &'a self,
-        state: &SimpleMatchState,
+        ss: &ScanState<'_>,
         results: &mut Vec<SimpleResult<'a>>,
     ) {
-        for &rule_idx in state.touched_indices() {
-            if state.rule_is_satisfied(rule_idx) {
+        for &rule_idx in ss.touched_indices() {
+            if ss.rule_is_satisfied(rule_idx) {
                 self.push_result(rule_idx, results);
             }
         }
@@ -414,20 +405,17 @@ impl RuleSet {
     ///   per-segment counter is incremented and the veto fires only when the count goes
     ///   positive.
     ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked` / `get_unchecked_mut` on `state.word_states`, `state.matrix`,
-    /// and `state.matrix_status`. `self.hot` is only accessed on the cold init path
-    /// (first touch per rule per generation). All accesses are guarded by preceding
-    /// `debug_assert!` bounds checks.
+    /// Init logic is inlined rather than calling [`ScanState::init_rule`] so that the
+    /// `&mut WordState` reference obtained at the start of each arm survives across the
+    /// init — eliminating a second `word_states` lookup per call.
     #[inline(always)]
     pub(super) fn process_entry(
         &self,
         entry: &PatternEntry,
         ctx: ScanContext,
-        state: &mut SimpleMatchState,
+        ss: &mut ScanState<'_>,
     ) -> bool {
-        let generation = state.generation();
+        let generation = ss.generation;
         let &PatternEntry {
             rule_idx,
             offset,
@@ -442,30 +430,29 @@ impl RuleSet {
             return false;
         }
 
-        debug_assert!(rule_idx < state.word_states.len());
+        debug_assert!(rule_idx < ss.word_states.len());
         debug_assert!(rule_idx < self.hot.len());
 
         match kind {
             PatternKind::Simple => {
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_assert above.
-                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
                 if word_state.positive_generation == generation {
                     return ctx.exit_early;
                 }
                 if word_state.matrix_generation != generation {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = generation;
-                    state.touched_indices.push(rule_idx);
-                    state.resolved_count += 1;
+                    ss.touched_indices.push(rule_idx);
+                    ss.resolved_count += 1;
                     return ctx.exit_early;
                 }
             }
             PatternKind::And => {
                 let offset = offset as usize;
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
 
-                // Skip not_generation read for pure AND rules (no NOT segments).
                 if shape.has_not() && word_state.not_generation == generation {
                     return false;
                 }
@@ -476,19 +463,35 @@ impl RuleSet {
                     return false;
                 }
 
+                // Inline init: disjoint field borrows keep word_state valid across
+                // touched_indices.push() and matrix access.
                 if word_state.matrix_generation != generation {
                     // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                     let rule = unsafe { self.hot.get_unchecked(rule_idx) };
-                    state.init_rule(rule, rule_idx, ctx);
+                    word_state.matrix_generation = generation;
+                    word_state.positive_generation =
+                        if rule.and_count == 0 { generation } else { 0 };
+                    word_state.remaining_and = rule.and_count as u16;
+                    word_state.satisfied_mask = 0;
+                    ss.touched_indices.push(rule_idx);
+                    if rule.use_matrix {
+                        init_matrix(
+                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                            unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
+                            // SAFETY: ditto.
+                            unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
+                            &rule.segment_counts,
+                            ctx.num_variants,
+                        );
+                    }
                 }
 
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                // word_state still valid — no re-load needed.
                 let is_satisfied = if shape.use_matrix() {
-                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
-                    let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
-                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
-                    let flat_status = unsafe { state.matrix_status.get_unchecked_mut(rule_idx) };
+                    // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                    let flat_matrix = unsafe { ss.matrix.get_unchecked_mut(rule_idx) };
+                    // SAFETY: ditto.
+                    let flat_status = unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) };
                     let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                     *counter -= 1;
                     if flat_status[offset] == 0 && *counter <= 0 {
@@ -496,13 +499,13 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
-                            state.resolved_count += 1;
+                            ss.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
                 } else if matches!(shape, RuleShape::SingleAnd | RuleShape::SingleAndNot) {
                     word_state.positive_generation = generation;
-                    state.resolved_count += 1;
+                    ss.resolved_count += 1;
                     true
                 } else {
                     let bit = 1u64 << offset;
@@ -511,7 +514,7 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
-                            state.resolved_count += 1;
+                            ss.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
@@ -528,25 +531,40 @@ impl RuleSet {
             PatternKind::Not => {
                 let offset = offset as usize;
                 // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
                     return false;
                 }
 
+                // Inline init (same rationale as AND path).
                 if word_state.matrix_generation != generation {
                     // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                     let rule = unsafe { self.hot.get_unchecked(rule_idx) };
-                    state.init_rule(rule, rule_idx, ctx);
+                    word_state.matrix_generation = generation;
+                    word_state.positive_generation =
+                        if rule.and_count == 0 { generation } else { 0 };
+                    word_state.remaining_and = rule.and_count as u16;
+                    word_state.satisfied_mask = 0;
+                    ss.touched_indices.push(rule_idx);
+                    if rule.use_matrix {
+                        init_matrix(
+                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                            unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
+                            // SAFETY: ditto.
+                            unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
+                            &rule.segment_counts,
+                            ctx.num_variants,
+                        );
+                    }
                 }
 
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                let word_state = unsafe { state.word_states.get_unchecked_mut(rule_idx) };
+                // word_state still valid — no re-load needed.
                 if shape.use_matrix() {
-                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
-                    let flat_matrix = unsafe { state.matrix.get_unchecked_mut(rule_idx) };
-                    // SAFETY: `rule_idx` is in bounds — matrix/status vecs are sized to match rules.
-                    let flat_status = unsafe { state.matrix_status.get_unchecked_mut(rule_idx) };
+                    // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                    let flat_matrix = unsafe { ss.matrix.get_unchecked_mut(rule_idx) };
+                    // SAFETY: ditto.
+                    let flat_status = unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) };
                     let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                     *counter += 1;
                     if flat_status[offset] == 0 && *counter > 0 {
@@ -824,11 +842,14 @@ mod tests {
 
     // --- process_entry tests ---
 
+    use super::super::state::SimpleMatchState;
+
     #[test]
     fn test_process_entry_simple_kind() {
         let rules = make_simple_ruleset(1, "hello");
         let mut state = SimpleMatchState::new();
         state.prepare(1);
+        let mut ss = state.as_scan_state();
 
         let entry = PatternEntry {
             rule_idx: 0,
@@ -838,12 +859,11 @@ mod tests {
             shape: RuleShape::SingleAnd,
         };
 
-        let result = rules.process_entry(&entry, make_ctx(true), &mut state);
+        let result = rules.process_entry(&entry, make_ctx(true), &mut ss);
         assert!(result, "Simple entry with exit_early should return true");
-        assert!(state.rule_is_satisfied(0));
+        assert!(ss.rule_is_satisfied(0));
 
-        // Idempotent on repeat
-        let result2 = rules.process_entry(&entry, make_ctx(true), &mut state);
+        let result2 = rules.process_entry(&entry, make_ctx(true), &mut ss);
         assert!(
             result2,
             "already-satisfied Simple should still return exit_early"
@@ -852,7 +872,6 @@ mod tests {
 
     #[test]
     fn test_process_entry_and_bitmask() {
-        // 3-segment AND rule: a&b&c
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![1, 1, 1],
@@ -867,9 +886,9 @@ mod tests {
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);
+        let mut ss = state.as_scan_state();
         let ctx = make_ctx(true);
 
-        // Process segment 0
         let e0 = PatternEntry {
             rule_idx: 0,
             offset: 0,
@@ -877,23 +896,20 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::Bitmask,
         };
-        assert!(!rules.process_entry(&e0, ctx, &mut state));
-        assert!(!state.rule_is_satisfied(0));
+        assert!(!rules.process_entry(&e0, ctx, &mut ss));
+        assert!(!ss.rule_is_satisfied(0));
 
-        // Process segment 1
         let e1 = PatternEntry { offset: 1, ..e0 };
-        assert!(!rules.process_entry(&e1, ctx, &mut state));
-        assert!(!state.rule_is_satisfied(0));
+        assert!(!rules.process_entry(&e1, ctx, &mut ss));
+        assert!(!ss.rule_is_satisfied(0));
 
-        // Process segment 2 — now satisfied
         let e2 = PatternEntry { offset: 2, ..e0 };
-        assert!(rules.process_entry(&e2, ctx, &mut state));
-        assert!(state.rule_is_satisfied(0));
+        assert!(rules.process_entry(&e2, ctx, &mut ss));
+        assert!(ss.rule_is_satisfied(0));
     }
 
     #[test]
     fn test_process_entry_not_veto() {
-        // Rule: a~b (1 AND, 1 NOT)
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![1, 0],
@@ -908,9 +924,9 @@ mod tests {
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);
+        let mut ss = state.as_scan_state();
         let ctx = make_ctx(false);
 
-        // Satisfy the AND segment
         let and_entry = PatternEntry {
             rule_idx: 0,
             offset: 0,
@@ -918,10 +934,9 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::SingleAndNot,
         };
-        rules.process_entry(&and_entry, ctx, &mut state);
-        assert!(state.rule_is_satisfied(0));
+        rules.process_entry(&and_entry, ctx, &mut ss);
+        assert!(ss.rule_is_satisfied(0));
 
-        // NOT segment vetoes
         let not_entry = PatternEntry {
             rule_idx: 0,
             offset: 1,
@@ -929,13 +944,12 @@ mod tests {
             kind: PatternKind::Not,
             shape: RuleShape::SingleAndNot,
         };
-        rules.process_entry(&not_entry, ctx, &mut state);
-        assert!(!state.rule_is_satisfied(0), "NOT should veto the rule");
+        rules.process_entry(&not_entry, ctx, &mut ss);
+        assert!(!ss.rule_is_satisfied(0), "NOT should veto the rule");
     }
 
     #[test]
     fn test_process_entry_matrix_counters() {
-        // Matrix rule: repeated AND segment that needs 2 hits
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![2, 1],
@@ -950,6 +964,7 @@ mod tests {
         );
         let mut state = SimpleMatchState::new();
         state.prepare(1);
+        let mut ss = state.as_scan_state();
         let ctx = make_ctx(true);
 
         let seg0 = PatternEntry {
@@ -967,17 +982,14 @@ mod tests {
             shape: RuleShape::Matrix,
         };
 
-        // First hit on seg0 (needs 2): counter goes 2→1, not satisfied
-        assert!(!rules.process_entry(&seg0, ctx, &mut state));
-        assert!(!state.rule_is_satisfied(0));
+        assert!(!rules.process_entry(&seg0, ctx, &mut ss));
+        assert!(!ss.rule_is_satisfied(0));
 
-        // Hit seg1 (needs 1): counter goes 1→0, seg1 done but seg0 still pending
-        assert!(!rules.process_entry(&seg1, ctx, &mut state));
-        assert!(!state.rule_is_satisfied(0));
+        assert!(!rules.process_entry(&seg1, ctx, &mut ss));
+        assert!(!ss.rule_is_satisfied(0));
 
-        // Second hit on seg0: counter goes 1→0, all segments done
-        assert!(rules.process_entry(&seg0, ctx, &mut state));
-        assert!(state.rule_is_satisfied(0));
+        assert!(rules.process_entry(&seg0, ctx, &mut ss));
+        assert!(ss.rule_is_satisfied(0));
     }
 
     #[test]
@@ -985,27 +997,24 @@ mod tests {
         let rules = make_simple_ruleset(1, "hello");
         let mut state = SimpleMatchState::new();
         state.prepare(1);
+        let mut ss = state.as_scan_state();
 
         let entry = PatternEntry {
             rule_idx: 0,
             offset: 0,
-            pt_index: 3, // bit 3
+            pt_index: 3,
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
         };
 
-        // Mask does NOT include bit 3
         let ctx = ScanContext {
             text_index: 0,
-            process_type_mask: 0b0101, // bits 0 and 2 only
+            process_type_mask: 0b0101,
             num_variants: 1,
             exit_early: true,
             is_ascii: true,
         };
-        assert!(!rules.process_entry(&entry, ctx, &mut state));
-        assert!(
-            !state.rule_is_satisfied(0),
-            "entry should be filtered by mask"
-        );
+        assert!(!rules.process_entry(&entry, ctx, &mut ss));
+        assert!(!ss.rule_is_satisfied(0), "entry should be filtered by mask");
     }
 }

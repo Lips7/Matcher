@@ -41,7 +41,7 @@ use crate::process::string_pool::return_string_to_pool;
 use super::rule::{
     DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT, DIRECT_RULE_MASK, PatternDispatch,
 };
-use super::state::{SIMPLE_MATCH_STATE, ScanContext, SimpleMatchState};
+use super::state::{SIMPLE_MATCH_STATE, ScanContext, ScanState};
 use super::{SimpleMatcher, SimpleResult};
 
 /// Hot-path search helpers layered on top of the compiled scan engines.
@@ -72,29 +72,21 @@ impl SimpleMatcher {
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
+        let mut ss = state.as_scan_state();
 
         let is_ascii = self.scan.all_patterns_ascii() || text.is_ascii();
         self.scan
             .for_each_rule_idx_simple(text, is_ascii, |rule_idx| {
-                self.rules.push_result_if_new(rule_idx, state, results);
+                self.rules.push_result_if_new(rule_idx, &mut ss, results);
             });
     }
 
     /// Scans one processed text variant and forwards each raw hit into rule evaluation.
-    ///
-    /// Delegates to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
-    /// with [`process_match`](Self::process_match) as the callback. Returns `true` if
-    /// the callback triggered early exit.
     #[inline(always)]
-    fn scan_variant(
-        &self,
-        processed_text: &str,
-        ctx: ScanContext,
-        state: &mut SimpleMatchState,
-    ) -> bool {
+    fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         self.scan
             .for_each_match_value(processed_text, ctx.is_ascii, |raw_value| {
-                self.process_match(raw_value, ctx, state)
+                self.process_match(raw_value, ctx, ss)
             })
     }
 
@@ -104,31 +96,24 @@ impl SimpleMatcher {
     /// immediately, returns `exit_early`). Falls through to
     /// [`PatternIndex::dispatch_indirect`](super::rule::PatternIndex::dispatch_indirect)
     /// for non-direct values (`SingleEntry` / `Entries`).
-    ///
-    /// Returns `true` when the caller should stop scanning (early exit satisfied).
     #[inline(always)]
-    fn process_match(
-        &self,
-        raw_value: u32,
-        ctx: ScanContext,
-        state: &mut SimpleMatchState,
-    ) -> bool {
+    fn process_match(&self, raw_value: u32, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         if raw_value & DIRECT_RULE_BIT != 0 {
             let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
             if ctx.process_type_mask & (1u64 << pt_index) == 0 {
                 return false;
             }
             let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
-            if state.mark_positive(rule_idx) {
-                state.resolved_count += 1;
+            if ss.mark_positive(rule_idx) {
+                ss.resolved_count += 1;
             }
             return ctx.exit_early;
         }
         match self.scan.patterns().dispatch_indirect(raw_value) {
-            PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, state),
+            PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, ss),
             PatternDispatch::Entries(entries) => {
                 for entry in entries {
-                    if self.rules.process_entry(entry, ctx, state) {
+                    if self.rules.process_entry(entry, ctx, ss) {
                         return true;
                     }
                 }
@@ -170,6 +155,7 @@ impl SimpleMatcher {
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
+        let mut ss = state.as_scan_state();
 
         if self.scan.patterns().is_empty() {
             return false;
@@ -186,25 +172,22 @@ impl SimpleMatcher {
                 exit_early,
                 is_ascii: root_is_ascii,
             };
-            if self.scan_variant(text, ctx, state) {
+            if self.scan_variant(text, ctx, &mut ss) {
                 return true;
             }
-            if !exit_early
-                && !self.rules.has_not_rules()
-                && state.resolved_count >= self.rules.len()
-            {
+            if !exit_early && !self.rules.has_not_rules() && ss.resolved_count >= self.rules.len() {
                 if let Some(results) = results {
-                    self.rules.collect_matches(state, results);
+                    self.rules.collect_matches(&ss, results);
                 }
-                return self.rules.has_match(state);
+                return self.rules.has_match(&ss);
             }
         }
 
         if tree[0].children.is_empty() {
             if let Some(results) = results {
-                self.rules.collect_matches(state, results);
+                self.rules.collect_matches(&ss, results);
             }
-            return self.rules.has_match(state);
+            return self.rules.has_match(&ss);
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
@@ -245,8 +228,6 @@ impl SimpleMatcher {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
-                        // Try to produce a changed variant; skip apply() entirely
-                        // when the step is a known no-op on ASCII input.
                         let changed = if !is_noop {
                             let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
                             output.changed.map(|s| (s, output.is_ascii))
@@ -264,7 +245,7 @@ impl SimpleMatcher {
                                 exit_early,
                                 is_ascii,
                             };
-                            let result = self.scan_variant(&s, ctx, state);
+                            let result = self.scan_variant(&s, ctx, &mut ss);
                             return_string_to_pool(s);
                             result
                         } else {
@@ -275,7 +256,7 @@ impl SimpleMatcher {
                                 exit_early,
                                 is_ascii: parent_ascii,
                             };
-                            self.scan_variant(texts[parent_aidx].as_ref(), ctx, state)
+                            self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
                         };
 
                         if stopped {
@@ -283,7 +264,7 @@ impl SimpleMatcher {
                         }
                         if !exit_early
                             && !self.rules.has_not_rules()
-                            && state.resolved_count >= self.rules.len()
+                            && ss.resolved_count >= self.rules.len()
                         {
                             break 'walk;
                         }
@@ -314,13 +295,13 @@ impl SimpleMatcher {
                             exit_early,
                             is_ascii: ascii_flags[child_aidx],
                         };
-                        stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, state);
+                        stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
                         if stopped {
                             break 'walk;
                         }
                         if !exit_early
                             && !self.rules.has_not_rules()
-                            && state.resolved_count >= self.rules.len()
+                            && ss.resolved_count >= self.rules.len()
                         {
                             break 'walk;
                         }
@@ -341,8 +322,8 @@ impl SimpleMatcher {
         }
 
         if let Some(results) = results {
-            self.rules.collect_matches(state, results);
+            self.rules.collect_matches(&ss, results);
         }
-        self.rules.has_match(state)
+        self.rules.has_match(&ss)
     }
 }
