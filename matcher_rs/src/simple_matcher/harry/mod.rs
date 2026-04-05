@@ -60,17 +60,14 @@ struct PrefixGroup {
     long_literals: Vec<BucketLiteral>,
 }
 
-/// Sorted prefix-key → `PrefixGroup` map for one prefix length within a bucket.
+/// Hash-table prefix-key → `PrefixGroup` map for one prefix length within a bucket.
 ///
-/// Keys and values are stored in parallel arrays: binary search runs over the
-/// compact `keys` slice (contiguous `u64`s — 16 KB for 2000 entries, fits L1 cache),
-/// then indexes into `values` only on a hit. This avoids both hash computation
-/// (the `u64` key IS the raw prefix bytes) and the cache pollution of interleaving
-/// large `PrefixGroup` structs with small `u64` keys.
+/// Uses `AHashMap` for O(1) average lookup. AHash on `u64` keys compiles to a
+/// single multiply + shift (~3 cycles), vs O(log n) binary search with ~10
+/// unpredictable comparisons on typical bucket sizes of ~750 entries.
 #[derive(Clone, Default)]
 struct PrefixMap {
-    keys: Box<[u64]>,
-    values: Box<[PrefixGroup]>,
+    map: ahash::AHashMap<u64, PrefixGroup>,
 }
 
 impl BucketLiteral {
@@ -94,31 +91,19 @@ impl PrefixGroup {
 impl PrefixMap {
     /// Builds from an unsorted iterator of `(key, group)` pairs.
     fn from_unsorted(iter: impl Iterator<Item = (u64, PrefixGroup)>) -> Self {
-        let mut pairs: Vec<(u64, PrefixGroup)> = iter.collect();
-        if pairs.is_empty() {
-            return Self::default();
-        }
-        pairs.sort_unstable_by_key(|(k, _)| *k);
-        let (keys, values): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
-        Self {
-            keys: keys.into_boxed_slice(),
-            values: values.into_boxed_slice(),
-        }
+        let map: ahash::AHashMap<u64, PrefixGroup> = iter.collect();
+        Self { map }
     }
 
     fn heap_bytes(&self) -> usize {
-        self.keys.len() * size_of::<u64>()
-            + self.values.len() * size_of::<PrefixGroup>()
-            + self.values.iter().map(|g| g.heap_bytes()).sum::<usize>()
+        self.map.capacity() * (size_of::<u64>() + size_of::<PrefixGroup>())
+            + self.map.values().map(|g| g.heap_bytes()).sum::<usize>()
     }
 
-    /// Looks up a prefix group by key via binary search on the keys array.
+    /// Looks up a prefix group by key via hash table (O(1) average).
     #[inline(always)]
     fn get(&self, key: u64) -> Option<&PrefixGroup> {
-        self.keys
-            .binary_search(&key)
-            .ok()
-            .map(|idx| &self.values[idx])
+        self.map.get(&key)
     }
 }
 
