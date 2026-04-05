@@ -127,7 +127,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `StepOutput`, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
-- `transform/replace.rs` — `FanjianMatcher`, `PinyinMatcher` (page-table + SIMD skip), `NormalizeMatcher` (Aho-Corasick)
+- `transform/replace.rs` — `FanjianMatcher`, `PinyinMatcher`, `NormalizeMatcher` (all page-table + SIMD skip), `NormalizeFilterIterator` (streaming fusion)
 - `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip)
 - `transform/utf8.rs` — Shared `decode_utf8_raw` unsafe helper (used by `replace.rs` and `delete.rs`)
 - `transform/simd.rs` — `portable_simd` helpers: `skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`

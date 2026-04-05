@@ -124,10 +124,10 @@ Each single-bit `ProcessType` maps to a low-level engine in `process/transform/`
 | `Fanjian` | `FanjianMatcher` | `replace.rs` | 2-stage page table. L1: `Box<[u16]>` (one per 256-codepoint block). L2: dense `Box<[u32]>` pages. A zero L1 entry means the entire block has no mapping. | O(1) per codepoint |
 | `PinYin` / `PinYinChar` | `PinyinMatcher` | `replace.rs` | Same 2-stage page table, but L2 values pack `(offset << 8 \| length)` into a concatenated UTF-8 string buffer (`Cow<'static, str>`). `PinYinChar` trims leading/trailing spaces from each packed entry at construction time via `trim_pinyin_packed`. The current generated table has no ASCII keys, so ASCII input is a guaranteed no-op. | O(1) per codepoint |
 | `Delete` | `DeleteMatcher` | `delete.rs` | ~139 KB flat BitSet covering U+0000 to U+10FFFF (`Cow<'static, [u8]>`). A 16-byte `ascii_lut` copy of the first 128 bits is kept inline for cache-hot ASCII checks. Uses a two-phase delete scan (seek + copy-skip) with SIMD bulk-skip of non-deletable ASCII. | O(1) per codepoint, branchless |
-| `Normalize` | `NormalizeMatcher` | `replace.rs` | `AhoCorasick` DFA (leftmost-longest, via `aho-corasick` crate). Paired with a `replace_list: Vec<&'static str>` so pattern index `i` maps directly to its replacement. A `NormalizeFindAdapter` wraps `aho_corasick::FindIter` for use with `SliceReplacingByteIter`. | O(N) per text |
+| `Normalize` | `NormalizeMatcher` | `replace.rs` | Same 2-stage page table as Pinyin (`l1`/`l2` + concatenated string buffer). All 8,633 normalize keys are single Unicode codepoints (verified at build time). L2 values pack `(offset << 8 \| length)` into the string buffer. ASCII A-Z keys are checked inline; non-ASCII codepoints probe the page table via `decode_utf8_raw`. Also provides `NormalizeFilterIterator` for fused normalize-scan streaming. | O(1) per codepoint |
 | `None` | `TransformStep::None` | `step.rs` | No-op step that preserves the input variant. | - |
 
-The page-table lookup for Fanjian and Pinyin (shared `page_table_lookup` function in `replace.rs`):
+The page-table lookup for Fanjian, Pinyin, and Normalize (shared `page_table_lookup` function in `replace.rs`):
 ```
 page = l1[cp >> 8]       // which 256-codepoint block?
 if page == 0 → no mapping
@@ -195,7 +195,7 @@ ASCII fast-path: when `parent_is_ascii` is `true`, steps that can't modify ASCII
 `step.rs` holds both `TransformStep` / `StepOutput` and the lazy registry `TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8]` — one slot per bit position in the `u8` bitflags. `get_transform_step(process_type_bit)` uses `trailing_zeros()` as the array index, and initializes the slot on first access via `build_transform_step`.
 
 Two build paths are feature-gated:
-- **Default (not `runtime_build`)**: Deserializes or builds from build-time artifacts (`include_bytes!`/`include_str!` constants in `transform/constants.rs`). Page tables are decoded via `decode_u16_table`/`decode_u32_table`. The Normalize step always compiles an `aho-corasick` DFA from pattern strings.
+- **Default (not `runtime_build`)**: Deserializes from build-time artifacts (`include_bytes!`/`include_str!` constants in `transform/constants.rs`). Page tables are decoded via `decode_u16_table`/`decode_u32_table` (Fanjian, Pinyin, Normalize).
 - **`runtime_build`**: Parses the raw source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) from `process_map/` at process startup.
 
 All `SimpleMatcher` instances share the same compiled steps, so the heavy initialization cost is paid at most once per step per process.
@@ -495,13 +495,16 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 
 For the AC DFA bytewise engine, `is_match` delegates to `AhoCorasick::is_match` which integrates prefilter acceleration (Teddy/memchr) when effective. `for_each_match_value` and `for_each_rule_idx_simple` iterate `AhoCorasick::find_overlapping_iter`, mapping each `Match::pattern()` index through the `to_value` array to recover the raw `u32` scan value.
 
-#### Fused Delete-Scan
+#### Fused Transform-Scan (Delete and Normalize)
 
-For leaf Delete nodes in the process-type trie, `walk_and_scan` can bypass string materialization entirely by streaming non-deleted bytes directly into the AC automaton. `daachorse` exposes `find_overlapping_iter_from_iter<P: Iterator<Item = u8>>` on both bytewise and charwise engines. `DeleteFilterIterator` wraps the original text and yields only non-deleted bytes (deciding keep/skip at the codepoint level via the delete bitset, then yielding individual bytes of kept characters).
+For leaf Delete or Normalize nodes in the process-type trie, `walk_and_scan` can bypass string materialization entirely by streaming transformed bytes directly into the AC automaton. `daachorse` exposes `find_overlapping_iter_from_iter<P: Iterator<Item = u8>>` on both bytewise and charwise engines.
+
+- **Delete**: `DeleteFilterIterator` yields only non-deleted bytes (deciding keep/skip at the codepoint level via the delete bitset, then yielding individual bytes of kept characters).
+- **Normalize**: `NormalizeFilterIterator` yields normalized bytes — unmapped codepoints pass through verbatim, mapped codepoints emit their replacement string's bytes from the page-table string buffer.
 
 This eliminates both the intermediate `String` allocation and the second traversal of the text. The fused path is selected when the daachorse engine would be used (charwise for non-ASCII text, bytewise for >25K ASCII patterns). It is NOT used when the `aho-corasick` DFA engine is selected — DFA has no streaming API, and DFA+materialization is faster than daachorse+streaming anyway (~1.7× DFA throughput advantage). The `ScanPlan::can_stream(is_ascii)` guard prevents unnecessary work on the DFA path.
 
-Measured impact: +12.6% throughput on CJK delete+scan workloads; neutral on ASCII/DFA paths.
+Measured impact (Delete): +12.6% throughput on CJK delete+scan workloads; neutral on ASCII/DFA paths.
 
 ### Pass 2: Logical Evaluation
 
@@ -684,7 +687,7 @@ The crate replaces the system allocator with `mimalloc` (v3) globally for improv
 | Flag | Default | Effect |
 |------|---------|--------|
 | `perf` | on | Meta-feature enabling all performance optimizations: `dfa`, `simd_runtime_dispatch`, and `harry`. This is the default feature. |
-| `dfa` | on (via `perf`) | Enables `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and pattern count ≤ `AC_DFA_PATTERN_THRESHOLD` (25,000). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput up to the cache boundary. Note: `NormalizeMatcher` always uses `aho-corasick` DFA regardless of this flag. |
+| `dfa` | on (via `perf`) | Enables `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and pattern count ≤ `AC_DFA_PATTERN_THRESHOLD` (25,000). Other scan paths use `daachorse`. ~10x more memory than DAAC equivalents, but higher throughput up to the cache boundary. |
 | `simd_runtime_dispatch` | on (via `perf`) | Dynamically selects the best SIMD instruction set at runtime for transformation skip functions (AVX2 on x86-64 via `SimdDispatch` + `OnceLock`, NEON on aarch64 at compile time, portable `std::simd` fallback). Also enables the NEON and AVX512-VBMI kernels in the Harry backend. Without this flag, only the portable/scalar paths are compiled. |
 | `harry` | on (via `perf`) | Enables the Harry column-vector SIMD scan backend. When present, `ScanPlan::is_match` dispatches to Harry for large pure-ASCII pattern sets (≥ 64 patterns) on non-ASCII haystacks or when no DFA exists. See [Harry Column-Vector SIMD Backend](#harry-column-vector-simd-backend). |
 | `runtime_build` | off | Builds transformation tables at runtime from source text files in `process_map/` instead of loading precompiled binary artifacts from `build.rs`. Slower initialization but allows custom or updated transformation data without recompiling the library. |
@@ -693,6 +696,6 @@ The crate replaces the system allocator with `mimalloc` (v3) globally for improv
 
 ## Compiled vs. Runtime Transformation Tables
 
-**Static (default):** `build.rs` pre-compiles all transformation tables into binary artifacts embedded in the library via `include_bytes!` / `include_str!`. At runtime, they are decoded lazily on first access by the step registry: `decode_u16_table` / `decode_u32_table` for page tables, compilation from pattern strings for the Normalize `aho-corasick` DFA. Zero startup cost beyond the first-use initialization.
+**Static (default):** `build.rs` pre-compiles all transformation tables into binary artifacts embedded in the library via `include_bytes!` / `include_str!`. At runtime, they are decoded lazily on first access by the step registry: `decode_u16_table` / `decode_u32_table` for page tables (Fanjian, Pinyin, and Normalize). Zero startup cost beyond the first-use initialization.
 
 **Runtime (`runtime_build` feature):** Tables are parsed from the raw source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) in `process_map/` at process startup. The `build_2_stage_table` helper in `replace.rs` converts sparse codepoint maps into the two-stage page-table layout. Slower initialization but allows dynamic rules or updated Unicode data without recompiling.

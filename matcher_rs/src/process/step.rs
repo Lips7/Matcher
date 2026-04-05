@@ -91,6 +91,15 @@ impl TransformStep {
         }
     }
 
+    /// Returns the inner `NormalizeMatcher` if this step is a Normalize transform.
+    #[inline(always)]
+    pub(crate) fn as_normalize(&self) -> Option<&NormalizeMatcher> {
+        match self {
+            Self::Normalize(m) => Some(m),
+            _ => None,
+        }
+    }
+
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
     /// Used by `walk_and_scan` to detect the no-op case for leaf nodes: when `true`,
@@ -321,10 +330,11 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             TransformStep::Fanjian(FanjianMatcher::new(FANJIAN_L1_BYTES, FANJIAN_L2_BYTES))
         }
         ProcessType::Delete => TransformStep::Delete(DeleteMatcher::new(DELETE_BITSET_BYTES)),
-        ProcessType::Normalize => TransformStep::Normalize(
-            NormalizeMatcher::new(NORMALIZE_PROCESS_LIST_STR.lines())
-                .with_replacements(NORMALIZE_PROCESS_REPLACE_LIST_STR.lines().collect()),
-        ),
+        ProcessType::Normalize => TransformStep::Normalize(NormalizeMatcher::new(
+            NORMALIZE_L1_BYTES,
+            NORMALIZE_L2_BYTES,
+            NORMALIZE_STR_BYTES,
+        )),
         ProcessType::PinYin => TransformStep::PinYin(PinyinMatcher::new(
             PINYIN_L1_BYTES,
             PINYIN_L2_BYTES,

@@ -11,9 +11,11 @@ use std::collections::{HashMap, HashSet};
 /// are generated.
 ///
 /// ### Binary Generation Strategy:
-/// 1. **Normalize (Complex Rules)**:
-///    Rules in `NORM.txt` and `NUM-NORM.txt` are compiled into sorted pattern/replacement
-///    text files. The aho_corasick DFA is built lazily from them on first use.
+/// 1. **Normalize (Single-Codepoint Replacements)**:
+///    All entries in `NORM.txt` and `NUM-NORM.txt` are single-codepoint keys mapped to
+///    replacement strings. Compiled into a **2-Stage Page Table** (same layout as Pinyin):
+///    - `L1`/`L2`: page-table mapping codepoints to packed `(offset << 8) | length`.
+///    - A **Concatenated String Buffer**: stores all replacement strings as a single UTF-8 block.
 ///
 /// 2. **Fanjian (Traditional to Simplified Chinese)**:
 ///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
@@ -52,30 +54,39 @@ fn main() -> Result<()> {
 
         let out_dir = env::var("OUT_DIR").unwrap();
 
-        // 1. Build Normalize pattern/replacement text files
-        let mut normalize_map = HashMap::new();
+        // 1. Build Normalize 2-stage page table & string buffer
+        //    All normalize keys are single codepoints → page-table is O(1) per lookup.
+        let mut normalize_cp_map = HashMap::new();
+        let mut normalize_str_buffer = String::new();
+
         for process_map in [NORM, NUM_NORM] {
-            normalize_map.extend(process_map.trim().lines().map(|pair_str| {
+            for pair_str in process_map.trim().lines() {
                 let mut split = pair_str.split('\t');
-                (
-                    split.next().expect("missing key in normalization source"),
-                    split.next().expect("missing value in normalization source"),
-                )
-            }));
+                let key = split.next().expect("missing key in normalization source");
+                let value = split.next().expect("missing value in normalization source");
+                if key == value {
+                    continue;
+                }
+                assert!(
+                    key.chars().count() == 1,
+                    "Normalize key must be exactly one codepoint: {key:?}"
+                );
+                let cp = key.chars().next().unwrap() as u32;
+                let offset = normalize_str_buffer.len();
+                normalize_str_buffer.push_str(value);
+                let length = value.len();
+                assert!(
+                    length < 256,
+                    "normalize replacement length {length} exceeds 8-bit packing limit for key U+{cp:04X}"
+                );
+                let packed = ((offset as u32) << 8) | (length as u32);
+                normalize_cp_map.insert(cp, packed);
+            }
         }
-        normalize_map.retain(|&key, &mut value| key != value);
 
-        let mut normalize_pairs: Vec<(&str, &str)> = normalize_map.into_iter().collect();
-        normalize_pairs.sort_unstable_by_key(|&(k, _)| k);
-        let normalize_patterns: Vec<&str> = normalize_pairs.iter().map(|&(k, _)| k).collect();
-        let normalize_replacements: Vec<&str> = normalize_pairs.iter().map(|&(_, v)| v).collect();
-
-        let mut pattern_file = File::create(format!("{out_dir}/normalize_process_list.bin"))?;
-        pattern_file.write_all(normalize_patterns.join("\n").as_bytes())?;
-
-        let mut replacement_file =
-            File::create(format!("{out_dir}/normalize_process_replace_list.bin"))?;
-        replacement_file.write_all(normalize_replacements.join("\n").as_bytes())?;
+        File::create(format!("{out_dir}/normalize_str.bin"))?
+            .write_all(normalize_str_buffer.as_bytes())?;
+        build_2_stage_table(&normalize_cp_map, &format!("{out_dir}/normalize"))?;
 
         // 2. Build Fanjian 2-stage flat array
         let mut fanjian_map = HashMap::new();

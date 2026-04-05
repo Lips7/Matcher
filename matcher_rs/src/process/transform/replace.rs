@@ -21,21 +21,18 @@
 //! fast-forward over ASCII bytes that cannot produce hits, falling through to
 //! the page-table probe only for multi-byte (non-ASCII) codepoints.
 //!
-//! ## Normalize — Aho-Corasick engine
+//! ## Normalize — page-table engine
 //!
-//! [`NormalizeMatcher`] performs multi-character replacement (full-width to
-//! half-width, variant forms, number normalization, etc.) using leftmost-longest
-//! Aho-Corasick matching. The automaton scans the text once, finds all
-//! non-overlapping matches, and rebuilds the output by interleaving unchanged
-//! spans with replacements from a parallel lookup table.
+//! [`NormalizeMatcher`] performs single-codepoint normalization replacement
+//! (full-width to half-width, variant forms, number normalization, casefold,
+//! etc.) using the same two-stage page table as Pinyin. All normalize keys
+//! are single Unicode codepoints (verified at build time), so each lookup is
+//! O(1). The iterator checks ASCII A-Z inline (the only ASCII keys) and
+//! probes the page table for non-ASCII codepoints.
 
 #[cfg(feature = "runtime_build")]
 use ahash::{AHashMap, AHashSet};
 use std::borrow::Cow;
-
-use aho_corasick::{
-    AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
-};
 
 use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::skip_ascii_simd;
@@ -516,96 +513,285 @@ impl PinyinMatcher {
 }
 
 // ---------------------------------------------------------------------------
-// Normalize (Aho-Corasick multi-character replacement)
+// Normalize (page-table single-codepoint replacement)
 // ---------------------------------------------------------------------------
 
-/// Multi-character normalization matcher plus its parallel replacement table.
+/// Iterator over codepoints that have normalization replacements.
 ///
-/// The matcher holds a compiled [`AhoCorasick`] DFA and a `replace_list` where
-/// index `i` is the replacement string for the `i`-th pattern in the automaton.
-/// Pattern order is established at construction time and must be consistent
-/// between the automaton and the replacement list.
+/// Similar to [`PinyinFindIter`] but cannot use [`skip_ascii_simd`] because
+/// normalize has 26 ASCII keys (A-Z → a-z casefold). ASCII bytes are checked
+/// inline: A-Z probes the page table, other ASCII bytes are skipped one at a
+/// time. Non-ASCII codepoints are decoded and probed as usual.
+struct NormalizeFindIter<'a> {
+    l1: &'a [u16],
+    l2: &'a [u32],
+    strings: &'a str,
+    text: &'a str,
+    byte_offset: usize,
+}
+
+impl<'a> Iterator for NormalizeFindIter<'a> {
+    type Item = (usize, usize, &'a str);
+
+    /// Advances to the next codepoint that has a normalization replacement.
+    ///
+    /// # Safety (internal)
+    ///
+    /// - [`decode_utf8_raw`] is called only when the current byte is non-ASCII
+    ///   (`>= 0x80`), guaranteeing a valid UTF-8 lead byte.
+    /// - The `offset + str_len <= self.strings.len()` bounds check ensures the
+    ///   slice into the string buffer is in range.
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+        let len = bytes.len();
+
+        loop {
+            if self.byte_offset >= len {
+                return None;
+            }
+
+            let b = bytes[self.byte_offset];
+            if b < 0x80 {
+                // ASCII: check A-Z inline (the only ASCII normalize keys).
+                // Cannot use skip_ascii_simd here because it would overshoot
+                // past A-Z bytes that need normalization.
+                let start = self.byte_offset;
+                self.byte_offset += 1;
+                if b.is_ascii_uppercase()
+                    && let Some(value) = page_table_lookup(b as u32, self.l1, self.l2)
+                {
+                    let offset = (value >> 8) as usize;
+                    let str_len = (value & 0xFF) as usize;
+                    if offset + str_len <= self.strings.len() {
+                        return Some((start, start + 1, &self.strings[offset..offset + str_len]));
+                    }
+                }
+                continue;
+            }
+
+            // Non-ASCII codepoint: decode and probe page table.
+            let start = self.byte_offset;
+            // SAFETY: `b >= 0x80` in a valid UTF-8 `&str` means this is a multi-byte lead byte.
+            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
+            self.byte_offset += char_len;
+
+            if let Some(value) = page_table_lookup(cp, self.l1, self.l2) {
+                let offset = (value >> 8) as usize;
+                let str_len = (value & 0xFF) as usize;
+                if offset + str_len <= self.strings.len() {
+                    return Some((
+                        start,
+                        self.byte_offset,
+                        &self.strings[offset..offset + str_len],
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Two-stage page-table matcher for Unicode normalization replacement.
+///
+/// Uses the same two-stage page table as [`PinyinMatcher`], where each non-zero
+/// L2 entry encodes `(byte_offset << 8) | byte_length` into a shared string
+/// buffer (`strings`) containing all replacement strings concatenated.
+///
+/// All normalize keys are single Unicode codepoints (verified at build time),
+/// making the page-table O(1) per codepoint — significantly faster than the
+/// previous Aho-Corasick DFA approach.
+///
+/// Two construction modes:
+/// - **Default**: decodes build-time binary page-table artifacts.
+/// - **`runtime_build`**: builds tables from a `HashMap<&str, &str>`.
 #[derive(Clone)]
 pub(crate) struct NormalizeMatcher {
-    engine: AhoCorasick,
-    /// Replacement strings parallel to the automaton's pattern indices.
-    /// `replace_list[match.pattern_index]` is the output for a given match.
-    replace_list: Vec<&'static str>,
+    l1: Box<[u16]>,
+    l2: Box<[u32]>,
+    strings: Cow<'static, str>,
 }
 
 impl NormalizeMatcher {
-    /// Creates a find iterator over all leftmost-longest matches in `text`.
+    /// Returns an iterator over all codepoints in `text` that have normalization output.
     #[inline(always)]
-    fn find_iter<'a>(&'a self, text: &'a str) -> aho_corasick::FindIter<'a, 'a> {
-        self.engine.find_iter(text)
-    }
-
-    /// Replaces every normalization match in `text`.
-    ///
-    /// Scans `text` with the Aho-Corasick automaton in leftmost-longest mode.
-    /// For each match, copies the unchanged text since the last match, then
-    /// appends the replacement string from `replace_list[pattern_index]`.
-    ///
-    /// Returns `None` when no pattern matched, so callers can preserve
-    /// borrowed input without allocation. The `bool` indicates whether the
-    /// output is pure ASCII.
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        let replace_list = &self.replace_list;
-        replace_spans_tracking_ascii(
+    fn iter<'a>(&'a self, text: &'a str) -> NormalizeFindIter<'a> {
+        NormalizeFindIter {
+            l1: &self.l1,
+            l2: &self.l2,
+            strings: self.strings.as_ref(),
             text,
-            self.find_iter(text)
-                .map(|m| (m.start(), m.end(), replace_list[m.pattern().as_usize()])),
-        )
-    }
-
-    /// Builds a matcher from an ordered pattern list.
-    ///
-    /// Compiles the patterns into an aho_corasick DFA using leftmost-longest
-    /// match semantics.
-    ///
-    /// # Panics
-    ///
-    /// Panics (via `.unwrap()`) if the Aho-Corasick builder fails.
-    pub(crate) fn new<I, P>(patterns: I) -> Self
-    where
-        I: IntoIterator<Item = P>,
-        P: AsRef<str> + AsRef<[u8]>,
-    {
-        Self {
-            engine: AhoCorasickBuilder::new()
-                .kind(Some(AhoCorasickKind::DFA))
-                .match_kind(AhoCorasickMatchKind::LeftmostLongest)
-                .build(patterns)
-                .unwrap(),
-            replace_list: Vec::new(),
+            byte_offset: 0,
         }
     }
 
-    /// Attaches the replacement list parallel to the compiled pattern order.
+    /// Replaces every matched codepoint in `text` with its normalized string.
     ///
-    /// `replace_list[i]` must be the replacement for pattern `i` in the
-    /// automaton. Consumes and returns `self` for builder-style chaining.
-    pub(crate) fn with_replacements(mut self, replace_list: Vec<&'static str>) -> Self {
-        self.replace_list = replace_list;
-        self
+    /// Returns `None` when no codepoint in `text` has a normalization mapping,
+    /// allowing callers to continue borrowing the original input. The `bool`
+    /// indicates whether the output is pure ASCII.
+    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
+        replace_spans_tracking_ascii(text, self.iter(text))
+    }
+
+    /// Builds a matcher from the precompiled build-time page tables and string storage.
+    #[cfg(not(feature = "runtime_build"))]
+    pub(crate) fn new(l1: &'static [u8], l2: &'static [u8], strings: &'static str) -> Self {
+        Self {
+            l1: decode_u16_table(l1),
+            l2: decode_u32_table(l2),
+            strings: Cow::Borrowed(strings),
+        }
+    }
+
+    /// Returns a byte iterator that yields normalized bytes from `text`.
+    ///
+    /// Used by the fused normalize-scan path to stream bytes directly into the
+    /// AC automaton without materializing an intermediate `String`. Unmapped
+    /// codepoints pass through byte-for-byte; mapped codepoints emit their
+    /// replacement string's bytes.
+    ///
+    /// The output byte stream is valid UTF-8: unmapped codepoints are complete
+    /// codepoints from the input, and mapped replacements are valid UTF-8
+    /// strings from the normalize table.
+    #[inline(always)]
+    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> NormalizeFilterIterator<'a> {
+        NormalizeFilterIterator {
+            bytes: text.as_bytes(),
+            offset: 0,
+            char_remaining: 0,
+            replace_bytes: &[],
+            replace_pos: 0,
+            l1: &self.l1,
+            l2: &self.l2,
+            strings: self.strings.as_ref(),
+        }
     }
 
     /// Builds a matcher from a runtime-parsed normalization dictionary.
     ///
-    /// Sorts the dictionary entries by key for deterministic pattern ordering,
-    /// builds the Aho-Corasick automaton from the sorted keys, and attaches
-    /// the corresponding replacement values via [`NormalizeMatcher::with_replacements`].
+    /// All keys must be single codepoints. Concatenates replacement strings
+    /// into a single buffer, packs each entry as `(offset << 8) | length`,
+    /// and builds the page table via [`build_2_stage_table`].
     #[cfg(feature = "runtime_build")]
     pub(crate) fn from_dict(dict: AHashMap<&'static str, &'static str>) -> Self {
-        let mut pairs: Vec<(&'static str, &'static str)> = dict.into_iter().collect();
-        pairs.sort_unstable_by_key(|&(k, _)| k);
-        let replace_list: Vec<&'static str> = pairs.iter().map(|&(_, v)| v).collect();
-        Self::new(pairs.into_iter().map(|(k, _)| k)).with_replacements(replace_list)
+        let mut strings = String::new();
+        let packed: AHashMap<u32, u32> = dict
+            .into_iter()
+            .map(|(key, value)| {
+                assert!(
+                    key.chars().count() == 1,
+                    "Normalize key must be exactly one codepoint: {key:?}"
+                );
+                let cp = key.chars().next().unwrap() as u32;
+                let offset = strings.len() as u32;
+                let length = value.len() as u32;
+                strings.push_str(value);
+                (cp, (offset << 8) | length)
+            })
+            .collect();
+        let (l1, l2) = build_2_stage_table(&packed);
+        Self {
+            l1: l1.into_boxed_slice(),
+            l2: l2.into_boxed_slice(),
+            strings: Cow::Owned(strings),
+        }
+    }
+}
+
+/// Streaming byte iterator that yields normalized bytes from a UTF-8 string.
+///
+/// Created by [`NormalizeMatcher::filter_bytes`]. Walks the source bytes,
+/// checking each codepoint against the page table. Unmapped codepoints have
+/// their bytes yielded directly; mapped codepoints emit their replacement
+/// string's bytes instead.
+///
+/// The output byte stream is valid UTF-8 (unmapped codepoints are complete
+/// codepoints from the input, mapped replacements are valid UTF-8 strings),
+/// which satisfies the safety requirement of `daachorse`'s
+/// `find_overlapping_iter_from_iter`.
+pub(crate) struct NormalizeFilterIterator<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    /// Remaining bytes to yield from the current kept (unmapped) multi-byte character.
+    /// 0 when at a codepoint boundary.
+    char_remaining: u8,
+    /// Replacement string bytes currently being yielded.
+    replace_bytes: &'a [u8],
+    /// Current position within `replace_bytes`.
+    replace_pos: usize,
+    l1: &'a [u16],
+    l2: &'a [u32],
+    strings: &'a str,
+}
+
+impl Iterator for NormalizeFilterIterator<'_> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Priority 1: mid-replacement — yield next replacement byte.
+        if self.replace_pos < self.replace_bytes.len() {
+            let byte = self.replace_bytes[self.replace_pos];
+            self.replace_pos += 1;
+            return Some(byte);
+        }
+
+        // Priority 2: mid-passthrough of unmapped multi-byte character.
+        if self.char_remaining > 0 {
+            // SAFETY: within a kept multi-byte character; offset is in bounds.
+            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+            self.offset += 1;
+            self.char_remaining -= 1;
+            return Some(byte);
+        }
+
+        // Priority 3: consume next codepoint from source.
+        if self.offset >= self.bytes.len() {
+            return None;
+        }
+
+        // SAFETY: offset < len checked above.
+        let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+
+        if byte < 0x80 {
+            // ASCII fast path: only A-Z have normalize mappings.
+            if byte.is_ascii_uppercase()
+                && let Some(value) = page_table_lookup(byte as u32, self.l1, self.l2)
+            {
+                let str_offset = (value >> 8) as usize;
+                let str_len = (value & 0xFF) as usize;
+                self.offset += 1;
+                self.replace_bytes = &self.strings.as_bytes()[str_offset..str_offset + str_len];
+                self.replace_pos = 1;
+                return Some(self.replace_bytes[0]);
+            }
+            // Unmapped ASCII: yield directly.
+            self.offset += 1;
+            return Some(byte);
+        }
+
+        // Non-ASCII: decode codepoint, probe page table.
+        // SAFETY: byte >= 0x80 in a valid UTF-8 &str means multi-byte lead byte.
+        let (cp, char_len) = unsafe { decode_utf8_raw(self.bytes, self.offset) };
+
+        if let Some(value) = page_table_lookup(cp, self.l1, self.l2) {
+            let str_offset = (value >> 8) as usize;
+            let str_len = (value & 0xFF) as usize;
+            self.offset += char_len;
+            self.replace_bytes = &self.strings.as_bytes()[str_offset..str_offset + str_len];
+            self.replace_pos = 1;
+            return Some(self.replace_bytes[0]);
+        }
+
+        // Unmapped: yield first byte, set remaining for continuation bytes.
+        self.offset += 1;
+        self.char_remaining = (char_len - 1) as u8;
+        Some(byte)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Runtime page-table builder (shared by Fanjian + Pinyin)
+// Runtime page-table builder (shared by Fanjian + Pinyin + Normalize)
 // ---------------------------------------------------------------------------
 
 /// Converts a sparse codepoint map into the shared two-stage page-table layout.

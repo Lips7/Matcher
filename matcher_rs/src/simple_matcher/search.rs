@@ -228,33 +228,43 @@ impl SimpleMatcher {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
-                        // Fused delete-scan: stream non-deleted bytes directly
+                        // Fused transform-scan: stream transformed bytes directly
                         // into the AC automaton, skipping intermediate allocation.
                         // Only when daachorse is the engine (DFA has no streaming API).
                         let fused_result = if !is_noop && self.scan.can_stream(parent_ascii) {
-                            step.as_delete().and_then(|dm| {
-                                let parent_text = texts[parent_aidx].as_ref();
-                                let iter = dm.filter_bytes(parent_text);
-                                let vi = variant_counter;
-                                let ctx = ScanContext {
-                                    text_index: vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    // Delete of ASCII input stays ASCII; of non-ASCII,
-                                    // conservatively assume non-ASCII (matches charwise path).
-                                    is_ascii: parent_ascii,
-                                };
-                                self.scan
-                                    .for_each_match_value_from_iter(
+                            let parent_text = texts[parent_aidx].as_ref();
+                            let vi = variant_counter;
+                            let ctx = ScanContext {
+                                text_index: vi,
+                                process_type_mask: child.pt_index_mask,
+                                num_variants,
+                                exit_early,
+                                // Both delete and normalize of ASCII input stay ASCII;
+                                // of non-ASCII, conservatively assume non-ASCII.
+                                is_ascii: parent_ascii,
+                            };
+                            step.as_delete()
+                                .and_then(|dm| {
+                                    let iter = dm.filter_bytes(parent_text);
+                                    self.scan.for_each_match_value_from_iter(
                                         iter,
                                         ctx.is_ascii,
                                         |raw_value| self.process_match(raw_value, ctx, &mut ss),
                                     )
-                                    .inspect(|_| {
-                                        variant_counter += 1;
+                                })
+                                .or_else(|| {
+                                    step.as_normalize().and_then(|nm| {
+                                        let iter = nm.filter_bytes(parent_text);
+                                        self.scan.for_each_match_value_from_iter(
+                                            iter,
+                                            ctx.is_ascii,
+                                            |raw_value| self.process_match(raw_value, ctx, &mut ss),
+                                        )
                                     })
-                            })
+                                })
+                                .inspect(|_| {
+                                    variant_counter += 1;
+                                })
                         } else {
                             None
                         };

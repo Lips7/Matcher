@@ -42,25 +42,26 @@ pub(crate) const NORM: &str = include_str!("../../../process_map/NORM.txt");
 #[cfg(feature = "runtime_build")]
 pub(crate) const PINYIN: &str = include_str!("../../../process_map/PINYIN.txt");
 
-// ── default build: pre-compiled normalization automaton ──────────────────────
+// ── default build: Normalize page tables ───────────────────────────────────
 
-/// Newline-separated source patterns for the Normalize matcher.
+/// L1 index for the Normalize 2-stage page table (`u16[4352]`, little-endian).
 ///
-/// Loaded via `include_str!` from the `OUT_DIR` artifact produced by `build.rs`.
-/// Used when `runtime_build` is disabled.
+/// See [`crate::process::transform::replace::NormalizeMatcher`] for the table layout.
 #[cfg(not(feature = "runtime_build"))]
-pub(crate) const NORMALIZE_PROCESS_LIST_STR: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/normalize_process_list.bin"));
+pub(crate) const NORMALIZE_L1_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/normalize_l1.bin"));
 
-/// Newline-separated replacement strings parallel to the Normalize pattern list.
+/// L2 data for the Normalize 2-stage page table (`u32[num_pages * 256]`, little-endian).
 ///
-/// Index `i` is the replacement for pattern `i` in `NORMALIZE_PROCESS_LIST_STR`. Loaded
-/// from `OUT_DIR`.
+/// Each entry packs `(offset << 8) | length` into a `u32`, pointing into [`NORMALIZE_STR_BYTES`].
 #[cfg(not(feature = "runtime_build"))]
-pub(crate) const NORMALIZE_PROCESS_REPLACE_LIST_STR: &str = include_str!(concat!(
-    env!("OUT_DIR"),
-    "/normalize_process_replace_list.bin"
-));
+pub(crate) const NORMALIZE_L2_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/normalize_l2.bin"));
+
+/// Concatenated replacement strings referenced by [`NORMALIZE_L2_BYTES`].
+#[cfg(not(feature = "runtime_build"))]
+pub(crate) const NORMALIZE_STR_BYTES: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/normalize_str.bin"));
 
 // ── default build: Fanjian page tables ──────────────────────────────────────
 

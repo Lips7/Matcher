@@ -466,8 +466,9 @@ impl CharwiseMatcherStreamExt for CharwiseMatcher {
         iter: impl Iterator<Item = u8>,
         mut on_value: impl FnMut(u32) -> bool,
     ) -> bool {
-        // SAFETY: DeleteFilterIterator yields valid UTF-8 (a subsequence of
-        // complete codepoints from the original &str).
+        // SAFETY: The streaming iterators (DeleteFilterIterator, NormalizeFilterIterator)
+        // yield valid UTF-8: delete outputs a subsequence of complete codepoints;
+        // normalize outputs unmapped codepoints verbatim plus valid UTF-8 replacement strings.
         for hit in unsafe { self.find_overlapping_iter_from_iter(iter) } {
             if on_value(hit.value()) {
                 return true;
