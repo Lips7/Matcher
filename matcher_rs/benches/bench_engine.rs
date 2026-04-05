@@ -1,15 +1,18 @@
-/// Isolated head-to-head benchmark of raw automaton engines.
+/// Regression benchmarks for raw automaton engines at key dispatch operating points.
 ///
-/// Measures build time, search throughput, and is_match throughput for three
-/// engines across ASCII, CJK, and Mixed pattern types. Results inform the
-/// `AC_DFA_PATTERN_THRESHOLD` in `simple_matcher/engine.rs`.
+/// Focused set (~280 configs) covering the dispatch thresholds identified by
+/// the characterization tool (`characterize_engines` example). Run regularly
+/// to catch regressions; use the characterization tool for full-matrix sweeps.
 ///
 /// Run with:
 ///   cargo bench -p matcher_rs --bench bench_engine
+///   cargo bench -p matcher_rs --bench bench_engine -- dispatch_search
+///   cargo bench -p matcher_rs --bench bench_engine -- dispatch_is_match
+///   cargo bench -p matcher_rs --bench bench_engine -- build_
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use daachorse::{
-    CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder, DoubleArrayAhoCorasick,
-    DoubleArrayAhoCorasickBuilder, MatchKind as DaacMatchKind,
+    CharwiseDoubleArrayAhoCorasickBuilder, DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
+    MatchKind as DaacMatchKind, charwise::CharwiseDoubleArrayAhoCorasick,
 };
 use divan::Bencher;
 use divan::counter::BytesCount;
@@ -19,10 +22,10 @@ use std::collections::HashSet;
 use std::env;
 use std::hint::black_box;
 
-const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
-const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
 const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
-const EN_HAYSTACK: &str = include_str!("../../data/text/en/sherlock.txt");
+const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
+
+// ── Engine types ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
 enum Engine {
@@ -63,10 +66,8 @@ enum BuiltEngine {
     Harry(Box<HarryMatcher>),
 }
 
-// ── Pattern preparation ────────────────────────────────────────────────────────
+// ── Pattern preparation ──────────────────────────────────────────────────────
 
-/// Samples `n` unique words from a sorted word list using stride-997.
-/// Produces a uniform first-byte distribution representative of real workloads.
 fn sample_words(source: &str, n: usize, ascii_only: bool) -> Vec<String> {
     let mut words: Vec<&str> = source.lines().filter(|s| !s.is_empty()).collect();
     words.sort_unstable();
@@ -74,6 +75,7 @@ fn sample_words(source: &str, n: usize, ascii_only: bool) -> Vec<String> {
     if ascii_only {
         words.retain(|s| s.is_ascii());
     }
+    let n = n.min(words.len());
     let mut out = Vec::with_capacity(n);
     let mut seen = HashSet::new();
     for i in 0.. {
@@ -99,6 +101,7 @@ fn cjk_patterns(n: usize) -> Vec<String> {
         .collect();
     words.sort_unstable();
     words.dedup();
+    let n = n.min(words.len());
     let mut out = Vec::with_capacity(n);
     let mut seen = HashSet::new();
     for i in 0.. {
@@ -113,18 +116,13 @@ fn cjk_patterns(n: usize) -> Vec<String> {
     out
 }
 
-fn mixed_patterns(n: usize) -> Vec<String> {
-    let half = n / 2;
-    let mut v = ascii_patterns(half);
-    v.extend(cjk_patterns(n - half));
-    let mut seen = HashSet::new();
-    v.retain(|s| seen.insert(s.clone()));
-    v.truncate(n);
-    v
-}
-
-/// Generates `n` patterns where `cjk_pct`% are CJK and the rest are ASCII.
 fn patterns_with_cjk_pct(n: usize, cjk_pct: u8) -> Vec<String> {
+    if cjk_pct == 0 {
+        return ascii_patterns(n);
+    }
+    if cjk_pct == 100 {
+        return cjk_patterns(n);
+    }
     let cjk_count = (n as f64 * cjk_pct as f64 / 100.0).round() as usize;
     let mut v = ascii_patterns(n - cjk_count);
     v.extend(cjk_patterns(cjk_count));
@@ -134,7 +132,7 @@ fn patterns_with_cjk_pct(n: usize, cjk_pct: u8) -> Vec<String> {
     v
 }
 
-// ── Engine construction ────────────────────────────────────────────────────────
+// ── Engine construction & measurement ────────────────────────────────────────
 
 fn build_engine(engine: Engine, patterns: &[String]) -> BuiltEngine {
     let strs: Vec<&str> = patterns.iter().map(String::as_str).collect();
@@ -200,7 +198,7 @@ fn engine_is_match(engine: &BuiltEngine, text: &str) -> bool {
     }
 }
 
-// ── Memory report ──────────────────────────────────────────────────────────────
+// ── Memory report ────────────────────────────────────────────────────────────
 
 fn heap_bytes(engine: &BuiltEngine) -> usize {
     match engine {
@@ -214,24 +212,17 @@ fn heap_bytes(engine: &BuiltEngine) -> usize {
 
 fn print_memory_report() {
     println!("\n=== Memory report (heap bytes) ===");
-    for &kind in &["ascii", "cjk", "mixed"] {
-        for &size in &[500, 1_000, 2_000, 3_000, 5_000, 10_000, 50_000] {
-            let patterns = match kind {
-                "ascii" => ascii_patterns(size),
-                "cjk" => cjk_patterns(size),
-                _ => mixed_patterns(size),
-            };
+    for &cjk_pct in &[0u8, 50, 100] {
+        for &size in &[500usize, 2_000, 10_000, 25_000, 50_000] {
+            let patterns = patterns_with_cjk_pct(size, cjk_pct);
             for &engine in ALL_ENGINES {
-                if matches!(engine, Engine::AcDfa) && kind == "cjk" {
-                    continue;
-                }
                 #[cfg(feature = "harry")]
-                if matches!(engine, Engine::Harry) && size < 64 {
+                if matches!(engine, Engine::Harry) && (cjk_pct > 0 || size < 64) {
                     continue;
                 }
                 let built = build_engine(engine, &patterns);
                 println!(
-                    "  {engine:<12} {kind:<6} n={size:<6} -> {} bytes",
+                    "  {engine:<12} cjk={cjk_pct:>3}% n={size:<6} -> {} bytes",
                     heap_bytes(&built)
                 );
             }
@@ -239,7 +230,77 @@ fn print_memory_report() {
     }
 }
 
-// ── Build benchmarks ───────────────────────────────────────────────────────────
+// ── Synthetic text ───────────────────────────────────────────────────────────
+
+fn synthetic_text(cjk_pct: u8, target_bytes: usize) -> String {
+    let mut s = String::with_capacity(target_bytes + 3);
+    let mut i = 0usize;
+    while s.len() < target_bytes {
+        if cjk_pct > 0 && i % 100 < cjk_pct as usize {
+            s.push('中');
+        } else {
+            s.push('a');
+        }
+        i += 1;
+    }
+    s
+}
+
+const TARGET_BYTES: usize = 200_000;
+
+// ── Dispatch regression config ───────────────────────────────────────────────
+//
+// Key operating points covering dispatch thresholds:
+// - Pure ASCII text (DFA territory)
+// - Crossover zone (~30% CJK)
+// - CJK-dominant (charwise territory)
+// - Pure CJK (Harry territory on is_match)
+// - Mixed patterns (no DFA in production)
+
+#[derive(Clone, Copy)]
+struct DispatchConfig {
+    pat_cjk_pct: u8,
+    text_cjk_pct: u8,
+}
+
+impl std::fmt::Display for DispatchConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "p{}_t{}", self.pat_cjk_pct, self.text_cjk_pct)
+    }
+}
+
+const DISPATCH_CONFIGS: &[DispatchConfig] = &[
+    DispatchConfig {
+        pat_cjk_pct: 0,
+        text_cjk_pct: 0,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 0,
+        text_cjk_pct: 30,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 0,
+        text_cjk_pct: 70,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 0,
+        text_cjk_pct: 100,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 50,
+        text_cjk_pct: 0,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 50,
+        text_cjk_pct: 50,
+    },
+    DispatchConfig {
+        pat_cjk_pct: 50,
+        text_cjk_pct: 100,
+    },
+];
+
+// ── Build benchmarks ─────────────────────────────────────────────────────────
 
 macro_rules! define_build_bench {
     ($mod_name:ident, $prep_fn:ident, $engines:expr, [$($size:expr),+ $(,)?]) => {
@@ -269,321 +330,79 @@ define_build_bench!(
     ALL_ENGINES,
     [500usize, 2000, 10000]
 );
-define_build_bench!(
-    build_mixed,
-    mixed_patterns,
-    ALL_ENGINES,
-    [500usize, 2000, 10000]
-);
 
-// ── Search benchmarks ─────────────────────────────────────────────────────────
+// ── Dispatch regression benchmarks ───────────────────────────────────────────
 
-macro_rules! define_search_bench {
-    ($mod_name:ident, $prep_fn:ident, $haystack:expr, $engines:expr, [$($size:expr),+ $(,)?]) => {
+macro_rules! define_dispatch_bench {
+    ($mod_name:ident, $measure_fn:ident) => {
         mod $mod_name {
             use super::*;
 
-            #[divan::bench(args = $engines, consts = [$($size),+], max_time = 3)]
-            fn search<const N: usize>(bencher: Bencher, engine: &Engine) {
-                let patterns = $prep_fn(N);
-                let built = build_engine(*engine, &patterns);
-                let haystack = $haystack;
-                let total_bytes = haystack.len();
-
+            #[divan::bench(
+                                                args = DISPATCH_CONFIGS,
+                                                consts = [500usize, 2000, 10000, 25000, 50000],
+                                                max_time = 3,
+                                            )]
+            fn ac_dfa<const N: usize>(bencher: Bencher, cfg: &DispatchConfig) {
+                let patterns = patterns_with_cjk_pct(N, cfg.pat_cjk_pct);
+                let engine = build_engine(Engine::AcDfa, &patterns);
+                let text = synthetic_text(cfg.text_cjk_pct, TARGET_BYTES);
                 bencher
-                    .counter(BytesCount::new(total_bytes))
-                    .bench(|| {
-                        for line in haystack.lines() {
-                            let _ = black_box(count_overlapping(&built, line));
-                        }
-                    });
+                    .counter(BytesCount::new(text.len()))
+                    .bench(|| black_box($measure_fn(&engine, &text)));
+            }
+
+            #[divan::bench(
+                                                args = DISPATCH_CONFIGS,
+                                                consts = [500usize, 2000, 10000, 25000, 50000],
+                                                max_time = 3,
+                                            )]
+            fn daac_bytewise<const N: usize>(bencher: Bencher, cfg: &DispatchConfig) {
+                let patterns = patterns_with_cjk_pct(N, cfg.pat_cjk_pct);
+                let engine = build_engine(Engine::DaacBytewise, &patterns);
+                let text = synthetic_text(cfg.text_cjk_pct, TARGET_BYTES);
+                bencher
+                    .counter(BytesCount::new(text.len()))
+                    .bench(|| black_box($measure_fn(&engine, &text)));
+            }
+
+            #[divan::bench(
+                                                args = DISPATCH_CONFIGS,
+                                                consts = [500usize, 2000, 10000, 25000, 50000],
+                                                max_time = 3,
+                                            )]
+            fn daac_charwise<const N: usize>(bencher: Bencher, cfg: &DispatchConfig) {
+                let patterns = patterns_with_cjk_pct(N, cfg.pat_cjk_pct);
+                let engine = build_engine(Engine::DaacCharwise, &patterns);
+                let text = synthetic_text(cfg.text_cjk_pct, TARGET_BYTES);
+                bencher
+                    .counter(BytesCount::new(text.len()))
+                    .bench(|| black_box($measure_fn(&engine, &text)));
+            }
+
+            #[cfg(feature = "harry")]
+            #[divan::bench(
+                                                args = DISPATCH_CONFIGS,
+                                                consts = [500usize, 2000, 10000, 25000, 50000],
+                                                max_time = 3,
+                                            )]
+            fn harry<const N: usize>(bencher: Bencher, cfg: &DispatchConfig) {
+                if cfg.pat_cjk_pct > 0 || N < 64 {
+                    return;
+                }
+                let patterns = patterns_with_cjk_pct(N, cfg.pat_cjk_pct);
+                let engine = build_engine(Engine::Harry, &patterns);
+                let text = synthetic_text(cfg.text_cjk_pct, TARGET_BYTES);
+                bencher
+                    .counter(BytesCount::new(text.len()))
+                    .bench(|| black_box($measure_fn(&engine, &text)));
             }
         }
     };
 }
 
-define_search_bench!(
-    search_ascii_en,
-    ascii_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [
-        500usize, 1000, 1500, 2000, 3000, 5000, 6000, 7000, 8000, 10000, 50000
-    ]
-);
-define_search_bench!(
-    search_ascii_cn,
-    ascii_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 2000, 5000, 10000, 50000]
-);
-define_search_bench!(
-    search_cjk_cn,
-    cjk_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 2000, 5000, 10000, 50000]
-);
-define_search_bench!(
-    search_cjk_en,
-    cjk_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 5000, 10000, 50000]
-);
-define_search_bench!(
-    search_mixed_en,
-    mixed_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 5000, 10000, 50000]
-);
-define_search_bench!(
-    search_mixed_cn,
-    mixed_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 5000, 10000, 50000]
-);
-
-// ── is_match benchmarks ───────────────────────────────────────────────────────
-
-macro_rules! define_is_match_bench {
-    ($mod_name:ident, $prep_fn:ident, $haystack:expr, $engines:expr, [$($size:expr),+ $(,)?]) => {
-        mod $mod_name {
-            use super::*;
-
-            #[divan::bench(args = $engines, consts = [$($size),+], max_time = 3)]
-            fn is_match<const N: usize>(bencher: Bencher, engine: &Engine) {
-                let patterns = $prep_fn(N);
-                let built = build_engine(*engine, &patterns);
-                let haystack = $haystack;
-                let total_bytes = haystack.len();
-
-                bencher
-                    .counter(BytesCount::new(total_bytes))
-                    .bench(|| {
-                        for line in haystack.lines() {
-                            let _ = black_box(engine_is_match(&built, line));
-                        }
-                    });
-            }
-        }
-    };
-}
-
-define_is_match_bench!(
-    is_match_ascii_en,
-    ascii_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 1500, 2000, 3000, 5000, 10000, 50000]
-);
-define_is_match_bench!(
-    is_match_ascii_cn,
-    ascii_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 2000, 5000, 10000, 50000]
-);
-define_is_match_bench!(
-    is_match_cjk_cn,
-    cjk_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 1000, 2000, 5000, 10000, 50000]
-);
-define_is_match_bench!(
-    is_match_cjk_en,
-    cjk_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 2000, 10000, 50000]
-);
-define_is_match_bench!(
-    is_match_mixed_cn,
-    mixed_patterns,
-    CN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 2000, 10000, 50000]
-);
-define_is_match_bench!(
-    is_match_mixed_en,
-    mixed_patterns,
-    EN_HAYSTACK,
-    ALL_ENGINES,
-    [500usize, 2000, 10000, 50000]
-);
-
-// ── Pattern-mix benchmark ─────────────────────────────────────────────────────
-//
-// Measures how all three engines respond as the fraction of CJK patterns grows.
-// N is fixed at DENSITY_PATTERN_COUNT (2,000); only the pattern mix varies.
-//
-// In production, the `all_ascii` guard selects AcDfa only when cjk_pct == 0.
-// This benchmark deliberately builds AcDfa from mixed patterns to measure the
-// raw degradation curve and confirm where DaacBytewise takes over.
-//
-// Run with:
-//   cargo bench -p matcher_rs --bench bench_engine -- pattern_mix_
-
-/// CJK pattern percentages to sweep for the pattern-mix benchmark.
-const PATTERN_MIX_CJK_PCTS: &[u8] = &[0, 10, 20, 50, 60, 80, 100];
-
-mod pattern_mix_en {
-    use super::*;
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn ac_dfa(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::AcDfa, &patterns);
-        bencher
-            .counter(BytesCount::new(EN_HAYSTACK.len()))
-            .bench(|| {
-                for line in EN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn bytewise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::DaacBytewise, &patterns);
-        bencher
-            .counter(BytesCount::new(EN_HAYSTACK.len()))
-            .bench(|| {
-                for line in EN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn charwise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::DaacCharwise, &patterns);
-        bencher
-            .counter(BytesCount::new(EN_HAYSTACK.len()))
-            .bench(|| {
-                for line in EN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-}
-
-mod pattern_mix_cn {
-    use super::*;
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn ac_dfa(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::AcDfa, &patterns);
-        bencher
-            .counter(BytesCount::new(CN_HAYSTACK.len()))
-            .bench(|| {
-                for line in CN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn bytewise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::DaacBytewise, &patterns);
-        bencher
-            .counter(BytesCount::new(CN_HAYSTACK.len()))
-            .bench(|| {
-                for line in CN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-
-    #[divan::bench(args = PATTERN_MIX_CJK_PCTS, max_time = 3)]
-    fn charwise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = patterns_with_cjk_pct(DENSITY_PATTERN_COUNT, *cjk_pct);
-        let engine = build_engine(Engine::DaacCharwise, &patterns);
-        bencher
-            .counter(BytesCount::new(CN_HAYSTACK.len()))
-            .bench(|| {
-                for line in CN_HAYSTACK.lines() {
-                    let _ = black_box(count_overlapping(&engine, line));
-                }
-            });
-    }
-}
-
-// ── Density dispatch benchmark ────────────────────────────────────────────────
-//
-// Measures bytewise vs charwise throughput across synthetic text at varying
-// multi-byte density. Use the crossover point to calibrate CHARWISE_DENSITY_THRESHOLD
-// in `simple_matcher/engine.rs`.
-//
-// CJK char fraction → approximate byte density (cont_bytes / total_bytes):
-//   0%  →  0.000    10% → 0.167    20% → 0.286    30% → 0.375
-//  40%  →  0.444    50% → 0.500    60% → 0.545    75% → 0.600   100% → 0.667
-//
-// Run with:
-//   cargo bench -p matcher_rs --bench bench_engine -- density_
-
-/// Generates synthetic text with `cjk_pct`% CJK characters (each 3-byte UTF-8),
-/// the rest ASCII 'a', evenly interleaved over approximately `target_bytes` total.
-fn synthetic_text(cjk_pct: u8, target_bytes: usize) -> String {
-    let mut s = String::with_capacity(target_bytes + 3);
-    let mut i = 0usize;
-    while s.len() < target_bytes {
-        if cjk_pct > 0 && i % 100 < cjk_pct as usize {
-            s.push('中');
-        } else {
-            s.push('a');
-        }
-        i += 1;
-    }
-    s
-}
-
-const DENSITY_TARGET_BYTES: usize = 200_000;
-const DENSITY_PATTERN_COUNT: usize = 2_000;
-/// CJK character percentages to sweep — maps to byte densities shown above.
-const DENSITY_CJK_PCTS: &[u8] = &[0, 10, 20, 30, 40, 50, 60, 75, 100];
-
-mod density_dispatch {
-    use super::*;
-
-    #[divan::bench(args = DENSITY_CJK_PCTS, max_time = 3)]
-    fn ac_dfa(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = mixed_patterns(DENSITY_PATTERN_COUNT);
-        let engine = build_engine(Engine::AcDfa, &patterns);
-        let text = synthetic_text(*cjk_pct, DENSITY_TARGET_BYTES);
-        bencher
-            .counter(BytesCount::new(text.len()))
-            .bench(|| black_box(count_overlapping(&engine, &text)));
-    }
-
-    #[divan::bench(args = DENSITY_CJK_PCTS, max_time = 3)]
-    fn bytewise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = mixed_patterns(DENSITY_PATTERN_COUNT);
-        let engine = build_engine(Engine::DaacBytewise, &patterns);
-        let text = synthetic_text(*cjk_pct, DENSITY_TARGET_BYTES);
-        bencher
-            .counter(BytesCount::new(text.len()))
-            .bench(|| black_box(count_overlapping(&engine, &text)));
-    }
-
-    #[divan::bench(args = DENSITY_CJK_PCTS, max_time = 3)]
-    fn charwise(bencher: Bencher, cjk_pct: &u8) {
-        let patterns = mixed_patterns(DENSITY_PATTERN_COUNT);
-        let engine = build_engine(Engine::DaacCharwise, &patterns);
-        let text = synthetic_text(*cjk_pct, DENSITY_TARGET_BYTES);
-        bencher
-            .counter(BytesCount::new(text.len()))
-            .bench(|| black_box(count_overlapping(&engine, &text)));
-    }
-}
+define_dispatch_bench!(dispatch_search, count_overlapping);
+define_dispatch_bench!(dispatch_is_match, engine_is_match);
 
 fn main() {
     if env::args().any(|arg| arg == "--memory-report") {

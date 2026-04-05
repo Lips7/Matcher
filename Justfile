@@ -122,6 +122,21 @@ bench-compare-raw baseline candidate *args:
 bench-viz *args:
     uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
 
+# Engine dispatch characterization — full matrix sweep to CSV
+# Examples:
+#   just characterize-engines                                     # full (~20-30 min)
+#   just characterize-engines-quick                               # subset (~3 min)
+#   ENGINES=ac_dfa,daac_charwise SIZES=500,10000 just characterize-engines  # custom
+characterize-engines *args:
+    cargo run --profile bench --example characterize_engines -p matcher_rs {{args}}
+
+characterize-engines-quick:
+    SIZES=500,2000,10000,50000 PAT_CJK=0,50,100 TEXT_CJK=0,20,50,100 ITERS=3 \
+    cargo run --profile bench --example characterize_engines -p matcher_rs
+
+characterize-viz *args:
+    uv run matcher_rs/scripts/visualize_dispatch.py {{args}}
+
 # Profile with Xcode Instruments (Time Profiler)
 # Examples:
 #   just profile record --mode is_match --dict en --rules 10000 --analyze
