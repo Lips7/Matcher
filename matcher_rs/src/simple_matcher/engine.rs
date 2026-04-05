@@ -88,9 +88,11 @@ pub(super) struct ScanPlan {
     /// Charwise engine for non-ASCII text. Always built from the **full** pattern set
     /// so a single charwise pass covers everything. `None` only when no patterns exist.
     charwise_matcher: Option<CharwiseMatcher>,
-    /// `true` when every compiled pattern is pure ASCII. Gates Harry dispatch now
-    /// that `charwise_matcher` is always present.
-    #[cfg(feature = "harry")]
+    /// `true` when every compiled pattern is pure ASCII.
+    ///
+    /// When set, bytewise scan is correct for **any** text encoding — ASCII bytes
+    /// (0x00–0x7F) never appear as UTF-8 continuation bytes, so the `is_ascii()`
+    /// dispatch can be skipped entirely.  Also gates Harry dispatch.
     all_patterns_ascii: bool,
     /// Harry column-vector SIMD engine for `is_match` fast path.
     ///
@@ -149,7 +151,6 @@ impl ScanPlan {
         let value_map = patterns.build_value_map();
         let (bytewise_matcher, charwise_matcher) = compile_automata(dedup_patterns, &value_map)?;
 
-        #[cfg(feature = "harry")]
         let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
         #[cfg(feature = "harry")]
         let harry_matcher = if all_patterns_ascii {
@@ -166,7 +167,6 @@ impl ScanPlan {
         Ok(Self {
             bytewise_matcher,
             charwise_matcher,
-            #[cfg(feature = "harry")]
             all_patterns_ascii,
             #[cfg(feature = "harry")]
             harry_matcher,
@@ -178,6 +178,12 @@ impl ScanPlan {
     #[inline(always)]
     pub(super) fn patterns(&self) -> &PatternIndex {
         &self.patterns
+    }
+
+    /// `true` when every compiled pattern is pure ASCII.
+    #[inline(always)]
+    pub(super) fn all_patterns_ascii(&self) -> bool {
+        self.all_patterns_ascii
     }
 
     /// Returns the estimated heap memory in bytes owned by all scan engines.
@@ -208,21 +214,32 @@ impl ScanPlan {
     /// 3. **AC charwise** — when text contains multi-byte characters.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
-        #[cfg(feature = "harry")]
-        if self.harry_matcher.as_ref().is_some_and(|_| {
-            self.all_patterns_ascii
-                && ({
-                    #[cfg(feature = "dfa")]
-                    let is_dfa =
-                        matches!(self.bytewise_matcher, Some(BytewiseMatcher::AcDfa { .. }));
-                    #[cfg(not(feature = "dfa"))]
-                    let is_dfa = false;
-                    !is_dfa || !text.is_ascii()
-                })
-        }) {
-            return self.harry_matcher.as_ref().unwrap().is_match(text);
+        // Fast path: all patterns are ASCII → bytewise handles any UTF-8 text.
+        // ASCII bytes (0x00–0x7F) never appear as UTF-8 continuation bytes,
+        // so byte-level matching is sound regardless of text encoding.
+        // Harry is only built when all_patterns_ascii, so its dispatch lives here.
+        if self.all_patterns_ascii {
+            #[cfg(feature = "harry")]
+            if let Some(ref harry) = self.harry_matcher {
+                #[cfg(feature = "dfa")]
+                let has_dfa = matches!(self.bytewise_matcher, Some(BytewiseMatcher::AcDfa { .. }));
+                #[cfg(not(feature = "dfa"))]
+                let has_dfa = false;
+                // Harry preferred when: no DFA (always), or non-ASCII text
+                // (column-0 early exit gives 3–4× over AC).  First-byte check
+                // is O(1) vs O(n) for is_ascii() — catches CJK/Cyrillic text
+                // that starts with a multi-byte lead byte.
+                if !has_dfa || text.as_bytes().first().is_some_and(|&b| b >= 0x80) {
+                    return harry.is_match(text);
+                }
+            }
+            return self
+                .bytewise_matcher
+                .as_ref()
+                .is_some_and(|m| m.is_match(text));
         }
 
+        // Mixed patterns — full is_ascii dispatch needed.
         if text.is_ascii() {
             self.bytewise_matcher
                 .as_ref()

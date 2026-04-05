@@ -73,8 +73,9 @@ impl SimpleMatcher {
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
 
+        let is_ascii = self.scan.all_patterns_ascii() || text.is_ascii();
         self.scan
-            .for_each_rule_idx_simple(text, text.is_ascii(), |rule_idx| {
+            .for_each_rule_idx_simple(text, is_ascii, |rule_idx| {
                 self.rules.push_result_if_new(rule_idx, state, results);
             });
     }
