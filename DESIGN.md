@@ -495,6 +495,14 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 
 For the AC DFA bytewise engine, `is_match` delegates to `AhoCorasick::is_match` which integrates prefilter acceleration (Teddy/memchr) when effective. `for_each_match_value` and `for_each_rule_idx_simple` iterate `AhoCorasick::find_overlapping_iter`, mapping each `Match::pattern()` index through the `to_value` array to recover the raw `u32` scan value.
 
+#### Fused Delete-Scan
+
+For leaf Delete nodes in the process-type trie, `walk_and_scan` can bypass string materialization entirely by streaming non-deleted bytes directly into the AC automaton. `daachorse` exposes `find_overlapping_iter_from_iter<P: Iterator<Item = u8>>` on both bytewise and charwise engines. `DeleteFilterIterator` wraps the original text and yields only non-deleted bytes (deciding keep/skip at the codepoint level via the delete bitset, then yielding individual bytes of kept characters).
+
+This eliminates both the intermediate `String` allocation and the second traversal of the text. The fused path is selected when the daachorse engine would be used (charwise for non-ASCII text, bytewise for >25K ASCII patterns). It is NOT used when the `aho-corasick` DFA engine is selected — DFA has no streaming API, and DFA+materialization is faster than daachorse+streaming anyway (~1.7× DFA throughput advantage). The `ScanPlan::can_stream(is_ascii)` guard prevents unnecessary work on the DFA path.
+
+Measured impact: +12.6% throughput on CJK delete+scan workloads; neutral on ASCII/DFA paths.
+
 ### Pass 2: Logical Evaluation
 
 After all variants are scanned:

@@ -228,35 +228,71 @@ impl SimpleMatcher {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
-                        let changed = if !is_noop {
-                            let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
-                            output.changed.map(|s| (s, output.is_ascii))
+                        // Fused delete-scan: stream non-deleted bytes directly
+                        // into the AC automaton, skipping intermediate allocation.
+                        // Only when daachorse is the engine (DFA has no streaming API).
+                        let fused_result = if !is_noop && self.scan.can_stream(parent_ascii) {
+                            step.as_delete().and_then(|dm| {
+                                let parent_text = texts[parent_aidx].as_ref();
+                                let iter = dm.filter_bytes(parent_text);
+                                let vi = variant_counter;
+                                let ctx = ScanContext {
+                                    text_index: vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    // Delete of ASCII input stays ASCII; of non-ASCII,
+                                    // conservatively assume non-ASCII (matches charwise path).
+                                    is_ascii: parent_ascii,
+                                };
+                                self.scan
+                                    .for_each_match_value_from_iter(
+                                        iter,
+                                        ctx.is_ascii,
+                                        |raw_value| self.process_match(raw_value, ctx, &mut ss),
+                                    )
+                                    .inspect(|_| {
+                                        variant_counter += 1;
+                                    })
+                            })
                         } else {
                             None
                         };
 
-                        stopped = if let Some((s, is_ascii)) = changed {
-                            let vi = variant_counter;
-                            variant_counter += 1;
-                            let ctx = ScanContext {
-                                text_index: vi,
-                                process_type_mask: child.pt_index_mask,
-                                num_variants,
-                                exit_early,
-                                is_ascii,
-                            };
-                            let result = self.scan_variant(&s, ctx, &mut ss);
-                            return_string_to_pool(s);
+                        stopped = if let Some(result) = fused_result {
                             result
                         } else {
-                            let ctx = ScanContext {
-                                text_index: parent_vi,
-                                process_type_mask: child.pt_index_mask,
-                                num_variants,
-                                exit_early,
-                                is_ascii: parent_ascii,
+                            // Normal path: materialize then scan.
+                            let changed = if !is_noop {
+                                let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
+                                output.changed.map(|s| (s, output.is_ascii))
+                            } else {
+                                None
                             };
-                            self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
+
+                            if let Some((s, is_ascii)) = changed {
+                                let vi = variant_counter;
+                                variant_counter += 1;
+                                let ctx = ScanContext {
+                                    text_index: vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    is_ascii,
+                                };
+                                let result = self.scan_variant(&s, ctx, &mut ss);
+                                return_string_to_pool(s);
+                                result
+                            } else {
+                                let ctx = ScanContext {
+                                    text_index: parent_vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    is_ascii: parent_ascii,
+                                };
+                                self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
+                            }
                         };
 
                         if stopped {

@@ -114,6 +114,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=BENCH_RECORDS_DIR,
         help="Directory that will receive the benchmark run set. Default: matcher_rs/bench_records.",
     )
+    parser.add_argument(
+        "--filter",
+        default=None,
+        help=(
+            "Divan filter pattern to narrow which benchmarks run. "
+            "Replaces the preset's default module filters. "
+            "Examples: 'text_transform', 'text_transform::cn', 'scaling::process_cn'."
+        ),
+    )
     return parser
 
 
@@ -121,6 +130,7 @@ def preset_commands(
     sample_count_override: int | None,
     min_time_override: float | None,
     profile: str = "bench",
+    filter_pattern: str | None = None,
 ) -> OrderedDict[str, list[str]]:
     def divan_args(kind: str) -> list[str]:
         defaults = {
@@ -149,54 +159,24 @@ def preset_commands(
         cmd += ["--bench", bench_name, "--"]
         return cmd
 
-    return OrderedDict(
-        [
-            (
-                "search",
-                [
-                    *cargo_bench("bench"),
-                    "search_mode",
-                    "match_vs_nomatch",
-                    "scaling",
-                    "text_transform",
-                    "rule_complexity",
-                    *divan_args("search"),
-                ],
-            ),
-            (
-                "build",
-                [
-                    *cargo_bench("bench"),
-                    "build",
-                    *divan_args("build"),
-                ],
-            ),
-            (
-                "engine-search",
-                [
-                    *cargo_bench("bench_engine"),
-                    "search_",
-                    *divan_args("search"),
-                ],
-            ),
-            (
-                "engine-build",
-                [
-                    *cargo_bench("bench_engine"),
-                    "build_",
-                    *divan_args("build"),
-                ],
-            ),
-            (
-                "engine-is-match",
-                [
-                    *cargo_bench("bench_engine"),
-                    "is_match_",
-                    *divan_args("search"),
-                ],
-            ),
-        ]
-    )
+    # Default module-level filters per preset. Replaced by --filter when provided.
+    presets: dict[str, tuple[str, list[str], str]] = {
+        "search": (
+            "bench",
+            ["search_mode", "match_vs_nomatch", "scaling", "text_transform", "rule_complexity"],
+            "search",
+        ),
+        "build": ("bench", ["build"], "build"),
+        "engine-search": ("bench_engine", ["search_"], "search"),
+        "engine-build": ("bench_engine", ["build_"], "build"),
+        "engine-is-match": ("bench_engine", ["is_match_"], "search"),
+    }
+
+    result = OrderedDict()
+    for name, (bench_target, default_filters, divan_kind) in presets.items():
+        filters = [filter_pattern] if filter_pattern else default_filters
+        result[name] = [*cargo_bench(bench_target), *filters, *divan_args(divan_kind)]
+    return result
 
 
 def command_sets_for_preset(
@@ -204,8 +184,11 @@ def command_sets_for_preset(
     sample_count_override: int | None,
     min_time_override: float | None,
     profile: str = "bench",
+    filter_pattern: str | None = None,
 ) -> OrderedDict[str, list[str]]:
-    commands = preset_commands(sample_count_override, min_time_override, profile=profile)
+    commands = preset_commands(
+        sample_count_override, min_time_override, profile=profile, filter_pattern=filter_pattern,
+    )
     if preset == "all":
         return commands
     return OrderedDict([(preset, commands[preset])])
@@ -251,13 +234,15 @@ def main() -> int:
         args.no_warmup = True
 
     command_sets = command_sets_for_preset(
-        args.preset, args.sample_count, args.min_time, profile=args.profile,
+        args.preset, args.sample_count, args.min_time,
+        profile=args.profile, filter_pattern=args.filter,
     )
 
     if args.repeats <= 0:
         raise SystemExit("--repeats must be greater than zero")
 
-    run_dir = args.output_dir / f"{timestamp_slug()}_{args.preset}"
+    filter_suffix = f"_{args.filter}" if args.filter else ""
+    run_dir = args.output_dir / f"{timestamp_slug()}_{args.preset}{filter_suffix}"
     raw_dir = run_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=False)
 

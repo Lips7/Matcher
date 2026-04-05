@@ -87,6 +87,11 @@ test-c:
     ./matcher_c/tests/test_matcher
 
 # -- Bench ---------------------------------------------------------------------
+# All bench recipes accept pass-through args: --quick, --filter, --repeats, etc.
+#   just bench-search                              # Full search preset (~15 min)
+#   just bench-search --quick                      # Quick directional signal (~2 min)
+#   just bench-search --filter text_transform      # Only transform benchmarks (~2 min)
+#   just bench-search --filter scaling             # Only scaling benchmarks (~5 min)
 
 _bench_script := "matcher_rs/scripts/run_benchmarks.py"
 

@@ -286,6 +286,50 @@ impl ScanPlan {
         false
     }
 
+    /// Calls `on_value` for each raw match value from a streaming byte iterator.
+    ///
+    /// Used by the fused delete-scan path to avoid materializing the deleted text.
+    /// Routes to daachorse `_from_iter` APIs. Not available for DFA (no streaming API).
+    ///
+    /// Returns `true` if `on_value` requests early exit. Returns `false` if the
+    /// DFA path would be selected (caller must fall back to materialized scan).
+    #[inline(always)]
+    pub(super) fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        is_ascii: bool,
+        on_value: impl FnMut(u32) -> bool,
+    ) -> Option<bool> {
+        if is_ascii {
+            match self.bytewise_matcher {
+                #[cfg(feature = "dfa")]
+                Some(BytewiseMatcher::AcDfa { .. }) => return None,
+                Some(ref matcher) => {
+                    return Some(matcher.for_each_match_value_from_iter(iter, on_value));
+                }
+                None => return Some(false),
+            }
+        }
+        if let Some(ref matcher) = self.charwise_matcher {
+            Some(matcher.for_each_match_value_from_iter(iter, on_value))
+        } else {
+            Some(false)
+        }
+    }
+
+    /// Returns whether the streaming `_from_iter` scan path is available for the
+    /// given ASCII flag. `false` when the DFA engine would be selected (no streaming API).
+    #[inline(always)]
+    pub(super) fn can_stream(&self, is_ascii: bool) -> bool {
+        if is_ascii {
+            #[cfg(feature = "dfa")]
+            if matches!(self.bytewise_matcher, Some(BytewiseMatcher::AcDfa { .. })) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// AllSimple-specialized scan: yields rule indices directly.
     ///
     /// Every raw value is assumed to carry [`DIRECT_RULE_BIT`]; the callback receives
@@ -366,6 +410,28 @@ impl BytewiseMatcher {
         }
     }
 
+    /// Streaming variant: accepts a byte iterator instead of a complete `&str`.
+    /// Only available for DaacBytewise (DFA has no streaming API).
+    #[inline(always)]
+    fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        mut on_value: impl FnMut(u32) -> bool,
+    ) -> bool {
+        match self {
+            #[cfg(feature = "dfa")]
+            Self::AcDfa { .. } => unreachable!("DFA has no streaming API"),
+            Self::DaacBytewise(matcher) => {
+                for hit in matcher.find_overlapping_iter_from_iter(iter) {
+                    if on_value(hit.value()) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
     fn heap_bytes(&self) -> usize {
         match self {
             #[cfg(feature = "dfa")]
@@ -382,6 +448,33 @@ trait CharwiseMatcherExt {
     fn is_match_text(&self, text: &str) -> bool;
     fn for_each_match_value(&self, text: &str, on_value: impl FnMut(u32) -> bool) -> bool;
     fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize));
+}
+
+/// Streaming query helpers for the charwise scan engine.
+trait CharwiseMatcherStreamExt {
+    fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        on_value: impl FnMut(u32) -> bool,
+    ) -> bool;
+}
+
+impl CharwiseMatcherStreamExt for CharwiseMatcher {
+    #[inline(always)]
+    fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        mut on_value: impl FnMut(u32) -> bool,
+    ) -> bool {
+        // SAFETY: DeleteFilterIterator yields valid UTF-8 (a subsequence of
+        // complete codepoints from the original &str).
+        for hit in unsafe { self.find_overlapping_iter_from_iter(iter) } {
+            if on_value(hit.value()) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl CharwiseMatcherExt for CharwiseMatcher {

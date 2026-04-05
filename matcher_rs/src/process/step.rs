@@ -82,6 +82,15 @@ pub(crate) enum TransformStep {
 
 /// Execution policy for one cached transform step.
 impl TransformStep {
+    /// Returns the inner `DeleteMatcher` if this step is a Delete transform.
+    #[inline(always)]
+    pub(crate) fn as_delete(&self) -> Option<&DeleteMatcher> {
+        match self {
+            Self::Delete(m) => Some(m),
+            _ => None,
+        }
+    }
+
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
     /// Used by `walk_and_scan` to detect the no-op case for leaf nodes: when `true`,
