@@ -15,6 +15,15 @@
 ///   3 for U+0800–U+FFFF (includes all CJK Unified Ideographs), 4 for
 ///   U+10000–U+10FFFF (supplementary planes).
 ///
+/// ```text
+/// // Decoding '中' (U+4E2D, 3-byte UTF-8: E4 B8 AD):
+/// let text = "abc中def";
+/// let bytes = text.as_bytes();
+/// let (cp, len) = unsafe { decode_utf8_raw(bytes, 3) };
+/// assert_eq!(cp, 0x4E2D);  // '中'
+/// assert_eq!(len, 3);       // 3-byte sequence
+/// ```
+///
 /// # Safety
 ///
 /// - `offset` must point at a valid UTF-8 continuation-sequence start (lead

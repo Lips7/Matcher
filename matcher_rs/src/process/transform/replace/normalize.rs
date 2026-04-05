@@ -1,8 +1,13 @@
 //! Unicode normalization replacement via page-table lookup + fused streaming scan.
 //!
-//! All 8,633 normalize keys are single Unicode codepoints (verified at build time).
-//! Cannot use [`skip_ascii_simd`](super::skip_ascii_simd) because A-Z have
-//! normalize mappings (casefold); ASCII bytes are checked inline instead.
+//! Data sourced from `unicodedata.normalize("NFKC", ch).casefold()`. All 8,633
+//! keys are single Unicode codepoints (verified at build time). Cannot use
+//! [`skip_ascii_simd`](super::skip_ascii_simd) because A–Z have casefold
+//! mappings; ASCII bytes are checked inline instead.
+//!
+//! Provides two consumption modes: materialized [`replace`](NormalizeMatcher::replace)
+//! (allocates a `String`) and streaming [`filter_bytes`](NormalizeMatcher::filter_bytes)
+//! (yields bytes one at a time for fused normalize-scan without allocation).
 
 use std::borrow::Cow;
 
@@ -169,10 +174,22 @@ impl NormalizeMatcher {
         }
     }
 
+    /// Replaces normalizable codepoints (including ASCII uppercase A–Z).
+    ///
+    /// Returns `None` when `text` contains no normalizable characters. The `bool`
+    /// in the return tuple indicates whether the output is entirely ASCII.
+    ///
+    /// ```ignore
+    /// let matcher = NormalizeMatcher::new(NORMALIZE_L1_BYTES, NORMALIZE_L2_BYTES, NORMALIZE_STR_BYTES);
+    /// let (result, is_ascii) = matcher.replace("Hello WORLD").unwrap();
+    /// assert_eq!(result, "hello world"); // casefold
+    /// assert!(is_ascii);
+    /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
         replace_spans_tracking_ascii(text, self.iter(text))
     }
 
+    /// Decodes L1/L2 page tables from build-time binary artifacts.
     pub(crate) fn new(l1: &'static [u8], l2: &'static [u8], strings: &'static str) -> Self {
         let (l1, l2) = decode_page_table(l1, l2);
         Self {
@@ -183,6 +200,10 @@ impl NormalizeMatcher {
     }
 
     #[inline(always)]
+    /// Returns a streaming byte iterator over the normalized form of `text`.
+    ///
+    /// Used by the fused normalize-scan path to feed normalized bytes directly
+    /// into the Aho-Corasick automaton without materializing the full string.
     pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> NormalizeFilterIterator<'a> {
         NormalizeFilterIterator {
             bytes: text.as_bytes(),

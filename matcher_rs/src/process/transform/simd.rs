@@ -32,6 +32,14 @@
 //!
 //! This is combined (OR) with the non-ASCII mask to produce a stop mask; the
 //! first set bit (via `trailing_zeros`) gives the exact stop offset.
+//!
+//! # Performance
+//!
+//! - **Runtime dispatch cost** (x86-64): one `OnceLock` init on first call;
+//!   subsequent calls are a single indirect function pointer.
+//! - **Chunk sizes**: NEON 16 bytes, AVX2/portable 32 bytes.
+//! - **Scalar tail**: remaining bytes after the last full chunk are scanned
+//!   one at a time (~0–31 bytes).
 
 #[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
 use std::simd::Simd;

@@ -72,22 +72,22 @@ scripts/bump-version.sh <version>   # Update version in all manifests + CHANGELO
 
 ## Architecture
 
-For exhaustive internal documentation, see [DESIGN.md](./DESIGN.md). Below is the essential mental model.
+For the full narrative walkthrough with a running example, see [DESIGN.md](./DESIGN.md). Below is the essential mental model.
 
-### Two-Pass Matching
+### How a Query Works
 
-1. **Pattern Scan** — All unique sub-patterns across all rules are deduplicated and compiled into a single automaton (Aho-Corasick via `daachorse`, optional `dfa`). O(N) text scan. ASCII-only patterns get a separate engine for fast dispatch when input is ASCII.
-2. **Logical Evaluation** — Only rules that had ≥1 hit in Pass 1 are evaluated. Sparse-set via generation IDs for O(1) state reset. Bitmask fast-path for rules with ≤64 segments; matrix fallback otherwise. `SearchMode::AllSimple` fast-path bypasses all state machinery for pure-literal matchers.
+1. **Transform** — Walk a shared-prefix trie of `ProcessType` steps, producing text variants (Fanjian, Delete, Normalize, PinYin). Intermediate results are reused across combinations.
+2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise for ASCII, charwise for CJK). Hits update per-rule state.
+3. **Evaluate** — Touched rules are checked: all AND segments satisfied + no NOT veto → match.
+4. **AllSimple bypass** — When all rules are pure literals under one `ProcessType`, the trie + state machinery is skipped entirely — each automaton hit maps directly to a result.
 
-### Text Transformation Pipeline
+### Key Concepts
 
-Before matching, text is transformed through a DAG of `ProcessType` steps (bitflags composable with `|`):
-
-```
-None | Fanjian | Delete | Normalize | DeleteNormalize | FanjianDeleteNormalize | PinYin | PinYinChar
-```
-
-The DAG is a Trie — intermediate results are reused across combinations. Transformations use `Cow<'_, str>` to avoid allocations when no change occurs. Transformation tables are compiled at build time (`build.rs`) from source files in `matcher_rs/process_map/`.
+- **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
+- **Transform trie**: shared-prefix DAG so `Fanjian|Delete` reuses the Fanjian result.
+- **ScanPlan**: bytewise AC (ASCII patterns, optional DFA) + charwise AC (all patterns, CJK-optimized) + Harry (column-vector SIMD for ≥64 patterns).
+- **RuleSet**: hot/cold split for cache efficiency. Generation-stamped sparse set for O(1) state reset.
+- **DIRECT_RULE_BIT**: single-entry simple patterns encode `rule_idx | (1 << 31)` directly in the automaton value, skipping the entry table on the hot path.
 
 ### Construction subtlety: Delete and AC pattern indexing
 
@@ -98,9 +98,10 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | Flag | Default | Notes |
 |------|---------|-------|
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
-| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 25,000 patterns (above that combined DFA+charwise exceeds L2/cache budget) |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
+| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 25,000 patterns |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and Harry (AVX512-VBMI/NEON) |
 | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
+
 ### Workspace Layout
 
 - `matcher_rs/` — Core library (`rlib`); all algorithms live here
@@ -110,8 +111,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 ### Key Source Files
 
-**`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores three components: `ProcessPlan` (transform tree + `SearchMode`), `ScanPlan` (AC automata + pattern index), `RuleSet` (rule metadata + state transitions).
-- `mod.rs` — `SimpleMatcher`, `SimpleResult`, `ProcessPlan`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`)
+**`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores four fields: `tree` (transform trie), `mode` (`SearchMode`), `scan` (`ScanPlan`), `rules` (`RuleSet`).
+- `mod.rs` — `SimpleMatcher`, `SimpleResult`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise for ASCII), `CharwiseMatcher` (DAAC charwise) — AC automaton compilation and scan iteration; Harry dispatch in `is_match`
 - `harry/` — `HarryMatcher` — column-vector SIMD scan engine (Harry12b dual-index encoding); `mod.rs` (core types + dispatch + scalar), `build.rs` (construction), `neon.rs` (AArch64), `avx512.rs` (x86-64); auto-selected for `is_match` via `ScanPlan` when ≥ 64 patterns exist
@@ -125,10 +126,10 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `StepOutput`, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
-- `transform/replace.rs` — `FanjianMatcher`, `PinyinMatcher`, `NormalizeMatcher` (all page-table + SIMD skip), `NormalizeFilterIterator` (streaming fusion)
-- `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip)
-- `transform/utf8.rs` — Shared `decode_utf8_raw` unsafe helper (used by `replace.rs` and `delete.rs`)
-- `transform/simd.rs` — `portable_simd` helpers: `skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`
+- `transform/replace/` — `FanjianMatcher` (`fanjian.rs`), `PinyinMatcher` (`pinyin.rs`), `NormalizeMatcher` (`normalize.rs`), shared page-table helpers (`mod.rs`)
+- `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip), `DeleteFilterIterator` (streaming)
+- `transform/utf8.rs` — Shared `decode_utf8_raw` unsafe helper
+- `transform/simd.rs` — SIMD helpers: `skip_ascii_simd`, `skip_ascii_non_delete_simd`
 - `transform/constants.rs` — Precompiled transformation tables (generated by `build.rs`)
 
 **Other:**
@@ -142,15 +143,3 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - Benchmarks use `divan` (not `criterion`) — write new benchmarks with `#[divan::bench]` attributes.
 - `proptest` is available for property-based testing in `matcher_rs`.
 - With heavy `#[inline(always)]` + full LTO, LLVM applies CSE across function boundaries. Source-level "redundancy" (e.g., duplicate `text.is_ascii()` calls) may already be a single operation in generated code. Profile category % is the ground truth, not source reading.
-
-### Failed Optimizations
-
-Do not re-attempt these. Each was profiled and/or benchmarked; the mechanism was validated as ineffective.
-
-| Optimization | Expected | Actual | Why it failed |
-|---|---|---|---|
-| Cache `text.is_ascii()` at top of `ScanPlan::is_match` | -7% ASCII check on is_match/en | +8% regression (bench); profile: ASCII check % unchanged on DFA path, 28% overhead added on Harry path | LLVM already CSE'd the duplicate call on the DFA path. On Harry path (>25K rules), original code avoids `is_ascii()` entirely via `!is_dfa` short-circuit — unconditional caching adds a wasted 580KB linear scan per call. |
-| Replace `Option::as_ref().is_some_and()` with `if let Some` in engine dispatch | -2% dispatch overhead | Neutral to slight regression | `is_some_and` compiles to tighter code under LTO than nested `if let` patterns. |
-| Compact `RuleHot` by splitting out `segment_counts` to separate `Vec<Vec<i32>>` | -3% on process/and (smaller hot array fits L1) | +3.9% regression on process_hit, +3.7% on shape_process/literal | Moving `segment_counts` to a separate field in `RuleSet` changed struct layout, degrading cache behavior. The `non_null<RuleHot>` overhead only dropped 5.4%→4.9% — the Vec pointer resolution cost is per-access regardless of element size. The extra `Vec<Vec<i32>>` added indirection without offsetting the cache benefit. |
-| Pre-resolve `&[RuleHot]` slice before AC scan closure (ScanState-style split-borrow for immutable data) | -5-8% on process/and (eliminate Vec pointer re-resolution in `process_entry`, same technique as ScanState split-borrow) | Neutral: shape_process/and +0.3%, shape_process/literal +0.03%, shape_process/not -1.1% (all within noise) | Profiling build (thin LTO) confirmed the mechanism: `RawVecInner::non_null<RuleHot>` dropped 5.8%→1.1%. But bench build (full LTO) showed zero throughput change — LLVM's full LTO already hoists the `Vec<RuleHot>` base pointer across closure boundaries. The profiling build's optimization barrier is an artifact of thinner LTO, not present in the authoritative bench profile. |
-| NEON bitmask extraction for `skip_ascii_non_delete_neon` / `first_non_ascii_in_neon` slow path | -3-5% on text_transform/delete (replace scratch buffer + `.iter().position()` scalar scan with `vandq_u8(stop_mask, powers)` + `vaddv_u8` + `trailing_zeros`) | Neutral: en/delete -1.1%/+3.0%, cn/delete +0.9%, en/normalize -2.7%/-7.4% (all within run-to-run noise) | The bitmask extraction only fires on the NEON slow path (chunks containing a stop byte). For ASCII-heavy text with sparse deletes/non-ASCII, the slow path triggers too infrequently for the per-call improvement to be measurable. Profile confirmed the slow path `.position()` dropped from 3.5%→0%, but the savings were absorbed by increased iteration count (same total runtime). |

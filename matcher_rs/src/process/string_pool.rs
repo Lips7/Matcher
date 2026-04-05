@@ -40,6 +40,13 @@ pub(crate) static STRING_POOL: UnsafeCell<Vec<String>> = UnsafeCell::new(Vec::ne
 /// mid-write reallocations. Passing 0 is valid and simply pops an arbitrary-
 /// capacity buffer from the pool.
 ///
+/// ```ignore
+/// let mut buf = get_string_from_pool(64);
+/// buf.push_str("hello");
+/// // ... use buf ...
+/// return_string_to_pool(buf); // recycle for next call
+/// ```
+///
 /// # Safety
 ///
 /// Accesses [`STRING_POOL`] via `UnsafeCell::get()`. Safe because

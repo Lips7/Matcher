@@ -1,3 +1,9 @@
+//! AArch64 NEON scan kernels for [`HarryMatcher`].
+//!
+//! NEON is baseline on AArch64, so no runtime feature detection is needed.
+//! Processes `16 - max_prefix_len + 1` positions per 16-byte chunk. All
+//! functions are `pub(super) unsafe`.
+
 use std::arch::aarch64::*;
 
 use super::{HarryMatcher, MASK_ROWS, MAX_SCAN_LEN};

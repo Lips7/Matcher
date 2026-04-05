@@ -30,6 +30,14 @@ use crate::process::transform::utf8::decode_utf8_raw;
 /// For ASCII bytes (0x00–0x7F), the first 16 bytes of the bitset are cached
 /// in `ascii_lut` so that the SIMD skip helpers can probe the delete set
 /// without touching the full bitset.
+///
+/// # Performance
+///
+/// - **O(1) per codepoint** via flat bitset lookup.
+/// - **SIMD ASCII skip**: [`skip_ascii_non_delete_simd`] advances past runs of
+///   non-deletable ASCII bytes in bulk (16–32 bytes per iteration).
+/// - **Two-phase scan**: first seeks to a deletable byte, then copies non-deleted
+///   spans in bulk — zero allocation when no deletions are found.
 #[derive(Clone)]
 pub(crate) struct DeleteMatcher {
     bitset: Cow<'static, [u8]>,
@@ -57,6 +65,13 @@ impl DeleteMatcher {
     /// 3. **Copy-skip loop**: Tracks a `gap_start` cursor. Non-deleted bytes
     ///    advance `offset`; deleted codepoints flush `text[gap_start..offset]`
     ///    to the result, skip the deleted bytes, and reset `gap_start`.
+    ///
+    /// ```ignore
+    /// let matcher = DeleteMatcher::new(DELETE_BITSET_BYTES);
+    /// let (result, is_ascii) = matcher.delete("hello, world!").unwrap();
+    /// assert_eq!(result, "hello world"); // commas and exclamation deleted
+    /// assert!(matcher.delete("helloworld").is_none()); // nothing to delete
+    /// ```
     ///
     /// # Safety (internal)
     ///

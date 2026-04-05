@@ -118,6 +118,15 @@ impl TransformStep {
     ///
     /// `parent_is_ascii` is the ASCII flag inherited from the parent text variant.
     ///
+    /// ```ignore
+    /// let step = get_transform_step(ProcessType::Delete);
+    /// let output = step.apply("hello, world!", true);
+    /// match output {
+    ///     StepOutput::Unchanged { .. } => { /* nothing to delete */ }
+    ///     StepOutput::Changed { text, is_ascii } => { /* text with deletions */ }
+    /// }
+    /// ```
+    ///
     /// When `parent_is_ascii` is `true`, ASCII-in → ASCII-out is guaranteed for all
     /// transforms (proven by process map analysis), so the output `is_ascii` flag is
     /// forced to `true` without re-scanning the result.

@@ -80,6 +80,16 @@ const AC_DFA_PATTERN_THRESHOLD: usize = 25_000;
 /// non-ASCII haystacks can be scanned at character granularity for ~1.6–1.9× throughput
 /// over bytewise scanning (CJK characters are 3 UTF-8 bytes → 3 bytewise transitions
 /// vs 1 charwise transition).
+///
+/// # Performance
+///
+/// - **Bytewise DFA** (when `dfa` feature + ≤[`AC_DFA_PATTERN_THRESHOLD`] patterns):
+///   ~1.7–1.9× faster than DAAC bytewise on ASCII text, but ~17× more memory.
+/// - **Charwise DAAC**: 1 state transition per character (vs 3 bytewise for CJK),
+///   yielding ~1.6–1.9× throughput on non-ASCII text.
+/// - **Harry dispatch** (when `harry` feature + ≥64 patterns + `AllSimple` mode):
+///   column-vector SIMD scan via [`HarryMatcher`], bypassing
+///   AC entirely on the `is_match` path.
 #[derive(Clone)]
 pub(super) struct ScanPlan {
     /// Bytewise engine for ASCII patterns.
@@ -332,7 +342,7 @@ impl ScanPlan {
 
     /// AllSimple-specialized scan: yields rule indices directly.
     ///
-    /// Every raw value is assumed to carry [`DIRECT_RULE_BIT`]; the callback receives
+    /// Every raw value is assumed to carry `DIRECT_RULE_BIT`; the callback receives
     /// the extracted `rule_idx` (no early exit, no indirect dispatch).
     #[inline(always)]
     pub(super) fn for_each_rule_idx_simple(

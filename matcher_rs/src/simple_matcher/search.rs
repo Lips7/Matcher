@@ -59,9 +59,9 @@ impl SimpleMatcher {
     ///
     /// Every automaton hit is a completed rule, so results are emitted immediately
     /// via [`RuleSet::push_result_if_new`](super::rule::RuleSet::push_result_if_new).
-    /// Deduplication is handled by the generation stamp in [`SimpleMatchState::mark_positive`].
+    /// Deduplication is handled by the generation stamp in [`ScanState::mark_positive`](super::state::ScanState::mark_positive).
     ///
-    /// All patterns have [`DIRECT_RULE_BIT`] encoding
+    /// All patterns have `DIRECT_RULE_BIT` encoding
     /// in all-simple mode, so every hit is resolved inline via the bit-packed value.
     ///
     /// # Safety
@@ -92,7 +92,7 @@ impl SimpleMatcher {
 
     /// Processes one raw match value reported by the scan engine.
     ///
-    /// Checks [`DIRECT_RULE_BIT`] inline for the common direct-rule case (marks positive
+    /// Checks `DIRECT_RULE_BIT` inline for the common direct-rule case (marks positive
     /// immediately, returns `exit_early`). Falls through to
     /// [`PatternIndex::dispatch_indirect`](super::rule::PatternIndex::dispatch_indirect)
     /// for non-direct values (`SingleEntry` / `Entries`).

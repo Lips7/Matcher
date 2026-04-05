@@ -14,6 +14,15 @@
 //! Shared helpers ([`page_table_lookup`], [`decode_page_table`], [`unpack_str_ref`],
 //! [`replace_scan`], [`replace_spans_tracking_ascii`]) live in this module; each
 //! engine has its own sub-module.
+//!
+//! # Performance
+//!
+//! - **O(1) per codepoint**: two `get_unchecked` lookups (L1 page, L2 value) on
+//!   the hot path — branchless modulo the page-zero check.
+//! - **String pool reuse**: output buffers are recycled via the thread-local
+//!   [`string_pool`](crate::process::string_pool) to reduce allocator pressure.
+//! - **Span-copy output**: unchanged byte ranges are bulk-copied; only mapped
+//!   codepoints incur per-replacement overhead.
 
 mod fanjian;
 mod normalize;

@@ -1,3 +1,13 @@
+//! Construction of [`HarryMatcher`] from raw pattern–value pairs.
+//!
+//! Patterns are grouped into 64 buckets (low nibble × high nibble of the first
+//! byte), with prefix keys up to [`MAX_SCAN_LEN`] bytes used for multi-byte
+//! verification. Single-byte patterns are separated into a dedicated lookup
+//! table. Mask columns are wildcarded per bucket so the unified automaton
+//! covers all prefix lengths in a single scan pass.
+//!
+//! See the [parent module](super) for the algorithm overview.
+
 use std::collections::HashMap;
 
 use super::{
@@ -8,8 +18,14 @@ use super::{
 impl HarryMatcher {
     /// Build a [`HarryMatcher`] from a slice of `(pattern, value)` pairs.
     ///
-    /// Returns `None` if the set is too small, contains any empty pattern, or has no
-    /// pattern with length ≥ 2. Accepts both ASCII and non-ASCII (CJK) patterns.
+    /// Accepts both ASCII and non-ASCII (CJK) patterns.
+    ///
+    /// # Returns
+    ///
+    /// `None` when any of these conditions hold:
+    /// - `patterns.len()` < `HARRY_MIN_PATTERN_COUNT` (too few patterns for SIMD payoff)
+    /// - Any pattern is empty
+    /// - No pattern has length ≥ 2 (single-byte-only sets lack multi-column coverage)
     pub fn build(patterns: &[(&str, u32)]) -> Option<Self> {
         if patterns.len() < HARRY_MIN_PATTERN_COUNT {
             return None;

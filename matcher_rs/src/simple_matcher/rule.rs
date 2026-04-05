@@ -260,7 +260,7 @@ pub(super) struct PatternEntry {
     /// Pre-resolved rule shape encoding `use_matrix`, `and_count == 1`, and `has_not`.
     ///
     /// Lets [`RuleSet::process_entry`] branch on rule properties without touching the
-    /// `hot` array (only needed on first-touch in [`SimpleMatchState::init_rule`]).
+    /// `hot` array (only needed on first-touch in `ScanState::init_rule`).
     pub(super) shape: RuleShape,
 }
 
@@ -405,7 +405,7 @@ impl RuleSet {
     ///   per-segment counter is incremented and the veto fires only when the count goes
     ///   positive.
     ///
-    /// Init logic is inlined rather than calling [`ScanState::init_rule`] so that the
+    /// Init logic is inlined rather than calling `ScanState::init_rule` so that the
     /// `&mut WordState` reference obtained at the start of each arm survives across the
     /// init — eliminating a second `word_states` lookup per call.
     #[inline(always)]

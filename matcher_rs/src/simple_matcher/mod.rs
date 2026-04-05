@@ -123,6 +123,21 @@ pub struct SimpleResult<'a> {
 /// threads are fully independent with no contention or locking. The matcher itself is
 /// immutable after construction.
 ///
+/// # Performance
+///
+/// - **O(N) text scan**: All unique sub-patterns across all rules are deduplicated into
+///   a single Aho-Corasick automaton, so scan time scales with text length, not rule count.
+/// - **O(1) state reset**: Generation-based sparse-set avoids clearing per-rule state
+///   between calls (only touched rules are cleaned up).
+/// - **Bitmask fast path**: Rules with ≤64 segments use a `u64` bitmask instead of the
+///   full matrix, keeping the inner loop branch-free.
+/// - **`AllSimple` bypass**: When every rule is a pure literal (no `&`/`~` operators and
+///   single segment), the state machinery is bypassed entirely — each automaton hit maps
+///   directly to a result.
+/// - **DAG reuse**: The transformation pipeline is structured as a trie so intermediate
+///   results (e.g., Delete output) are computed once even when multiple composite
+///   `ProcessType`s share a prefix.
+///
 /// # Examples
 ///
 /// ```rust

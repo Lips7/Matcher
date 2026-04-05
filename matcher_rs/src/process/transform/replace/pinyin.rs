@@ -1,4 +1,11 @@
 //! CJK-to-Pinyin romanization replacement via page-table lookup.
+//!
+//! Data sourced from `pypinyin` (no-tone, single-codepoint entries). L2 entries
+//! are packed as `(byte_offset << 8) | byte_length` into a shared string buffer.
+//! The `PinYinChar` variant trims inter-syllable spaces via
+//! [`trim_pinyin_packed`] at construction time.
+//! All keys are non-ASCII CJK, so [`skip_ascii_simd`]
+//! bypasses ASCII runs.
 
 use std::borrow::Cow;
 
@@ -69,10 +76,25 @@ impl PinyinMatcher {
         }
     }
 
+    /// Replaces CJK codepoints with their Pinyin romanization.
+    ///
+    /// Returns `None` when `text` contains no CJK characters. The `bool` in the
+    /// return tuple indicates whether the output is entirely ASCII.
+    ///
+    /// ```ignore
+    /// let matcher = PinyinMatcher::new(PINYIN_L1_BYTES, PINYIN_L2_BYTES, PINYIN_STR_BYTES, false);
+    /// let (result, is_ascii) = matcher.replace("中国").unwrap();
+    /// assert_eq!(result, " zhong  guo "); // space-separated syllables
+    /// assert!(is_ascii);
+    /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
         replace_spans_tracking_ascii(text, self.iter(text))
     }
 
+    /// Decodes L1/L2 page tables from build-time binary artifacts.
+    ///
+    /// When `trim_space` is `true`, L2 entries are adjusted to exclude leading
+    /// and trailing spaces from each syllable (used by `PinYinChar`).
     pub(crate) fn new(
         l1: &'static [u8],
         l2: &'static [u8],

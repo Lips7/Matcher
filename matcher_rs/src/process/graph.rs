@@ -84,6 +84,15 @@ impl ProcessTypeBitNode {
 /// root (index 0) represents the raw input; each subsequent node represents one
 /// transformation step. Node indices are used by `walk_and_scan` to traverse the trie at
 /// match time.
+///
+/// ```text
+/// // Given process_type_set = {Fanjian|Delete, Fanjian|Delete|Normalize}:
+/// let tree = build_process_type_tree(&set, &pt_index_table);
+/// // tree[0] = root (None), children: [1]
+/// // tree[1] = Fanjian,     children: [2]
+/// // tree[2] = Delete,      children: [3], terminates
+/// // tree[3] = Normalize,   children: [],  terminates
+/// ```
 pub(crate) fn build_process_type_tree(
     process_type_set: &HashSet<ProcessType>,
     pt_index_table: &[u8; 64],

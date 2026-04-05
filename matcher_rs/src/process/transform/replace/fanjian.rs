@@ -1,4 +1,10 @@
-//! Traditional-to-Simplified Chinese replacement via page-table lookup.
+//! Traditional-to-Simplified Chinese (T2S) replacement via page-table lookup.
+//!
+//! Data sourced from OpenCC (`t2s`, `tw2s`, `hk2s`). The two-stage page table
+//! maps each Traditional codepoint to its Simplified equivalent (stored as a
+//! `u32` codepoint in L2). Since all keys are non-ASCII CJK characters,
+//! [`skip_ascii_simd`] bypasses ASCII runs in O(1)
+//! per SIMD chunk. Output is always non-ASCII (CJK→CJK).
 
 use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
 
@@ -43,6 +49,7 @@ impl<'a> Iterator for FanjianFindIter<'a> {
 /// Two-stage page-table matcher for Traditional-to-Simplified Chinese replacement.
 ///
 /// Each non-zero L2 entry is the Unicode codepoint of the Simplified equivalent.
+/// Constructed once from build-time binary artifacts via [`FanjianMatcher::new`].
 #[derive(Clone)]
 pub(crate) struct FanjianMatcher {
     l1: Box<[u16]>,
@@ -60,10 +67,21 @@ impl FanjianMatcher {
         }
     }
 
+    /// Replaces Traditional Chinese codepoints with their Simplified equivalents.
+    ///
+    /// Returns `None` when `text` contains no Traditional characters (zero-alloc
+    /// fast path).
+    ///
+    /// ```ignore
+    /// let matcher = FanjianMatcher::new(FANJIAN_L1_BYTES, FANJIAN_L2_BYTES);
+    /// assert_eq!(matcher.replace("國語"), Some("国语".to_string()));
+    /// assert!(matcher.replace("hello").is_none()); // no T→S mapping
+    /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         replace_scan(text, self.iter(text))
     }
 
+    /// Decodes L1/L2 page tables from build-time binary artifacts.
     pub(crate) fn new(l1: &'static [u8], l2: &'static [u8]) -> Self {
         let (l1, l2) = decode_page_table(l1, l2);
         Self { l1, l2 }

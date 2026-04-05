@@ -14,6 +14,13 @@
 //!
 //! When `generation` wraps to `u32::MAX`, all stamps are reset to 0 and the counter
 //! restarts at 1. This happens at most once every ~4 billion calls per thread.
+//!
+//! ```text
+//! Call 1 (gen=1): touch rules [0, 3, 7] → only word_states[0,3,7] stamped gen=1
+//! Call 2 (gen=2): touch rules [1, 3]    → word_states[0,7] still stamped gen=1 (stale)
+//!                                         word_states[1,3] stamped gen=2 (live)
+//! // No zeroing needed between calls — stale stamps are simply ignored.
+//! ```
 
 use std::cell::UnsafeCell;
 

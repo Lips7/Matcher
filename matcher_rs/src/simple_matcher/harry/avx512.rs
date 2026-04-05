@@ -1,3 +1,10 @@
+//! AVX512 scan kernels for [`HarryMatcher`].
+//!
+//! Requires `avx512f`, `avx512bw`, and `avx512vbmi` — confirmed at runtime via
+//! [`ScanPlan`](crate::simple_matcher::engine::ScanPlan) before dispatch.
+//! Processes 56 positions per chunk (64-byte SIMD register minus
+//! `max_prefix_len` overlap). All functions are `pub(super) unsafe`.
+
 use std::arch::x86_64::*;
 
 use super::{HarryMatcher, MAX_SCAN_LEN};
