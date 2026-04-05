@@ -7,7 +7,7 @@
 //!
 //! Env vars:
 //!   RULES=10000   Number of rules (default: 10000)
-//!   DICT=en       Word list language: cn | en (default: en)
+//!   DICT=en       Pattern script: en | cn | mixed (default: en)
 //!   PT=fdn        ProcessType shorthand (default: fdn)
 //!   ITERS=50      Number of build iterations (default: 50)
 
@@ -47,15 +47,56 @@ fn parse_process_type(s: &str) -> ProcessType {
     }
 }
 
+/// Returns a filtered, sorted word list.
+///
+/// - `"en"`:    pure ASCII words from the English dictionary
+/// - `"cn"`:    pure non-ASCII words from the Chinese dictionary
+/// - `"mixed"`: alternating ASCII and CJK words (guaranteed ~50/50 mix)
 fn word_list(lang: &str) -> Vec<&'static str> {
-    let raw = if lang == "cn" {
-        CN_WORD_LIST
-    } else {
-        EN_WORD_LIST
-    };
-    let mut words: Vec<&str> = raw.lines().collect();
-    words.sort_unstable();
-    words
+    match lang {
+        "cn" => {
+            let mut w: Vec<&str> = CN_WORD_LIST
+                .lines()
+                .filter(|s| !s.is_ascii() && !s.is_empty())
+                .collect();
+            w.sort_unstable();
+            w
+        }
+        "mixed" => {
+            let mut en: Vec<&str> = EN_WORD_LIST
+                .lines()
+                .filter(|s| s.is_ascii() && !s.is_empty())
+                .collect();
+            let mut cn: Vec<&str> = CN_WORD_LIST
+                .lines()
+                .filter(|s| !s.is_ascii() && !s.is_empty())
+                .collect();
+            en.sort_unstable();
+            cn.sort_unstable();
+            let cap = en.len() + cn.len();
+            let mut words = Vec::with_capacity(cap);
+            let (mut ei, mut ci) = (0, 0);
+            while ei < en.len() || ci < cn.len() {
+                if ei < en.len() {
+                    words.push(en[ei]);
+                    ei += 1;
+                }
+                if ci < cn.len() {
+                    words.push(cn[ci]);
+                    ci += 1;
+                }
+            }
+            words
+        }
+        _ => {
+            let mut w: Vec<&str> = EN_WORD_LIST
+                .lines()
+                .filter(|s| s.is_ascii() && !s.is_empty())
+                .collect();
+            w.sort_unstable();
+            w
+        }
+    }
 }
 
 fn build_rule_map(lang: &str, size: usize) -> HashMap<u32, String> {
@@ -78,6 +119,11 @@ fn main() {
     println!("  rules={rules}, lang={lang}, pt={pt}, iters={iters}");
 
     let map = build_rule_map(&lang, rules);
+    let (ascii_pats, non_ascii_pats) = map.values().fold((0u32, 0u32), |(a, n), v| {
+        if v.is_ascii() { (a + 1, n) } else { (a, n + 1) }
+    });
+    println!("  patterns: {ascii_pats} ASCII, {non_ascii_pats} non-ASCII");
+
     let mut table = HashMap::new();
     table.insert(pt, map);
 

@@ -956,7 +956,7 @@ def main():
     rec = sub.add_parser("record", help="Record a Time Profiler trace")
     rec.add_argument("--mode", default="process", choices=["is_match", "process"])
     rec.add_argument("--shape", default="literal", choices=["literal", "and", "not"])
-    rec.add_argument("--dict", default="en", choices=["en", "cn"], dest="dict_lang")
+    rec.add_argument("--dict", default="en", choices=["en", "cn", "mixed"], dest="dict_lang")
     rec.add_argument("--rules", type=int, default=10_000)
     rec.add_argument("--pt", default="none",
                      choices=["none", "fanjian", "delete", "norm", "dn", "fdn", "pinyin", "pychar"])

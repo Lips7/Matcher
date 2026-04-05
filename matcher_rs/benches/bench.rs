@@ -27,36 +27,60 @@ const BUILD_PROCESS_TYPES: &[ProcessType] = &[
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
+/// Returns a filtered, sorted word list.
+///
+/// - `"en"`:    pure ASCII words from the English dictionary
+/// - `"cn"`:    pure non-ASCII words from the Chinese dictionary
+/// - `"mixed"`: alternating ASCII and CJK words (guaranteed ~50/50 mix)
 fn word_list(lang: &str) -> Vec<&str> {
-    let mut words: Vec<&str> = if lang == "cn" {
-        CN_WORD_LIST.lines().collect()
-    } else {
-        EN_WORD_LIST.lines().collect()
-    };
-    words.sort_unstable();
-    words
+    match lang {
+        "cn" => {
+            let mut w: Vec<&str> = CN_WORD_LIST
+                .lines()
+                .filter(|s| !s.is_ascii() && !s.is_empty())
+                .collect();
+            w.sort_unstable();
+            w
+        }
+        "mixed" => {
+            let mut en: Vec<&str> = EN_WORD_LIST
+                .lines()
+                .filter(|s| s.is_ascii() && !s.is_empty())
+                .collect();
+            let mut cn: Vec<&str> = CN_WORD_LIST
+                .lines()
+                .filter(|s| !s.is_ascii() && !s.is_empty())
+                .collect();
+            en.sort_unstable();
+            cn.sort_unstable();
+            let cap = en.len() + cn.len();
+            let mut words = Vec::with_capacity(cap);
+            let (mut ei, mut ci) = (0, 0);
+            while ei < en.len() || ci < cn.len() {
+                if ei < en.len() {
+                    words.push(en[ei]);
+                    ei += 1;
+                }
+                if ci < cn.len() {
+                    words.push(cn[ci]);
+                    ci += 1;
+                }
+            }
+            words
+        }
+        _ => {
+            let mut w: Vec<&str> = EN_WORD_LIST
+                .lines()
+                .filter(|s| s.is_ascii() && !s.is_empty())
+                .collect();
+            w.sort_unstable();
+            w
+        }
+    }
 }
 
 fn build_literal_map(lang: &str, size: usize, match_scenario: bool) -> HashMap<u32, String> {
-    build_literal_map_inner(lang, size, match_scenario, false)
-}
-
-fn build_literal_map_ascii(lang: &str, size: usize, match_scenario: bool) -> HashMap<u32, String> {
-    build_literal_map_inner(lang, size, match_scenario, true)
-}
-
-fn build_literal_map_inner(
-    lang: &str,
-    size: usize,
-    match_scenario: bool,
-    ascii_only: bool,
-) -> HashMap<u32, String> {
-    let all_patterns = word_list(lang);
-    let patterns: Vec<&str> = if ascii_only {
-        all_patterns.into_iter().filter(|s| s.is_ascii()).collect()
-    } else {
-        all_patterns
-    };
+    let patterns = word_list(lang);
     let mut map = HashMap::with_capacity(size);
     for i in 0..size {
         let word_idx = (i * 997) % patterns.len();
@@ -94,17 +118,8 @@ fn build_shaped_map(lang: &str, size: usize, shape: &str) -> HashMap<u32, String
 }
 
 fn build_mixed_script_map(size: usize) -> HashMap<u32, String> {
-    let mut en: Vec<&str> = EN_WORD_LIST
-        .lines()
-        .filter(|w| w.is_ascii() && !w.is_empty())
-        .collect();
-    let mut cn: Vec<&str> = CN_WORD_LIST
-        .lines()
-        .filter(|w| !w.is_ascii() && !w.is_empty())
-        .collect();
-    en.sort_unstable();
-    cn.sort_unstable();
-
+    let en = word_list("en");
+    let cn = word_list("cn");
     let mut map = HashMap::with_capacity(size);
     for i in 0..size {
         let word = if i % 2 == 0 {
@@ -354,30 +369,6 @@ mod scaling {
         let table = wrap_table(ProcessType::None, build_literal_map("cn", size, true));
         let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = CN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            for line in haystack.lines() {
-                let _ = black_box(matcher.process(line));
-            }
-        });
-    }
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn is_match_en_ascii(bencher: Bencher, size: usize) {
-        let table = wrap_table(ProcessType::None, build_literal_map_ascii("en", size, true));
-        let matcher = SimpleMatcher::new(&table).unwrap();
-        let haystack = EN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            for line in haystack.lines() {
-                let _ = black_box(matcher.is_match(line));
-            }
-        });
-    }
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn process_en_ascii(bencher: Bencher, size: usize) {
-        let table = wrap_table(ProcessType::None, build_literal_map_ascii("en", size, true));
-        let matcher = SimpleMatcher::new(&table).unwrap();
-        let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
                 let _ = black_box(matcher.process(line));
