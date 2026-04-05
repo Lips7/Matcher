@@ -137,7 +137,17 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 ## Important Notes
 
-- ALWAYS run benchmarks to measure baseline performance before making optimizations, run them again after changes, and compare repeated-run aggregates with `run_benchmarks.py` plus `compare_benchmark_runs.py`.
+- ALWAYS profile before AND after optimizations to validate the mechanism, then bench-compare for the final adopt/revert decision. Profile comparison is fast (~30s) and shows whether the target category % actually changed; bench-compare is slow (~15 min) but is the authoritative throughput measurement.
 - ALWAYS update `DESIGN.md` after making any non-trivial code changes to keep documentation accurate.
 - Benchmarks use `divan` (not `criterion`) — write new benchmarks with `#[divan::bench]` attributes.
 - `proptest` is available for property-based testing in `matcher_rs`.
+- With heavy `#[inline(always)]` + full LTO, LLVM applies CSE across function boundaries. Source-level "redundancy" (e.g., duplicate `text.is_ascii()` calls) may already be a single operation in generated code. Profile category % is the ground truth, not source reading.
+
+### Failed Optimizations
+
+Do not re-attempt these. Each was profiled and/or benchmarked; the mechanism was validated as ineffective.
+
+| Optimization | Expected | Actual | Why it failed |
+|---|---|---|---|
+| Cache `text.is_ascii()` at top of `ScanPlan::is_match` | -7% ASCII check on is_match/en | +8% regression (bench); profile: ASCII check % unchanged on DFA path, 28% overhead added on Harry path | LLVM already CSE'd the duplicate call on the DFA path. On Harry path (>25K rules), original code avoids `is_ascii()` entirely via `!is_dfa` short-circuit — unconditional caching adds a wasted 580KB linear scan per call. |
+| Replace `Option::as_ref().is_some_and()` with `if let Some` in engine dispatch | -2% dispatch overhead | Neutral to slight regression | `is_some_and` compiles to tighter code under LTO than nested `if let` patterns. |
