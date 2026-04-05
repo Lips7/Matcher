@@ -540,6 +540,16 @@ On `u32::MAX` overflow, all generation fields in `word_states` are explicitly re
 
 `touched_indices: Vec<usize>` records which rules were first-touched during Pass 1. Pass 2 iterates only these entries instead of the full `word_states` array. This keeps evaluation cost proportional to the number of rules that received hits, not the total rule count. Cleared at the start of each scan in `prepare()`.
 
+### ScanState Split-Borrow View
+
+`ScanState<'a>` is a stack-local struct that borrows `SimpleMatchState`'s fields as individual mutable slices (`&mut [WordState]`, `&mut Vec<usize>`, `&mut [TinyVec<...>]`, etc.) rather than passing `&mut SimpleMatchState` through the hot path. This enables two compiler optimizations:
+
+1. **Register-cached base pointers** — `&mut [WordState]` is a fat pointer on the stack; the compiler keeps its data pointer in a register across the entire scan loop. With `&mut SimpleMatchState`, each `word_states.get_unchecked_mut()` must reload the `Vec`'s heap pointer from the struct (the compiler can't prove it didn't change between calls when `&mut self` methods are called).
+
+2. **Eliminated double word_state load** — In `process_entry`'s AND/NOT paths, the rule-init logic is inlined rather than called via `state.init_rule(&mut self)`. Because `word_states` and `touched_indices` are separate `ScanState` fields, Rust's disjoint-field borrowing guarantees the `&mut WordState` reference survives across `touched_indices.push()` — no re-load needed after init.
+
+Profiled impact: eliminated 9.9% `RawVecInner::non_null<WordState>` overhead on process/and workloads. Benchmarked at 3–6% throughput improvement across process and is_match paths (strongest on AND rules: −5.7%).
+
 ### PatternKind Dispatch
 
 Each `PatternEntry` carries a `PatternKind` enum (`repr(u8)`) determined at construction time:
@@ -640,7 +650,7 @@ Two TLS slots are used, both declared with `#[thread_local]` (a nightly attribut
 
 | Slot | Type | Module | Purpose |
 |------|------|--------|---------|
-| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, touched-index list, and `resolved_count` for variant-level early termination. Reused across calls. |
+| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | `simple_matcher/state.rs` | Generation-stamped per-rule word states, counter matrices, touched-index list, and `resolved_count` for variant-level early termination. Reused across calls. Hot path accesses fields through `ScanState<'a>` split-borrow view for register-cached base pointers. |
 | `STRING_POOL` | `UnsafeCell<Vec<String>>` | `process/string_pool.rs` | Recycled `String` allocations for transformation output. Bounded to 128 entries. |
 
 `UnsafeCell` is used instead of `RefCell` to eliminate runtime borrow-checking overhead. This is sound because `#[thread_local]` guarantees single-threaded access, and the code structure prevents re-entrant borrowing — each TLS slot is borrowed in exactly one function scope with no recursive calls back into the same slot.
