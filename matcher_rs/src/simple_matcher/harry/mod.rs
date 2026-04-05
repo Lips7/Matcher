@@ -101,7 +101,6 @@ impl PrefixMap {
     }
 
     /// Looks up a prefix group by key via hash table (O(1) average).
-    #[inline(always)]
     fn get(&self, key: u64) -> Option<&PrefixGroup> {
         self.map.get(&key)
     }
@@ -207,7 +206,7 @@ impl HarryMatcher {
         self.scan_multi_dispatch(haystack, &mut on_value)
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_match_bytes(&self, haystack: &[u8]) -> bool {
         #[cfg(any(
             all(feature = "simd_runtime_dispatch", target_arch = "aarch64"),
@@ -358,7 +357,7 @@ impl HarryMatcher {
     }
 
     /// Routes multi-byte scanning to the best available kernel.
-    #[inline(always)]
+    #[inline]
     fn scan_multi_dispatch(&self, haystack: &[u8], on_value: &mut impl FnMut(u32) -> bool) -> bool {
         if haystack.len() < 2 {
             return false;

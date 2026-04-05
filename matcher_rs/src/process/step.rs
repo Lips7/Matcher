@@ -38,7 +38,6 @@ impl StepOutput {
     ///
     /// Used when a step determines that no characters in the input are affected by its
     /// transformation table.
-    #[inline(always)]
     pub(crate) fn unchanged(is_ascii: bool) -> Self {
         Self {
             changed: None,
@@ -47,7 +46,6 @@ impl StepOutput {
     }
 
     /// Creates a changed result with the produced `String` and its ASCII status.
-    #[inline(always)]
     pub(crate) fn changed(changed: String, is_ascii: bool) -> Self {
         Self {
             changed: Some(changed),

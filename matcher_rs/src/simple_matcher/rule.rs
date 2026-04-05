@@ -146,13 +146,11 @@ pub(super) enum RuleShape {
 
 impl RuleShape {
     /// Whether the owning rule contains at least one NOT (`~`) segment.
-    #[inline(always)]
     pub(super) fn has_not(self) -> bool {
         self as u8 & 1 != 0
     }
 
     /// Whether the owning rule requires the per-variant counter matrix.
-    #[inline(always)]
     pub(super) fn use_matrix(self) -> bool {
         matches!(self, Self::Matrix | Self::MatrixNot)
     }

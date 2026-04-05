@@ -144,7 +144,7 @@ impl SimpleMatcher {
     ///
     /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
     /// See module-level safety documentation.
-    #[inline(always)]
+    #[inline]
     pub(super) fn walk_and_scan<'a>(
         &'a self,
         text: &'a str,

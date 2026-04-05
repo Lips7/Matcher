@@ -115,7 +115,6 @@ impl SimdDispatch {
 /// caller runs [`SimdDispatch::detect`]; all subsequent callers get the cached
 /// result with no synchronization overhead beyond a single atomic load.
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
-#[inline(always)]
 fn dispatch() -> &'static SimdDispatch {
     static DISPATCH: OnceLock<SimdDispatch> = OnceLock::new();
     DISPATCH.get_or_init(SimdDispatch::detect)
@@ -298,7 +297,7 @@ fn skip_ascii_portable(bytes: &[u8], offset: usize) -> usize {
 /// The `ascii_lut` is expanded to a 32-byte vector (duplicated halves) once
 /// before the main loop to match the 32-lane `swizzle_dyn` requirement.
 #[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-#[inline(always)]
+#[inline]
 fn skip_ascii_non_delete_portable(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
     if offset >= bytes.len() {
         return offset;
@@ -522,7 +521,7 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
 /// - `ascii_lut` and [`SHIFT_TABLE_16`] are both exactly 16 bytes, matching
 ///   the `vld1q_u8` / `vqtbl1q_u8` requirement.
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
-#[inline(always)]
+#[inline]
 fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
     if offset >= bytes.len() {
         return offset;

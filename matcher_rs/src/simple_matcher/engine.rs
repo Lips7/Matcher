@@ -190,13 +190,11 @@ impl ScanPlan {
     }
 
     /// Returns the pattern metadata referenced by the compiled scan engines.
-    #[inline(always)]
     pub(super) fn patterns(&self) -> &PatternIndex {
         &self.patterns
     }
 
     /// `true` when every compiled pattern is pure ASCII.
-    #[inline(always)]
     pub(super) fn all_patterns_ascii(&self) -> bool {
         self.all_patterns_ascii
     }
@@ -489,7 +487,6 @@ impl CharwiseMatcherStreamExt for CharwiseMatcher {
 }
 
 impl CharwiseMatcherExt for CharwiseMatcher {
-    #[inline(always)]
     fn is_match_text(&self, text: &str) -> bool {
         self.find_iter(text).next().is_some()
     }

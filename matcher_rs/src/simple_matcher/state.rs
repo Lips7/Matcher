@@ -186,7 +186,6 @@ pub(super) struct ScanContext {
 /// Hot-path methods on the split-borrow scan state.
 impl ScanState<'_> {
     /// Returns the rules touched during the current generation.
-    #[inline(always)]
     pub(super) fn touched_indices(&self) -> &[usize] {
         self.touched_indices
     }
