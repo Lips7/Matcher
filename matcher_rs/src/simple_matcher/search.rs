@@ -36,6 +36,7 @@ use std::borrow::Cow;
 
 use tinyvec::TinyVec;
 
+use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
 use super::rule::{
@@ -243,28 +244,24 @@ impl SimpleMatcher {
                                 // of non-ASCII, conservatively assume non-ASCII.
                                 is_ascii: parent_ascii,
                             };
-                            step.as_delete()
-                                .and_then(|dm| {
-                                    let iter = dm.filter_bytes(parent_text);
+                            macro_rules! fused {
+                                ($m:expr) => {
                                     self.scan.for_each_match_value_from_iter(
-                                        iter,
+                                        $m.filter_bytes(parent_text),
                                         ctx.is_ascii,
-                                        |raw_value| self.process_match(raw_value, ctx, &mut ss),
+                                        |v| self.process_match(v, ctx, &mut ss),
                                     )
-                                })
-                                .or_else(|| {
-                                    step.as_normalize().and_then(|nm| {
-                                        let iter = nm.filter_bytes(parent_text);
-                                        self.scan.for_each_match_value_from_iter(
-                                            iter,
-                                            ctx.is_ascii,
-                                            |raw_value| self.process_match(raw_value, ctx, &mut ss),
-                                        )
-                                    })
-                                })
-                                .inspect(|_| {
-                                    variant_counter += 1;
-                                })
+                                };
+                            }
+                            match step {
+                                TransformStep::Delete(m) => fused!(m),
+                                TransformStep::Normalize(m) => fused!(m),
+                                TransformStep::Fanjian(m) => fused!(m),
+                                _ => None,
+                            }
+                            .inspect(|_| {
+                                variant_counter += 1;
+                            })
                         } else {
                             None
                         };

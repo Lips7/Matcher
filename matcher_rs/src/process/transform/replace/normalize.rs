@@ -199,11 +199,11 @@ impl NormalizeMatcher {
         }
     }
 
-    #[inline(always)]
     /// Returns a streaming byte iterator over the normalized form of `text`.
     ///
     /// Used by the fused normalize-scan path to feed normalized bytes directly
     /// into the Aho-Corasick automaton without materializing the full string.
+    #[inline(always)]
     pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> NormalizeFilterIterator<'a> {
         NormalizeFilterIterator {
             bytes: text.as_bytes(),

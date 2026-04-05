@@ -234,6 +234,7 @@ For leaf Delete or Normalize nodes, `walk_and_scan` can bypass string materializ
 
 - **Delete**: `DeleteFilterIterator` yields only non-deleted bytes
 - **Normalize**: `NormalizeFilterIterator` yields normalized bytes (unmapped pass through, mapped emit replacement bytes)
+- **Fanjian**: `FanjianFilterIterator` yields simplified bytes (unmapped CJK pass through, mapped Traditional→Simplified emit replacement char's UTF-8 bytes)
 
 This eliminates the intermediate `String` allocation and the second text traversal. Not used when the `aho-corasick` DFA engine is selected (DFA has no streaming API, and DFA+materialization is faster anyway). Measured: +12.6% throughput on CJK delete+scan workloads.
 

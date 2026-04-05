@@ -8,6 +8,92 @@
 
 use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
 
+// ---------------------------------------------------------------------------
+// Streaming byte iterator (for fused fanjian-scan)
+// ---------------------------------------------------------------------------
+
+/// Streaming byte iterator that yields Fanjian-transformed bytes from a UTF-8 string.
+///
+/// Created by [`FanjianMatcher::filter_bytes`]. Unmapped codepoints pass
+/// through byte-for-byte; mapped codepoints emit their simplified replacement's
+/// UTF-8 bytes. Output is valid UTF-8, satisfying `daachorse`'s
+/// `find_overlapping_iter_from_iter` safety requirement.
+///
+/// ASCII bytes always pass through unchanged (Fanjian only maps non-ASCII CJK
+/// codepoints), so `skip_ascii_simd` is not used here — the iterator yields
+/// ASCII bytes directly for maximum throughput in the fused scan path.
+pub(crate) struct FanjianFilterIterator<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    /// Remaining bytes to yield from the current kept (unmapped) multi-byte character.
+    char_remaining: u8,
+    /// UTF-8 encoding of the current replacement character.
+    replace_buf: [u8; 4],
+    replace_len: u8,
+    replace_pos: u8,
+    l1: &'a [u16],
+    l2: &'a [u32],
+}
+
+impl Iterator for FanjianFilterIterator<'_> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Fast path: mid-replacement character bytes.
+        if self.replace_pos < self.replace_len {
+            let byte = self.replace_buf[self.replace_pos as usize];
+            self.replace_pos += 1;
+            return Some(byte);
+        }
+
+        // Fast path: mid-character continuation bytes (unmapped passthrough).
+        if self.char_remaining > 0 {
+            // SAFETY: within a kept multi-byte character; offset is in bounds.
+            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+            self.offset += 1;
+            self.char_remaining -= 1;
+            return Some(byte);
+        }
+
+        if self.offset >= self.bytes.len() {
+            return None;
+        }
+
+        // SAFETY: offset < len checked above.
+        let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+
+        if byte < 0x80 {
+            // ASCII: always passthrough (Fanjian only maps non-ASCII).
+            self.offset += 1;
+            return Some(byte);
+        }
+
+        // Non-ASCII: decode codepoint, check page table.
+        // SAFETY: byte >= 0x80 in a valid UTF-8 &str means multi-byte lead byte.
+        let (cp, char_len) = unsafe { decode_utf8_raw(self.bytes, self.offset) };
+
+        if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2)
+            && mapped_cp != cp
+        {
+            // Mapped: encode replacement char and yield first byte.
+            self.offset += char_len;
+            // SAFETY: page table values are valid Unicode codepoints assigned at build time.
+            let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
+            let len = mapped.len_utf8();
+            mapped.encode_utf8(&mut self.replace_buf);
+            self.replace_len = len as u8;
+            self.replace_pos = 1;
+            return Some(self.replace_buf[0]);
+        }
+
+        // Unmapped: yield first byte, set remaining for continuation bytes.
+        self.offset += 1;
+        self.char_remaining = (char_len - 1) as u8;
+        Some(byte)
+    }
+}
+
 struct FanjianFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -79,6 +165,24 @@ impl FanjianMatcher {
     /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         replace_scan(text, self.iter(text))
+    }
+
+    /// Returns a streaming byte iterator over the Fanjian-transformed form of `text`.
+    ///
+    /// Used by the fused fanjian-scan path to feed transformed bytes directly
+    /// into the Aho-Corasick automaton without materializing the full string.
+    #[inline(always)]
+    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> FanjianFilterIterator<'a> {
+        FanjianFilterIterator {
+            bytes: text.as_bytes(),
+            offset: 0,
+            char_remaining: 0,
+            replace_buf: [0; 4],
+            replace_len: 0,
+            replace_pos: 0,
+            l1: &self.l1,
+            l2: &self.l2,
+        }
     }
 
     /// Decodes L1/L2 page tables from build-time binary artifacts.
