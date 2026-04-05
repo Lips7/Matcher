@@ -117,12 +117,13 @@ bench-compare-raw baseline candidate *args:
 bench-viz *args:
     uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
 
-# Profile with samply + source-line attribution via atos
+# Profile with Xcode Instruments (Time Profiler)
 # Examples:
-#   just profile record --mode process --shape literal --dict en --analyze
-#   just profile analyze /tmp/prof_*.json.gz
+#   just profile record --mode is_match --dict en --rules 10000 --analyze
+#   just profile record --mode process --dict cn --open
+#   just profile analyze /tmp/prof_*.trace
 profile *args:
-    uv run matcher_rs/scripts/analyze_profile.py {{args}}
+    uv run matcher_rs/scripts/instruments_profile.py {{args}}
 
 # -- Coverage ------------------------------------------------------------------
 
