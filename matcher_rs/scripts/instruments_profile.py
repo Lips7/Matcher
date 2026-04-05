@@ -83,7 +83,9 @@ def record_profile(
     build: bool,
 ) -> Path:
     binary = find_profiling_binary()
-    if not binary.exists() or build:
+    if build:
+        binary = build_profiling_binary()
+    elif not binary.exists():
         binary = build_profiling_binary()
 
     if output is None:
@@ -166,16 +168,168 @@ def shorten_symbol(demangled: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Inline Resolution via atos
+# ---------------------------------------------------------------------------
+
+def resolve_addresses_atos(
+    binary_path: str,
+    load_addr: str,
+    addresses: list[str],
+) -> dict[str, list[dict]]:
+    """Resolve instruction addresses to inline call chains via `atos -i`.
+
+    Returns dict mapping address → list of {name, file, line} dicts,
+    ordered inner (leaf) → outer (caller).
+    """
+    if not addresses:
+        return {}
+
+    unique_addrs = sorted(set(addresses))
+
+    try:
+        cmd = ["atos", "-i", "-o", binary_path, "-l", load_addr] + unique_addrs
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        raw_output = proc.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+
+    if not raw_output:
+        return {}
+
+    # Pipe through rustfilt for demangling
+    try:
+        proc2 = subprocess.run(
+            ["rustfilt"], input=raw_output,
+            capture_output=True, text=True, timeout=10,
+        )
+        demangled_output = proc2.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        demangled_output = raw_output
+
+    # Split into per-address groups (separated by blank lines).
+    groups = re.split(r"\n\s*\n", demangled_output)
+
+    # atos -i with N addresses produces N groups.
+    result: dict[str, list[dict]] = {}
+    for addr, group in zip(unique_addrs, groups):
+        chain = []
+        for line in group.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Format: "symbol (in binary_name) (file:line)" or just "symbol (in binary_name)"
+            m = re.match(r"^(.+?)\s+\(in .+?\)\s+\((.+?):(\d+)\)$", line)
+            if m:
+                chain.append({
+                    "name": shorten_symbol(m.group(1)),
+                    "file": Path(m.group(2)).name,
+                    "line": m.group(3),
+                })
+            else:
+                m2 = re.match(r"^(.+?)\s+\(in .+?\)", line)
+                name = shorten_symbol(m2.group(1)) if m2 else line
+                chain.append({"name": name, "file": "", "line": ""})
+        if chain:
+            result[addr] = chain
+
+    return result
+
+
+def _build_source_attribution(
+    samples: list[dict],
+    atos_cache: dict[str, list[dict]],
+    total_weight_ns: int,
+) -> list[dict]:
+    """Attribute each sample to the deepest frame in our codebase using atos inline chains.
+
+    Returns list of {source, weight_ms, pct, inline_chain} sorted by weight.
+    """
+    OUR_FILES = {
+        "mod.rs", "build.rs", "engine.rs", "search.rs", "state.rs", "rule.rs",
+        "harry", "neon.rs", "avx512.rs",
+        "step.rs", "graph.rs", "api.rs", "process_type.rs", "string_pool.rs",
+        "replace.rs", "delete.rs", "utf8.rs", "simd.rs", "constants.rs",
+        "builder.rs",
+    }
+
+    attribution: Counter[str] = Counter()
+    attribution_chain: dict[str, str] = {}
+
+    for s in samples:
+        frames = s["frames"]
+        w = s["weight_ns"]
+
+        # Use the leaf frame's address to get the atos-resolved inline chain
+        leaf_addr = frames[0].get("addr", "") if frames else ""
+        chain = atos_cache.get(leaf_addr, [])
+
+        # Find deepest frame in our code
+        attributed = None
+        chain_str = ""
+        for i, frame in enumerate(chain):
+            fname = frame.get("file", "")
+            if fname in OUR_FILES:
+                loc = f"{fname}:{frame['line']}" if frame.get("line") else fname
+                name = frame["name"]
+                # Strip generic parameters (e.g., "::for_each_match_value::<...closure#0>")
+                name = re.sub(r"::<.*$", "", name)  # strip trailing generic
+                name = re.sub(r"<[^>]*>", "", name)  # remove remaining generics
+                if "::" in name:
+                    parts = [p for p in name.split("::") if p]
+                    name = "::".join(parts[-2:]) if len(parts) > 2 else name
+                attributed = f"{name}  ({loc})"
+                # Build abbreviated chain from this point outward
+                chain_parts = []
+                for j in range(i + 1, min(i + 4, len(chain))):
+                    cname = chain[j]["name"]
+                    cname = re.sub(r"::<.*$", "", cname)
+                    cname = re.sub(r"<[^>]*>", "", cname)
+                    if "::" in cname:
+                        cparts = [p for p in cname.split("::") if p]
+                        cname = cparts[-1] if len(cparts) > 1 else cname
+                    chain_parts.append(cname)
+                if chain_parts:
+                    chain_str = " → ".join(chain_parts)
+                break
+
+        if attributed is None:
+            # Fall back to leaf symbol name
+            if chain:
+                attributed = f"{chain[0]['name']}  ({chain[0].get('file', '?')}:{chain[0].get('line', '?')})"
+            else:
+                attributed = "unknown"
+
+        attribution[attributed] += w
+        if attributed not in attribution_chain and chain_str:
+            attribution_chain[attributed] = chain_str
+
+    result = []
+    for source, w in attribution.most_common(25):
+        entry = {
+            "source": source,
+            "weight_ms": w / 1_000_000,
+            "pct": w / total_weight_ns * 100 if total_weight_ns else 0,
+        }
+        if source in attribution_chain:
+            entry["chain"] = attribution_chain[source]
+        result.append(entry)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Parse XML
 # ---------------------------------------------------------------------------
 
-def parse_time_profile(xml_text: str) -> list[dict]:
+def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
     """Parse xctrace time-profile XML into structured samples.
 
-    Each sample has:
+    Returns (samples, binary_info) where each sample has:
       - weight_ns: sample weight in nanoseconds
-      - frames: list of {name, source_file, source_line} dicts (leaf first)
+      - frames: list of {name, addr, source_file, source_line} dicts (leaf first)
       - thread: thread description string
+
+    binary_info maps binary name → {path, load_addr}.
     """
     root = ET.fromstring(xml_text)
 
@@ -185,6 +339,18 @@ def parse_time_profile(xml_text: str) -> list[dict]:
         eid = elem.get("id")
         if eid:
             id_map[eid] = elem
+
+    # Collect binary metadata (path + load address)
+    binary_info: dict[str, dict] = {}
+    for binary_el in root.iter("binary"):
+        bref = binary_el.get("ref")
+        if bref and bref in id_map:
+            binary_el = id_map[bref]
+        bname = binary_el.get("name", "")
+        bpath = binary_el.get("path", "")
+        load_addr = binary_el.get("load-addr", "")
+        if bname and bpath and load_addr:
+            binary_info[bname] = {"path": bpath, "load_addr": load_addr}
 
     samples: list[dict] = []
 
@@ -227,6 +393,7 @@ def parse_time_profile(xml_text: str) -> list[dict]:
                 frame_el = id_map[fref]
 
             name = frame_el.get("name", "")
+            addr = frame_el.get("addr", "")
             source_file = None
             source_line = None
 
@@ -242,6 +409,7 @@ def parse_time_profile(xml_text: str) -> list[dict]:
 
             frames.append({
                 "name": name,
+                "addr": addr,
                 "source_file": source_file,
                 "source_line": source_line,
             })
@@ -253,7 +421,7 @@ def parse_time_profile(xml_text: str) -> list[dict]:
                 "thread": thread_name,
             })
 
-    return samples
+    return samples, binary_info
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +510,7 @@ def analyze_trace(trace_path: Path) -> dict:
         sys.exit("Empty export — trace may not contain time-profile data")
 
     print("Parsing samples...")
-    samples = parse_time_profile(xml_text)
+    samples, binary_info = parse_time_profile(xml_text)
     if not samples:
         print("No samples parsed. Try opening in Instruments.app for interactive analysis.")
         return {"total_weight_ms": 0, "categories": {}, "top_symbols": [], "samples": 0}
@@ -361,6 +529,31 @@ def analyze_trace(trace_path: Path) -> dict:
 
     print(f"Demangling {len(all_mangled)} symbols...")
     demangle_map = batch_demangle(all_mangled)
+
+    # --- atos inline resolution ---
+    # Collect all unique leaf addresses for atos resolution
+    atos_cache: dict[str, list[dict]] = {}
+    profile_binary = binary_info.get(PROFILE_BINARY)
+    if profile_binary:
+        all_leaf_addrs: set[str] = set()
+        for s in main_samples:
+            if s["frames"]:
+                addr = s["frames"][0].get("addr", "")
+                if addr:
+                    all_leaf_addrs.add(addr)
+        if all_leaf_addrs:
+            print(f"Resolving {len(all_leaf_addrs)} addresses via atos -i...")
+            atos_cache = resolve_addresses_atos(
+                profile_binary["path"],
+                profile_binary["load_addr"],
+                sorted(all_leaf_addrs),
+            )
+            if atos_cache:
+                print(f"  Resolved {len(atos_cache)} inline chains")
+            else:
+                print("  (atos resolution failed — inline chains unavailable)")
+    else:
+        print("  (binary info not found in trace — skipping atos resolution)")
 
     # Aggregate
     total_weight_ns = sum(s["weight_ns"] for s in main_samples)
@@ -408,7 +601,10 @@ def analyze_trace(trace_path: Path) -> dict:
     call_tree = _build_call_tree(main_samples, demangle_map, total_weight_ns)
 
     # Build heavy backtraces (bottom-up, full stacks for top leaf symbols)
-    heavy_backtraces = _build_heavy_backtraces(main_samples, demangle_map, total_weight_ns)
+    heavy_backtraces = _build_heavy_backtraces(main_samples, demangle_map, total_weight_ns, atos_cache)
+
+    # Build source attribution (inline-resolved grouping by our code)
+    source_attribution = _build_source_attribution(main_samples, atos_cache, total_weight_ns) if atos_cache else []
 
     return {
         "total_weight_ms": total_weight_ns / 1_000_000,
@@ -424,6 +620,7 @@ def analyze_trace(trace_path: Path) -> dict:
         ],
         "call_tree": call_tree,
         "heavy_backtraces": heavy_backtraces,
+        "source_attribution": source_attribution,
     }
 
 
@@ -559,14 +756,20 @@ def _build_heavy_backtraces(
     samples: list[dict],
     demangle_map: dict[str, str],
     total_weight_ns: int,
+    atos_cache: dict[str, list[dict]] | None = None,
     top_n: int = 8,
 ) -> list[dict]:
     """For the top N leaf symbols, collect their most common full call stacks.
 
-    Shows raw caller chains (only skipping OS entry points) so that inlined
-    frames that are the actual callers aren't lost.
+    When atos_cache is available, uses inline-resolved chains from `atos -i`
+    instead of the (often empty) XML backtraces.
     """
+    if atos_cache is None:
+        atos_cache = {}
+
     leaf_stacks: dict[str, list[tuple[int, list[str]]]] = {}
+    # Also collect atos-resolved chains per leaf for inline display
+    leaf_atos: dict[str, Counter[tuple[str, ...]]] = {}
 
     for s in samples:
         frames = s["frames"]
@@ -585,7 +788,7 @@ def _build_heavy_backtraces(
         else:
             leaf_display = leaf_short
 
-        # Build caller chain — skip runtime entry-point boilerplate
+        # Build caller chain from XML — skip runtime entry-point boilerplate
         callers = []
         for f in frames[1:]:
             name = demangle_map.get(f["name"], f["name"])
@@ -607,6 +810,19 @@ def _build_heavy_backtraces(
             leaf_stacks[leaf_display] = []
         leaf_stacks[leaf_display].append((w, callers))
 
+        # Collect atos-resolved inline chain for this leaf address
+        leaf_addr = frames[0].get("addr", "")
+        if leaf_addr and leaf_addr in atos_cache:
+            chain = atos_cache[leaf_addr]
+            # Skip the leaf itself (chain[0]), show callers (chain[1:])
+            atos_callers = tuple(
+                f"{f['name']}  ({f['file']}:{f['line']})" if f.get("file") else f["name"]
+                for f in chain[1:]
+            )
+            if leaf_display not in leaf_atos:
+                leaf_atos[leaf_display] = Counter()
+            leaf_atos[leaf_display][atos_callers] += w
+
     leaf_totals = {leaf: sum(w for w, _ in stacks) for leaf, stacks in leaf_stacks.items()}
     top_leaves = sorted(leaf_totals.items(), key=lambda x: -x[1])[:top_n]
 
@@ -614,18 +830,35 @@ def _build_heavy_backtraces(
     for leaf_display, total_ns in top_leaves:
         pct = total_ns / total_weight_ns * 100
 
-        stack_weights: Counter[tuple[str, ...]] = Counter()
-        for w, callers in leaf_stacks[leaf_display]:
-            key = tuple(callers[:12])
-            stack_weights[key] += w
+        # Prefer atos-resolved chains over XML backtraces, but only when
+        # atos gives us real inline callers (>0 entries after the leaf).
+        atos_has_callers = (
+            leaf_display in leaf_atos
+            and leaf_atos[leaf_display]
+            and any(callers for callers in leaf_atos[leaf_display] if callers)
+        )
+        if atos_has_callers:
+            top_stacks = []
+            for stack_tuple, sw in leaf_atos[leaf_display].most_common(3):
+                top_stacks.append({
+                    "callers": list(stack_tuple),
+                    "weight_ms": sw / 1_000_000,
+                    "pct": sw / total_weight_ns * 100,
+                    "source": "atos",
+                })
+        else:
+            stack_weights: Counter[tuple[str, ...]] = Counter()
+            for w, callers in leaf_stacks[leaf_display]:
+                key = tuple(callers[:12])
+                stack_weights[key] += w
 
-        top_stacks = []
-        for stack_tuple, sw in stack_weights.most_common(3):
-            top_stacks.append({
-                "callers": list(stack_tuple),
-                "weight_ms": sw / 1_000_000,
-                "pct": sw / total_weight_ns * 100,
-            })
+            top_stacks = []
+            for stack_tuple, sw in stack_weights.most_common(3):
+                top_stacks.append({
+                    "callers": list(stack_tuple),
+                    "weight_ms": sw / 1_000_000,
+                    "pct": sw / total_weight_ns * 100,
+                })
 
         result.append({
             "leaf": leaf_display,
@@ -674,9 +907,9 @@ def print_report(result: dict, path: Path) -> None:
         print("  " + "-" * 74)
         _print_call_tree(result["call_tree"], result["call_tree"].total_ns)
 
-    # Heavy backtraces (bottom-up)
+    # Heavy backtraces (bottom-up, with inline resolution)
     if result.get("heavy_backtraces"):
-        print("\n  Heavy Backtraces (bottom-up, top leaf → callers):")
+        print("\n  Heavy Backtraces (bottom-up, inline-resolved via atos):")
         print("  " + "=" * 74)
         for entry in result["heavy_backtraces"]:
             print(f"\n  {entry['pct']:5.1f}%  {entry['total_ms']:7.0f}ms  ▶ {entry['leaf']}")
@@ -687,10 +920,22 @@ def print_report(result: dict, path: Path) -> None:
             for i, stack in enumerate(entry["stacks"]):
                 if not stack["callers"]:
                     continue
-                print(f"         stack #{i+1} ({stack['pct']:.1f}%):")
+                source = stack.get("source", "")
+                label = "inline chain" if source == "atos" else f"stack #{i+1}"
+                print(f"         {label} ({stack['pct']:.1f}%):")
                 for depth, caller in enumerate(stack["callers"]):
                     prefix = "           " + "  " * depth + "← "
                     print(f"{prefix}{caller}")
+
+    # Source attribution (inline-resolved, grouped by our code)
+    if result.get("source_attribution"):
+        print("\n  Source Attribution (inline-resolved, by our code location):")
+        print("  " + "=" * 74)
+        for entry in result["source_attribution"]:
+            if entry["pct"] < 0.5:
+                break
+            chain_suffix = f"  in: {entry['chain']}" if entry.get("chain") else ""
+            print(f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['source']}{chain_suffix}")
 
     print()
 
@@ -717,7 +962,7 @@ def main():
                      choices=["none", "fanjian", "delete", "norm", "dn", "fdn", "pinyin", "pychar"])
     rec.add_argument("--seconds", type=int, default=10)
     rec.add_argument("--output", "-o", type=Path, default=None)
-    rec.add_argument("--build", action="store_true", help="Force rebuild before recording")
+    rec.add_argument("--no-build", action="store_true", help="Skip rebuild (use existing binary as-is)")
     rec.add_argument("--analyze", action="store_true", help="Analyze immediately after recording")
     rec.add_argument("--open", action="store_true", help="Open trace in Instruments.app after recording")
 
@@ -741,7 +986,7 @@ def main():
             pt=args.pt,
             seconds=args.seconds,
             output=args.output,
-            build=args.build,
+            build=not args.no_build,
         )
         if args.analyze:
             result = analyze_trace(trace)
