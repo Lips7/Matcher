@@ -16,18 +16,11 @@
 //! Returns `None` when no codepoint was deleted, allowing callers to keep
 //! borrowing the original `&str` without allocation.
 
-#[cfg(feature = "runtime_build")]
-use ahash::AHashSet;
 use std::borrow::Cow;
 
 use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::skip_ascii_non_delete_simd;
 use crate::process::transform::utf8::decode_utf8_raw;
-
-/// Number of bytes needed to represent all Unicode codepoints (0x0–0x10FFFF) in
-/// a flat bitset: one bit per codepoint, packed 8 per byte.
-#[cfg(feature = "runtime_build")]
-const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
 /// Bitset-backed matcher for the delete transform.
 ///
@@ -37,12 +30,6 @@ const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 /// For ASCII bytes (0x00–0x7F), the first 16 bytes of the bitset are cached
 /// in `ascii_lut` so that the SIMD skip helpers can probe the delete set
 /// without touching the full bitset.
-///
-/// Construction is feature-gated:
-/// - **Default**: `DeleteMatcher` borrows the pre-compiled bitset from
-///   `constants::DELETE_BITSET_BYTES`.
-/// - **`runtime_build`**: `DeleteMatcher::from_sources` builds the bitset
-///   from the source delete table.
 #[derive(Clone)]
 pub(crate) struct DeleteMatcher {
     /// Full Unicode bitset (one bit per codepoint). Borrowed from a `&'static`
@@ -179,43 +166,12 @@ impl DeleteMatcher {
         }
     }
 
-    /// Builds a matcher from the precompiled delete bitset.
-    ///
-    /// `bitset` is the raw byte slice from `constants::DELETE_BITSET_BYTES`,
-    /// embedded at compile time by `build.rs`. The first 16 bytes are copied
-    /// into `ascii_lut` for SIMD-friendly ASCII probing.
-    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(bitset: &'static [u8]) -> Self {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
         Self {
             bitset: Cow::Borrowed(bitset),
-            ascii_lut,
-        }
-    }
-
-    /// Builds a matcher from the raw delete-source file.
-    ///
-    /// Parses `text_delete` (`U+XXXX` codepoint tokens, one per line, from
-    /// `TEXT-DELETE.txt`), collecting every unique codepoint into a `HashSet`
-    /// and setting the corresponding bits in a freshly allocated
-    /// [`UNICODE_BITSET_SIZE`]-byte bitset.
-    #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_sources(text_delete: &str) -> Self {
-        let mut bitset = vec![0u8; UNICODE_BITSET_SIZE];
-        let mut codepoints = AHashSet::new();
-        for token in text_delete.trim().lines() {
-            codepoints.insert(parse_delete_codepoint(token));
-        }
-        for cp in codepoints {
-            let cp = cp as usize;
-            bitset[cp / 8] |= 1 << (cp % 8);
-        }
-        let mut ascii_lut = [0u8; 16];
-        ascii_lut.copy_from_slice(&bitset[..16]);
-        Self {
-            bitset: Cow::Owned(bitset),
             ascii_lut,
         }
     }
@@ -284,15 +240,4 @@ impl Iterator for DeleteFilterIterator<'_> {
             return Some(first_byte);
         }
     }
-}
-
-#[cfg(feature = "runtime_build")]
-fn parse_delete_codepoint(token: &str) -> u32 {
-    u32::from_str_radix(
-        token
-            .strip_prefix("U+")
-            .expect("TEXT-DELETE entries must use U+XXXX format"),
-        16,
-    )
-    .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
 }

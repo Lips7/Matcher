@@ -7,13 +7,11 @@
 //!
 //! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
 //! [`ProcessType`]. On first access the corresponding [`TransformStep`] is compiled
-//! (either from build-time artifacts or from source maps when `runtime_build` is enabled)
-//! and cached for the lifetime of the process. All [`crate::SimpleMatcher`] instances
+//! (from build-time binary artifacts in [`super::transform::constants`]) and cached for
+//! the lifetime of the process. All [`crate::SimpleMatcher`] instances
 //! share the same compiled steps, so the heavy initialization cost (Aho-Corasick
 //! compilation, page-table construction) is paid at most once per step per process.
 
-#[cfg(feature = "runtime_build")]
-use ahash::AHashMap;
 use std::sync::OnceLock;
 
 use crate::process::process_type::ProcessType;
@@ -223,106 +221,6 @@ pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static Tran
     TRANSFORM_STEP_CACHE[index].get_or_init(|| build_transform_step(process_type_bit))
 }
 
-/// Builds one compiled step by parsing the raw source maps shipped in `process_map/`.
-///
-/// This implementation is used when the `runtime_build` feature is enabled, allowing
-/// transformation tables to be loaded dynamically rather than from build-time artifacts.
-///
-/// # Panics
-///
-/// Panics (via `.unwrap()`) if any line in the source map files is malformed (missing
-/// tab separator or empty key/value). This is acceptable because the source maps are
-/// shipped with the crate and validated at development time.
-#[cfg(feature = "runtime_build")]
-fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
-    match process_type_bit {
-        ProcessType::None => TransformStep::None,
-        ProcessType::Fanjian => {
-            let mut map = AHashMap::new();
-            for line in FANJIAN.trim().lines() {
-                let mut split = line.split('\t');
-                let key = split.next().unwrap();
-                let value = split.next().unwrap();
-                assert!(
-                    key.chars().count() == 1,
-                    "FANJIAN key must be exactly one character: {key:?}"
-                );
-                assert!(
-                    value.chars().count() == 1,
-                    "FANJIAN value must be exactly one character: {value:?}"
-                );
-                let key = key.chars().next().unwrap() as u32;
-                let value = value.chars().next().unwrap() as u32;
-                if key != value {
-                    map.insert(key, value);
-                }
-            }
-            TransformStep::Fanjian(FanjianMatcher::from_map(map))
-        }
-        ProcessType::Delete => TransformStep::Delete(DeleteMatcher::from_sources(TEXT_DELETE)),
-        ProcessType::Normalize => {
-            let mut dict = AHashMap::new();
-            for process_map in [NORM, NUM_NORM] {
-                dict.extend(process_map.trim().lines().map(|pair| {
-                    let mut split = pair.split('\t');
-                    (split.next().unwrap(), split.next().unwrap())
-                }));
-            }
-            dict.retain(|&key, value| key != *value);
-            TransformStep::Normalize(NormalizeMatcher::from_dict(dict))
-        }
-        ProcessType::PinYin => {
-            let mut map = AHashMap::new();
-            for line in PINYIN.trim().lines() {
-                let mut split = line.split('\t');
-                let key = split.next().unwrap();
-                assert!(
-                    key.chars().count() == 1,
-                    "PINYIN key must be exactly one character: {key:?}"
-                );
-                let key = key.chars().next().unwrap() as u32;
-                let value = split.next().unwrap();
-                assert!(
-                    !value.is_empty(),
-                    "PINYIN value must not be empty for key U+{key:04X}"
-                );
-                map.insert(key, value);
-            }
-            TransformStep::PinYin(PinyinMatcher::from_map(map, false))
-        }
-        ProcessType::PinYinChar => {
-            let mut map = AHashMap::new();
-            for line in PINYIN.trim().lines() {
-                let mut split = line.split('\t');
-                let key = split.next().unwrap();
-                assert!(
-                    key.chars().count() == 1,
-                    "PINYIN key must be exactly one character: {key:?}"
-                );
-                let key = key.chars().next().unwrap() as u32;
-                let value = split.next().unwrap();
-                assert!(
-                    !value.is_empty(),
-                    "PINYIN value must not be empty for key U+{key:04X}"
-                );
-                map.insert(key, value);
-            }
-            TransformStep::PinYinChar(PinyinMatcher::from_map(map, true))
-        }
-        _ => unreachable!("unsupported single-bit ProcessType"),
-    }
-}
-
-/// Builds one compiled step from the build-time artifacts emitted by `build.rs`.
-///
-/// This is the default (non-`runtime_build`) path. The artifacts are `include_bytes!` /
-/// `include_str!` constants defined in [`super::transform::constants`], so initialization
-/// is a deserialization rather than a full compilation.
-///
-/// # Panics
-///
-/// Panics (via `unreachable!`) if `process_type_bit` is not a recognized single-bit value.
-#[cfg(not(feature = "runtime_build"))]
 fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     match process_type_bit {
         ProcessType::None => TransformStep::None,

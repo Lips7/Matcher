@@ -4,15 +4,12 @@
 //! Cannot use [`skip_ascii_simd`](super::skip_ascii_simd) because A-Z have
 //! normalize mappings (casefold); ASCII bytes are checked inline instead.
 
-#[cfg(feature = "runtime_build")]
-use ahash::AHashMap;
 use std::borrow::Cow;
 
-#[cfg(feature = "runtime_build")]
-use super::build_2_stage_table;
-#[cfg(not(feature = "runtime_build"))]
-use super::decode_page_table;
-use super::{decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii, unpack_str_ref};
+use super::{
+    decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii,
+    unpack_str_ref,
+};
 
 // ---------------------------------------------------------------------------
 // Find iterator (for materialized replace)
@@ -176,7 +173,6 @@ impl NormalizeMatcher {
         replace_spans_tracking_ascii(text, self.iter(text))
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(l1: &'static [u8], l2: &'static [u8], strings: &'static str) -> Self {
         let (l1, l2) = decode_page_table(l1, l2);
         Self {
@@ -197,31 +193,6 @@ impl NormalizeMatcher {
             l1: &self.l1,
             l2: &self.l2,
             strings: self.strings.as_ref(),
-        }
-    }
-
-    #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_dict(dict: AHashMap<&'static str, &'static str>) -> Self {
-        let mut strings = String::new();
-        let packed: AHashMap<u32, u32> = dict
-            .into_iter()
-            .map(|(key, value)| {
-                assert!(
-                    key.chars().count() == 1,
-                    "Normalize key must be exactly one codepoint: {key:?}"
-                );
-                let cp = key.chars().next().unwrap() as u32;
-                let offset = strings.len() as u32;
-                let length = value.len() as u32;
-                strings.push_str(value);
-                (cp, (offset << 8) | length)
-            })
-            .collect();
-        let (l1, l2) = build_2_stage_table(&packed);
-        Self {
-            l1: l1.into_boxed_slice(),
-            l2: l2.into_boxed_slice(),
-            strings: Cow::Owned(strings),
         }
     }
 }

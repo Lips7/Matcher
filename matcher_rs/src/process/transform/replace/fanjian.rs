@@ -1,13 +1,6 @@
 //! Traditional-to-Simplified Chinese replacement via page-table lookup.
 
-#[cfg(feature = "runtime_build")]
-use ahash::AHashMap;
-
-#[cfg(feature = "runtime_build")]
-use super::build_2_stage_table;
-#[cfg(not(feature = "runtime_build"))]
-use super::decode_page_table;
-use super::{decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
+use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
 
 struct FanjianFindIter<'a> {
     l1: &'a [u16],
@@ -71,18 +64,8 @@ impl FanjianMatcher {
         replace_scan(text, self.iter(text))
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(l1: &'static [u8], l2: &'static [u8]) -> Self {
         let (l1, l2) = decode_page_table(l1, l2);
         Self { l1, l2 }
-    }
-
-    #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_map(map: AHashMap<u32, u32>) -> Self {
-        let (l1, l2) = build_2_stage_table(&map);
-        Self {
-            l1: l1.into_boxed_slice(),
-            l2: l2.into_boxed_slice(),
-        }
     }
 }

@@ -1,16 +1,10 @@
 //! CJK-to-Pinyin romanization replacement via page-table lookup.
 
-#[cfg(feature = "runtime_build")]
-use ahash::AHashMap;
 use std::borrow::Cow;
 
-#[cfg(feature = "runtime_build")]
-use super::build_2_stage_table;
-#[cfg(not(feature = "runtime_build"))]
-use super::decode_page_table;
 use super::{
-    decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii, skip_ascii_simd,
-    trim_pinyin_packed, unpack_str_ref,
+    decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii,
+    skip_ascii_simd, trim_pinyin_packed, unpack_str_ref,
 };
 
 struct PinyinFindIter<'a> {
@@ -79,7 +73,6 @@ impl PinyinMatcher {
         replace_spans_tracking_ascii(text, self.iter(text))
     }
 
-    #[cfg(not(feature = "runtime_build"))]
     pub(crate) fn new(
         l1: &'static [u8],
         l2: &'static [u8],
@@ -96,33 +89,6 @@ impl PinyinMatcher {
             l1,
             l2,
             strings: Cow::Borrowed(strings),
-        }
-    }
-
-    #[cfg(feature = "runtime_build")]
-    pub(crate) fn from_map(map: AHashMap<u32, &str>, trim_space: bool) -> Self {
-        let mut strings = String::new();
-        let packed: AHashMap<u32, u32> = map
-            .into_iter()
-            .map(|(key, value)| {
-                let offset = strings.len() as u32;
-                let length = value.len() as u32;
-                strings.push_str(value);
-                (key, (offset << 8) | length)
-            })
-            .collect();
-        let (l1, l2) = build_2_stage_table(&packed);
-        let strings: Cow<'static, str> = Cow::Owned(strings);
-        let mut l2 = l2.into_boxed_slice();
-        if trim_space {
-            for value in l2.iter_mut() {
-                *value = trim_pinyin_packed(*value, strings.as_ref());
-            }
-        }
-        Self {
-            l1: l1.into_boxed_slice(),
-            l2,
-            strings,
         }
     }
 }

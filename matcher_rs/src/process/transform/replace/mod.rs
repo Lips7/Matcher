@@ -23,9 +23,6 @@ pub(crate) use fanjian::FanjianMatcher;
 pub(crate) use normalize::NormalizeMatcher;
 pub(crate) use pinyin::PinyinMatcher;
 
-#[cfg(feature = "runtime_build")]
-use ahash::{AHashMap, AHashSet};
-
 use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::skip_ascii_simd;
 use crate::process::transform::utf8::decode_utf8_raw;
@@ -107,7 +104,6 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     (value != 0).then_some(value)
 }
 
-#[cfg(not(feature = "runtime_build"))]
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
     bytes
@@ -117,7 +113,6 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
         .into_boxed_slice()
 }
 
-#[cfg(not(feature = "runtime_build"))]
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
     bytes
@@ -127,7 +122,6 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
         .into_boxed_slice()
 }
 
-#[cfg(not(feature = "runtime_build"))]
 fn decode_page_table(l1: &[u8], l2: &[u8]) -> (Box<[u16]>, Box<[u32]>) {
     (decode_u16_table(l1), decode_u32_table(l2))
 }
@@ -158,25 +152,4 @@ fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
         end -= 1;
     }
     ((start as u32) << 8) | ((end - start) as u32)
-}
-
-#[cfg(feature = "runtime_build")]
-fn build_2_stage_table(map: &AHashMap<u32, u32>) -> (Vec<u16>, Vec<u32>) {
-    let mut pages: AHashSet<u32> = map.keys().map(|&key| key >> 8).collect();
-    let mut page_list: Vec<u32> = pages.drain().collect();
-    page_list.sort_unstable();
-    const L1_SIZE: usize = (0x10FFFF >> 8) + 1;
-    let mut l1 = vec![0u16; L1_SIZE];
-    let mut l2 = vec![0u32; (page_list.len() + 1) * 256];
-    for (index, &page) in page_list.iter().enumerate() {
-        let l2_page_idx = (index + 1) as u16;
-        l1[page as usize] = l2_page_idx;
-        for char_idx in 0..256u32 {
-            let cp = (page << 8) | char_idx;
-            if let Some(&value) = map.get(&cp) {
-                l2[(l2_page_idx as usize * 256) + char_idx as usize] = value;
-            }
-        }
-    }
-    (l1, l2)
 }

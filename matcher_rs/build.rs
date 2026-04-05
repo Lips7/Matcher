@@ -1,14 +1,12 @@
-use std::io::Result;
-
-#[cfg(not(feature = "runtime_build"))]
 use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs::File;
+use std::io::{Result, Write};
 
 /// Build script for `matcher_rs`.
 ///
 /// Transforms raw text-map files in `process_map/` into pre-compiled binary structures
-/// embedded at compile time by `constants.rs`. When the `runtime_build` feature is enabled,
-/// this function is a no-op (tables are built at runtime instead) and no binary artifacts
-/// are generated.
+/// embedded at compile time by `constants.rs`.
 ///
 /// ### Binary Generation Strategy:
 /// 1. **Normalize (Single-Codepoint Replacements)**:
@@ -21,7 +19,6 @@ use std::collections::{HashMap, HashSet};
 ///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
 ///    - `L1`: A page directory mapping character blocks to `L2` indices.
 ///    - `L2`: A data array containing the target character code points.
-///      The runtime decodes these artifacts into lookup tables on first use.
 ///
 /// 3. **Pinyin & PinyinChar**:
 ///    Character-to-string mappings are stored using a hybrid structure:
@@ -38,126 +35,114 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");
 
-    #[cfg(not(feature = "runtime_build"))]
-    {
-        use std::collections::HashMap;
-        use std::env;
-        use std::fs::File;
-        use std::io::Write;
+    const FANJIAN: &str = include_str!("./process_map/FANJIAN.txt");
+    const NUM_NORM: &str = include_str!("./process_map/NUM-NORM.txt");
+    const NORM: &str = include_str!("./process_map/NORM.txt");
+    const PINYIN: &str = include_str!("./process_map/PINYIN.txt");
+    const TEXT_DELETE: &str = include_str!("./process_map/TEXT-DELETE.txt");
+    const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
-        const FANJIAN: &str = include_str!("./process_map/FANJIAN.txt");
-        const NUM_NORM: &str = include_str!("./process_map/NUM-NORM.txt");
-        const NORM: &str = include_str!("./process_map/NORM.txt");
-        const PINYIN: &str = include_str!("./process_map/PINYIN.txt");
-        const TEXT_DELETE: &str = include_str!("./process_map/TEXT-DELETE.txt");
-        const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
+    let out_dir = env::var("OUT_DIR").unwrap();
 
-        let out_dir = env::var("OUT_DIR").unwrap();
+    // 1. Build Normalize 2-stage page table & string buffer
+    let mut normalize_cp_map = HashMap::new();
+    let mut normalize_str_buffer = String::new();
 
-        // 1. Build Normalize 2-stage page table & string buffer
-        //    All normalize keys are single codepoints → page-table is O(1) per lookup.
-        let mut normalize_cp_map = HashMap::new();
-        let mut normalize_str_buffer = String::new();
-
-        for process_map in [NORM, NUM_NORM] {
-            for pair_str in process_map.trim().lines() {
-                let mut split = pair_str.split('\t');
-                let key = split.next().expect("missing key in normalization source");
-                let value = split.next().expect("missing value in normalization source");
-                if key == value {
-                    continue;
-                }
-                assert!(
-                    key.chars().count() == 1,
-                    "Normalize key must be exactly one codepoint: {key:?}"
-                );
-                let cp = key.chars().next().unwrap() as u32;
-                let offset = normalize_str_buffer.len();
-                normalize_str_buffer.push_str(value);
-                let length = value.len();
-                assert!(
-                    length < 256,
-                    "normalize replacement length {length} exceeds 8-bit packing limit for key U+{cp:04X}"
-                );
-                let packed = ((offset as u32) << 8) | (length as u32);
-                normalize_cp_map.insert(cp, packed);
+    for process_map in [NORM, NUM_NORM] {
+        for pair_str in process_map.trim().lines() {
+            let mut split = pair_str.split('\t');
+            let key = split.next().expect("missing key in normalization source");
+            let value = split.next().expect("missing value in normalization source");
+            if key == value {
+                continue;
             }
-        }
-
-        File::create(format!("{out_dir}/normalize_str.bin"))?
-            .write_all(normalize_str_buffer.as_bytes())?;
-        build_2_stage_table(&normalize_cp_map, &format!("{out_dir}/normalize"))?;
-
-        // 2. Build Fanjian 2-stage flat array
-        let mut fanjian_map = HashMap::new();
-        for line in FANJIAN.trim().lines() {
-            let mut split = line.split('\t');
-            let key = split.next().expect("missing key in FANJIAN.txt");
-            let value = split.next().expect("missing value in FANJIAN.txt");
             assert!(
                 key.chars().count() == 1,
-                "FANJIAN key must be exactly one character: {key:?}"
+                "Normalize key must be exactly one codepoint: {key:?}"
             );
-            assert!(
-                value.chars().count() == 1,
-                "FANJIAN value must be exactly one character: {value:?}"
-            );
-            let k = key.chars().next().unwrap() as u32;
-            let v = value.chars().next().unwrap() as u32;
-            if k != v {
-                fanjian_map.insert(k, v);
-            }
-        }
-        build_2_stage_table(&fanjian_map, &format!("{out_dir}/fanjian"))?;
-
-        // 3. Build Pinyin 2-stage flat array & string buffer
-        let mut pinyin_map = HashMap::new();
-        let mut pinyin_str_buffer = String::new();
-
-        for line in PINYIN.trim().lines() {
-            let mut split = line.split('\t');
-            let key = split.next().expect("missing key in PINYIN.txt");
-            assert!(
-                key.chars().count() == 1,
-                "PINYIN key must be exactly one character: {key:?}"
-            );
-            let k = key.chars().next().unwrap() as u32;
-            let v = split.next().expect("missing value in PINYIN.txt");
-            assert!(
-                !v.is_empty(),
-                "PINYIN value must not be empty for key U+{k:04X}"
-            );
-
-            let offset = pinyin_str_buffer.len();
-            pinyin_str_buffer.push_str(v);
-            let length = v.len();
+            let cp = key.chars().next().unwrap() as u32;
+            let offset = normalize_str_buffer.len();
+            normalize_str_buffer.push_str(value);
+            let length = value.len();
             assert!(
                 length < 256,
-                "pinyin string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
+                "normalize replacement length {length} exceeds 8-bit packing limit for key U+{cp:04X}"
             );
-
-            // store offset << 8 | length
             let packed = ((offset as u32) << 8) | (length as u32);
-            pinyin_map.insert(k, packed);
+            normalize_cp_map.insert(cp, packed);
         }
-
-        File::create(format!("{out_dir}/pinyin_str.bin"))?
-            .write_all(pinyin_str_buffer.as_bytes())?;
-        build_2_stage_table(&pinyin_map, &format!("{out_dir}/pinyin"))?;
-
-        // 4. Build Text Delete BitSet
-        let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
-        for token in TEXT_DELETE.trim().lines() {
-            let cp = parse_delete_codepoint(token) as usize;
-            delete_bitset[cp / 8] |= 1 << (cp % 8);
-        }
-        File::create(format!("{out_dir}/delete_bitset.bin"))?.write_all(&delete_bitset)?;
     }
+
+    File::create(format!("{out_dir}/normalize_str.bin"))?
+        .write_all(normalize_str_buffer.as_bytes())?;
+    build_2_stage_table(&normalize_cp_map, &format!("{out_dir}/normalize"))?;
+
+    // 2. Build Fanjian 2-stage flat array
+    let mut fanjian_map = HashMap::new();
+    for line in FANJIAN.trim().lines() {
+        let mut split = line.split('\t');
+        let key = split.next().expect("missing key in FANJIAN.txt");
+        let value = split.next().expect("missing value in FANJIAN.txt");
+        assert!(
+            key.chars().count() == 1,
+            "FANJIAN key must be exactly one character: {key:?}"
+        );
+        assert!(
+            value.chars().count() == 1,
+            "FANJIAN value must be exactly one character: {value:?}"
+        );
+        let k = key.chars().next().unwrap() as u32;
+        let v = value.chars().next().unwrap() as u32;
+        if k != v {
+            fanjian_map.insert(k, v);
+        }
+    }
+    build_2_stage_table(&fanjian_map, &format!("{out_dir}/fanjian"))?;
+
+    // 3. Build Pinyin 2-stage flat array & string buffer
+    let mut pinyin_map = HashMap::new();
+    let mut pinyin_str_buffer = String::new();
+
+    for line in PINYIN.trim().lines() {
+        let mut split = line.split('\t');
+        let key = split.next().expect("missing key in PINYIN.txt");
+        assert!(
+            key.chars().count() == 1,
+            "PINYIN key must be exactly one character: {key:?}"
+        );
+        let k = key.chars().next().unwrap() as u32;
+        let v = split.next().expect("missing value in PINYIN.txt");
+        assert!(
+            !v.is_empty(),
+            "PINYIN value must not be empty for key U+{k:04X}"
+        );
+
+        let offset = pinyin_str_buffer.len();
+        pinyin_str_buffer.push_str(v);
+        let length = v.len();
+        assert!(
+            length < 256,
+            "pinyin string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
+        );
+
+        let packed = ((offset as u32) << 8) | (length as u32);
+        pinyin_map.insert(k, packed);
+    }
+
+    File::create(format!("{out_dir}/pinyin_str.bin"))?.write_all(pinyin_str_buffer.as_bytes())?;
+    build_2_stage_table(&pinyin_map, &format!("{out_dir}/pinyin"))?;
+
+    // 4. Build Text Delete BitSet
+    let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
+    for token in TEXT_DELETE.trim().lines() {
+        let cp = parse_delete_codepoint(token) as usize;
+        delete_bitset[cp / 8] |= 1 << (cp % 8);
+    }
+    File::create(format!("{out_dir}/delete_bitset.bin"))?.write_all(&delete_bitset)?;
 
     Ok(())
 }
 
-#[cfg(not(feature = "runtime_build"))]
 fn parse_delete_codepoint(token: &str) -> u32 {
     u32::from_str_radix(
         token
@@ -168,30 +153,7 @@ fn parse_delete_codepoint(token: &str) -> u32 {
     .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
 }
 
-/// Generates a compact 2-stage flat-array page table for sparse Unicode codepoint mappings.
-///
-/// Constructs two binary files consumed at compile time by `constants.rs`:
-/// - **L1** (`{prefix}_l1.bin`): 4352 `u16` entries (`(0x10FFFF >> 8) + 1`), one per 256-codepoint
-///   block. Non-zero entries are 1-based indices into L2; zero means the whole block is unmapped.
-/// - **L2** (`{prefix}_l2.bin`): dense `u32` pages, each 256 entries. Entry at
-///   `page * 256 + (cp & 0xFF)` holds the mapping value for codepoint `cp`.
-///
-/// This produces compact lookup artifacts for Fanjian (Traditional→Simplified) and
-/// Pinyin (codepoint→packed syllable offset/length).
-///
-/// # Arguments
-/// * `map` — sparse codepoint-to-value mapping; keys are Unicode scalar values (`u32`),
-///   values are the packed output (Fanjian: mapped codepoint; Pinyin: `(offset << 8) | length`).
-/// * `prefix` — file path prefix; the function writes `{prefix}_l1.bin` and `{prefix}_l2.bin`
-///   into the directory. Typically an `OUT_DIR`-relative path.
-///
-/// # Errors
-/// Returns `io::Error` if either output file cannot be created or written.
-#[cfg(not(feature = "runtime_build"))]
 fn build_2_stage_table(map: &HashMap<u32, u32>, prefix: &str) -> std::io::Result<()> {
-    use std::fs::File;
-    use std::io::Write;
-
     let mut pages = HashSet::new();
     for &k in map.keys() {
         pages.insert(k >> 8);
@@ -200,9 +162,9 @@ fn build_2_stage_table(map: &HashMap<u32, u32>, prefix: &str) -> std::io::Result
     let mut page_list: Vec<u32> = pages.into_iter().collect();
     page_list.sort_unstable();
 
-    const L1_SIZE: usize = (0x10FFFF >> 8) + 1; // 4352: one entry per 256-codepoint block
+    const L1_SIZE: usize = (0x10FFFF >> 8) + 1;
     let mut l1 = vec![0u16; L1_SIZE];
-    let mut l2 = vec![0u32; (page_list.len() + 1) * 256]; // +1: page 0 is the empty fallback
+    let mut l2 = vec![0u32; (page_list.len() + 1) * 256];
 
     for (i, &page) in page_list.iter().enumerate() {
         let l2_page_idx = (i + 1) as u16;
@@ -220,13 +182,13 @@ fn build_2_stage_table(map: &HashMap<u32, u32>, prefix: &str) -> std::io::Result
     for val in l1 {
         l1_bytes.extend_from_slice(&val.to_le_bytes());
     }
-    File::create(format!("{}_l1.bin", prefix))?.write_all(&l1_bytes)?;
+    File::create(format!("{prefix}_l1.bin"))?.write_all(&l1_bytes)?;
 
     let mut l2_bytes = Vec::with_capacity(l2.len() * 4);
     for val in l2 {
         l2_bytes.extend_from_slice(&val.to_le_bytes());
     }
-    File::create(format!("{}_l2.bin", prefix))?.write_all(&l2_bytes)?;
+    File::create(format!("{prefix}_l2.bin"))?.write_all(&l2_bytes)?;
 
     Ok(())
 }
