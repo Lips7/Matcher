@@ -32,8 +32,6 @@ use crate::process::transform::utf8::decode_utf8_raw;
 /// without touching the full bitset.
 #[derive(Clone)]
 pub(crate) struct DeleteMatcher {
-    /// Full Unicode bitset (one bit per codepoint). Borrowed from a `&'static`
-    /// constant in the default build; owned when using `runtime_build`.
     bitset: Cow<'static, [u8]>,
     /// First 16 bytes of `bitset`, covering ASCII codepoints 0x00–0x7F.
     /// Passed to [`skip_ascii_non_delete_simd`] for fast SIMD probing.

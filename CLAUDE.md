@@ -101,8 +101,6 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 25,000 patterns (above that combined DFA+charwise exceeds L2/cache budget) |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for ASCII deletion (AVX2/NEON/portable fallback) |
 | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
-| `runtime_build` | off | Build transformation tables at runtime — slower init, dynamic rules |
-
 ### Workspace Layout
 
 - `matcher_rs/` — Core library (`rlib`); all algorithms live here
@@ -135,7 +133,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 **Other:**
 - `matcher_rs/src/builder.rs` — `SimpleMatcherBuilder` fluent API
-- `matcher_rs/process_map/` — Source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs` and `runtime_build`
+- `matcher_rs/process_map/` — Source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs`
 
 ## Important Notes
 

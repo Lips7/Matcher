@@ -93,8 +93,6 @@ For more detailed usage examples, please refer to the [test_simple_matcher.rs](.
 * `dfa` *(via `perf`)*: Use `aho-corasick` DFA mode for the bytewise scan engine when all patterns are ASCII and count ≤ 7,000. ~10x more memory than NFA but higher throughput up to the cache boundary.
 * `simd_runtime_dispatch` *(via `perf`)*: Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere). Also enables NEON and AVX512-VBMI kernels in the Harry backend.
 * `harry` *(via `perf`)*: Column-vector SIMD scan backend, auto-selected for `is_match` when ≥ 64 patterns exist. Handles both ASCII and non-ASCII (CJK) haystacks.
-* `runtime_build`: Build transformation tables from the source text maps at runtime instead of loading build-time artifacts.
-
 ### Feature Comparison & Recommendation
 
 | Feature | Engine | Search Speed | Memory Usage | Best For |

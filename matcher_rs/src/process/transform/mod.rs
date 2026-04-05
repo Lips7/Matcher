@@ -5,9 +5,8 @@
 //! input text before pattern matching. Each sub-module implements one class of
 //! transformation:
 //!
-//! - [`constants`] -- Pre-compiled binary tables (page tables, bitsets,
-//!   serialized automata) embedded at build time by `build.rs`, or raw source
-//!   text maps when the `runtime_build` feature is active.
+//! - [`constants`] -- Pre-compiled binary tables (page tables, bitsets)
+//!   embedded at build time by `build.rs`.
 //! - [`replace`] -- Text-replacement engines, each in its own sub-module:
 //!   [`replace::FanjianMatcher`] (Traditional→Simplified, page-table),
 //!   [`replace::PinyinMatcher`] (CJK→Pinyin, page-table),

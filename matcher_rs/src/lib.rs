@@ -85,7 +85,6 @@
 //! | `dfa` | via `perf` | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
 //! | `simd_runtime_dispatch` | via `perf` | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
 //! | `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK patterns/haystacks |
-//! | `runtime_build` | off | Parses the source transform maps at runtime instead of loading build-time artifacts lazily on first use |
 
 /// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
 ///
