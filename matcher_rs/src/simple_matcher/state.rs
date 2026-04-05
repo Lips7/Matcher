@@ -269,6 +269,31 @@ impl SimpleMatchState {
         true
     }
 
+    /// Marks a simple rule as positive for the current generation (lightweight).
+    ///
+    /// Like [`mark_positive`](Self::mark_positive) but skips the `matrix_generation`
+    /// check and `touched_indices` bookkeeping. Only safe to call from code paths
+    /// that never read `touched_indices` afterward (i.e., `process_simple`).
+    ///
+    /// Returns `true` only when this is the first positive hit for the rule in the
+    /// current generation.
+    ///
+    /// # Safety
+    ///
+    /// Uses `get_unchecked_mut` on `self.word_states`. Guarded by a preceding `debug_assert!`.
+    #[inline(always)]
+    pub(super) fn mark_positive_simple(&mut self, rule_idx: usize) -> bool {
+        let generation = self.generation;
+        debug_assert!(rule_idx < self.word_states.len());
+        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
+        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        if word_state.positive_generation == generation {
+            return false;
+        }
+        word_state.positive_generation = generation;
+        true
+    }
+
     /// Initializes one complex rule the first time it is touched in a generation.
     ///
     /// Sets up the generation stamp, resets the remaining-AND counter and bitmask, adds

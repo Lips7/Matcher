@@ -377,7 +377,7 @@ impl RuleSet {
         state: &mut SimpleMatchState,
         results: &mut Vec<SimpleResult<'a>>,
     ) {
-        if state.mark_positive(rule_idx) {
+        if state.mark_positive_simple(rule_idx) {
             self.push_result(rule_idx, results);
         }
     }

@@ -301,7 +301,7 @@ Sub-patterns are counted: `"a&a"` requires two occurrences of `"a"`. This is tra
    - Builds a `PatternIndex` from the entry buckets (flattens into contiguous storage with parallel `ranges`).
    - Builds a value map via `PatternIndex::build_value_map`, which assigns each deduplicated pattern a `u32` scan value. Single-entry simple patterns get `rule_idx | DIRECT_RULE_BIT`.
    - Delegates to `compile_automata` which builds AC engines:
-     - **Bytewise engine** (`BytewiseMatcher`): With the `dfa` feature, all patterns ASCII, and count ≤ `AC_DFA_PATTERN_THRESHOLD` (25,000), uses `aho-corasick` DFA (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). Otherwise uses `daachorse` bytewise DAAC with user-supplied `u32` values.
+     - **Bytewise engine** (`BytewiseMatcher`): With the `dfa` feature, all patterns ASCII, and count ≤ `AC_DFA_PATTERN_THRESHOLD` (25,000), uses `aho-corasick` high-level `AhoCorasick` type forced to DFA kind (`AcDfa` variant with a `to_value` remapping `Vec<u32>`). The high-level wrapper integrates Teddy/memchr prefilter acceleration for `is_match` — effective when patterns have few distinct starting bytes (≤ ~5 patterns). Otherwise uses `daachorse` bytewise DAAC with user-supplied `u32` values.
      - **Charwise engine** (`CharwiseDoubleArrayAhoCorasick<u32>`): `daachorse` charwise DAAC compiled over the entire pattern set. Always built so non-ASCII haystacks benefit from character-granularity scanning (~1.6–1.9× on CJK text vs bytewise).
    - **Harry engine** (with `harry` feature): After AC compilation, if all patterns are pure ASCII, builds a `HarryMatcher` from the full pattern set. Only succeeds when ≥ 64 patterns exist and at least one pattern has length ≥ 2.
    - AC engines are `None` when the corresponding pattern class is absent.
@@ -493,7 +493,7 @@ Patterns of length 1 bypass the column-vector scan and are matched via a `single
 - `process_match` — Checks `DIRECT_RULE_BIT` inline to handle the common DirectRule case without calling `dispatch()`: extracts `pt_index` and `rule_idx` directly from the bit-packed value, checks `process_type_mask`, calls `mark_positive` (incrementing `resolved_count` on first positive), and returns `ctx.exit_early`. Falls through to `PatternIndex::dispatch` only for the rare non-DirectRule values (`SingleEntry` / `Entries`).
 - `process_simple` — AllSimple fast path. Also checks `DIRECT_RULE_BIT` inline and extracts `rule_idx` directly (skipping `pt_index` entirely since AllSimple matchers have a single ProcessType). Falls through to `dispatch()` only for shared-pattern entries.
 
-For the AC DFA bytewise engine, both `for_each_match_value` and `is_match` use hand-written state-stepping loops (`next_state` / `is_special` / `is_match` per byte) rather than the `try_find_overlapping_iter` or `try_find` iterator APIs. This eliminates iterator protocol overhead: all overlapping matches at a given DFA state are processed in one tight inner loop without re-entry. The `is_match` loop additionally checks `is_dead(sid)` for early exit. The DFA pre-computes per-state match lists, so `match_len(sid)` / `match_pattern(sid, i)` enumerate all overlapping matches at O(1) per match.
+For the AC DFA bytewise engine, `is_match` delegates to `AhoCorasick::is_match` which integrates prefilter acceleration (Teddy/memchr) when effective. `for_each_match_value` and `for_each_rule_idx_simple` iterate `AhoCorasick::find_overlapping_iter`, mapping each `Match::pattern()` index through the `to_value` array to recover the raw `u32` scan value.
 
 ### Pass 2: Logical Evaluation
 
@@ -626,7 +626,7 @@ Matrix and status arrays are stored per-rule in `SimpleMatchState::matrix` and `
 When `SearchMode::AllSimple` is active (single `ProcessType::None`, every pattern is a simple literal with no `&`/`~`), both `is_match` and `process`/`process_into` use dedicated fast paths that bypass `walk_and_scan` entirely:
 
 - **`is_match`** calls `is_match_simple`, which delegates directly to `ScanPlan::is_match(text)`. This dispatches to Harry (when present and applicable), the AC DFA, or the DAAC bytewise engine — completely bypassing TLS state, generation counters, `SimpleMatchState`, and overlapping iteration.
-- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_match_value`. Each hit is dispatched through `PatternDispatch` — `DirectRule` hits call `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive` for generation-based deduplication. This avoids tree walk overhead while still correctly deduplicating results when the same pattern appears multiple times in the text.
+- **`process_into`** calls `process_simple`, which scans the automaton via `ScanPlan::for_each_rule_idx_simple`. Each hit calls `RuleSet::push_result_if_new`, which uses `SimpleMatchState::mark_positive_simple` — a lightweight variant that checks only `positive_generation` and skips `touched_indices` bookkeeping (unnecessary since `process_simple` never calls `collect_matches`/`has_match`). This avoids tree walk overhead while still correctly deduplicating results when the same pattern appears multiple times in the text.
 
 ---
 

@@ -27,7 +27,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    Anchored, MatchKind as AhoCorasickMatchKind, automaton::Automaton, dfa::DFA as AcDfaEngine,
+    AhoCorasick as AcEngine, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
 };
 use daachorse::{
     DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
@@ -120,13 +120,18 @@ pub(super) struct ScanPlan {
 ///   the DFA threshold is exceeded.
 #[derive(Clone)]
 enum BytewiseMatcher {
-    /// `aho-corasick` DFA engine.
+    /// `aho-corasick` DFA engine with prefilter acceleration.
     ///
-    /// The `aho-corasick` crate uses pattern indices (not user-supplied values) in its
-    /// match output, so `to_value` maps pattern index → raw value.
+    /// Uses the high-level [`AhoCorasick`](AcEngine) wrapper (forced to DFA kind) rather
+    /// than the low-level `dfa::DFA`, because `AhoCorasick` integrates Teddy/memchr
+    /// prefilter logic that the raw DFA doesn't expose. The prefilter SIMD-skips
+    /// non-matching regions in `is_match`, giving 2–4× on sparse haystacks.
+    ///
+    /// The crate uses pattern indices (not user-supplied values) in its match output,
+    /// so `to_value` maps pattern index → raw value.
     #[cfg(feature = "dfa")]
     AcDfa {
-        matcher: Box<AcDfaEngine>,
+        matcher: AcEngine,
         to_value: Vec<u32>,
     },
     /// `daachorse` bytewise double-array engine with user-supplied `u32` values.
@@ -309,21 +314,7 @@ impl BytewiseMatcher {
     fn is_match(&self, text: &str) -> bool {
         match self {
             #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, .. } => {
-                let mut sid = matcher.start_state(Anchored::No).unwrap();
-                for &byte in text.as_bytes() {
-                    sid = matcher.next_state(Anchored::No, sid, byte);
-                    if matcher.is_special(sid) {
-                        if matcher.is_match(sid) {
-                            return true;
-                        }
-                        if matcher.is_dead(sid) {
-                            return false;
-                        }
-                    }
-                }
-                false
-            }
+            Self::AcDfa { matcher, .. } => matcher.is_match(text),
             Self::DaacBytewise(matcher) => matcher.find_iter(text).next().is_some(),
         }
     }
@@ -334,18 +325,11 @@ impl BytewiseMatcher {
         match self {
             #[cfg(feature = "dfa")]
             Self::AcDfa { matcher, to_value } => {
-                let mut sid = matcher.start_state(Anchored::No).unwrap();
-                for &byte in text.as_bytes() {
-                    sid = matcher.next_state(Anchored::No, sid, byte);
-                    if matcher.is_special(sid) && matcher.is_match(sid) {
-                        for i in 0..matcher.match_len(sid) {
-                            let pid = matcher.match_pattern(sid, i);
-                            // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
-                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
-                            if on_value(value) {
-                                return true;
-                            }
-                        }
+                for m in matcher.find_overlapping_iter(text) {
+                    // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                    let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+                    if on_value(value) {
+                        return true;
                     }
                 }
                 false
@@ -368,17 +352,10 @@ impl BytewiseMatcher {
         match self {
             #[cfg(feature = "dfa")]
             Self::AcDfa { matcher, to_value } => {
-                let mut sid = matcher.start_state(Anchored::No).unwrap();
-                for &byte in text.as_bytes() {
-                    sid = matcher.next_state(Anchored::No, sid, byte);
-                    if matcher.is_special(sid) && matcher.is_match(sid) {
-                        for i in 0..matcher.match_len(sid) {
-                            let pid = matcher.match_pattern(sid, i);
-                            // SAFETY: `to_value` has one entry per pattern.
-                            let value = unsafe { *to_value.get_unchecked(pid.as_usize()) };
-                            on_rule((value & DIRECT_RULE_MASK) as usize);
-                        }
-                    }
+                for m in matcher.find_overlapping_iter(text) {
+                    // SAFETY: `to_value` has one entry per pattern.
+                    let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+                    on_rule((value & DIRECT_RULE_MASK) as usize);
                 }
             }
             Self::DaacBytewise(matcher) => {
@@ -512,12 +489,11 @@ fn build_current_bytewise(
     #[cfg(feature = "dfa")]
     if ascii_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
         return Ok(BytewiseMatcher::AcDfa {
-            matcher: Box::new(
-                AcDfaEngine::builder()
-                    .match_kind(AhoCorasickMatchKind::Standard)
-                    .build(ascii_patvals.iter().map(|(p, _)| p))
-                    .map_err(MatcherError::automaton_build)?,
-            ),
+            matcher: AhoCorasickBuilder::new()
+                .kind(Some(AhoCorasickKind::DFA))
+                .match_kind(AhoCorasickMatchKind::Standard)
+                .build(ascii_patvals.iter().map(|(p, _)| p))
+                .map_err(MatcherError::automaton_build)?,
             to_value: ascii_ac_to_value,
         });
     }
