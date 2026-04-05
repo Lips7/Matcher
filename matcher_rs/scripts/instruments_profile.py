@@ -157,24 +157,11 @@ def batch_demangle(mangled: set[str]) -> dict[str, str]:
 
 
 def shorten_symbol(demangled: str) -> str:
-    """Shorten a demangled Rust symbol for display."""
+    """Clean up a demangled Rust symbol for display (no abbreviation)."""
     s = demangled
     # Remove leading < and trailing > for impl blocks
     if s.startswith("<") and ">" in s:
         s = re.sub(r"^<(.+?)>::", r"\1::", s)
-    # Shorten common paths
-    s = s.replace("matcher_rs::simple_matcher::", "sm::")
-    s = s.replace("matcher_rs::process::", "proc::")
-    s = s.replace("matcher_rs::", "")
-    s = s.replace("aho_corasick::", "ac::")
-    s = s.replace("core::slice::", "slice::")
-    s = s.replace("core::ptr::", "ptr::")
-    s = s.replace("core::hint::", "hint::")
-    s = s.replace("core::cmp::", "cmp::")
-    s = s.replace("core::ops::function::", "fn::")
-    s = s.replace("alloc::vec::", "vec::")
-    s = s.replace("alloc::boxed::", "box::")
-    s = s.replace("daachorse::", "daac::")
     return s
 
 
@@ -417,6 +404,12 @@ def analyze_trace(trace_path: Path) -> dict:
         for sym, w in leaf_symbols.most_common(30)
     ]
 
+    # Build call tree (top-down, from root toward leaf)
+    call_tree = _build_call_tree(main_samples, demangle_map, total_weight_ns)
+
+    # Build heavy backtraces (bottom-up, full stacks for top leaf symbols)
+    heavy_backtraces = _build_heavy_backtraces(main_samples, demangle_map, total_weight_ns)
+
     return {
         "total_weight_ms": total_weight_ns / 1_000_000,
         "samples": len(main_samples),
@@ -429,7 +422,219 @@ def analyze_trace(trace_path: Path) -> dict:
             {"display": d, "weight_ms": w / 1_000_000, "pct": w / total_weight_ns * 100}
             for d, w in leaf_with_caller.most_common(30)
         ],
+        "call_tree": call_tree,
+        "heavy_backtraces": heavy_backtraces,
     }
+
+
+# ---------------------------------------------------------------------------
+# Call Tree (top-down)
+# ---------------------------------------------------------------------------
+
+class CallTreeNode:
+    __slots__ = ("name", "total_ns", "self_ns", "children")
+
+    def __init__(self, name: str):
+        self.name = name
+        self.total_ns: int = 0
+        self.self_ns: int = 0
+        self.children: dict[str, CallTreeNode] = {}
+
+    def child(self, name: str) -> CallTreeNode:
+        if name not in self.children:
+            self.children[name] = CallTreeNode(name)
+        return self.children[name]
+
+
+def _frame_display(frame: dict, demangle_map: dict[str, str]) -> str:
+    name = demangle_map.get(frame["name"], frame["name"])
+    short = shorten_symbol(name)
+    src = frame.get("source_file") or ""
+    line = frame.get("source_line") or ""
+    if src:
+        fname = Path(src).name
+        loc = f"{fname}:{line}" if line and line != "0" else fname
+        return f"{short}  ({loc})"
+    return short
+
+
+def _build_call_tree(
+    samples: list[dict],
+    demangle_map: dict[str, str],
+    total_weight_ns: int,
+) -> CallTreeNode:
+    root = CallTreeNode("[root]")
+    root.total_ns = total_weight_ns
+
+    for s in samples:
+        frames = s["frames"]
+        w = s["weight_ns"]
+
+        # Build stack from root → leaf (frames are leaf-first, reverse for top-down)
+        stack = []
+        for f in reversed(frames):
+            name = demangle_map.get(f["name"], f["name"])
+            short = shorten_symbol(name)
+            src = f.get("source_file") or ""
+            line = f.get("source_line") or ""
+            if src:
+                fname = Path(src).name
+                loc = f"{fname}:{line}" if line and line != "0" else fname
+                display = f"{short}  ({loc})"
+            else:
+                display = short
+            stack.append(display)
+
+        # Walk down the tree
+        node = root
+        for display in stack:
+            node = node.child(display)
+            node.total_ns += w
+        # Self-time goes to the leaf
+        node.self_ns += w
+
+    return root
+
+
+def _print_call_tree(
+    node: CallTreeNode,
+    total_ns: int,
+    depth: int = 0,
+    min_pct: float = 1.0,
+    max_depth: int = 15,
+):
+    """Recursively print hot-path call tree, pruning branches below min_pct.
+
+    Auto-collapses single-child chains (A→B→C with no branching shown as A → B → C)
+    to reduce noise from wrapper/boilerplate frames.
+    """
+    if depth > max_depth:
+        return
+
+    children = sorted(node.children.values(), key=lambda c: -c.total_ns)
+    hot_children = [c for c in children if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct]
+
+    for child in hot_children:
+        # Collapse single-child chains with negligible self-time
+        collapsed: list[str] = []
+        walk = child
+        while True:
+            walk_children = sorted(walk.children.values(), key=lambda c: -c.total_ns)
+            walk_hot = [c for c in walk_children if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct]
+            walk_self_pct = walk.self_ns / total_ns * 100 if total_ns else 0
+            if len(walk_hot) == 1 and walk_self_pct < 0.5:
+                collapsed.append(walk.name)
+                walk = walk_hot[0]
+            else:
+                break
+
+        # `walk` is now the first interesting node (branching or has self-time)
+        pct = walk.total_ns / total_ns * 100 if total_ns else 0
+        self_pct = walk.self_ns / total_ns * 100 if total_ns else 0
+        self_tag = f" [self: {self_pct:.1f}%]" if self_pct >= 0.5 else ""
+
+        indent = "  │ " * depth
+        if collapsed:
+            print(f"  {pct:5.1f}%{self_tag}  {indent}  ├─ ... → {walk.name}")
+        else:
+            print(f"  {pct:5.1f}%{self_tag}  {indent}  ├─ {walk.name}")
+
+        _print_call_tree(walk, total_ns, depth + 1, min_pct, max_depth)
+
+
+# ---------------------------------------------------------------------------
+# Heavy Backtraces (bottom-up)
+# ---------------------------------------------------------------------------
+
+HEAVY_BOILERPLATE_EXACT = {
+    "start", "main", "thread_start", "_pthread_start",
+}
+HEAVY_BOILERPLATE_FRAGMENTS = {
+    "FnOnce", "call_once", "lang_start", "std::rt", "std::sys",
+    "std::panicking", "std::thread::lifecycle",
+}
+
+
+def _build_heavy_backtraces(
+    samples: list[dict],
+    demangle_map: dict[str, str],
+    total_weight_ns: int,
+    top_n: int = 8,
+) -> list[dict]:
+    """For the top N leaf symbols, collect their most common full call stacks.
+
+    Shows raw caller chains (only skipping OS entry points) so that inlined
+    frames that are the actual callers aren't lost.
+    """
+    leaf_stacks: dict[str, list[tuple[int, list[str]]]] = {}
+
+    for s in samples:
+        frames = s["frames"]
+        w = s["weight_ns"]
+        if not frames:
+            continue
+
+        leaf_name = demangle_map.get(frames[0]["name"], frames[0]["name"])
+        leaf_short = shorten_symbol(leaf_name)
+        src = frames[0].get("source_file") or ""
+        line = frames[0].get("source_line") or ""
+        if src:
+            fname = Path(src).name
+            loc = f"{fname}:{line}" if line and line != "0" else fname
+            leaf_display = f"{leaf_short}  ({loc})"
+        else:
+            leaf_display = leaf_short
+
+        # Build caller chain — skip runtime entry-point boilerplate
+        callers = []
+        for f in frames[1:]:
+            name = demangle_map.get(f["name"], f["name"])
+            short = shorten_symbol(name)
+            if short in HEAVY_BOILERPLATE_EXACT:
+                continue
+            if any(frag in name for frag in HEAVY_BOILERPLATE_FRAGMENTS):
+                continue
+            src2 = f.get("source_file") or ""
+            line2 = f.get("source_line") or ""
+            if src2:
+                fname2 = Path(src2).name
+                loc2 = f"{fname2}:{line2}" if line2 and line2 != "0" else fname2
+                callers.append(f"{short}  ({loc2})")
+            else:
+                callers.append(short)
+
+        if leaf_display not in leaf_stacks:
+            leaf_stacks[leaf_display] = []
+        leaf_stacks[leaf_display].append((w, callers))
+
+    leaf_totals = {leaf: sum(w for w, _ in stacks) for leaf, stacks in leaf_stacks.items()}
+    top_leaves = sorted(leaf_totals.items(), key=lambda x: -x[1])[:top_n]
+
+    result = []
+    for leaf_display, total_ns in top_leaves:
+        pct = total_ns / total_weight_ns * 100
+
+        stack_weights: Counter[tuple[str, ...]] = Counter()
+        for w, callers in leaf_stacks[leaf_display]:
+            key = tuple(callers[:12])
+            stack_weights[key] += w
+
+        top_stacks = []
+        for stack_tuple, sw in stack_weights.most_common(3):
+            top_stacks.append({
+                "callers": list(stack_tuple),
+                "weight_ms": sw / 1_000_000,
+                "pct": sw / total_weight_ns * 100,
+            })
+
+        result.append({
+            "leaf": leaf_display,
+            "total_ms": total_ns / 1_000_000,
+            "pct": pct,
+            "stacks": top_stacks,
+        })
+
+    return result
 
 
 def print_report(result: dict, path: Path) -> None:
@@ -462,6 +667,30 @@ def print_report(result: dict, path: Path) -> None:
         print("  " + "-" * 74)
         for entry in result["top_with_caller"][:15]:
             print(f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['display']}")
+
+    # Call tree (top-down hot path)
+    if result.get("call_tree"):
+        print("\n  Call Tree (top-down, ≥1% of total):")
+        print("  " + "-" * 74)
+        _print_call_tree(result["call_tree"], result["call_tree"].total_ns)
+
+    # Heavy backtraces (bottom-up)
+    if result.get("heavy_backtraces"):
+        print("\n  Heavy Backtraces (bottom-up, top leaf → callers):")
+        print("  " + "=" * 74)
+        for entry in result["heavy_backtraces"]:
+            print(f"\n  {entry['pct']:5.1f}%  {entry['total_ms']:7.0f}ms  ▶ {entry['leaf']}")
+            has_any_callers = any(stack["callers"] for stack in entry["stacks"])
+            if not has_any_callers:
+                print("         (callers inlined away — open in Instruments.app for full context)")
+                continue
+            for i, stack in enumerate(entry["stacks"]):
+                if not stack["callers"]:
+                    continue
+                print(f"         stack #{i+1} ({stack['pct']:.1f}%):")
+                for depth, caller in enumerate(stack["callers"]):
+                    prefix = "           " + "  " * depth + "← "
+                    print(f"{prefix}{caller}")
 
     print()
 
