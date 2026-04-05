@@ -8,10 +8,10 @@
 //! - [`constants`] -- Pre-compiled binary tables (page tables, bitsets,
 //!   serialized automata) embedded at build time by `build.rs`, or raw source
 //!   text maps when the `runtime_build` feature is active.
-//! - [`replace`] -- Text-replacement engines: [`replace::FanjianMatcher`]
-//!   (Traditional-to-Simplified Chinese, page-table), [`replace::PinyinMatcher`]
-//!   (CJK-to-Pinyin, page-table), and [`replace::NormalizeMatcher`]
-//!   (multi-character Aho-Corasick replacement).
+//! - [`replace`] -- Text-replacement engines, each in its own sub-module:
+//!   [`replace::FanjianMatcher`] (Traditional→Simplified, page-table),
+//!   [`replace::PinyinMatcher`] (CJK→Pinyin, page-table),
+//!   [`replace::NormalizeMatcher`] (Unicode normalization, page-table + fused scan).
 //! - [`delete`] -- A flat Unicode bitset engine ([`delete::DeleteMatcher`])
 //!   that strips configured codepoints from text, with a fast ASCII LUT path.
 //! - [`simd`] -- SIMD-accelerated byte-skip helpers that let the replace and
