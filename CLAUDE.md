@@ -117,7 +117,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `harry/` — `HarryMatcher` — column-vector SIMD scan engine (Harry12b dual-index encoding); `mod.rs` (core types + dispatch + scalar), `build.rs` (construction), `neon.rs` (AArch64), `avx512.rs` (x86-64); auto-selected for `is_match` via `ScanPlan` when ≥ 64 patterns exist
 - `rule.rs` — `RuleSet`, `RuleHot`, `RuleCold`, `PatternEntry`, `PatternKind`, `PatternDispatch`, `DIRECT_RULE_BIT`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
 - `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified tree walk with materialize+scan), `process_simple`, `scan_variant`, `process_match`
-- `state.rs` — `WordState`, `SimpleMatchState`, `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
+- `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:
 - `process_type.rs` — `ProcessType` bitflags + serde/display
@@ -151,3 +151,4 @@ Do not re-attempt these. Each was profiled and/or benchmarked; the mechanism was
 |---|---|---|---|
 | Cache `text.is_ascii()` at top of `ScanPlan::is_match` | -7% ASCII check on is_match/en | +8% regression (bench); profile: ASCII check % unchanged on DFA path, 28% overhead added on Harry path | LLVM already CSE'd the duplicate call on the DFA path. On Harry path (>25K rules), original code avoids `is_ascii()` entirely via `!is_dfa` short-circuit — unconditional caching adds a wasted 580KB linear scan per call. |
 | Replace `Option::as_ref().is_some_and()` with `if let Some` in engine dispatch | -2% dispatch overhead | Neutral to slight regression | `is_some_and` compiles to tighter code under LTO than nested `if let` patterns. |
+| Compact `RuleHot` by splitting out `segment_counts` to separate `Vec<Vec<i32>>` | -3% on process/and (smaller hot array fits L1) | +3.9% regression on process_hit, +3.7% on shape_process/literal | Moving `segment_counts` to a separate field in `RuleSet` changed struct layout, degrading cache behavior. The `non_null<RuleHot>` overhead only dropped 5.4%→4.9% — the Vec pointer resolution cost is per-access regardless of element size. The extra `Vec<Vec<i32>>` added indirection without offsetting the cache benefit. |
