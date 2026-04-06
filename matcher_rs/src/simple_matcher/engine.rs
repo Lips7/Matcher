@@ -36,9 +36,8 @@ use daachorse::{
 
 use crate::MatcherError;
 
-use super::rule::{
-    DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK, PatternEntry, PatternIndex,
-};
+use super::encoding::{DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK};
+use super::pattern::{PatternEntry, PatternIndex};
 
 /// Non-ASCII byte density threshold for switching from bytewise to charwise engine.
 ///

@@ -1,17 +1,12 @@
-//! Rule metadata, pattern dispatch, and rule-state transition logic.
+//! Rule metadata and rule-state transition logic.
 //!
-//! This module contains the types that bind deduplicated scan-engine patterns back to the
-//! logical rules they came from. During construction ([`super::build`]), each user-supplied
-//! rule string is split on `&`/`~` operators into segments, then each segment is split on
-//! `|` into OR alternatives. Those sub-patterns are deduplicated across all rules, and each
-//! unique string receives a single automaton entry.
-//! The [`PatternEntry`] records how every automaton hit maps back to a specific rule and
-//! segment offset.
+//! This module contains the types that bind rule metadata to the scan state machine.
+//! [`RuleSet`] owns parallel hot/cold metadata vectors and exposes [`process_entry`](RuleSet::process_entry)
+//! — the core state-transition function that tracks bitmasks, matrix counters, and
+//! generation stamps in the thread-local [`super::state::SimpleMatchState`].
 //!
-//! At scan time the hot path reads raw match values from the automaton, dispatches them
-//! through [`PatternIndex::dispatch_indirect`] into [`PatternDispatch`] variants, and feeds each
-//! hit into [`RuleSet::process_entry`] — the core state machine that tracks bitmasks,
-//! matrix counters, and generation stamps in the thread-local [`super::state::SimpleMatchState`].
+//! Pattern types ([`PatternEntry`], [`PatternIndex`], [`PatternDispatch`]) live in
+//! [`super::pattern`]. Bit-packing constants live in [`super::encoding`].
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -19,6 +14,7 @@ use std::collections::HashMap;
 use crate::process::ProcessType;
 
 use super::SimpleResult;
+use super::pattern::{PatternEntry, PatternKind};
 use super::state::{ScanContext, ScanState, init_matrix};
 
 /// Raw table format accepted by [`SimpleMatcher::new`](super::SimpleMatcher::new).
@@ -83,49 +79,6 @@ pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 /// ```
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
-/// High bit used to encode the direct-rule fast path in raw scan values.
-///
-/// When a deduplicated pattern is attached to exactly one [`PatternKind::Simple`] rule,
-/// the automaton stores an encoded value with this bit set so that callers can
-/// extract `rule_idx`, `pt_index`, and `boundary` inline without the entry table
-/// indirection.
-///
-/// ```text
-/// Bit 31:     DIRECT_RULE_BIT flag
-/// Bits 28-30: pt_index (3 bits, max 7)
-/// Bits 26-27: boundary (2 bits: bit 26 = left, bit 27 = right)
-/// Bits 0-25:  rule_idx (26 bits, max ~67M rules)
-/// ```
-pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
-
-/// Bit shift for the process-type index inside a direct-rule encoded value.
-pub(super) const DIRECT_PT_SHIFT: u32 = 28;
-
-/// Mask for extracting the process-type index from a direct-rule encoded value.
-pub(super) const DIRECT_PT_MASK: u32 = 0x07 << DIRECT_PT_SHIFT;
-
-/// Bit shift for boundary flags inside a direct-rule encoded value.
-pub(super) const DIRECT_BOUNDARY_SHIFT: u32 = 26;
-
-/// Mask for extracting boundary flags from a direct-rule encoded value.
-pub(super) const DIRECT_BOUNDARY_MASK: u32 = 0x03 << DIRECT_BOUNDARY_SHIFT;
-
-/// Mask for extracting the rule index from a direct-rule encoded value.
-pub(super) const DIRECT_RULE_MASK: u32 = (1 << DIRECT_BOUNDARY_SHIFT) - 1;
-
-/// Maximum number of segments handled by the bitmask fast path.
-///
-/// Rules with up to 64 AND/NOT segments track per-segment satisfaction in a single `u64`
-/// bitmask (`WordState::satisfied_mask`). Rules exceeding this threshold fall back to
-/// the per-variant counter matrix (`SimpleMatchState::matrix`).
-pub(super) const BITMASK_CAPACITY: usize = 64;
-
-/// Size of the compact process-type lookup table indexed by raw [`ProcessType`] bits.
-///
-/// [`ProcessType`] is a 7-bit bitflag, so `2^7 = 128` covers every possible combination.
-/// The table maps each bitflag value to a dense sequential index used in the scan masks.
-pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 128;
-
 /// Pre-resolved rule shape encoding the combination of `use_matrix`, `and_count == 1`,
 /// and `has_not` for one [`PatternEntry`].
 ///
@@ -164,36 +117,6 @@ impl RuleShape {
     }
 }
 
-/// Logical role of one emitted pattern inside a rule.
-///
-/// Determined at construction time by the operator that precedes the sub-pattern
-/// in the original rule string:
-///
-/// - No operator or the first segment of a single-segment rule → [`Simple`](Self::Simple)
-/// - `&` operator → [`And`](Self::And)
-/// - `~` operator → [`Not`](Self::Not)
-///
-/// `repr(u8)` keeps this type small for dense storage in [`PatternEntry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub(super) enum PatternKind {
-    /// Single-fragment rule that can complete on one hit.
-    ///
-    /// Only used when the rule has exactly one positive segment, no NOT segments,
-    /// and does not need the matrix fallback.
-    Simple = 0,
-    /// Positive segment that must be observed.
-    ///
-    /// All AND segments in a rule must be satisfied (across any text variant)
-    /// before the rule can fire.
-    And = 1,
-    /// Negative segment that vetoes the rule when observed.
-    ///
-    /// If any NOT segment is matched in any variant, the rule is permanently
-    /// vetoed for the current scan generation.
-    Not = 2,
-}
-
 /// Hot-path per-rule metadata used during scanning.
 ///
 /// Stored in a contiguous `Vec` inside [`RuleSet`] and accessed by rule index on every
@@ -220,7 +143,7 @@ pub(super) struct RuleHot {
     /// Whether the rule needs the per-variant counter matrix instead of the `u64` bitmask.
     ///
     /// True when any segment requires a count other than 1, or when the total number
-    /// of segments exceeds [`BITMASK_CAPACITY`].
+    /// of segments exceeds [`BITMASK_CAPACITY`](super::encoding::BITMASK_CAPACITY).
     pub(super) use_matrix: bool,
 }
 
@@ -240,41 +163,6 @@ pub(super) struct RuleCold {
     pub(super) word: String,
 }
 
-/// One deduplicated pattern's attachment to a concrete rule segment.
-///
-/// Multiple rules may share the same deduplicated pattern string (e.g., two rules both
-/// contain the sub-pattern `"hello"`). Each such binding is stored as a separate
-/// `PatternEntry` in the same bucket of the [`PatternIndex`].
-///
-/// Size: 12 bytes (u32 + 5×u8 + padding).
-#[derive(Debug, Clone)]
-pub(super) struct PatternEntry {
-    /// Rule index inside [`RuleSet`] (indexes into the hot/cold `Vec`s).
-    pub(super) rule_idx: u32,
-    /// Segment offset within the rule's [`RuleHot::segment_counts`] array.
-    ///
-    /// For AND segments this is `0..and_count`; for NOT segments it is `and_count..`.
-    /// Maximum 255 segments per rule (far exceeds [`BITMASK_CAPACITY`] of 64).
-    pub(super) offset: u8,
-    /// Compact process-type index assigned by `SimpleMatcher::build_pt_index_table`.
-    ///
-    /// Used to filter pattern hits by comparing against the current variant's
-    /// [`ScanContext::process_type_mask`].
-    pub(super) pt_index: u8,
-    /// Logical role of this segment hit.
-    pub(super) kind: PatternKind,
-    /// Pre-resolved rule shape encoding `use_matrix`, `and_count == 1`, and `has_not`.
-    ///
-    /// Lets [`RuleSet::process_entry`] branch on rule properties without touching the
-    /// `hot` array (only needed on first-touch in `ScanState::init_rule`).
-    pub(super) shape: RuleShape,
-    /// Word boundary flags (bit 0 = left `\b`, bit 1 = right `\b`).
-    ///
-    /// When non-zero, the scan dispatch checks `is_word_byte` at match start/end
-    /// before forwarding the hit to [`RuleSet::process_entry`].
-    pub(super) boundary: u8,
-}
-
 /// All hot and cold metadata for the compiled rule set.
 ///
 /// `hot` and `cold` are parallel `Vec`s indexed by rule index. [`RuleHot`] is read on
@@ -289,40 +177,6 @@ pub(super) struct RuleSet {
     /// When false, `positive_generation == generation` permanently resolves a rule,
     /// enabling variant-level early termination in `walk_and_scan`.
     has_not_rules: bool,
-}
-
-/// Flat storage for deduplicated pattern entries plus their original bucket ranges.
-///
-/// During construction, each unique pattern string may be attached to one or more
-/// [`PatternEntry`] values (one per rule segment that uses that string). Those per-pattern
-/// buckets are flattened into a single contiguous `entries` vec, and `ranges` records the
-/// `(start, len)` slice for each deduplicated pattern id.
-///
-/// The automaton raw value for a given pattern is either:
-/// - A deduplicated index into `ranges` (general case), or
-/// - A direct rule index with [`DIRECT_RULE_BIT`] set (fast path for simple single-entry
-///   patterns).
-#[derive(Clone)]
-pub(super) struct PatternIndex {
-    /// Contiguous storage of all pattern entries across all deduplicated patterns.
-    entries: Vec<PatternEntry>,
-    /// `(start_offset, length)` into `entries` for each deduplicated pattern id.
-    ranges: Vec<(usize, usize)>,
-    /// `true` when at least one entry has non-zero boundary flags.
-    has_boundary: bool,
-}
-
-/// Dispatch result for a non-direct raw scan value.
-///
-/// Returned by [`PatternIndex::dispatch_indirect`] for values that do **not** have
-/// [`DIRECT_RULE_BIT`] set. Callers handle direct-rule values inline (checking
-/// `DIRECT_RULE_BIT` and extracting `rule_idx` / `pt_index` from the bit-packed
-/// value) before falling through to `dispatch_indirect` for the remaining cases.
-pub(super) enum PatternDispatch<'a> {
-    /// Exactly one attached pattern entry.
-    SingleEntry(&'a PatternEntry),
-    /// Multiple attached entries sharing the same deduplicated pattern string.
-    Entries(&'a [PatternEntry]),
 }
 
 /// Rule-evaluation helpers used by the scan hot path.
@@ -616,135 +470,9 @@ impl RuleSet {
     }
 }
 
-/// Pattern-dispatch helpers for the compiled deduplicated index.
-impl PatternIndex {
-    /// Flattens per-pattern entry buckets into contiguous storage and records their ranges.
-    ///
-    /// Each element of `dedup_entries` is the set of [`PatternEntry`] values attached to
-    /// one unique pattern string. After flattening, `ranges[dedup_id]` gives the
-    /// `(start, len)` slice into the flat `entries` vec.
-    pub(super) fn new(dedup_entries: Vec<Vec<PatternEntry>>) -> Self {
-        let mut entries = Vec::with_capacity(dedup_entries.iter().map(|bucket| bucket.len()).sum());
-        let mut ranges = Vec::with_capacity(dedup_entries.len());
-
-        for bucket in dedup_entries {
-            let start = entries.len();
-            let len = bucket.len();
-            entries.extend(bucket);
-            ranges.push((start, len));
-        }
-
-        let has_boundary = entries.iter().any(|e| e.boundary != 0);
-        Self {
-            entries,
-            ranges,
-            has_boundary,
-        }
-    }
-
-    /// Returns whether any entry requires word boundary checking.
-    pub(super) fn has_boundary(&self) -> bool {
-        self.has_boundary
-    }
-
-    /// Returns the estimated heap memory in bytes owned by the pattern index.
-    pub(super) fn heap_bytes(&self) -> usize {
-        self.entries.capacity() * size_of::<PatternEntry>()
-            + self.ranges.capacity() * size_of::<(usize, usize)>()
-    }
-
-    /// Returns whether there are no deduplicated patterns to scan.
-    #[inline(always)]
-    pub(super) fn is_empty(&self) -> bool {
-        self.ranges.is_empty()
-    }
-
-    /// Returns whether every entry across all patterns is a [`PatternKind::Simple`] segment
-    /// and every pattern maps to exactly one rule.
-    ///
-    /// When true, the matcher can use [`AllSimple`](super::SearchMode::AllSimple)
-    /// which skips the full state machine and processes every hit as a completed rule.
-    ///
-    /// The single-entry requirement exists because the AllSimple fast path extracts
-    /// `rule_idx` directly from the raw scan value via [`DIRECT_RULE_MASK`]. Patterns
-    /// shared across multiple rules (e.g., via OR alternatives `"cat|dog"` + `"dog|bird"`)
-    /// produce multi-entry buckets that require the General dispatch path.
-    #[inline(always)]
-    pub(super) fn all_simple(&self) -> bool {
-        self.entries
-            .iter()
-            .all(|entry| entry.kind == PatternKind::Simple)
-            && self.ranges.iter().all(|&(_, len)| len == 1)
-    }
-
-    /// Builds the raw scan-value mapping used by the automata.
-    ///
-    /// For each deduplicated pattern, produces the `u32` value that the automaton will
-    /// report on a hit. A pattern with exactly one [`PatternKind::Simple`] entry is encoded as
-    /// `rule_idx | DIRECT_RULE_BIT` so the hot path can skip the indirection through the
-    /// entry table. All other patterns store the deduplicated index directly.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked` on `self.entries` when checking the single-entry fast path.
-    /// The index `start` comes from `self.ranges` which was built by [`Self::new`] and
-    /// is always in bounds.
-    pub(super) fn build_value_map(&self) -> Vec<u32> {
-        let mut value_map = Vec::with_capacity(self.ranges.len());
-
-        for (dedup_idx, &(start, len)) in self.ranges.iter().enumerate() {
-            if len == 1 {
-                // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by `Self::new`.
-                let entry = unsafe { self.entries.get_unchecked(start) };
-                if entry.kind == PatternKind::Simple
-                    && (entry.pt_index as u32) < 8
-                    && entry.rule_idx < (1 << DIRECT_BOUNDARY_SHIFT)
-                {
-                    let encoded = DIRECT_RULE_BIT
-                        | ((entry.pt_index as u32) << DIRECT_PT_SHIFT)
-                        | ((entry.boundary as u32) << DIRECT_BOUNDARY_SHIFT)
-                        | entry.rule_idx;
-                    value_map.push(encoded);
-                    continue;
-                }
-            }
-            value_map.push(dedup_idx as u32);
-        }
-
-        value_map
-    }
-
-    /// Dispatches a non-direct raw scan value into a [`PatternDispatch`] variant.
-    ///
-    /// The caller **must** have already checked that `raw_value & DIRECT_RULE_BIT == 0`.
-    /// Direct-rule values are handled inline by the caller (extracting `rule_idx` and
-    /// `pt_index` from the bit-packed value). This function handles the remaining cases
-    /// where the value is a deduplicated pattern index into the entry table.
-    #[inline(always)]
-    pub(super) fn dispatch_indirect(&self, raw_value: u32) -> PatternDispatch<'_> {
-        debug_assert!(
-            raw_value & DIRECT_RULE_BIT == 0,
-            "dispatch_indirect called with DIRECT_RULE_BIT set"
-        );
-
-        let pattern_idx = raw_value as usize;
-        debug_assert!(pattern_idx < self.ranges.len());
-        // SAFETY: `pattern_idx` is in bounds — guaranteed by debug_assert above.
-        let &(start, len) = unsafe { self.ranges.get_unchecked(pattern_idx) };
-        debug_assert!(start + len <= self.entries.len());
-
-        if len == 1 {
-            // SAFETY: `start` and `start + len` are in bounds — guaranteed by debug_assert above.
-            PatternDispatch::SingleEntry(unsafe { self.entries.get_unchecked(start) })
-        } else {
-            // SAFETY: `start..start + len` is in bounds — guaranteed by debug_assert above.
-            PatternDispatch::Entries(unsafe { self.entries.get_unchecked(start..start + len) })
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::state::SimpleMatchState;
     use super::*;
 
     fn make_ctx(exit_early: bool) -> ScanContext {
@@ -772,91 +500,6 @@ mod tests {
         )
     }
 
-    // --- PatternIndex dispatch tests ---
-
-    #[test]
-    fn test_pattern_index_direct_rule_encoding() {
-        let entries = vec![vec![PatternEntry {
-            rule_idx: 5,
-            offset: 0,
-            pt_index: 2,
-            kind: PatternKind::Simple,
-            shape: RuleShape::SingleAnd,
-            boundary: 0,
-        }]];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map();
-
-        assert_eq!(value_map.len(), 1);
-        let raw = value_map[0];
-        assert!(raw & DIRECT_RULE_BIT != 0, "should set DIRECT_RULE_BIT");
-
-        let rule_idx = (raw & DIRECT_RULE_MASK) as usize;
-        let pt_index = ((raw & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
-        assert_eq!(rule_idx, 5);
-        assert_eq!(pt_index, 2);
-    }
-
-    #[test]
-    fn test_pattern_index_dispatch_single_entry() {
-        // Non-Simple kind should NOT get DIRECT_RULE_BIT
-        let entries = vec![vec![PatternEntry {
-            rule_idx: 0,
-            offset: 0,
-            pt_index: 0,
-            kind: PatternKind::And,
-            shape: RuleShape::Bitmask,
-            boundary: 0,
-        }]];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map();
-
-        assert!(
-            value_map[0] & DIRECT_RULE_BIT == 0,
-            "And kind should not get DIRECT_RULE_BIT"
-        );
-
-        match index.dispatch_indirect(value_map[0]) {
-            PatternDispatch::SingleEntry(entry) => {
-                assert_eq!(entry.rule_idx, 0);
-                assert_eq!(entry.kind, PatternKind::And);
-            }
-            _ => panic!("expected SingleEntry dispatch"),
-        }
-    }
-
-    #[test]
-    fn test_pattern_index_dispatch_multi_entry() {
-        let entries = vec![vec![
-            PatternEntry {
-                rule_idx: 0,
-                offset: 0,
-                pt_index: 0,
-                kind: PatternKind::Simple,
-                shape: RuleShape::SingleAnd,
-                boundary: 0,
-            },
-            PatternEntry {
-                rule_idx: 1,
-                offset: 0,
-                pt_index: 0,
-                kind: PatternKind::Simple,
-                shape: RuleShape::SingleAnd,
-                boundary: 0,
-            },
-        ]];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map();
-
-        // Multi-entry patterns never get DIRECT_RULE_BIT
-        assert!(value_map[0] & DIRECT_RULE_BIT == 0);
-
-        match index.dispatch_indirect(value_map[0]) {
-            PatternDispatch::Entries(slice) => assert_eq!(slice.len(), 2),
-            _ => panic!("expected Entries dispatch"),
-        }
-    }
-
     // --- RuleShape predicate tests ---
 
     #[test]
@@ -877,8 +520,6 @@ mod tests {
     }
 
     // --- process_entry tests ---
-
-    use super::super::state::SimpleMatchState;
 
     #[test]
     fn test_process_entry_simple_kind() {

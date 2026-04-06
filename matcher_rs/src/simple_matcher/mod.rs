@@ -9,8 +9,10 @@
 //! The implementation is split across private child modules:
 //!
 //! - `build` — [`SimpleMatcher::new`] and rule parsing / deduplication.
-//! - `engine` — Aho-Corasick automaton compilation (ASCII and charwise engines).
-//! - `rule` — Rule metadata, pattern dispatch, and state transitions.
+//! - `encoding` — Bit-packing constants for direct-rule encoding and capacity limits.
+//! - `engine` — Aho-Corasick automaton compilation (bytewise and charwise engines).
+//! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
+//! - `rule` — Rule metadata (`RuleHot`/`RuleCold`/`RuleSet`) and state machine.
 //! - `search` — Hot-path scan loops and rule evaluation.
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 
@@ -22,7 +24,9 @@ use serde::Serialize;
 use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
+mod encoding;
 mod engine;
+mod pattern;
 mod rule;
 mod search;
 mod simd;

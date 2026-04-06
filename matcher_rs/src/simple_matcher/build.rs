@@ -28,11 +28,10 @@ use ahash::AHashMap;
 use crate::process::graph::build_process_type_tree;
 use crate::process::{ProcessType, reduce_text_process_emit};
 
+use super::encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE};
 use super::engine::ScanPlan;
-use super::rule::{
-    BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, PatternKind, RuleCold, RuleHot,
-    RuleSet, RuleShape,
-};
+use super::pattern::{PatternEntry, PatternKind};
+use super::rule::{RuleCold, RuleHot, RuleSet, RuleShape};
 use super::{SearchMode, SimpleMatcher};
 
 /// Fully parsed matcher construction output before scan-engine compilation.
@@ -400,7 +399,7 @@ fn parse_boundary_markers(s: &str) -> (u8, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::rule::PatternKind;
+    use super::super::pattern::PatternKind;
     use super::*;
     use crate::process::ProcessType;
 

@@ -40,11 +40,12 @@ use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
 use super::build::{BOUNDARY_LEFT, BOUNDARY_RIGHT};
-use super::engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density};
-use super::rule::{
+use super::encoding::{
     DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT,
-    DIRECT_RULE_MASK, PatternDispatch,
+    DIRECT_RULE_MASK,
 };
+use super::engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density};
+use super::pattern::PatternDispatch;
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, ScanState};
 use super::{SimpleMatcher, SimpleResult};
 
