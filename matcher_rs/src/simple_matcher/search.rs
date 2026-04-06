@@ -198,6 +198,12 @@ impl SimpleMatcher {
     }
 
     /// Unified tree walk that transforms, scans, and evaluates rules in a single pass.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a non-root node in the transform trie lacks a cached
+    /// [`TransformStep`]. This is a construction invariant maintained by
+    /// [`build_process_type_tree`](crate::process::graph::build_process_type_tree).
     #[inline]
     pub(super) fn walk_and_scan<'a>(
         &'a self,

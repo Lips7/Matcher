@@ -456,6 +456,12 @@ impl CharwiseMatcherExt for CharwiseMatcher {
 ///   full pattern set so that non-ASCII haystacks benefit from character-granularity
 ///   scanning (~1.6–1.9× faster on CJK text vs bytewise).
 ///
+/// # Panics
+///
+/// Panics if the bytewise automaton build thread panics internally. This should
+/// not occur under normal operation — it indicates a bug in the underlying
+/// `daachorse` or `aho-corasick` builder.
+///
 /// # Errors
 ///
 /// Returns [`MatcherError`] if the `daachorse` or `aho-corasick` automaton builders

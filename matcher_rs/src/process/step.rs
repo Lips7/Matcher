@@ -109,6 +109,16 @@ static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
     OnceLock::new(),
 ];
 
+/// Returns the cached [`TransformStep`] for a single-bit [`ProcessType`] flag.
+///
+/// The step is lazily initialized on first access via [`OnceLock`] and reused
+/// for all subsequent calls with the same flag.
+///
+/// # Panics
+///
+/// In debug builds, panics if `process_type_bit` is not a single-bit flag
+/// (i.e., not a power of two) or exceeds the cache size. Callers must iterate
+/// [`ProcessType`] to extract individual bits before calling this function.
 pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static TransformStep {
     debug_assert!(
         process_type_bit.bits().is_power_of_two() || process_type_bit == ProcessType::None,

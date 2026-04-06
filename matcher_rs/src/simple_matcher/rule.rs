@@ -269,6 +269,12 @@ impl RuleSet {
     /// Init logic is inlined rather than calling `ScanState::init_rule` so that the
     /// `&mut WordState` reference obtained at the start of each arm survives across the
     /// init — eliminating a second `word_states` lookup per call.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `entry.rule_idx` is out of bounds for the
+    /// rule arrays. This invariant is guaranteed by construction in
+    /// [`SimpleMatcher::new`](super::SimpleMatcher::new).
     #[inline(always)]
     pub(super) fn process_entry(
         &self,

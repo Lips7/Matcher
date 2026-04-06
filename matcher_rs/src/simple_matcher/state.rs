@@ -64,7 +64,7 @@ pub(super) struct WordState {
     pub(super) satisfied_mask: u64,
     /// Remaining AND segments still needed before the rule can fire.
     ///
-    /// Initialized to [`RuleHot::and_count`](super::rule::RuleHot::and_count) and
+    /// Initialized to [`PatternEntry::and_count`](super::pattern::PatternEntry::and_count) and
     /// decremented as segments are satisfied. The rule becomes positive when this
     /// reaches zero.
     pub(super) remaining_and: u16,

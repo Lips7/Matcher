@@ -76,7 +76,7 @@ pub(super) struct PatternEntry {
     pub(super) boundary: u8,
     /// Number of positive (AND) segments in the owning rule.
     ///
-    /// Duplicated from [`RuleHot::and_count`](super::rule::RuleHot::and_count) so that
+    /// Duplicated from the rule's AND-segment count so that
     /// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) can initialize
     /// per-rule state without loading the `RuleHot` struct (avoiding a cache miss on
     /// the 400KB+ hot array). Fits in the existing struct padding (9→10 bytes, still
