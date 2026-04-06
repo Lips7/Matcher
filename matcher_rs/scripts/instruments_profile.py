@@ -435,9 +435,9 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
-    ("DFA scan",          ["dfa::", "DFA::", "aho_corasick::dfa"]),
+    ("DFA scan",          ["dfa::", "DFA::", "aho_corasick::dfa", "aho_corasick::automaton",
+                           "aho_corasick::ahocorasick", "AcAutomaton"]),
     ("Daachorse scan",    ["bytewise", "charwise", "daachorse"]),
-    ("AC normalize scan", ["automaton::", "NormalizeMatcher"]),
     ("Engine dispatch",   ["engine::", "ScanPlan", "BytewiseMatcher", "CharwiseMatcher"]),
     ("Search hot path",   ["search::", "walk_and_scan", "scan_variant", "process_match",
                            "is_match_simple", "process_simple"]),
