@@ -136,6 +136,7 @@ characterize-viz *args:
 # Examples:
 #   just profile record --mode is_match --dict en --rules 10000 --analyze
 #   just profile record --mode process --dict cn --open
+#   just profile record --target build --dict en --rules 50000 --analyze
 #   just profile analyze /tmp/prof_*.trace
 profile *args:
     uv run matcher_rs/scripts/instruments_profile.py {{args}}

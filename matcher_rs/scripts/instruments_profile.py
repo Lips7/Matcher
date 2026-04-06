@@ -35,33 +35,33 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PROFILE_BINARY = "profile_search"
+PROFILE_BINARIES = ("profile_search", "profile_build")
 
 
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
-def find_profiling_binary() -> Path:
-    target = REPO_ROOT / "target" / "profiling" / "examples" / PROFILE_BINARY
+def find_profiling_binary(name: str = "profile_search") -> Path:
+    target = REPO_ROOT / "target" / "profiling" / "examples" / name
     if target.exists():
         return target
     deps = REPO_ROOT / "target" / "profiling" / "deps"
     if deps.exists():
         for f in deps.iterdir():
-            if f.name.startswith("profile_search") and f.is_file() and os.access(f, os.X_OK):
+            if f.name.startswith(name) and f.is_file() and os.access(f, os.X_OK):
                 return f
     return target
 
 
-def build_profiling_binary() -> Path:
-    print("Building profile_search with --profile profiling...")
+def build_profiling_binary(name: str = "profile_search") -> Path:
+    print(f"Building {name} with --profile profiling...")
     subprocess.run(
-        ["cargo", "build", "--profile", "profiling", "--example", PROFILE_BINARY, "-p", "matcher_rs"],
+        ["cargo", "build", "--profile", "profiling", "--example", name, "-p", "matcher_rs"],
         cwd=REPO_ROOT,
         check=True,
     )
-    binary = find_profiling_binary()
+    binary = find_profiling_binary(name)
     if not binary.exists():
         sys.exit(f"Error: binary not found at {binary} after build")
     return binary
@@ -73,6 +73,7 @@ def build_profiling_binary() -> Path:
 
 def record_profile(
     *,
+    target: str = "search",
     scene: str | None = None,
     mode: str = "process",
     shape: str = "literal",
@@ -83,15 +84,26 @@ def record_profile(
     output: Path | None = None,
     build: bool = True,
 ) -> Path:
-    binary = find_profiling_binary()
+    binary_name = f"profile_{target}"
+    binary = find_profiling_binary(binary_name)
     if build:
-        binary = build_profiling_binary()
+        binary = build_profiling_binary(binary_name)
     elif not binary.exists():
-        binary = build_profiling_binary()
+        binary = build_profiling_binary(binary_name)
 
-    # Build CLI args for profile_search binary
     binary_args: list[str] = []
-    if scene:
+    if target == "build":
+        # profile_build: --dict, --rules, --pt, --seconds
+        if output is None:
+            output = Path(f"/tmp/prof_build_{dict_lang}_{rules}.trace")
+        binary_args += [
+            "--dict", dict_lang,
+            "--rules", str(rules),
+            "--pt", pt,
+            "--seconds", str(seconds),
+        ]
+        print(f"Recording build: dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s")
+    elif scene:
         if output is None:
             output = Path(f"/tmp/prof_{scene}.trace")
         binary_args += ["--scene", scene, "--seconds", str(seconds)]
@@ -458,7 +470,7 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
                            "PartialEq", "slice::cmp", "ptr::read", "ptr::copy",
                            "memcmp", "memcpy", "memmove", "memmove"]),
     ("Sort (init)",       ["sort::", "quicksort", "smallsort", "median"]),
-    ("Main loop",         ["profile_search", "main"]),
+    ("Main loop",         ["profile_search", "profile_build", "main"]),
     ("Thread / spawn",    ["thread::", "pthread", "thread_start", "spawn"]),
     ("dyld / system",     ["dyld", "libsystem", "boot_boot", "ignite", "_open"]),
 ]
@@ -526,7 +538,7 @@ def analyze_trace(trace_path: Path) -> dict:
         return {"total_weight_ms": 0, "categories": {}, "top_symbols": [], "samples": 0}
 
     # Filter to main thread only (where our code runs)
-    main_samples = [s for s in samples if "Main Thread" in s["thread"] or "profile_search" in s["thread"]]
+    main_samples = [s for s in samples if "Main Thread" in s["thread"] or "profile_" in s["thread"]]
     if not main_samples:
         main_samples = samples  # fallback
 
@@ -543,7 +555,11 @@ def analyze_trace(trace_path: Path) -> dict:
     # --- atos inline resolution ---
     # Collect all unique leaf addresses for atos resolution
     atos_cache: dict[str, list[dict]] = {}
-    profile_binary = binary_info.get(PROFILE_BINARY)
+    profile_binary = None
+    for bname in PROFILE_BINARIES:
+        profile_binary = binary_info.get(bname)
+        if profile_binary:
+            break
     if profile_binary:
         all_leaf_addrs: set[str] = set()
         for s in main_samples:
@@ -964,6 +980,8 @@ def main():
 
     # --- record ---
     rec = sub.add_parser("record", help="Record a Time Profiler trace")
+    rec.add_argument("--target", default="search", choices=["search", "build"],
+                     help="Profiling target: 'search' (default) or 'build' (construction)")
     rec.add_argument("--scene", default=None,
                      help="Named scene (e.g. en-search, cn-transform, all). Overrides --mode/--dict/etc.")
     rec.add_argument("--mode", default="process", choices=["is_match", "process"])
@@ -992,6 +1010,7 @@ def main():
 
     if args.command == "record":
         trace = record_profile(
+            target=args.target,
             scene=args.scene,
             mode=args.mode,
             shape=args.shape,
