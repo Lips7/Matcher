@@ -236,7 +236,15 @@ For leaf Delete or Normalize nodes, `walk_and_scan` can bypass string materializ
 - **Normalize**: `NormalizeFilterIterator` yields normalized bytes (unmapped pass through, mapped emit replacement bytes)
 - **Fanjian**: `FanjianFilterIterator` yields simplified bytes (unmapped CJK pass through, mapped Traditional→Simplified emit replacement char's UTF-8 bytes)
 
-This eliminates the intermediate `String` allocation and the second text traversal. Not used when the `aho-corasick` DFA engine is selected (DFA has no streaming API, and DFA+materialization is faster anyway). Measured: +12.6% throughput on CJK delete+scan workloads.
+This eliminates the intermediate `String` allocation and the second text traversal.
+
+The fused path uses a 3-way dispatch based on DFA availability and text density:
+
+| Condition | Strategy | Rationale |
+|---|---|---|
+| `dfa` feature ON + density ≤ 0.67 | Materialize via `step.apply()` → DFA scan | DFA+Teddy is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text; allocation cost is negligible |
+| `dfa` feature OFF + density ≤ 0.67 | Stream via `filter_bytes()` → DAAC bytewise | Best available option without DFA |
+| density > 0.67 | Stream via `filter_bytes()` → DAAC charwise | Charwise does 1 transition per CJK char vs 3 bytewise; streaming avoids allocation |
 
 ---
 

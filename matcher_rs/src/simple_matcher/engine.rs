@@ -135,6 +135,25 @@ impl ScanPlan {
         &self.patterns
     }
 
+    /// Returns whether the bytewise engine has a DFA backend available.
+    ///
+    /// When `true`, the caller should prefer materialized scan over streaming
+    /// at low non-ASCII density — DFA+Teddy is 2–5× faster than DAAC bytewise
+    /// streaming on ASCII-heavy text, outweighing the allocation cost.
+    #[inline(always)]
+    pub(super) fn has_dfa(&self) -> bool {
+        #[cfg(feature = "dfa")]
+        {
+            self.bytewise_matcher
+                .as_ref()
+                .is_some_and(|m| m.dfa.is_some())
+        }
+        #[cfg(not(feature = "dfa"))]
+        {
+            false
+        }
+    }
+
     /// Returns the estimated heap memory in bytes owned by all scan engines.
     pub(super) fn heap_bytes(&self) -> usize {
         let bw = self.bytewise_matcher.as_ref().map_or(0, |m| m.heap_bytes());

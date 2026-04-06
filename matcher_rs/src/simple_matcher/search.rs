@@ -39,7 +39,7 @@ use tinyvec::TinyVec;
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
-use super::engine::text_non_ascii_density;
+use super::engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density};
 use super::rule::{
     DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT, DIRECT_RULE_MASK, PatternDispatch,
 };
@@ -194,10 +194,16 @@ impl SimpleMatcher {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
                         let child_density = step.output_density(parent_density);
 
-                        // Fused transform-scan: stream transformed bytes directly
-                        // into the AC automaton via DAAC bytewise, skipping
-                        // intermediate allocation.
-                        let fused_result = if !is_noop {
+                        // Fused transform-scan dispatch:
+                        //
+                        // - DFA available + low density: skip fused, fall through to
+                        //   materialize path — DFA+Teddy is 2–5× faster than DAAC
+                        //   bytewise streaming on ASCII-heavy text.
+                        // - No DFA + low density: stream via DAAC bytewise.
+                        // - High density: stream via DAAC charwise.
+                        let use_fused = !(is_noop
+                            || self.scan.has_dfa() && child_density <= CHARWISE_DENSITY_THRESHOLD);
+                        let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             let vi = variant_counter;
                             let ctx = ScanContext {
