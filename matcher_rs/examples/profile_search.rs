@@ -433,7 +433,7 @@ fn main() {
         args.iter()
             .position(|a| a == flag)
             .and_then(|i| args.get(i + 1))
-            .map(String::clone)
+            .cloned()
             .unwrap_or_else(|| env_or(env_key, default))
     };
 
