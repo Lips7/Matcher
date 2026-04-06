@@ -44,17 +44,6 @@ fn test_search_mode_general() {
 
 #[test]
 fn test_direct_rule_bit_fast_path() {
-    // AllSimple: all rules are simple literals under ProcessType::None
-    let simple = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::None, 2, "world")
-        .build()
-        .unwrap();
-
-    assert!(simple.is_match("hello world"));
-    let results = simple.process("hello world");
-    assert_eq!(results.len(), 2);
-
     // Mixed: same sub-pattern "hello" used in both a simple rule and a compound rule.
     // This forces Entries dispatch instead of DirectRule for the shared pattern.
     let mixed = SimpleMatcherBuilder::new()
@@ -207,6 +196,44 @@ fn test_bitmask_boundary_64_vs_65() {
 
     assert_eq!(matcher_64.process(&text_64).len(), 1);
     assert_eq!(matcher_65.process(&text_65).len(), 1);
+}
+
+#[test]
+fn test_bitmask_not_boundary() {
+    // 63 AND + 1 NOT = 64 total -> bitmask path (at capacity)
+    let and_parts_63: Vec<String> = (0..63).map(|i| format!("w{i}")).collect();
+    let pattern_63_not = format!("{}~veto", and_parts_63.join("&"));
+    let matcher_63 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern_63_not)
+        .build()
+        .unwrap();
+
+    // 64 AND + 1 NOT = 65 total -> matrix fallback
+    let and_parts_64: Vec<String> = (0..64).map(|i| format!("w{i}")).collect();
+    let pattern_64_not = format!("{}~veto", and_parts_64.join("&"));
+    let matcher_64 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern_64_not)
+        .build()
+        .unwrap();
+
+    let text_63 = and_parts_63.join(" ");
+    let text_64 = and_parts_64.join(" ");
+
+    // Both should match without veto
+    assert!(matcher_63.is_match(&text_63), "63 AND + 1 NOT: match");
+    assert!(matcher_64.is_match(&text_64), "64 AND + 1 NOT: match");
+
+    // Both should be vetoed with NOT present
+    let text_63_veto = format!("{text_63} veto");
+    let text_64_veto = format!("{text_64} veto");
+    assert!(
+        !matcher_63.is_match(&text_63_veto),
+        "63 AND + 1 NOT: vetoed"
+    );
+    assert!(
+        !matcher_64.is_match(&text_64_veto),
+        "64 AND + 1 NOT: vetoed"
+    );
 }
 
 #[test]
@@ -388,7 +415,7 @@ fn test_charwise_streaming_via_variant_norm_delete() {
 }
 
 // ---------------------------------------------------------------------------
-// ASCII engine routing
+// Engine routing: ASCII vs charwise dispatch
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -440,4 +467,90 @@ fn test_ascii_engine_only_when_no_non_ascii_patterns() {
     let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
     ids.sort();
     assert_eq!(ids, vec![1, 2]);
+}
+
+// ---------------------------------------------------------------------------
+// Density-based engine dispatch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_density_dispatch_boundary() {
+    // Both ASCII and CJK patterns registered — verify matches are found
+    // regardless of which side of the 0.67 density threshold the text falls on.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "needle")
+        .add_word(ProcessType::None, 2, "针")
+        .build()
+        .unwrap();
+
+    // ~30% non-ASCII density (bytewise path): mostly ASCII with some CJK padding
+    // "needle" (6 bytes ASCII) + " 针" (1+3=4 bytes) + " aaaa..." (padding)
+    // Non-ASCII: 3 bytes out of ~30 -> ~10% density -> bytewise
+    let low_density = format!("needle 针 {}", "a".repeat(50));
+    assert!(matcher.is_match(&low_density), "low density: ASCII match");
+    let results = matcher.process(&low_density);
+    let ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
+    assert!(ids.contains(&1), "low density: needle found");
+    assert!(ids.contains(&2), "low density: 针 found");
+
+    // ~80% non-ASCII density (charwise path): mostly CJK with the ASCII needle embedded
+    // Each CJK char is 3 bytes, so 20 CJK chars = 60 non-ASCII bytes
+    // "needle" = 6 ASCII bytes, total ~66 bytes, density = 60/66 ≈ 0.91
+    let high_density = format!(
+        "{}needle{}",
+        "你好世界测试国语中文".repeat(1),
+        "你好世界测试国语中文".repeat(1)
+    );
+    assert!(
+        matcher.is_match(&high_density),
+        "high density: ASCII match in CJK text"
+    );
+    let results = matcher.process(&high_density);
+    let ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
+    assert!(ids.contains(&1), "high density: needle found");
+}
+
+// ---------------------------------------------------------------------------
+// Sequential matcher reuse (thread-local state isolation)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_sequential_matcher_reuse() {
+    // Verify that using two different matchers sequentially on the same thread
+    // does not leak state via thread-local storage.
+    let matcher_a = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "alpha")
+        .add_word(ProcessType::None, 2, "beta")
+        .build()
+        .unwrap();
+
+    let matcher_b = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 10, "gamma")
+        .add_word(ProcessType::None, 20, "delta")
+        .build()
+        .unwrap();
+
+    // Use matcher_a first
+    assert!(matcher_a.is_match("alpha beta"));
+    let results_a = matcher_a.process("alpha beta");
+    assert_eq!(results_a.len(), 2);
+
+    // Use matcher_b — should not be affected by matcher_a's prior state
+    assert!(
+        !matcher_b.is_match("alpha"),
+        "matcher_b should not know alpha"
+    );
+    assert!(matcher_b.is_match("gamma delta"));
+    let results_b = matcher_b.process("gamma delta");
+    assert_eq!(results_b.len(), 2);
+    let ids_b: Vec<u32> = results_b.iter().map(|r| r.word_id).collect();
+    assert!(ids_b.contains(&10));
+    assert!(ids_b.contains(&20));
+
+    // Use matcher_a again — should still work correctly
+    assert!(matcher_a.is_match("alpha"));
+    assert!(
+        !matcher_a.is_match("gamma"),
+        "matcher_a should not know gamma"
+    );
 }

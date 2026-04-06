@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
 
 // ---------------------------------------------------------------------------
-// Basic AND / NOT
+// AND semantics
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -89,29 +89,43 @@ fn test_count_based_and_logic() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// NOT semantics: ordering, veto, pure-NOT
-// ---------------------------------------------------------------------------
-
 #[test]
-fn test_not_logic_ordering() {
-    // NOT logic works even if the NOT token appears BEFORE the positive token.
-    let mut builder = SimpleMatcherBuilder::new();
-    builder = builder.add_word(ProcessType::None, 1, "hello~world");
-    let matcher = builder.build().unwrap();
+fn test_high_repetition_and() {
+    // "a&a&a&a&a&a&a&a&a&a" requires 10 occurrences of "a"
+    let pattern = (0..10).map(|_| "a").collect::<Vec<_>>().join("&");
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern)
+        .build()
+        .unwrap();
 
-    // "world hello" -> "world" triggers NOT, "hello" triggers positive.
-    assert_eq!(matcher.process("world hello").len(), 0);
-    assert_eq!(matcher.process("hello").len(), 1);
+    let text_10 = "a ".repeat(10);
+    let text_9 = "a ".repeat(9);
+    assert!(matcher.is_match(&text_10));
+    assert!(!matcher.is_match(&text_9));
 }
 
+// ---------------------------------------------------------------------------
+// NOT semantics
+// ---------------------------------------------------------------------------
+
 #[test]
-fn test_not_can_veto_after_positive_completion() {
+fn test_not_veto_is_order_independent() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello~world")
         .build()
         .unwrap();
 
+    // Positive only -> match
+    assert_eq!(matcher.process("hello").len(), 1);
+
+    // NOT token before positive token in text -> veto
+    assert_eq!(
+        matcher.process("world hello").len(),
+        0,
+        "NOT should veto even when appearing before the positive token"
+    );
+
+    // NOT token after positive satisfaction -> veto
     assert!(
         !matcher.is_match("hello hello world"),
         "world should still veto after hello satisfied the positive side"
@@ -120,14 +134,17 @@ fn test_not_can_veto_after_positive_completion() {
 }
 
 #[test]
-fn test_pure_not_rule_skipped_with_warning() {
+fn test_pure_not_rules_skipped() {
     // Pure-NOT rules (no AND segments) can never fire because the AC automaton only
-    // detects presence, not absence. Construction skips them with a warning to stderr.
+    // detects presence, not absence. Construction skips them with a warning.
+    // Valid rules in the same matcher should still work.
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "~bad")
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "~bad")
         .build()
         .unwrap();
 
+    assert!(matcher.is_match("hello world"), "valid rule still works");
     assert!(
         !matcher.is_match("good text"),
         "pure-NOT rule skipped -> no match"
@@ -137,66 +154,11 @@ fn test_pure_not_rule_skipped_with_warning() {
         "pure-NOT rule skipped -> no match"
     );
     assert!(matcher.process("anything").is_empty());
-}
-
-#[test]
-fn test_pure_not_mixed_with_valid_rules() {
-    // Pure-NOT rules are skipped, but valid rules in the same matcher still work.
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::None, 2, "~bad")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("hello world"), "valid rule still works");
-    assert!(!matcher.is_match("nothing"), "pure-NOT rule was skipped");
+    assert_eq!(matcher.process("hello").len(), 1);
 }
 
 // ---------------------------------------------------------------------------
-// Degenerate / edge-case patterns
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_operator_only_patterns() {
-    // Patterns that are pure operators produce empty segments, all skipped.
-    let matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
-    )]))
-    .unwrap();
-
-    assert!(!matcher.is_match("hello world"));
-    assert!(!matcher.is_match("& ~ && ~~"));
-    assert!(matcher.process("anything at all").is_empty());
-}
-
-// ---------------------------------------------------------------------------
-// Large rule sets
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_large_overlapping_and_not_set() {
-    let mut builder = SimpleMatcherBuilder::new();
-    let mut storage = Vec::new();
-    for i in 100..200 {
-        storage.push(format!("word{}&word{}~not{}", i, i + 1, i));
-    }
-    for (i, s) in storage.iter().enumerate() {
-        builder = builder.add_word(ProcessType::None, (i + 100) as u32, s);
-    }
-    let matcher = builder.build().unwrap();
-
-    assert!(matcher.is_match("word110 word111"));
-    assert!(!matcher.is_match("word110 word111 not110"));
-
-    let results = matcher.process("word110 word111 word120 word121 not120");
-    let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
-    ids.sort();
-    assert_eq!(ids, vec![110]);
-}
-
-// ---------------------------------------------------------------------------
-// Segment order independence
+// Combined AND/NOT
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -221,9 +183,68 @@ fn test_and_not_segment_order_independence() {
     );
 }
 
+#[test]
+fn test_large_overlapping_and_not_set() {
+    let mut builder = SimpleMatcherBuilder::new();
+    let mut storage = Vec::new();
+    for i in 100..200 {
+        storage.push(format!("word{}&word{}~not{}", i, i + 1, i));
+    }
+    for (i, s) in storage.iter().enumerate() {
+        builder = builder.add_word(ProcessType::None, (i + 100) as u32, s);
+    }
+    let matcher = builder.build().unwrap();
+
+    assert!(matcher.is_match("word110 word111"));
+    assert!(!matcher.is_match("word110 word111 not110"));
+
+    let results = matcher.process("word110 word111 word120 word121 not120");
+    let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
+    ids.sort();
+    assert_eq!(ids, vec![110]);
+}
+
 // ---------------------------------------------------------------------------
-// NUL byte in patterns
+// Edge-case patterns
 // ---------------------------------------------------------------------------
+
+#[test]
+fn test_operator_only_patterns() {
+    // Patterns that are pure operators produce empty segments, all skipped.
+    let matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::None,
+        HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
+    )]))
+    .unwrap();
+
+    assert!(!matcher.is_match("hello world"));
+    assert!(!matcher.is_match("& ~ && ~~"));
+    assert!(matcher.process("anything at all").is_empty());
+}
+
+#[test]
+fn test_trailing_operator_patterns() {
+    // Trailing/leading operators produce empty segments that get stripped.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello&")
+        .add_word(ProcessType::None, 2, "hello~")
+        .add_word(ProcessType::None, 3, "&world")
+        .add_word(ProcessType::None, 4, "~world")
+        .build()
+        .unwrap();
+
+    // "hello&" -> empty trailing segment stripped -> effectively "hello"
+    assert!(matcher.is_match("hello"), "trailing & stripped");
+    // "&world" -> empty leading segment stripped -> effectively "world"
+    assert!(matcher.is_match("world"), "leading & stripped");
+    // "hello~" -> empty NOT segment stripped -> effectively "hello"
+    assert!(matcher.is_match("hello foo"), "trailing ~ stripped");
+    // "~world" -> pure-NOT rule, skipped
+    assert!(
+        !matcher.is_match("anything"),
+        "leading ~ makes pure-NOT rule"
+    );
+}
 
 #[test]
 fn test_pattern_with_nul_byte() {
@@ -235,23 +256,4 @@ fn test_pattern_with_nul_byte() {
     assert!(matcher.is_match("hello\0world"));
     assert!(!matcher.is_match("hello world"));
     assert!(!matcher.is_match("helloworld"));
-}
-
-// ---------------------------------------------------------------------------
-// High-repetition AND (same sub-pattern)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_high_repetition_and() {
-    // "a&a&a&a&a&a&a&a&a&a" requires 10 occurrences of "a"
-    let pattern = (0..10).map(|_| "a").collect::<Vec<_>>().join("&");
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, &pattern)
-        .build()
-        .unwrap();
-
-    let text_10 = "a ".repeat(10);
-    let text_9 = "a ".repeat(9);
-    assert!(matcher.is_match(&text_10));
-    assert!(!matcher.is_match(&text_9));
 }

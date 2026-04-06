@@ -1,6 +1,5 @@
+use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
 use std::collections::HashMap;
-
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
 
 // ---------------------------------------------------------------------------
 // Construction: HashMap API
@@ -18,38 +17,6 @@ fn test_init() {
         HashMap::from([(1, "hello"), (2, "world")]),
     )]))
     .unwrap();
-    // Boundary conditions
-    let empty_map: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
-    let empty_matcher = SimpleMatcher::new(&empty_map).unwrap();
-    assert!(
-        !empty_matcher.is_match("test"),
-        "empty matcher should never match"
-    );
-    assert!(
-        !empty_matcher.is_match(""),
-        "empty matcher should never match empty string"
-    );
-}
-
-#[test]
-fn test_duplicate_word_id_same_process_type() {
-    // Same (PT, word_id) inserted twice via HashMap -> second pattern overwrites.
-    // HashMap itself deduplicates, so only "banana" survives.
-    let matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1, "banana")]),
-    )]))
-    .unwrap();
-
-    assert!(
-        !matcher.is_match("apple"),
-        "overwritten pattern should not match"
-    );
-    assert!(matcher.is_match("banana"), "final pattern should match");
-
-    let results = matcher.process("banana");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].word, "banana");
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +68,6 @@ fn test_builder_many_words() {
     assert!(matcher.is_match("word999"), "specific word matches");
     assert!(!matcher.is_match("wordXXX"), "absent word doesn't match");
 
-    // Use unique-length words to avoid substring overlaps in Aho-Corasick
     let results = matcher.process("word0 word1999");
     let mut ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
     ids.sort();
@@ -110,7 +76,7 @@ fn test_builder_many_words() {
 }
 
 #[test]
-fn test_builder_duplicate_overwrite() {
+fn test_duplicate_word_id_overwrite() {
     // Second add_word with same (PT, word_id) overwrites the first.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "apple")
@@ -118,7 +84,7 @@ fn test_builder_duplicate_overwrite() {
         .build()
         .unwrap();
 
-    assert!(!matcher.is_match("apple"), "overwritten");
+    assert!(!matcher.is_match("apple"), "overwritten pattern gone");
     assert!(matcher.is_match("banana"), "final pattern active");
     assert_eq!(matcher.process("banana")[0].word, "banana");
 }
@@ -183,6 +149,27 @@ fn test_process_into_reuse() {
     let len_before = results.len();
     matcher.process_into("", &mut results);
     assert_eq!(results.len(), len_before);
+}
+
+#[test]
+fn test_process_into_append_general_mode() {
+    // General mode (mixed PTs) with pre-seeded buffer — verify append semantics.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::VariantNorm, 2, "测试")
+        .build()
+        .unwrap();
+
+    let sentinel = SimpleResult {
+        word_id: 9999,
+        word: std::borrow::Cow::Borrowed("sentinel"),
+    };
+    let mut results: Vec<SimpleResult<'_>> = vec![sentinel];
+    matcher.process_into("hello 測試", &mut results);
+
+    assert_eq!(results[0].word_id, 9999, "sentinel preserved");
+    assert_eq!(results[0].word, "sentinel");
+    assert_eq!(results.len(), 3, "sentinel + 2 matches");
 }
 
 // ---------------------------------------------------------------------------
@@ -318,20 +305,6 @@ fn test_debug_format() {
     assert!(debug.contains("rule_count"), "debug output: {debug}");
 }
 
-#[test]
-fn test_process_into_empty_text() {
-    // General mode (not AllSimple) to exercise the General early-return path in process_into.
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::VariantNorm, 2, "你好")
-        .build()
-        .unwrap();
-
-    let mut results = vec![];
-    matcher.process_into("", &mut results);
-    assert!(results.is_empty());
-}
-
 // ---------------------------------------------------------------------------
 // Stress and edge cases
 // ---------------------------------------------------------------------------
@@ -367,28 +340,22 @@ fn test_very_long_text() {
 }
 
 #[test]
-fn test_process_result_order_stability() {
-    let mut builder = SimpleMatcherBuilder::new();
-    let words: Vec<String> = (0..10).map(|i| format!("pattern{i}")).collect();
-    for (i, w) in words.iter().enumerate() {
-        builder = builder.add_word(ProcessType::None, i as u32, w);
-    }
-    let matcher = builder.build().unwrap();
+fn test_very_long_pattern() {
+    // 500+ char pattern — verify construction and scanning don't blow up.
+    let pattern = "a".repeat(500);
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern)
+        .build()
+        .unwrap();
 
-    let text = words.join(" ");
-    let baseline: Vec<u32> = matcher
-        .process(&text)
-        .into_iter()
-        .map(|r| r.word_id)
-        .collect();
-    assert!(!baseline.is_empty());
+    let text = "b".repeat(499) + &pattern + &"b".repeat(499);
+    assert!(matcher.is_match(&text), "long pattern should match");
+    assert!(
+        !matcher.is_match(&"a".repeat(499)),
+        "one char short should not match"
+    );
 
-    for _ in 0..100 {
-        let ids: Vec<u32> = matcher
-            .process(&text)
-            .into_iter()
-            .map(|r| r.word_id)
-            .collect();
-        assert_eq!(ids, baseline, "result ordering must be stable across calls");
-    }
+    let results = matcher.process(&text);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
 }

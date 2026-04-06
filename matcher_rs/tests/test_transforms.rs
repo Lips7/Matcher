@@ -306,6 +306,44 @@ fn test_normalize_leaf_applies_ascii_mappings() {
 }
 
 #[test]
+fn test_normalize_combining_characters() {
+    // Normalize uses a per-codepoint lookup table, NOT full NFC composition.
+    // Precomposed chars (é = U+00E9) have table entries that strip diacritics.
+    // Decomposed combining marks (U+0301) are standalone codepoints without table
+    // entries, so they pass through unchanged.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Normalize, 1, "cafe")
+        .build()
+        .unwrap();
+
+    // Precomposed: "café" = U+0063 U+0061 U+0066 U+00E9 → "cafe"
+    assert!(
+        matcher.is_match("caf\u{00E9}"),
+        "precomposed é should normalize to cafe via table lookup"
+    );
+
+    // Decomposed: "cafe\u{0301}" → "cafe" + combining mark passes through
+    // The combining mark is a separate codepoint not in the normalize table,
+    // so the output is "cafe\u{0301}" (the "cafe" prefix still matches though).
+    assert!(
+        matcher.is_match("cafe\u{0301}"),
+        "cafe prefix matches even with trailing combining mark"
+    );
+
+    // Verify the precomposed form actually strips the diacritic
+    let precomposed = text_process(ProcessType::Normalize, "caf\u{00E9}");
+    assert_eq!(precomposed.as_ref(), "cafe", "precomposed é → e via table");
+
+    // Verify the decomposed combining mark passes through (not composed then stripped)
+    let decomposed = text_process(ProcessType::Normalize, "\u{0301}");
+    assert_eq!(
+        decomposed.as_ref(),
+        "\u{0301}",
+        "standalone combining mark has no table entry, passes through"
+    );
+}
+
+#[test]
 fn test_romanize() {
     use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
@@ -326,16 +364,15 @@ fn test_romanize() {
 }
 
 #[test]
-fn test_romanize_leaf_does_not_apply_ascii_digit_mappings() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Romanize, 1, "yi")
-        .build()
-        .unwrap();
-
-    assert!(
-        !matcher.is_match("1"),
-        "Romanize should skip ASCII digits because the generated table has no ASCII keys"
-    );
+fn test_romanize_skips_ascii_digits() {
+    // Romanize/RomanizeChar should skip ASCII digits (no ASCII keys in generated table)
+    for pt in [ProcessType::Romanize, ProcessType::RomanizeChar] {
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(pt, 1, "yi")
+            .build()
+            .unwrap();
+        assert!(!matcher.is_match("1"), "{pt:?} should skip ASCII digits");
+    }
 }
 
 #[test]
@@ -359,19 +396,6 @@ fn test_romanizechar() {
     assert!(
         simple_matcher.is_match("xian"),
         "RomanizeChar should match literal xian"
-    );
-}
-
-#[test]
-fn test_romanizechar_leaf_does_not_apply_ascii_digit_mappings() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::RomanizeChar, 1, "yi")
-        .build()
-        .unwrap();
-
-    assert!(
-        !matcher.is_match("1"),
-        "RomanizeChar should skip ASCII digits because the generated table has no ASCII keys"
     );
 }
 
@@ -673,114 +697,95 @@ fn test_unicode_4byte_emoji_pattern() {
 }
 
 // ===========================================================================
-// Japanese / Korean CJK expansion tests
+// CJK script expansion: table-driven text_process validation
 // ===========================================================================
 
 #[test]
-fn test_variant_norm_halfwidth_katakana() {
-    // Half-width katakana (U+FF71 ｱ) → full-width (U+30A2 ア)
-    let result = text_process(ProcessType::VariantNorm, "ｱｲｳ");
-    assert_eq!(result.as_ref(), "アイウ");
+fn test_text_process_cjk_scripts() {
+    let cases: &[(ProcessType, &str, &str)] = &[
+        // VariantNorm: halfwidth katakana → fullwidth
+        (ProcessType::VariantNorm, "ｱｲｳ", "アイウ"),
+        // VariantNorm: mixed halfwidth katakana with ASCII/CJK
+        (
+            ProcessType::VariantNorm,
+            "hello ｶﾀｶﾅ world",
+            "hello カタカナ world",
+        ),
+        // VariantNorm: fullwidth katakana unchanged
+        (ProcessType::VariantNorm, "アイウ", "アイウ"),
+        // VariantNorm: Chinese T→S preserved
+        (ProcessType::VariantNorm, "國語", "国语"),
+        // Romanize: Japanese hiragana
+        (ProcessType::Romanize, "あいう", " a i u"),
+        // Romanize: Japanese katakana
+        (ProcessType::Romanize, "カタカナ", " ka ta ka na"),
+        // Romanize: Korean hangul
+        (ProcessType::Romanize, "한글", " han geul"),
+        // Romanize: Korean Seoul
+        (ProcessType::Romanize, "서울", " seo ul"),
+        // Romanize: Chinese pinyin preserved
+        (ProcessType::Romanize, "中国", " zhong guo"),
+        // Romanize: mixed Chinese + Japanese + Korean
+        (ProcessType::Romanize, "中あ한", " zhong a han"),
+        // RomanizeChar: strips inter-syllable spaces
+        (ProcessType::RomanizeChar, "한글", "hangeul"),
+    ];
+
+    for &(pt, input, expected) in cases {
+        let result = text_process(pt, input);
+        assert_eq!(
+            result.as_ref(),
+            expected,
+            "{pt:?} on {input:?}: expected {expected:?}, got {:?}",
+            result.as_ref()
+        );
+    }
 }
 
-#[test]
-fn test_variant_norm_halfwidth_katakana_mixed() {
-    // Mixed half-width katakana with ASCII and CJK
-    let result = text_process(ProcessType::VariantNorm, "hello ｶﾀｶﾅ world");
-    assert_eq!(result.as_ref(), "hello カタカナ world");
-}
+// ===========================================================================
+// CJK script expansion: table-driven matcher integration
+// ===========================================================================
 
 #[test]
-fn test_variant_norm_preserves_fullwidth_katakana() {
-    // Full-width katakana should pass through unchanged
-    let result = text_process(ProcessType::VariantNorm, "アイウ");
-    assert_eq!(result.as_ref(), "アイウ");
+fn test_matcher_cjk_scripts() {
+    let cases: &[(ProcessType, &str, &str)] = &[
+        // Korean romanization matching
+        (ProcessType::Romanize, "han", "한국"),
+        // Japanese kana romanization matching
+        (ProcessType::Romanize, "shi", "しんぶん"),
+        // Half-width katakana matches full-width pattern
+        (ProcessType::VariantNorm, "カタカナ", "ｶﾀｶﾅ"),
+    ];
+
+    for &(pt, pattern, input) in cases {
+        let matcher = SimpleMatcherBuilder::new()
+            .add_word(pt, 1, pattern)
+            .build()
+            .unwrap();
+        assert!(
+            matcher.is_match(input),
+            "{pt:?} pattern={pattern:?} should match input={input:?}"
+        );
+    }
 }
 
-#[test]
-fn test_variant_norm_chinese_still_works() {
-    // Existing Chinese T→S behavior is preserved
-    let result = text_process(ProcessType::VariantNorm, "國語");
-    assert_eq!(result.as_ref(), "国语");
-}
+// ===========================================================================
+// Mixed CJK scripts through matcher
+// ===========================================================================
 
 #[test]
-fn test_romanize_japanese_hiragana() {
-    // Hiragana → Romaji
-    let result = text_process(ProcessType::Romanize, "あいう");
-    assert_eq!(result.as_ref(), " a i u");
-}
-
-#[test]
-fn test_romanize_japanese_katakana() {
-    // Katakana → Romaji
-    let result = text_process(ProcessType::Romanize, "カタカナ");
-    assert_eq!(result.as_ref(), " ka ta ka na");
-}
-
-#[test]
-fn test_romanize_korean_hangul() {
-    // Korean Hangul → Revised Romanization
-    let result = text_process(ProcessType::Romanize, "한글");
-    assert_eq!(result.as_ref(), " han geul");
-}
-
-#[test]
-fn test_romanize_korean_hangul_seoul() {
-    let result = text_process(ProcessType::Romanize, "서울");
-    assert_eq!(result.as_ref(), " seo ul");
-}
-
-#[test]
-fn test_romanize_chinese_still_works() {
-    // Existing Chinese Pinyin behavior is preserved
-    let result = text_process(ProcessType::Romanize, "中国");
-    assert_eq!(result.as_ref(), " zhong guo");
-}
-
-#[test]
-fn test_romanize_char_strips_spaces() {
-    // RomanizeChar should strip inter-syllable spaces
-    let result = text_process(ProcessType::RomanizeChar, "한글");
-    assert_eq!(result.as_ref(), "hangeul");
-}
-
-#[test]
-fn test_romanize_mixed_cjk_scripts() {
-    // Mixed Chinese + Japanese kana + Korean
-    let result = text_process(ProcessType::Romanize, "中あ한");
-    assert_eq!(result.as_ref(), " zhong a han");
-}
-
-#[test]
-fn test_matcher_romanize_korean() {
-    // Matching via Korean romanization
+fn test_romanize_mixed_cjk_matcher() {
+    // Verify matching a romanized pattern against mixed-CJK text through SimpleMatcher.
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Romanize, 1, "han")
+        .add_word(ProcessType::Romanize, 1, "zhong")
         .build()
         .unwrap();
-    assert!(matcher.is_match("한국"));
-}
 
-#[test]
-fn test_matcher_romanize_japanese_kana() {
-    // Matching via Japanese kana romanization
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Romanize, 1, "shi")
-        .build()
-        .unwrap();
-    assert!(matcher.is_match("しんぶん"));
-}
-
-#[test]
-fn test_matcher_variant_norm_halfwidth() {
-    // Matching patterns against half-width katakana input
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::VariantNorm, 1, "カタカナ")
-        .build()
-        .unwrap();
     assert!(
-        matcher.is_match("ｶﾀｶﾅ"),
-        "half-width should match full-width pattern"
+        matcher.is_match("中あ한"),
+        "romanized 'zhong' should match '中' in mixed CJK text"
     );
+    let results = matcher.process("中あ한");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
 }
