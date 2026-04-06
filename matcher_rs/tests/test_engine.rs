@@ -27,7 +27,7 @@ fn test_search_mode_general() {
     // Rules across multiple PTs -> General
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::Fanjian, 2, "测试")
+        .add_word(ProcessType::VariantNorm, 2, "测试")
         .build()
         .unwrap();
 
@@ -262,22 +262,22 @@ fn test_delete_adjusted_pattern_indexing() {
 }
 
 #[test]
-fn test_fanjian_delete_pattern_indexing() {
-    // Fanjian|Delete: pattern is Fanjian-emitted (测试), text gets both Fanjian + Delete.
+fn test_variant_norm_delete_pattern_indexing() {
+    // VariantNorm|Delete: pattern is VariantNorm-emitted (测试), text gets both VariantNorm + Delete.
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "测试")
+        .add_word(ProcessType::VariantNorm | ProcessType::Delete, 1, "测试")
         .build()
         .unwrap();
 
     assert!(matcher.is_match("测试"), "simplified direct");
-    assert!(matcher.is_match("測試"), "traditional -> Fanjian path");
+    assert!(matcher.is_match("測試"), "traditional -> VariantNorm path");
     assert!(
         matcher.is_match("测！试"),
         "simplified + noise -> Delete path"
     );
     assert!(
         matcher.is_match("測！試"),
-        "traditional + noise -> Fanjian + Delete"
+        "traditional + noise -> VariantNorm + Delete"
     );
 }
 
@@ -354,14 +354,14 @@ fn test_compile_both_ascii_and_non_ascii_engines() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_dfa_streaming_via_fanjian() {
-    // ASCII patterns under Fanjian: on ASCII text the Fanjian leaf is a no-op,
+fn test_dfa_streaming_via_variant_norm() {
+    // ASCII patterns under VariantNorm: on ASCII text the VariantNorm leaf is a no-op,
     // but the streaming codepath in BytewiseMatcher::for_each_match_value_from_iter
-    // is exercised because the tree walk visits the Fanjian leaf with an iterator.
+    // is exercised because the tree walk visits the VariantNorm leaf with an iterator.
     let words: Vec<String> = (0..100u32).map(|i| format!("word{i:03}")).collect();
     let mut builder = SimpleMatcherBuilder::new();
     for (i, word) in words.iter().enumerate() {
-        builder = builder.add_word(ProcessType::Fanjian, i as u32, word);
+        builder = builder.add_word(ProcessType::VariantNorm, i as u32, word);
     }
     let matcher = builder.build().unwrap();
 
@@ -371,13 +371,13 @@ fn test_dfa_streaming_via_fanjian() {
 }
 
 #[test]
-fn test_charwise_streaming_via_fanjian_delete() {
-    // Non-ASCII patterns under Fanjian|Delete: the charwise engine's streaming
+fn test_charwise_streaming_via_variant_norm_delete() {
+    // Non-ASCII patterns under VariantNorm|Delete: the charwise engine's streaming
     // iterator path is exercised when the Delete leaf emits bytes through
     // CharwiseMatcher::for_each_match_value_from_iter.
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::Fanjian | ProcessType::Delete, 1, "测试")
-        .add_word(ProcessType::Fanjian | ProcessType::Delete, 2, "你好")
+        .add_word(ProcessType::VariantNorm | ProcessType::Delete, 1, "测试")
+        .add_word(ProcessType::VariantNorm | ProcessType::Delete, 2, "你好")
         .build()
         .unwrap();
 

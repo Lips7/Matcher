@@ -4,13 +4,13 @@ class ProcessType:
     """
 
     NONE: int
-    FANJIAN: int
+    VARIANT_NORM: int
     DELETE: int
     NORMALIZE: int
     DELETE_NORMALIZE: int
-    FANJIAN_DELETE_NORMALIZE: int
-    PINYIN: int
-    PINYIN_CHAR: int
+    VARIANT_NORM_DELETE_NORMALIZE: int
+    ROMANIZE: int
+    ROMANIZE_CHAR: int
 
 class SimpleResult:
     """

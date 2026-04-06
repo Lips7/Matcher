@@ -28,7 +28,7 @@ int main() {
 
     // 2. Test reduce_text_process
     // We expect an array of strings representing variants
-    char** reduced = reduce_text_process(PROCESS_TYPE_FANJIAN_DELETE_NORMALIZE, input_text);
+    char** reduced = reduce_text_process(PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE, input_text);
     if (reduced) {
         printf("reduce_text_process returned variants:\n");
         size_t i = 0;

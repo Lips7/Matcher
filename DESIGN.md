@@ -11,8 +11,8 @@ Three rules, each using a different text transformation:
 | Rule | ProcessType | word_id | Pattern |
 |------|-------------|---------|---------|
 | R1 | `None` | 1 | `"hello&world"` |
-| R2 | `Fanjian \| Delete` | 2 | `"你好"` |
-| R3 | `PinYin` | 3 | `"zhongguo"` |
+| R2 | `VariantNorm \| Delete` | 2 | `"你好"` |
+| R3 | `Romanize` | 3 | `"zhongguo"` |
 
 Query text: `"Hello! 你好世界 china is cool"`
 
@@ -34,13 +34,13 @@ Split on `&`/`~` → two AND segments: `["hello", "world"]`. No NOT segments. `a
 
 Each sub-pattern is emitted via `reduce_text_process_emit(process_type - Delete, pattern)`. Since `None - Delete = None`, both `"hello"` and `"world"` emit themselves unchanged.
 
-**R2: `"你好"` under `Fanjian | Delete`**
+**R2: `"你好"` under `VariantNorm | Delete`**
 
-Single AND segment: `["你好"]`. `and_count = 1`, simple rule. Emitted under `Fanjian | Delete - Delete = Fanjian`. The Fanjian transform maps Traditional → Simplified; `"你好"` is already Simplified, so it emits unchanged as `"你好"`.
+Single AND segment: `["你好"]`. `and_count = 1`, simple rule. Emitted under `VariantNorm | Delete - Delete = VariantNorm`. The VariantNorm transform normalizes CJK variant forms (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width); `"你好"` is already normalized, so it emits unchanged as `"你好"`.
 
-**R3: `"zhongguo"` under `PinYin`**
+**R3: `"zhongguo"` under `Romanize`**
 
-Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `PinYin - Delete = PinYin`. Since `"zhongguo"` is pure ASCII and PinYin only transforms CJK, it emits unchanged.
+Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delete = Romanize`. Since `"zhongguo"` is pure ASCII and Romanize only transforms CJK, it emits unchanged.
 
 **Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Double-deleting would break matches.
 
@@ -57,13 +57,13 @@ dedup_entries:
 
 ### 1.2 Build Transform Trie
 
-The three `ProcessType` values — `{None, Fanjian|Delete, PinYin}` — are decomposed into single-bit steps and merged into a shared-prefix trie:
+The three `ProcessType` values — `{None, VariantNorm|Delete, Romanize}` — are decomposed into single-bit steps and merged into a shared-prefix trie:
 
 ```
 [0] Root (None) ← terminates: pt_index_mask has bit 0 (None)
- ├─[1] Fanjian
- │  └─[2] Delete ← terminates: pt_index_mask has bit 1 (Fanjian|Delete)
- └─[3] PinYin   ← terminates: pt_index_mask has bit 2 (PinYin)
+ ├─[1] VariantNorm
+ │  └─[2] Delete ← terminates: pt_index_mask has bit 1 (VariantNorm|Delete)
+ └─[3] Romanize  ← terminates: pt_index_mask has bit 2 (Romanize)
 ```
 
 Each node caches a `&'static TransformStep` reference from the global step registry. The root's step is `None` (no transformation). `pt_index_mask` is a `u64` bitmask of which compact indices terminate at or pass through each node.
@@ -120,13 +120,13 @@ The charwise AC automaton scans the full text. It finds no overlapping matches (
 
 ---
 
-**Node 1 — Fanjian**: apply `FanjianMatcher` to the root text.
+**Node 1 — VariantNorm**: apply `VariantNormMatcher` to the root text.
 
-`FanjianMatcher::replace` scans for Traditional Chinese codepoints via the page table. `你好世界` is already Simplified → returns `None` (no change). The child node (Delete) receives the same text.
+`VariantNormMatcher::replace` scans for CJK variant codepoints via the page table. `你好世界` is already in normalized form → returns `None` (no change). The child node (Delete) receives the same text.
 
 ---
 
-**Node 2 — Delete** (child of Fanjian): apply `DeleteMatcher`.
+**Node 2 — Delete** (child of VariantNorm): apply `DeleteMatcher`.
 
 `DeleteMatcher::delete` strips punctuation, symbols, and whitespace:
 
@@ -135,22 +135,22 @@ input:  "Hello! 你好世界 china is cool"
 output: "Hello你好世界chinaisscool"    (is_ascii = false)
 ```
 
-This node terminates (`pt_index_mask` has bit 1 for `Fanjian|Delete`). Scan with `pt_index_mask = 0b010`:
+This node terminates (`pt_index_mask` has bit 1 for `VariantNorm|Delete`). Scan with `pt_index_mask = 0b010`:
 
 The charwise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2. `resolved_count` increments to 1.
 
 ---
 
-**Node 3 — PinYin**: apply `PinyinMatcher` to the root text.
+**Node 3 — Romanize**: apply `RomanizeMatcher` to the root text.
 
-`PinyinMatcher::replace` converts CJK codepoints to Pinyin romanization:
+`RomanizeMatcher::replace` converts CJK codepoints to romanized form (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization):
 
 ```
 input:  "Hello! 你好世界 china is cool"
 output: "Hello!  ni  hao  shi  jie  china is cool"    (is_ascii = true)
 ```
 
-This node terminates (`pt_index_mask` has bit 2 for `PinYin`). Since `is_ascii = true`, the bytewise engine is selected.
+This node terminates (`pt_index_mask` has bit 2 for `Romanize`). Since `is_ascii = true`, the bytewise engine is selected.
 
 The bytewise AC finds no match for `"zhongguo"` (the text contains `"ni hao shi jie"`, not `"zhongguo"`). No state update for R3.
 
@@ -191,17 +191,17 @@ This path handles the common case of "check if any of these N keywords appear" w
 | Flag | Bit | Effect | Data Source |
 |------|-----|--------|-------------|
 | `None` | 0 | No transformation; match raw input | — |
-| `Fanjian` | 1 | Traditional → Simplified Chinese | OpenCC `t2s` + `tw2s`/`hk2s` |
+| `VariantNorm` | 1 | CJK variant normalization (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width) | OpenCC `t2s` + `tw2s`/`hk2s` + JIS mappings |
 | `Delete` | 2 | Remove punctuation/symbols/whitespace | `unicodedata.category()` |
 | `Normalize` | 3 | NFKC casefold + numeric normalization | `unicodedata.normalize().casefold()` |
-| `PinYin` | 4 | CJK → space-separated Pinyin | `pypinyin` no-tone |
-| `PinYinChar` | 5 | CJK → Pinyin (no inter-syllable spaces) | `pypinyin` no-tone |
+| `Romanize` | 4 | CJK → space-separated romanization (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization) | `pypinyin` + kana/hangul tables |
+| `RomanizeChar` | 5 | CJK → romanization (no inter-syllable spaces) | same as Romanize |
 
-Flags compose with `|`. Named aliases: `DeleteNormalize`, `FanjianDeleteNormalize`.
+Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
 
 #### Page-Table Lookup
 
-Fanjian, Pinyin, and Normalize share a two-stage page table (in `replace/mod.rs`):
+VariantNorm, Romanize, and Normalize share a two-stage page table (in `replace/mod.rs`):
 
 ```
 page = l1[cp >> 8]                    // which 256-codepoint block?
@@ -210,8 +210,8 @@ value = l2[page * 256 + (cp & 0xFF)] // lookup within the block
 if value == 0 → no mapping
 ```
 
-- **Fanjian**: L2 value is the Simplified codepoint directly (`replace/fanjian.rs`)
-- **Pinyin/Normalize**: L2 value packs `(offset << 8) | length` into a shared string buffer (`replace/pinyin.rs`, `replace/normalize.rs`)
+- **VariantNorm**: L2 value is the normalized codepoint directly (`replace/variant_norm.rs`)
+- **Romanize/Normalize**: L2 value packs `(offset << 8) | length` into a shared string buffer (`replace/romanize.rs`, `replace/normalize.rs`)
 
 Both L1 and L2 are accessed via `get_unchecked` for branchless hot-path performance.
 
@@ -221,7 +221,7 @@ The transform iterators use SIMD to skip irrelevant ASCII byte runs (in `transfo
 
 | Engine | Skip Function | What It Skips |
 |--------|--------------|---------------|
-| Fanjian, Pinyin | `skip_ascii_simd` | All ASCII bytes (only CJK keys exist) |
+| VariantNorm, Romanize | `skip_ascii_simd` | All ASCII bytes (only CJK keys exist) |
 | Delete | `skip_ascii_non_delete_simd` | ASCII bytes not in the delete bitset |
 
 Dispatch: AVX2 intrinsics on x86-64 (runtime detection via `OnceLock`), NEON on AArch64 (compile-time), portable `std::simd` fallback. Chunk sizes: 32 bytes (AVX2/portable), 16 bytes (NEON).
@@ -234,7 +234,7 @@ For leaf Delete or Normalize nodes, `walk_and_scan` can bypass string materializ
 
 - **Delete**: `DeleteFilterIterator` yields only non-deleted bytes
 - **Normalize**: `NormalizeFilterIterator` yields normalized bytes (unmapped pass through, mapped emit replacement bytes)
-- **Fanjian**: `FanjianFilterIterator` yields simplified bytes (unmapped CJK pass through, mapped Traditional→Simplified emit replacement char's UTF-8 bytes)
+- **VariantNorm**: `VariantNormFilterIterator` yields normalized bytes (unmapped CJK pass through, mapped variant→normalized emit replacement char's UTF-8 bytes)
 
 This eliminates the intermediate `String` allocation and the second text traversal.
 
@@ -354,4 +354,4 @@ Both use `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminat
 
 ### Compiled Transformation Tables
 
-`build.rs` pre-compiles transformation data from source files in `matcher_rs/process_map/` (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) into binary artifacts embedded via `include_bytes!`/`include_str!` (in `transform/constants.rs`). At runtime, page tables are decoded lazily on first access by the step registry.
+`build.rs` pre-compiles transformation data from source files in `matcher_rs/process_map/` (`VARIANT_NORM.txt`, `ROMANIZE.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) into binary artifacts embedded via `include_bytes!`/`include_str!` (in `transform/constants.rs`). At runtime, page tables are decoded lazily on first access by the step registry.

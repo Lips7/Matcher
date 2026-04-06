@@ -17,7 +17,7 @@ fn test_multithreaded_matching() {
         SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, "apple")
             .add_word(ProcessType::None, 2, "banana")
-            .add_word(ProcessType::Fanjian, 3, "测试")
+            .add_word(ProcessType::VariantNorm, 3, "测试")
             .build()
             .unwrap(),
     );
@@ -30,7 +30,7 @@ fn test_multithreaded_matching() {
             for _ in 0..100 {
                 if i % 2 == 0 {
                     assert!(matcher_clone.is_match("I have an apple"));
-                    assert!(matcher_clone.is_match("測試")); // Traditional triggers Fanjian
+                    assert!(matcher_clone.is_match("測試")); // Traditional triggers VariantNorm
                 } else {
                     assert!(matcher_clone.is_match("banana split"));
                     let results = matcher_clone.process("apple banana 测试");

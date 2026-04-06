@@ -36,7 +36,7 @@
 - Fix leaf-transform noop handling: leaf nodes in the process trie that are ASCII no-ops were incorrectly re-scanning instead of reusing the parent variant.
 
 ### Data
-- Regenerate all process maps (FANJIAN, NORM, NUM-NORM, PINYIN, TEXT-DELETE) from updated Python sources.
+- Regenerate all process maps (VARIANT_NORM, NORM, NUM-NORM, ROMANIZE, TEXT-DELETE) from updated Python sources.
 - Move map generator script into `matcher_rs/scripts/generate_process_map.py`; add `manifest.json` for reproducibility.
 - Remove large raw Unicode source files from `data/str_conv/` (now generated on demand).
 
@@ -57,7 +57,7 @@
 ## 0.12.2 - 2026-03-31
 
 ### Performance
-- Fix PinYin regression by eliminating `Replacement` enum indirection in replacement engines.
+- Fix Romanize regression by eliminating `Replacement` enum indirection in replacement engines.
 - Unify streaming tree walk into single `walk_and_scan` method — 25% faster `process`, 33% faster `is_match`.
 - Lazy transform pipeline for `is_match` — skips materializing text variants when early exit is possible.
 
@@ -67,7 +67,7 @@
 - Extract shared UTF-8 decoder to `transform/utf8.rs`.
 - Merge `step.rs` and `registry.rs` into single `step` module.
 - Remove dead public API after `walk_and_scan` unification.
-- Remove unused optimizations (masks pool, Fanjian in-place, `SingleProcessType` const generic).
+- Remove unused optimizations (masks pool, VariantNorm in-place, `SingleProcessType` const generic).
 - Remove unused `daachorse` dependency and related non-overlapping code.
 
 ### Bug Fixes
@@ -104,7 +104,7 @@
 
 ### Bug Fixes
 - Harden construction against invalid `ProcessType` and edge-case rules.
-- Fix PinYin handling to correctly track `is_ascii` for unmapped characters.
+- Fix Romanize handling to correctly track `is_ascii` for unmapped characters.
 - Resolve broken intra-doc link to cfg-gated private function.
 
 ### Safety
@@ -138,7 +138,7 @@
 - `all_simple` fast path for `is_match` — bypasses TLS state, generation counters, and overlapping iteration for pure-literal matchers.
 - Dedup length pre-filter to skip redundant pattern entries during construction.
 - Thread-local `TRANSFORM_STATE` bundles scratch buffers into a single TLS lookup per call; literal fast path avoids TLS entirely for simple cases.
-- In-place Fanjian optimization — exploits same-byte-length property of 99%+ Traditional-to-Simplified mappings to avoid scan-and-rebuild allocations.
+- In-place VariantNorm optimization — exploits same-byte-length property of 99%+ Traditional-to-Simplified mappings to avoid scan-and-rebuild allocations.
 - Shrink `PatternEntry` from 16 to 8 bytes via sequential process-type indexing.
 - Embed dedup indices directly in DAAC automaton values, eliminating one indirection per hit.
 - Track `is_ascii` flag through the transform pipeline to skip redundant charwise scans on ASCII-only text.
@@ -177,7 +177,7 @@
 ### Performance
 - Hot/cold struct split, pre-computed masks, TLS consolidation for reduced per-call overhead in `SimpleMatcher`.
 - Skip unused text variants during process-tree traversal, avoiding redundant transformations.
-- Cache PinYin trim metadata to eliminate repeated recomputation.
+- Cache Romanize trim metadata to eliminate repeated recomputation.
 - Lazy tree walking for unique text variants — process-tree nodes are now visited on demand rather than eagerly.
 
 ### Refactor
@@ -201,11 +201,11 @@
 
 ### Performance
 - Monomorphize `SingleChar` iterators and add SIMD ASCII chunk-skip for faster inner loops.
-- Byte-level `PinYin`/`Delete` iterators and `ascii_lut` fast-path, eliminating UTF-8 decoding overhead on ASCII-heavy input.
+- Byte-level `Romanize`/`Delete` iterators and `ascii_lut` fast-path, eliminating UTF-8 decoding overhead on ASCII-heavy input.
 - `portable_simd` SIMD helpers (`skip_ascii_simd`, `simd_ascii_delete_mask`, `skip_non_digit_ascii_simd`) for 16-byte parallel probing in `SingleChar` skip loops.
 
 ### Features
-- Exhaustive property-based and unit tests for `Fanjian`, `Delete`, `Normalize`, and `PinYin` process types.
+- Exhaustive property-based and unit tests for `VariantNorm`, `Delete`, `Normalize`, and `Romanize` process types.
 - Macro-based benchmark generation with `BytesCount` metric for normalized throughput measurement.
 
 ### Refactor
@@ -401,12 +401,12 @@
 ### Changed
 - Optimize Simple Matcher `process` function when multiple simple_match_type are used.
 - add `dfa` feature to matcher_rs.
-- shrink `FANJIAN` conversion map.
+- shrink `VARIANT_NORM` conversion map.
 
 ## 0.4.4 - 2024-07-09
 
 ### Changed
-- Merge PINYIN and PINYINCHAR process matcher build.
+- Merge ROMANIZE and ROMANIZECHAR process matcher build.
 - Add `process` function to matcher_py/c/java.
 - Fix simple matcher process function issue.
 - Refactor matcher_py file structure, use `rye` to manage matcher_py.
@@ -420,7 +420,7 @@
 - Reverse DFA structure to AhoCorasick structure.
 - matcher_c use from_utf8_unchecked instead of from_utf8.
 - Build multiple wheels for different python version.
-- Update FANJIAN.txt and NORM.txt.
+- Update VARIANT_NORM.txt and NORM.txt.
 - Fix issues with `runtime_build` feature.
 
 ## 0.4.2 - 2024-07-07

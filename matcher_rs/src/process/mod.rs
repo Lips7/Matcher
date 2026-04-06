@@ -2,7 +2,7 @@
 //!
 //! This module converts raw input text through a configurable series of steps —
 //! Traditional-to-Simplified Chinese conversion, codepoint deletion, normalization,
-//! and Pinyin transliteration — so that [`crate::SimpleMatcher`] can match patterns
+//! and CJK romanization — so that [`crate::SimpleMatcher`] can match patterns
 //! against both raw and transformed forms of the same text.
 //!
 //! # Public API

@@ -4,9 +4,8 @@
 //! two-pass matching pipeline. Two independent engines are compiled:
 //!
 //! - **Bytewise engine** ([`BytewiseMatcher`]) — scans byte-by-byte over ASCII patterns.
-//!   With the `dfa` feature enabled and pattern count ≤ [`AC_DFA_PATTERN_THRESHOLD`], this
-//!   uses the `aho-corasick` crate's DFA for maximum throughput. Otherwise it falls back to
-//!   `daachorse`'s bytewise double-array Aho-Corasick.
+//!   With the `dfa` feature enabled, this uses the `aho-corasick` crate's DFA for maximum
+//!   throughput. Otherwise it falls back to `daachorse`'s bytewise double-array Aho-Corasick.
 //!
 //! - **Charwise engine** ([`CharwiseMatcher`]) — scans character-wise using `daachorse`'s
 //!   charwise automaton. Always built over the **full** pattern set so a single charwise
@@ -74,7 +73,7 @@ pub(super) fn text_non_ascii_density(text: &str) -> f32 {
 ///
 /// # Performance
 ///
-/// - **Bytewise DFA** (when `dfa` feature + ≤[`AC_DFA_PATTERN_THRESHOLD`] patterns):
+/// - **Bytewise DFA** (when `dfa` feature enabled):
 ///   ~1.7–1.9× faster than DAAC bytewise on ASCII text, but ~17× more memory.
 /// - **Charwise DAAC**: 1 state transition per character (vs 3 bytewise for CJK),
 ///   yielding ~1.6–1.9× throughput on non-ASCII text.

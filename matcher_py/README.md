@@ -11,15 +11,15 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
 ## Features
 
 - **Text Transformation**:
-  - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
+  - **VariantNorm**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `ＡＢⅣ①℉` -> `ab41°f`
-  - **PinYin**: Convert Chinese characters to space-separated Pinyin for fuzzy matching.
+  - **Romanize**: Convert CJK characters to space-separated romanized form (Pinyin, Romaji, RR) for fuzzy matching.
     Example: `西安` -> ` xi an`, matches `洗按` -> ` xi an`, but not `先` -> ` xian`
-  - **PinYinChar**: Convert Chinese characters to Pinyin without boundary spaces.
+  - **RomanizeChar**: Convert CJK characters to romanized form without boundary spaces.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
@@ -106,7 +106,7 @@ print(result)
 ### ProcessType
 
 * `NONE`: No transformation.
-* `FANJIAN`: Traditional Chinese to simplified Chinese transformation. Based on [FANJIAN](../matcher_rs/process_map/FANJIAN.txt).
+* `VARIANT_NORM`: Traditional Chinese to simplified Chinese transformation. Based on [VARIANT_NORM](../matcher_rs/process_map/VARIANT_NORM.txt).
   * `測試` -> `测试`
   * `現⾝` -> `现身`
 * `DELETE`: Delete all punctuation, special characters, separator characters, and configured control/format codepoints. Based on [TEXT_DELETE](../matcher_rs/process_map/TEXT-DELETE.txt).
@@ -115,16 +115,16 @@ print(result)
 * `NORMALIZE`: Normalize all English character variations and number variations to basic characters. Based on [NORM](../matcher_rs/process_map/NORM.txt) and [NUM_NORM](../matcher_rs/process_map/NUM-NORM.txt).
   * `ＡＢⅣ①℉` -> `ab41°f`
   * `ⅠⅡⅢ` -> `123`
-* `PINYIN`: Convert Chinese characters to space-separated Pinyin. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
+* `ROMANIZE`: Convert CJK characters to space-separated romanization (Pinyin, Romaji, RR). Based on [ROMANIZE](../matcher_rs/process_map/ROMANIZE.txt).
   * `你好` -> ` ni hao`
   * `西安` -> ` xi an`
-* `PINYIN_CHAR`: Convert Chinese characters to Pinyin without boundary spaces. Based on [PINYIN](../matcher_rs/process_map/PINYIN.txt).
+* `ROMANIZE_CHAR`: Convert CJK characters to romanized form without boundary spaces. Based on [ROMANIZE](../matcher_rs/process_map/ROMANIZE.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
 
-You can combine these transformations as needed. Pre-defined combinations like `DELETE_NORMALIZE` and `FANJIAN_DELETE_NORMALIZE` are provided for convenience.
+You can combine these transformations as needed. Pre-defined combinations like `DELETE_NORMALIZE` and `VARIANT_NORM_DELETE_NORMALIZE` are provided for convenience.
 
-Be careful combining `PINYIN` and `PINYIN_CHAR`: they preserve different word boundaries, so the same input can behave like `xi` + `an` in one pipeline and `xian` in the other.
+Be careful combining `ROMANIZE` and `ROMANIZE_CHAR`: they preserve different word boundaries, so the same input can behave like `xi` + `an` in one pipeline and `xian` in the other.
 
 ## Contributing
 

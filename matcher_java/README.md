@@ -45,13 +45,13 @@ cp target/release/libmatcher_java.dylib matcher_java/src/main/resources/  # .so 
 | Enum | Value | Description |
 |------|-------|-------------|
 | `NONE` | `0b00000001` | No transformation; match raw input |
-| `FANJIAN` | `0b00000010` | Traditional Chinese to Simplified Chinese |
+| `VARIANT_NORM` | `0b00000010` | CJK variant normalization |
 | `DELETE` | `0b00000100` | Remove symbols, punctuation, whitespace |
 | `NORMALIZE` | `0b00001000` | Normalize character variants to basic forms |
 | `DELETE_NORMALIZE` | `0b00001100` | Delete + Normalize combined |
-| `FANJIAN_DELETE_NORMALIZE` | `0b00001110` | Fanjian + Delete + Normalize combined |
-| `PINYIN` | `0b00010000` | Chinese characters to space-separated Pinyin |
-| `PINYIN_CHAR` | `0b00100000` | Chinese characters to Pinyin without boundary spaces |
+| `VARIANT_NORM_DELETE_NORMALIZE` | `0b00001110` | VariantNorm + Delete + Normalize combined |
+| `ROMANIZE` | `0b00010000` | CJK characters to space-separated romanization (Pinyin, Romaji, RR) |
+| `ROMANIZE_CHAR` | `0b00100000` | CJK characters to romanization without boundary spaces |
 
 ### SimpleMatcher (recommended)
 
@@ -105,7 +105,7 @@ String normalized = MatcherJava.textProcess(
 
 // Get all intermediate transformation variants
 String[] variants = MatcherJava.reduceTextProcess(
-    ProcessType.FANJIAN_DELETE_NORMALIZE.getValue(),
+    ProcessType.VARIANT_NORM_DELETE_NORMALIZE.getValue(),
     "你好，世界！".getBytes(StandardCharsets.UTF_8)
 );
 ```

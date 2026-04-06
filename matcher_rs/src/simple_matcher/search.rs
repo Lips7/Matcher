@@ -225,7 +225,7 @@ impl SimpleMatcher {
                             match step {
                                 TransformStep::Delete(m) => fused!(m),
                                 TransformStep::Normalize(m) => fused!(m),
-                                TransformStep::Fanjian(m) => fused!(m),
+                                TransformStep::VariantNorm(m) => fused!(m),
                                 _ => None,
                             }
                             .inspect(|_| {

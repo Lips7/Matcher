@@ -20,9 +20,9 @@ const DEFAULT_RULE_COUNT: usize = 10_000;
 const BUILD_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::None,
     ProcessType::Delete,
-    ProcessType::Fanjian,
-    ProcessType::FanjianDeleteNormalize,
-    ProcessType::PinYin,
+    ProcessType::VariantNorm,
+    ProcessType::VariantNormDeleteNormalize,
+    ProcessType::Romanize,
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -137,9 +137,12 @@ fn build_multi_process_table(size: usize) -> HashMap<ProcessType, HashMap<u32, S
     HashMap::from([
         (ProcessType::None, build_literal_map("en", slice, true)),
         (ProcessType::Delete, build_literal_map("en", slice, true)),
-        (ProcessType::Fanjian, build_literal_map("cn", slice, true)),
         (
-            ProcessType::FanjianDeleteNormalize,
+            ProcessType::VariantNorm,
+            build_literal_map("cn", slice, true),
+        ),
+        (
+            ProcessType::VariantNormDeleteNormalize,
             build_literal_map("cn", size - slice * 3, true),
         ),
     ])
@@ -384,11 +387,11 @@ mod text_transform {
     use super::*;
 
     const CN_TRANSFORMS: &[ProcessType] = &[
-        ProcessType::Fanjian,
+        ProcessType::VariantNorm,
         ProcessType::Delete,
         ProcessType::Normalize,
-        ProcessType::PinYin,
-        ProcessType::PinYinChar,
+        ProcessType::Romanize,
+        ProcessType::RomanizeChar,
     ];
 
     const EN_TRANSFORMS: &[ProcessType] = &[ProcessType::Delete, ProcessType::Normalize];

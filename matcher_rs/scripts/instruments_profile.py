@@ -437,8 +437,8 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("State machine",     ["state::", "WordState", "SimpleMatchState", "ScanContext",
                            "generation"]),
     ("Rule evaluation",   ["rule::", "process_entry", "RuleSet", "RuleHot"]),
-    ("Text transform",    ["process::", "transform::", "DeleteMatcher", "FanjianMatcher",
-                           "PinyinMatcher", "string_pool", "ProcessType"]),
+    ("Text transform",    ["process::", "transform::", "DeleteMatcher", "VariantNormMatcher",
+                           "RomanizeMatcher", "string_pool", "ProcessType"]),
     ("ASCII check",       ["is_ascii", "ascii::"]),
     ("Allocator",         ["alloc::", "mi_", "malloc", "free", "realloc", "Allocator"]),
     ("Vec / collections", ["vec::", "Vec::", "HashMap", "hashbrown", "AHash"]),
@@ -957,7 +957,7 @@ def main():
     rec.add_argument("--dict", default="en", choices=["en", "cn", "mixed"], dest="dict_lang")
     rec.add_argument("--rules", type=int, default=10_000)
     rec.add_argument("--pt", default="none",
-                     choices=["none", "fanjian", "delete", "norm", "dn", "fdn", "pinyin", "pychar"])
+                     choices=["none", "variant_norm", "delete", "norm", "dn", "fdn", "romanize", "pychar"])
     rec.add_argument("--seconds", type=int, default=10)
     rec.add_argument("--output", "-o", type=Path, default=None)
     rec.add_argument("--no-build", action="store_true", help="Skip rebuild (use existing binary as-is)")

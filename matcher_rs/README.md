@@ -15,7 +15,7 @@ use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 
 let matcher = SimpleMatcherBuilder::new()
     .add_word(ProcessType::None, 1, "apple&pie")
-    .add_word(ProcessType::Fanjian, 2, "你好")
+    .add_word(ProcessType::VariantNorm, 2, "你好")
     .build()
     .unwrap();
 
@@ -32,7 +32,7 @@ Rules → parse & dedup → build transform trie → compile AC automata
 Query text → walk trie (transform + scan each variant) → evaluate rules → results
 ```
 
-All sub-patterns across all rules are deduplicated into a single Aho-Corasick automaton for O(N) text scanning. Text transformations share a prefix trie so `Fanjian|Delete` reuses the Fanjian result rather than recomputing it. Per-rule state uses generation-stamped sparse sets for O(1) amortized reset between queries.
+All sub-patterns across all rules are deduplicated into a single Aho-Corasick automaton for O(N) text scanning. Text transformations share a prefix trie so `VariantNorm|Delete` reuses the VariantNorm result rather than recomputing it. Per-rule state uses generation-stamped sparse sets for O(1) amortized reset between queries.
 
 ## ProcessType
 
@@ -41,13 +41,13 @@ Controls which text transformations are applied before matching:
 | Flag | Example |
 |------|---------|
 | `None` | Match against the original input text |
-| `Fanjian` | Traditional → Simplified Chinese: `測試` → `测试` |
+| `VariantNorm` | CJK variant normalization: `測試` → `测试`, `ｶﾀｶﾅ` → `カタカナ` |
 | `Delete` | Remove punctuation/symbols/whitespace: `hello, world!` → `helloworld` |
 | `Normalize` | NFKC casefold + numeric: `ＡＢⅣ①` → `ab41` |
-| `PinYin` | CJK → space-separated Pinyin: `你好` → ` ni  hao ` |
-| `PinYinChar` | CJK → Pinyin (no spaces): `你好` → `nihao` |
+| `Romanize` | CJK → space-separated romanization: `你好` → ` ni hao`, `한글` → ` han geul` |
+| `RomanizeChar` | CJK → romanization (no spaces): `你好` → `nihao` |
 
-Compose with `|`: `ProcessType::Fanjian | ProcessType::Delete`. Pre-defined aliases: `DeleteNormalize`, `FanjianDeleteNormalize`.
+Compose with `|`: `ProcessType::VariantNorm | ProcessType::Delete`. Pre-defined aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
 
 Including `None` in a composite type keeps the raw-text path alongside transformed variants — one sub-pattern can match raw text while another matches the transformed variant.
 
@@ -66,15 +66,15 @@ Repeated segments count: `"无&法&无&天"` requires two matches of `"无"`.
 use matcher_rs::{text_process, reduce_text_process, ProcessType};
 
 let result = text_process(ProcessType::Delete, "你好，世界！");
-let results = reduce_text_process(ProcessType::FanjianDeleteNormalize, "你好，世界！");
+let results = reduce_text_process(ProcessType::VariantNormDeleteNormalize, "你好，世界！");
 ```
 
 ```rust
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 
 let matcher = SimpleMatcherBuilder::new()
-    .add_word(ProcessType::Fanjian, 1, "你好")
-    .add_word(ProcessType::Fanjian, 2, "世界")
+    .add_word(ProcessType::VariantNorm, 1, "你好")
+    .add_word(ProcessType::VariantNorm, 2, "世界")
     .build()
     .unwrap();
 

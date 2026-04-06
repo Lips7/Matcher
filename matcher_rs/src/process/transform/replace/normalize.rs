@@ -154,7 +154,7 @@ impl Iterator for NormalizeFilterIterator<'_> {
 /// Two-stage page-table matcher for Unicode normalization replacement.
 ///
 /// L2 entries encode `(byte_offset << 8) | byte_length` into a shared string
-/// buffer, same layout as [`super::pinyin::PinyinMatcher`].
+/// buffer, same layout as [`super::romanize::RomanizeMatcher`].
 #[derive(Clone)]
 pub(crate) struct NormalizeMatcher {
     l1: Box<[u16]>,

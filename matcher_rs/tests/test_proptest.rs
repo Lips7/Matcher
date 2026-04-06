@@ -15,13 +15,13 @@ proptest! {
 
         for ptype in [
             ProcessType::None,
-            ProcessType::Fanjian,
+            ProcessType::VariantNorm,
             ProcessType::Delete,
             ProcessType::Normalize,
-            ProcessType::PinYin,
-            ProcessType::PinYinChar,
+            ProcessType::Romanize,
+            ProcessType::RomanizeChar,
             ProcessType::DeleteNormalize,
-            ProcessType::FanjianDeleteNormalize,
+            ProcessType::VariantNormDeleteNormalize,
         ] {
             let mut map = HashMap::new();
             map.insert(ptype, inner_map.clone());
@@ -99,13 +99,13 @@ proptest! {
     ) {
         for ptype in [
             ProcessType::None,
-            ProcessType::Fanjian,
+            ProcessType::VariantNorm,
             ProcessType::Delete,
             ProcessType::Normalize,
-            ProcessType::PinYin,
-            ProcessType::PinYinChar,
+            ProcessType::Romanize,
+            ProcessType::RomanizeChar,
             ProcessType::DeleteNormalize,
-            ProcessType::FanjianDeleteNormalize,
+            ProcessType::VariantNormDeleteNormalize,
         ] {
             let matcher = SimpleMatcherBuilder::new()
                 .add_word(ptype, 1, &word)
@@ -136,7 +136,7 @@ proptest! {
         // General path: add a second ProcessType to force General mode
         let general = SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
-            .add_word(ProcessType::Fanjian, 2, &word)
+            .add_word(ProcessType::VariantNorm, 2, &word)
             .build()
             .unwrap();
 

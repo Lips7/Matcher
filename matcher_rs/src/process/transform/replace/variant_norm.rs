@@ -1,28 +1,28 @@
-//! Traditional-to-Simplified Chinese (T2S) replacement via page-table lookup.
+//! CJK variant normalization via page-table lookup.
 //!
-//! Data sourced from OpenCC (`t2s`, `tw2s`, `hk2s`). The two-stage page table
-//! maps each Traditional codepoint to its Simplified equivalent (stored as a
-//! `u32` codepoint in L2). Since all keys are non-ASCII CJK characters,
-//! [`skip_ascii_simd`] bypasses ASCII runs in O(1)
-//! per SIMD chunk. Output is always non-ASCII (CJK→CJK).
+//! Merges Chinese Traditional→Simplified (OpenCC), Japanese Kyūjitai→Shinjitai,
+//! and half-width katakana→full-width into a single
+//! two-stage page table. Each mapped codepoint is stored as a `u32` in L2.
+//! Since all keys are non-ASCII CJK characters, [`skip_ascii_simd`] bypasses
+//! ASCII runs in O(1) per SIMD chunk. Output is always non-ASCII (CJK→CJK).
 
 use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
 
 // ---------------------------------------------------------------------------
-// Streaming byte iterator (for fused fanjian-scan)
+// Streaming byte iterator (for fused variant-norm-scan)
 // ---------------------------------------------------------------------------
 
-/// Streaming byte iterator that yields Fanjian-transformed bytes from a UTF-8 string.
+/// Streaming byte iterator that yields variant-normalized bytes from a UTF-8 string.
 ///
-/// Created by [`FanjianMatcher::filter_bytes`]. Unmapped codepoints pass
-/// through byte-for-byte; mapped codepoints emit their simplified replacement's
+/// Created by [`VariantNormMatcher::filter_bytes`]. Unmapped codepoints pass
+/// through byte-for-byte; mapped codepoints emit their normalized replacement's
 /// UTF-8 bytes. Output is valid UTF-8, satisfying `daachorse`'s
 /// `find_overlapping_iter_from_iter` safety requirement.
 ///
-/// ASCII bytes always pass through unchanged (Fanjian only maps non-ASCII CJK
+/// ASCII bytes always pass through unchanged (VariantNorm only maps non-ASCII CJK
 /// codepoints), so `skip_ascii_simd` is not used here — the iterator yields
 /// ASCII bytes directly for maximum throughput in the fused scan path.
-pub(crate) struct FanjianFilterIterator<'a> {
+pub(crate) struct VariantNormFilterIterator<'a> {
     bytes: &'a [u8],
     offset: usize,
     /// Remaining bytes to yield from the current kept (unmapped) multi-byte character.
@@ -35,7 +35,7 @@ pub(crate) struct FanjianFilterIterator<'a> {
     l2: &'a [u32],
 }
 
-impl Iterator for FanjianFilterIterator<'_> {
+impl Iterator for VariantNormFilterIterator<'_> {
     type Item = u8;
 
     #[inline(always)]
@@ -64,7 +64,7 @@ impl Iterator for FanjianFilterIterator<'_> {
         let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
 
         if byte < 0x80 {
-            // ASCII: always passthrough (Fanjian only maps non-ASCII).
+            // ASCII: always passthrough (VariantNorm only maps non-ASCII).
             self.offset += 1;
             return Some(byte);
         }
@@ -94,14 +94,14 @@ impl Iterator for FanjianFilterIterator<'_> {
     }
 }
 
-struct FanjianFindIter<'a> {
+struct VariantNormFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
     text: &'a str,
     byte_offset: usize,
 }
 
-impl<'a> Iterator for FanjianFindIter<'a> {
+impl<'a> Iterator for VariantNormFindIter<'a> {
     type Item = (usize, usize, char);
 
     #[inline(always)]
@@ -132,20 +132,22 @@ impl<'a> Iterator for FanjianFindIter<'a> {
     }
 }
 
-/// Two-stage page-table matcher for Traditional-to-Simplified Chinese replacement.
+/// Two-stage page-table matcher for CJK variant normalization.
 ///
-/// Each non-zero L2 entry is the Unicode codepoint of the Simplified equivalent.
-/// Constructed once from build-time binary artifacts via [`FanjianMatcher::new`].
+/// Covers Chinese Traditional→Simplified, Japanese Kyūjitai→Shinjitai,
+/// and half-width katakana→full-width. Each non-zero L2
+/// entry is the Unicode codepoint of the normalized equivalent. Constructed
+/// once from build-time binary artifacts via [`VariantNormMatcher::new`].
 #[derive(Clone)]
-pub(crate) struct FanjianMatcher {
+pub(crate) struct VariantNormMatcher {
     l1: Box<[u16]>,
     l2: Box<[u32]>,
 }
 
-impl FanjianMatcher {
+impl VariantNormMatcher {
     #[inline(always)]
-    fn iter<'a>(&'a self, text: &'a str) -> FanjianFindIter<'a> {
-        FanjianFindIter {
+    fn iter<'a>(&'a self, text: &'a str) -> VariantNormFindIter<'a> {
+        VariantNormFindIter {
             l1: &self.l1,
             l2: &self.l2,
             text,
@@ -153,27 +155,27 @@ impl FanjianMatcher {
         }
     }
 
-    /// Replaces Traditional Chinese codepoints with their Simplified equivalents.
+    /// Replaces CJK variant codepoints with their normalized equivalents.
     ///
-    /// Returns `None` when `text` contains no Traditional characters (zero-alloc
+    /// Returns `None` when `text` contains no variant characters (zero-alloc
     /// fast path).
     ///
     /// ```ignore
-    /// let matcher = FanjianMatcher::new(FANJIAN_L1_BYTES, FANJIAN_L2_BYTES);
+    /// let matcher = VariantNormMatcher::new(VARIANT_NORM_L1_BYTES, VARIANT_NORM_L2_BYTES);
     /// assert_eq!(matcher.replace("國語"), Some("国语".to_string()));
-    /// assert!(matcher.replace("hello").is_none()); // no T→S mapping
+    /// assert!(matcher.replace("hello").is_none()); // no variant mapping
     /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         replace_scan(text, self.iter(text))
     }
 
-    /// Returns a streaming byte iterator over the Fanjian-transformed form of `text`.
+    /// Returns a streaming byte iterator over the variant-normalized form of `text`.
     ///
-    /// Used by the fused fanjian-scan path to feed transformed bytes directly
+    /// Used by the fused variant-norm-scan path to feed transformed bytes directly
     /// into the Aho-Corasick automaton without materializing the full string.
     #[inline(always)]
-    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> FanjianFilterIterator<'a> {
-        FanjianFilterIterator {
+    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> VariantNormFilterIterator<'a> {
+        VariantNormFilterIterator {
             bytes: text.as_bytes(),
             offset: 0,
             char_remaining: 0,

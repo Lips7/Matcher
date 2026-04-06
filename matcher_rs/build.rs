@@ -11,21 +11,22 @@ use std::io::{Result, Write};
 /// ### Binary Generation Strategy:
 /// 1. **Normalize (Single-Codepoint Replacements)**:
 ///    All entries in `NORM.txt` and `NUM-NORM.txt` are single-codepoint keys mapped to
-///    replacement strings. Compiled into a **2-Stage Page Table** (same layout as Pinyin):
+///    replacement strings. Compiled into a **2-Stage Page Table** (same layout as Romanize):
 ///    - `L1`/`L2`: page-table mapping codepoints to packed `(offset << 8) | length`.
 ///    - A **Concatenated String Buffer**: stores all replacement strings as a single UTF-8 block.
 ///
-/// 2. **Fanjian (Traditional to Simplified Chinese)**:
-///    Since these are 1-to-1 character mappings, they are compiled into a **2-Stage Page Table**.
+/// 2. **VariantNorm (CJK Variant Normalization)**:
+///    1-to-1 character mappings (Chinese Traditional→Simplified, Japanese Kyūjitai→Shinjitai,
+///    half-width katakana→full-width, Korean Hanja→Hangul). Compiled into a **2-Stage Page Table**.
 ///    - `L1`: A page directory mapping character blocks to `L2` indices.
 ///    - `L2`: A data array containing the target character code points.
 ///
-/// 3. **Pinyin & PinyinChar**:
-///    Character-to-string mappings are stored using a hybrid structure:
-///    - A **Concatenated String Buffer**: Stores all Pinyin strings as a single UTF-8 block.
+/// 3. **Romanize & RomanizeChar**:
+///    Character-to-string mappings (Chinese Pinyin, Japanese kana Romaji, Korean RR) stored using:
+///    - A **Concatenated String Buffer**: Stores all romanization strings as a single UTF-8 block.
 ///    - A **2-Stage Page Table**: Maps character code points to a packed `u32` containing
-///      both the `offset` into the string buffer and the `length` of the Pinyin string.
-///      `PinYinChar` trims boundary spaces after the table is decoded at runtime.
+///      both the `offset` into the string buffer and the `length` of the string.
+///      `RomanizeChar` trims boundary spaces after the table is decoded at runtime.
 ///
 /// 4. **Text Delete (BitSet)**:
 ///    Delete-table codepoints are compiled into a **Global BitSet** (139 KB) covering the
@@ -35,10 +36,10 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");
 
-    const FANJIAN: &str = include_str!("./process_map/FANJIAN.txt");
+    const VARIANT_NORM: &str = include_str!("./process_map/VARIANT_NORM.txt");
     const NUM_NORM: &str = include_str!("./process_map/NUM-NORM.txt");
     const NORM: &str = include_str!("./process_map/NORM.txt");
-    const PINYIN: &str = include_str!("./process_map/PINYIN.txt");
+    const ROMANIZE: &str = include_str!("./process_map/ROMANIZE.txt");
     const TEXT_DELETE: &str = include_str!("./process_map/TEXT-DELETE.txt");
     const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
@@ -77,60 +78,61 @@ fn main() -> Result<()> {
         .write_all(normalize_str_buffer.as_bytes())?;
     build_2_stage_table(&normalize_cp_map, &format!("{out_dir}/normalize"))?;
 
-    // 2. Build Fanjian 2-stage flat array
-    let mut fanjian_map = HashMap::new();
-    for line in FANJIAN.trim().lines() {
+    // 2. Build VariantNorm 2-stage flat array
+    let mut variant_norm_map = HashMap::new();
+    for line in VARIANT_NORM.trim().lines() {
         let mut split = line.split('\t');
-        let key = split.next().expect("missing key in FANJIAN.txt");
-        let value = split.next().expect("missing value in FANJIAN.txt");
+        let key = split.next().expect("missing key in VARIANT_NORM.txt");
+        let value = split.next().expect("missing value in VARIANT_NORM.txt");
         assert!(
             key.chars().count() == 1,
-            "FANJIAN key must be exactly one character: {key:?}"
+            "VARIANT_NORM key must be exactly one character: {key:?}"
         );
         assert!(
             value.chars().count() == 1,
-            "FANJIAN value must be exactly one character: {value:?}"
+            "VARIANT_NORM value must be exactly one character: {value:?}"
         );
         let k = key.chars().next().unwrap() as u32;
         let v = value.chars().next().unwrap() as u32;
         if k != v {
-            fanjian_map.insert(k, v);
+            variant_norm_map.insert(k, v);
         }
     }
-    build_2_stage_table(&fanjian_map, &format!("{out_dir}/fanjian"))?;
+    build_2_stage_table(&variant_norm_map, &format!("{out_dir}/variant_norm"))?;
 
-    // 3. Build Pinyin 2-stage flat array & string buffer
-    let mut pinyin_map = HashMap::new();
-    let mut pinyin_str_buffer = String::new();
+    // 3. Build Romanize 2-stage flat array & string buffer
+    let mut romanize_map = HashMap::new();
+    let mut romanize_str_buffer = String::new();
 
-    for line in PINYIN.trim().lines() {
+    for line in ROMANIZE.trim().lines() {
         let mut split = line.split('\t');
-        let key = split.next().expect("missing key in PINYIN.txt");
+        let key = split.next().expect("missing key in ROMANIZE.txt");
         assert!(
             key.chars().count() == 1,
-            "PINYIN key must be exactly one character: {key:?}"
+            "ROMANIZE key must be exactly one character: {key:?}"
         );
         let k = key.chars().next().unwrap() as u32;
-        let v = split.next().expect("missing value in PINYIN.txt");
+        let v = split.next().expect("missing value in ROMANIZE.txt");
         assert!(
             !v.is_empty(),
-            "PINYIN value must not be empty for key U+{k:04X}"
+            "ROMANIZE value must not be empty for key U+{k:04X}"
         );
 
-        let offset = pinyin_str_buffer.len();
-        pinyin_str_buffer.push_str(v);
+        let offset = romanize_str_buffer.len();
+        romanize_str_buffer.push_str(v);
         let length = v.len();
         assert!(
             length < 256,
-            "pinyin string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
+            "romanize string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
         );
 
         let packed = ((offset as u32) << 8) | (length as u32);
-        pinyin_map.insert(k, packed);
+        romanize_map.insert(k, packed);
     }
 
-    File::create(format!("{out_dir}/pinyin_str.bin"))?.write_all(pinyin_str_buffer.as_bytes())?;
-    build_2_stage_table(&pinyin_map, &format!("{out_dir}/pinyin"))?;
+    File::create(format!("{out_dir}/romanize_str.bin"))?
+        .write_all(romanize_str_buffer.as_bytes())?;
+    build_2_stage_table(&romanize_map, &format!("{out_dir}/romanize"))?;
 
     // 4. Build Text Delete BitSet
     let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];

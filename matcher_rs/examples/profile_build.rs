@@ -34,15 +34,15 @@ fn parse_env<T: std::str::FromStr>(key: &str, default: T) -> T {
 fn parse_process_type(s: &str) -> ProcessType {
     match s {
         "none" => ProcessType::None,
-        "fanjian" => ProcessType::Fanjian,
+        "variant_norm" => ProcessType::VariantNorm,
         "delete" => ProcessType::Delete,
         "norm" => ProcessType::Normalize,
         "dn" => ProcessType::DeleteNormalize,
-        "fdn" => ProcessType::FanjianDeleteNormalize,
-        "pinyin" => ProcessType::PinYin,
-        "pychar" => ProcessType::PinYinChar,
+        "fdn" => ProcessType::VariantNormDeleteNormalize,
+        "romanize" => ProcessType::Romanize,
+        "pychar" => ProcessType::RomanizeChar,
         other => panic!(
-            "Unknown PT shorthand: {other}. Use: none|fanjian|delete|norm|dn|fdn|pinyin|pychar"
+            "Unknown PT shorthand: {other}. Use: none|variant_norm|delete|norm|dn|fdn|romanize|pychar"
         ),
     }
 }

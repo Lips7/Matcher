@@ -9,13 +9,13 @@
 //!
 //! # Example trie
 //!
-//! Given the set `{Fanjian, Fanjian|Delete, Fanjian|Delete|Normalize}`, the trie is:
+//! Given the set `{VariantNorm, VariantNorm|Delete, VariantNorm|Delete|Normalize}`, the trie is:
 //!
 //! ```text
 //!   [0] root (None)
-//!    └─[1] Fanjian          ← terminates: {Fanjian}
-//!       └─[2] Delete        ← terminates: {Fanjian|Delete}
-//!          └─[3] Normalize  ← terminates: {Fanjian|Delete|Normalize}
+//!    └─[1] VariantNorm          ← terminates: {VariantNorm}
+//!       └─[2] Delete        ← terminates: {VariantNorm|Delete}
+//!          └─[3] Normalize  ← terminates: {VariantNorm|Delete|Normalize}
 //! ```
 
 use std::collections::HashSet;
@@ -35,7 +35,7 @@ pub(crate) struct ProcessTypeBitNode {
     /// The single-bit [`ProcessType`] transformation step this node represents.
     ///
     /// The root node always has `ProcessType::None`; all other nodes have exactly
-    /// one bit set (e.g., `Fanjian`, `Delete`).
+    /// one bit set (e.g., `VariantNorm`, `Delete`).
     pub(crate) process_type_bit: ProcessType,
     /// Indices of child nodes in the flat trie array.
     ///
@@ -71,7 +71,7 @@ impl ProcessTypeBitNode {
 ///
 /// The trie encodes every unique prefix path among the given composite types. A root node
 /// with `process_type_bit = ProcessType::None` is always present at index 0. For each
-/// composite type (e.g. `Fanjian | Delete`), the constructor walks its constituent bits in
+/// composite type (e.g. `VariantNorm | Delete`), the constructor walks its constituent bits in
 /// ascending order (determined by [`ProcessType::iter`]), reusing existing child nodes
 /// where the path overlaps with previously inserted types and creating new child nodes
 /// when a path diverges.
@@ -86,10 +86,10 @@ impl ProcessTypeBitNode {
 /// match time.
 ///
 /// ```text
-/// // Given process_type_set = {Fanjian|Delete, Fanjian|Delete|Normalize}:
+/// // Given process_type_set = {VariantNorm|Delete, VariantNorm|Delete|Normalize}:
 /// let tree = build_process_type_tree(&set, &pt_index_table);
 /// // tree[0] = root (None), children: [1]
-/// // tree[1] = Fanjian,     children: [2]
+/// // tree[1] = VariantNorm,     children: [2]
 /// // tree[2] = Delete,      children: [3], terminates
 /// // tree[3] = Normalize,   children: [],  terminates
 /// ```
@@ -179,20 +179,20 @@ mod tests {
     #[test]
     fn test_tree_prefix_sharing() {
         let set: HashSet<ProcessType> = [
-            ProcessType::Fanjian,
-            ProcessType::Fanjian | ProcessType::Delete,
+            ProcessType::VariantNorm,
+            ProcessType::VariantNorm | ProcessType::Delete,
         ]
         .into_iter()
         .collect();
         let tree = build_process_type_tree(&set, &identity_index_table());
 
-        // Root + Fanjian + Delete = 3 nodes
+        // Root + VariantNorm + Delete = 3 nodes
         assert_eq!(tree.len(), 3);
-        // Root has one child (Fanjian)
+        // Root has one child (VariantNorm)
         assert_eq!(tree[0].children.len(), 1);
         let fj_idx = tree[0].children[0];
-        assert_eq!(tree[fj_idx].process_type_bit, ProcessType::Fanjian);
-        // Fanjian node has one child (Delete)
+        assert_eq!(tree[fj_idx].process_type_bit, ProcessType::VariantNorm);
+        // VariantNorm node has one child (Delete)
         assert_eq!(tree[fj_idx].children.len(), 1);
         let del_idx = tree[fj_idx].children[0];
         assert_eq!(tree[del_idx].process_type_bit, ProcessType::Delete);
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_tree_branching() {
-        let set: HashSet<ProcessType> = [ProcessType::Fanjian, ProcessType::Delete]
+        let set: HashSet<ProcessType> = [ProcessType::VariantNorm, ProcessType::Delete]
             .into_iter()
             .collect();
         let tree = build_process_type_tree(&set, &identity_index_table());
@@ -214,25 +214,25 @@ mod tests {
             .iter()
             .map(|&idx| tree[idx].process_type_bit)
             .collect();
-        assert!(bits.contains(&ProcessType::Fanjian));
+        assert!(bits.contains(&ProcessType::VariantNorm));
         assert!(bits.contains(&ProcessType::Delete));
     }
 
     #[test]
     fn test_mask_with_index() {
-        let set: HashSet<ProcessType> = [ProcessType::None, ProcessType::Fanjian]
+        let set: HashSet<ProcessType> = [ProcessType::None, ProcessType::VariantNorm]
             .into_iter()
             .collect();
 
         let mut pt_index_table = [u8::MAX; 64];
         pt_index_table[ProcessType::None.bits() as usize] = 0;
-        pt_index_table[ProcessType::Fanjian.bits() as usize] = 1;
+        pt_index_table[ProcessType::VariantNorm.bits() as usize] = 1;
 
         let tree = build_process_type_tree(&set, &pt_index_table);
 
         // Root should have bit 0 set (for None)
         assert!(tree[0].pt_index_mask & (1u64 << 0) != 0);
-        // Fanjian child should have bit 1 set
+        // VariantNorm child should have bit 1 set
         let fj_idx = tree[0].children[0];
         assert!(tree[fj_idx].pt_index_mask & (1u64 << 1) != 0);
     }

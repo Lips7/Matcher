@@ -138,7 +138,7 @@ fn test_empty_text_matching() {
     // General
     let general = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::Fanjian, 2, "你好")
+        .add_word(ProcessType::VariantNorm, 2, "你好")
         .build()
         .unwrap();
 
@@ -242,14 +242,14 @@ fn test_same_word_id_different_process_types() {
 fn test_serde_round_trip_process_type() {
     let types = [
         ProcessType::None,
-        ProcessType::Fanjian,
+        ProcessType::VariantNorm,
         ProcessType::Delete,
         ProcessType::Normalize,
-        ProcessType::PinYin,
-        ProcessType::PinYinChar,
+        ProcessType::Romanize,
+        ProcessType::RomanizeChar,
         ProcessType::DeleteNormalize,
-        ProcessType::FanjianDeleteNormalize,
-        ProcessType::Fanjian | ProcessType::PinYin,
+        ProcessType::VariantNormDeleteNormalize,
+        ProcessType::VariantNorm | ProcessType::Romanize,
     ];
 
     for pt in types {
@@ -323,7 +323,7 @@ fn test_process_into_empty_text() {
     // General mode (not AllSimple) to exercise the General early-return path in process_into.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
-        .add_word(ProcessType::Fanjian, 2, "你好")
+        .add_word(ProcessType::VariantNorm, 2, "你好")
         .build()
         .unwrap();
 

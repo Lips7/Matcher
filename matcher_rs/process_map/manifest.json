@@ -1,10 +1,10 @@
 {
   "counts": {
-    "fanjian": 4118,
     "norm": 6786,
     "num_norm": 1912,
-    "pinyin": 41923,
-    "text_delete": 11321
+    "romanize": 53271,
+    "text_delete": 11321,
+    "variant_norm": 6762
   },
   "delete_categories": [
     "Cc",
@@ -31,11 +31,21 @@
     "opencc": "1.2.0",
     "pypinyin": "0.55.0"
   },
-  "fanjian_configs": [
+  "python_version": "3.13.12",
+  "romanize_sources": [
+    "pypinyin",
+    "kana_romaji",
+    "korean_rr"
+  ],
+  "unicodedata_version": "15.1.0",
+  "variant_norm_configs": [
     "t2s",
     "tw2s",
     "hk2s"
   ],
-  "python_version": "3.13.12",
-  "unicodedata_version": "15.1.0"
+  "variant_norm_sources": [
+    "opencc",
+    "unihan_kyujitai",
+    "halfwidth_katakana"
+  ]
 }

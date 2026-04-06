@@ -17,9 +17,9 @@
 //! - **Logical operators** — Rules can require co-occurrence of sub-patterns (`&`) or
 //!   veto a match when a sub-pattern is present (`~`).
 //! - **Transformation pipelines** — Input can be matched after Traditional→Simplified
-//!   Chinese conversion ([`ProcessType::Fanjian`]), deletion of configured codepoints
+//!   CJK variant normalization ([`ProcessType::VariantNorm`]), deletion of configured codepoints
 //!   ([`ProcessType::Delete`]), replacement-table normalization ([`ProcessType::Normalize`]),
-//!   and Pinyin transliteration ([`ProcessType::PinYin`] / [`ProcessType::PinYinChar`]).
+//!   and CJK romanization ([`ProcessType::Romanize`] / [`ProcessType::RomanizeChar`]).
 //! - **Two-pass evaluation** — Construction deduplicates emitted patterns and partitions them
 //!   into ASCII and charwise matcher engines. Search walks the needed transform tree once,
 //!   scans each produced text variant, then evaluates only touched rules.
@@ -32,7 +32,7 @@
 //! let matcher = SimpleMatcherBuilder::new()
 //!     .add_word(ProcessType::None, 1, "hello")
 //!     // Matches after converting Traditional Chinese and removing noise chars
-//!     .add_word(ProcessType::FanjianDeleteNormalize, 2, "你好")
+//!     .add_word(ProcessType::VariantNormDeleteNormalize, 2, "你好")
 //!     // Both sub-patterns must appear in the text
 //!     .add_word(ProcessType::None, 3, "apple&pie")
 //!     // "banana" matches only when "peel" is absent
@@ -50,8 +50,8 @@
 //!
 //! Composite [`ProcessType`] values can also include [`ProcessType::None`] to match
 //! against both the raw text and a transformed variant. For example, a rule with
-//! `ProcessType::None | ProcessType::PinYin` can satisfy one sub-pattern directly from
-//! the input and another via Pinyin transliteration during the same search.
+//! `ProcessType::None | ProcessType::Romanize` can satisfy one sub-pattern directly from
+//! the input and another via CJK romanization during the same search.
 //!
 //! # Safety
 //!

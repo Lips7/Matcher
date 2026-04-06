@@ -35,7 +35,7 @@ impl PyProcessType {
     const NONE: u8 = ProcessType::None.bits();
 
     #[classattr]
-    const FANJIAN: u8 = ProcessType::Fanjian.bits();
+    const VARIANT_NORM: u8 = ProcessType::VariantNorm.bits();
 
     #[classattr]
     const DELETE: u8 = ProcessType::Delete.bits();
@@ -47,13 +47,13 @@ impl PyProcessType {
     const DELETE_NORMALIZE: u8 = ProcessType::DeleteNormalize.bits();
 
     #[classattr]
-    const FANJIAN_DELETE_NORMALIZE: u8 = ProcessType::FanjianDeleteNormalize.bits();
+    const VARIANT_NORM_DELETE_NORMALIZE: u8 = ProcessType::VariantNormDeleteNormalize.bits();
 
     #[classattr]
-    const PINYIN: u8 = ProcessType::PinYin.bits();
+    const ROMANIZE: u8 = ProcessType::Romanize.bits();
 
     #[classattr]
-    const PINYIN_CHAR: u8 = ProcessType::PinYinChar.bits();
+    const ROMANIZE_CHAR: u8 = ProcessType::RomanizeChar.bits();
 
     #[new]
     fn new(bits: u8) -> Self {

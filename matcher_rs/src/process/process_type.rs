@@ -18,10 +18,10 @@ bitflags! {
     /// shared transform tree from the active set, and reuses intermediate results where
     /// prefixes overlap.
     ///
-    /// `DeleteNormalize` and `FanjianDeleteNormalize` are named aliases for common
+    /// `DeleteNormalize` and `VariantNormDeleteNormalize` are named aliases for common
     /// combinations, not separate transformation primitives. Iterating over a composite
     /// value with [`ProcessType::iter()`] yields individual single-bit flags in ascending
-    /// bit order: `Fanjian`, then `Delete`, then `Normalize`, etc.
+    /// bit order: `VariantNorm`, then `Delete`, then `Normalize`, etc.
     ///
     /// The default value is `ProcessType::empty()` (no bits set), which differs from
     /// [`ProcessType::None`] (the explicit "raw text" flag at bit 0).
@@ -31,11 +31,11 @@ bitflags! {
     /// | Flag | Bit | Value |
     /// |------|-----|-------|
     /// | `None` | 0 | `0x01` |
-    /// | `Fanjian` | 1 | `0x02` |
+    /// | `VariantNorm` | 1 | `0x02` |
     /// | `Delete` | 2 | `0x04` |
     /// | `Normalize` | 3 | `0x08` |
-    /// | `PinYin` | 4 | `0x10` |
-    /// | `PinYinChar` | 5 | `0x20` |
+    /// | `Romanize` | 4 | `0x10` |
+    /// | `RomanizeChar` | 5 | `0x20` |
     ///
     /// # Examples
     ///
@@ -43,13 +43,13 @@ bitflags! {
     /// use matcher_rs::ProcessType;
     ///
     /// // Compose flags with | just like standard bitflags.
-    /// let combined = ProcessType::Fanjian | ProcessType::Delete;
-    /// assert!(combined.contains(ProcessType::Fanjian));
+    /// let combined = ProcessType::VariantNorm | ProcessType::Delete;
+    /// assert!(combined.contains(ProcessType::VariantNorm));
     /// assert!(combined.contains(ProcessType::Delete));
     ///
     /// // Iterate over the individual bits in order.
     /// let bits: Vec<_> = combined.iter().collect();
-    /// assert_eq!(bits, vec![ProcessType::Fanjian, ProcessType::Delete]);
+    /// assert_eq!(bits, vec![ProcessType::VariantNorm, ProcessType::Delete]);
     ///
     /// // Serialize/deserialize as a raw u8 for compact wire format.
     /// let raw = combined.bits();
@@ -62,8 +62,8 @@ bitflags! {
     ///
     /// // Named aliases are just shorthand for the equivalent OR.
     /// assert_eq!(
-    ///     ProcessType::FanjianDeleteNormalize,
-    ///     ProcessType::Fanjian | ProcessType::Delete | ProcessType::Normalize,
+    ///     ProcessType::VariantNormDeleteNormalize,
+    ///     ProcessType::VariantNorm | ProcessType::Delete | ProcessType::Normalize,
     /// );
     /// ```
     #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, Default)]
@@ -74,10 +74,11 @@ bitflags! {
         /// checked during matching.
         const None = 0b00000001;
 
-        /// Traditional Chinese to Simplified Chinese conversion.
+        /// CJK variant normalization (Chinese Traditional→Simplified, Japanese
+        /// Kyūjitai→Shinjitai, half-width katakana→full-width).
         ///
-        /// Uses a page-table lookup compiled from `process_map/FANJIAN.txt`.
-        const Fanjian = 0b00000010;
+        /// Uses a page-table lookup compiled from `process_map/VARIANT_NORM.txt`.
+        const VariantNorm = 0b00000010;
 
         /// Removes codepoints configured in the Delete tables.
         ///
@@ -95,19 +96,20 @@ bitflags! {
         /// Shorthand for `Delete | Normalize`.
         const DeleteNormalize = 0b00001100;
 
-        /// Shorthand for `Fanjian | Delete | Normalize`.
-        const FanjianDeleteNormalize = 0b00001110;
+        /// Shorthand for `VariantNorm | Delete | Normalize`.
+        const VariantNormDeleteNormalize = 0b00001110;
 
-        /// Converts Chinese characters to space-separated Pinyin syllables.
+        /// Converts CJK characters to space-separated romanized syllables
+        /// (Chinese Pinyin, Japanese kana Romaji, Korean Revised Romanization).
         ///
-        /// Uses a page-table lookup compiled from `process_map/PINYIN.txt`.
-        const PinYin = 0b00010000;
+        /// Uses a page-table lookup compiled from `process_map/ROMANIZE.txt`.
+        const Romanize = 0b00010000;
 
-        /// Converts Chinese characters to Pinyin with inter-syllable spaces stripped.
+        /// Converts CJK characters to romanized form with inter-syllable spaces stripped.
         ///
-        /// Uses the same source as [`PinYin`](Self::PinYin) but trims the leading space
+        /// Uses the same source as [`Romanize`](Self::Romanize) but trims the leading space
         /// from each mapping at build time.
-        const PinYinChar = 0b00100000;
+        const RomanizeChar = 0b00100000;
     }
 }
 
@@ -121,9 +123,9 @@ bitflags! {
 /// ```rust
 /// use matcher_rs::ProcessType;
 ///
-/// let combined = ProcessType::Fanjian | ProcessType::Delete;
+/// let combined = ProcessType::VariantNorm | ProcessType::Delete;
 /// let json = serde_json::to_string(&combined).unwrap();
-/// // Fanjian = 0x02, Delete = 0x04 → 6
+/// // VariantNorm = 0x02, Delete = 0x04 → 6
 /// assert_eq!(json, "6");
 ///
 /// // Single flag:
@@ -150,7 +152,7 @@ impl Serialize for ProcessType {
 /// use matcher_rs::ProcessType;
 ///
 /// // Valid round-trip:
-/// let combined = ProcessType::Fanjian | ProcessType::Delete;
+/// let combined = ProcessType::VariantNorm | ProcessType::Delete;
 /// let json = serde_json::to_string(&combined).unwrap();
 /// let back: ProcessType = serde_json::from_str(&json).unwrap();
 /// assert_eq!(back, combined);
@@ -176,8 +178,9 @@ impl<'de> Deserialize<'de> for ProcessType {
 
 /// Human-readable formatting for [`ProcessType`] combinations.
 ///
-/// Active flag names are lowercased and joined with underscores. For example,
-/// `ProcessType::Fanjian | ProcessType::Delete` formats as `"fanjian_delete"`.
+/// Active flag names are lowercased with underscores and joined with underscores.
+/// For example, `ProcessType::VariantNorm | ProcessType::Delete` formats as
+/// `"variant_norm_delete"`.
 ///
 /// # Examples
 ///
@@ -186,25 +189,43 @@ impl<'de> Deserialize<'de> for ProcessType {
 ///
 /// assert_eq!(format!("{}", ProcessType::None), "none");
 /// assert_eq!(
-///     format!("{}", ProcessType::Fanjian | ProcessType::Delete),
-///     "fanjian_delete"
+///     format!("{}", ProcessType::VariantNorm | ProcessType::Delete),
+///     "variant_norm_delete"
 /// );
 /// assert_eq!(
-///     format!("{}", ProcessType::FanjianDeleteNormalize),
-///     "fanjian_delete_normalize"
+///     format!("{}", ProcessType::VariantNormDeleteNormalize),
+///     "variant_norm_delete_normalize"
 /// );
 /// // Empty flags (no bits set) produce an empty string.
 /// assert_eq!(format!("{}", ProcessType::empty()), "");
 /// ```
 impl Display for ProcessType {
-    /// Formats active flag names as lowercase strings joined by underscores.
+    /// Formats active flag names as snake_case strings joined by underscores.
     ///
-    /// Empty flags produce an empty string; single flags produce just the lowercased name.
+    /// Empty flags produce an empty string; single flags produce just the snake_case name.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let names = self
-            .iter_names()
-            .map(|(name, _)| name.to_lowercase())
-            .collect::<Vec<_>>();
-        write!(f, "{}", names.join("_"))
+        fn to_snake(name: &str) -> &str {
+            match name {
+                "VariantNorm" => "variant_norm",
+                "DeleteNormalize" => "delete_normalize",
+                "VariantNormDeleteNormalize" => "variant_norm_delete_normalize",
+                "RomanizeChar" => "romanize_char",
+                "None" => "none",
+                "Delete" => "delete",
+                "Normalize" => "normalize",
+                "Romanize" => "romanize",
+                _ => "unknown",
+            }
+        }
+
+        let mut first = true;
+        for (name, _) in self.iter_names() {
+            if !first {
+                f.write_str("_")?;
+            }
+            f.write_str(to_snake(name))?;
+            first = false;
+        }
+        Ok(())
     }
 }

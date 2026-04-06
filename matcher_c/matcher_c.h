@@ -28,13 +28,13 @@ void drop_string(char* ptr);
 typedef uint8_t ProcessType;
 
 #define PROCESS_TYPE_NONE 1
-#define PROCESS_TYPE_FANJIAN 2
+#define PROCESS_TYPE_VARIANT_NORM 2
 #define PROCESS_TYPE_DELETE 4
 #define PROCESS_TYPE_NORMALIZE 8
 #define PROCESS_TYPE_DELETE_NORMALIZE 12
-#define PROCESS_TYPE_FANJIAN_DELETE_NORMALIZE 14
-#define PROCESS_TYPE_PINYIN 16
-#define PROCESS_TYPE_PINYIN_CHAR 32
+#define PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE 14
+#define PROCESS_TYPE_ROMANIZE 16
+#define PROCESS_TYPE_ROMANIZE_CHAR 32
 
 // Apply a single ProcessType transform to text. Caller must free result with drop_string.
 char* text_process(ProcessType process_type, const char* text);

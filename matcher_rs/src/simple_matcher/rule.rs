@@ -41,7 +41,7 @@ use super::state::{ScanContext, ScanState, init_matrix};
 /// let mut table: SimpleTable = HashMap::new();
 /// table.entry(ProcessType::None).or_default().insert(1, "hello");
 /// table.entry(ProcessType::None).or_default().insert(2, "apple&pie");
-/// table.entry(ProcessType::Fanjian).or_default().insert(3, "你好");
+/// table.entry(ProcessType::VariantNorm).or_default().insert(3, "你好");
 ///
 /// let matcher = SimpleMatcher::new(&table).unwrap();
 /// assert!(matcher.is_match("hello world"));

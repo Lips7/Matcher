@@ -4,7 +4,7 @@
 //! fast-forward over irrelevant ASCII byte runs without per-byte branching:
 //!
 //! - [`skip_ascii_simd`] -- skips all ASCII bytes (`< 0x80`). Used by
-//!   `FanjianFindIter` and `PinyinFindIter` (in [`super::replace`]).
+//!   `VariantNormFindIter` and `RomanizeFindIter` (in [`super::replace`]).
 //! - [`skip_ascii_non_delete_simd`] -- skips ASCII bytes that are not in the
 //!   delete bitset. Used by [`super::delete::DeleteMatcher`].
 //!
@@ -573,7 +573,7 @@ define_skip_dispatch! {
     /// `offset` unchanged — the caller can safely call `decode_utf8_raw` at `offset`
     /// immediately after.
     ///
-    /// Used by `FanjianFindIter` and `PinyinFindIter` in
+    /// Used by `VariantNormFindIter` and `RomanizeFindIter` in
     /// [`super::replace`] to skip over ASCII runs that can never produce
     /// page-table hits.
     pub(crate) fn skip_ascii_simd(bytes, offset),

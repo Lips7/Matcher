@@ -49,16 +49,16 @@ def test_backslashes():
     assert simple_matcher.process(r"It's /\/\y duty")[0].word == r"It's /\/\y duty"
 
 
-def test_fanjian():
+def test_variant_norm():
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "测试"}}).encode()
+        json.dumps({ProcessType.VARIANT_NORM: {1: "测试"}}).encode()
     )
     assert simple_matcher.is_match("測試")
     assert simple_matcher.process("测试")[0].word_id == 1
     assert simple_matcher.process("测试")[0].word == "测试"
 
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "測試"}}).encode()
+        json.dumps({ProcessType.VARIANT_NORM: {1: "測試"}}).encode()
     )
     assert simple_matcher.is_match("测试")
     assert simple_matcher.process("测试")[0].word_id == 1
@@ -88,11 +88,11 @@ def test_normalize():
     assert simple_matcher.process("ＡＢⅣ①℉")[0].word == "ab41°f"
 
 
-def test_pinyin():
+def test_romanize():
     simple_matcher = SimpleMatcher(
         json.dumps(
             {
-                ProcessType.PINYIN: {
+                ProcessType.ROMANIZE: {
                     1: "西安",
                 }
             }
@@ -102,11 +102,11 @@ def test_pinyin():
     assert not simple_matcher.is_match("现")
 
 
-def test_pinyinchar():
+def test_romanize_char():
     simple_matcher = SimpleMatcher(
         json.dumps(
             {
-                ProcessType.PINYIN_CHAR: {
+                ProcessType.ROMANIZE_CHAR: {
                     1: "西安",
                 }
             }
@@ -152,7 +152,7 @@ def test_threading():
     import concurrent.futures
 
     simple_matcher = SimpleMatcher(
-        json.dumps({ProcessType.FANJIAN: {1: "测试"}}).encode()
+        json.dumps({ProcessType.VARIANT_NORM: {1: "测试"}}).encode()
     )
     texts = ["測試测试文本" * 100] * 200
 

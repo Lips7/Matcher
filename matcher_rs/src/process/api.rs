@@ -71,12 +71,12 @@ fn reduce_text_process_inner<'a>(
 /// ```rust
 /// use matcher_rs::{ProcessType, text_process};
 ///
-/// // Fanjian converts Traditional→Simplified; Delete removes punctuation.
-/// let processed = text_process(ProcessType::Fanjian | ProcessType::Delete, "測！試");
+/// // VariantNorm normalizes CJK variants; Delete removes punctuation.
+/// let processed = text_process(ProcessType::VariantNorm | ProcessType::Delete, "測！試");
 /// assert_eq!(processed, "测试");
 ///
 /// // No-op when the text has nothing to transform.
-/// let unchanged = text_process(ProcessType::Fanjian, "hello");
+/// let unchanged = text_process(ProcessType::VariantNorm, "hello");
 /// assert_eq!(unchanged, "hello");
 /// // Borrowed — no allocation occurred.
 /// assert!(matches!(unchanged, std::borrow::Cow::Borrowed(_)));
@@ -111,8 +111,8 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// ```rust
 /// use matcher_rs::{ProcessType, reduce_text_process};
 ///
-/// // FanjianDeleteNormalize = Fanjian | Delete | Normalize, applied in that order.
-/// let variants = reduce_text_process(ProcessType::FanjianDeleteNormalize, "~測~Ａ~");
+/// // VariantNormDeleteNormalize = VariantNorm | Delete | Normalize, applied in that order.
+/// let variants = reduce_text_process(ProcessType::VariantNormDeleteNormalize, "~測~Ａ~");
 /// // First entry is always the original input.
 /// assert_eq!(variants[0], "~測~Ａ~");
 /// // Last entry is the fully transformed result.
@@ -127,7 +127,7 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 ///
 /// This variant is used during matcher construction to keep only the strings that the
 /// Aho-Corasick automaton will actually scan at match time. Replace-style steps
-/// (Fanjian, Normalize, PinYin, PinYinChar) overwrite the last entry rather than
+/// (VariantNorm, Normalize, Romanize, RomanizeChar) overwrite the last entry rather than
 /// appending, because the pre-replacement form is never scanned separately. Delete steps
 /// still append because deletion changes which character sequences are adjacent, affecting
 /// which patterns can match.
@@ -140,12 +140,12 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// ```rust
 /// use matcher_rs::{ProcessType, reduce_text_process_emit};
 ///
-/// // FanjianDeleteNormalize = Fanjian | Delete | Normalize.
-/// let variants = reduce_text_process_emit(ProcessType::FanjianDeleteNormalize, "~測~Ａ~");
-/// // Only two entries: Fanjian overwrites the original, then Delete appends.
+/// // VariantNormDeleteNormalize = VariantNorm | Delete | Normalize.
+/// let variants = reduce_text_process_emit(ProcessType::VariantNormDeleteNormalize, "~測~Ａ~");
+/// // Only two entries: VariantNorm overwrites the original, then Delete appends.
 /// // The Normalize step overwrites the Delete entry in-place.
 /// assert_eq!(variants.len(), 2);
-/// assert_eq!(variants[0], "~测~Ａ~");  // after Fanjian (replace, overwrites original)
+/// assert_eq!(variants[0], "~测~Ａ~");  // after VariantNorm (replace, overwrites original)
 /// assert_eq!(variants[1], "测a");       // after Delete+Normalize
 /// ```
 #[inline(always)]

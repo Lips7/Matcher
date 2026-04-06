@@ -76,7 +76,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 
 ### How a Query Works
 
-1. **Transform** — Walk a shared-prefix trie of `ProcessType` steps, producing text variants (Fanjian, Delete, Normalize, PinYin). Intermediate results are reused across combinations.
+1. **Transform** — Walk a shared-prefix trie of `ProcessType` steps, producing text variants (VariantNorm, Delete, Normalize, Romanize). Intermediate results are reused across combinations.
 2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise for ASCII, charwise for CJK). Hits update per-rule state.
 3. **Evaluate** — Touched rules are checked: all AND segments satisfied + no NOT veto → match.
 4. **AllSimple bypass** — When all rules are pure literals under one `ProcessType`, the trie + state machinery is skipped entirely — each automaton hit maps directly to a result.
@@ -84,7 +84,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 ### Key Concepts
 
 - **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
-- **Transform trie**: shared-prefix DAG so `Fanjian|Delete` reuses the Fanjian result.
+- **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
 - **ScanPlan**: bytewise AC (all patterns, optional DFA) + charwise AC (all patterns, CJK-optimized). Engine selection via SIMD density scan (≤0.67 non-ASCII → bytewise, >0.67 → charwise).
 - **RuleSet**: hot/cold split for cache efficiency. Generation-stamped sparse set for O(1) state reset.
 - **DIRECT_RULE_BIT**: single-entry simple patterns encode `rule_idx | (1 << 31)` directly in the automaton value, skipping the entry table on the hot path.
@@ -125,7 +125,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
-- `transform/replace/` — `FanjianMatcher` (`fanjian.rs`), `PinyinMatcher` (`pinyin.rs`), `NormalizeMatcher` (`normalize.rs`), shared page-table helpers (`mod.rs`)
+- `transform/replace/` — `VariantNormMatcher` (`variant_norm.rs`), `RomanizeMatcher` (`romanize.rs`), `NormalizeMatcher` (`normalize.rs`), shared page-table helpers (`mod.rs`)
 - `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip), `DeleteFilterIterator` (streaming)
 - `transform/utf8.rs` — Shared `decode_utf8_raw` unsafe helper
 - `transform/simd.rs` — SIMD helpers: `skip_ascii_simd`, `skip_ascii_non_delete_simd`
@@ -133,7 +133,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 **Other:**
 - `matcher_rs/src/builder.rs` — `SimpleMatcherBuilder` fluent API
-- `matcher_rs/process_map/` — Source text files (`FANJIAN.txt`, `PINYIN.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs`
+- `matcher_rs/process_map/` — Source text files (`VARIANT_NORM.txt`, `ROMANIZE.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) consumed by `build.rs`
 
 ## Important Notes
 

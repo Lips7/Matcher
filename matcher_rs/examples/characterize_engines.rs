@@ -184,9 +184,9 @@ fn synthetic_text(cjk_pct: u8, target_bytes: usize) -> String {
 
 // ── Env var parsing ──────────────────────────────────────────────────────────
 
-fn parse_list_env<T: std::str::FromStr>(key: &str, defaults: &[T]) -> Vec<T>
+fn parse_list_env<T>(key: &str, defaults: &[T]) -> Vec<T>
 where
-    T: Clone,
+    T: std::str::FromStr + Clone,
 {
     match std::env::var(key) {
         Ok(val) => val

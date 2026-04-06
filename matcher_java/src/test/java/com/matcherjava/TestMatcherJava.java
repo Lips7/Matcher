@@ -12,15 +12,15 @@ public class TestMatcherJava {
   public void testTextProcess() {
     String text = "A B 測試 Ａ １";
 
-    int fanjianType = ProcessType.FANJIAN.getValue();
-    String result1 = MatcherJava.textProcess(fanjianType, text.getBytes(StandardCharsets.UTF_8));
+    int variantNormType = ProcessType.VARIANT_NORM.getValue();
+    String result1 = MatcherJava.textProcess(variantNormType, text.getBytes(StandardCharsets.UTF_8));
     assertEquals("A B 测试 Ａ １", result1);
 
-    int combinedType = ProcessType.FANJIAN_DELETE_NORMALIZE.getValue();
+    int combinedType = ProcessType.VARIANT_NORM_DELETE_NORMALIZE.getValue();
     String[] variants = MatcherJava.reduceTextProcess(combinedType, text.getBytes(StandardCharsets.UTF_8));
     assertArrayEquals(new String[] { "A B 測試 Ａ １", "A B 测试 Ａ １", "AB测试Ａ１", "ab测试a1" }, variants);
-    int deletePinyinCombo = ProcessType.DELETE.getValue() | ProcessType.PINYIN.getValue();
-    String[] comboVariants = MatcherJava.reduceTextProcess(deletePinyinCombo, text.getBytes(StandardCharsets.UTF_8));
+    int deleteRomanizeCombo = ProcessType.DELETE.getValue() | ProcessType.ROMANIZE.getValue();
+    String[] comboVariants = MatcherJava.reduceTextProcess(deleteRomanizeCombo, text.getBytes(StandardCharsets.UTF_8));
     assertNotNull("reduceTextProcess should not return null for valid composite flags", comboVariants);
     assertTrue("reduceTextProcess should return multiple intermediate variants", comboVariants.length > 0);
   }

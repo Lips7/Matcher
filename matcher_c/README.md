@@ -34,13 +34,13 @@ The full API is declared in [`matcher_c.h`](./matcher_c.h).
 | Define | Value | Description |
 |--------|-------|-------------|
 | `PROCESS_TYPE_NONE` | 1 | No transformation; match raw input |
-| `PROCESS_TYPE_FANJIAN` | 2 | Traditional Chinese to Simplified Chinese |
+| `PROCESS_TYPE_VARIANT_NORM` | 2 | CJK variant normalization |
 | `PROCESS_TYPE_DELETE` | 4 | Remove symbols, punctuation, whitespace |
 | `PROCESS_TYPE_NORMALIZE` | 8 | Normalize character variants to basic forms |
 | `PROCESS_TYPE_DELETE_NORMALIZE` | 12 | Delete + Normalize combined |
-| `PROCESS_TYPE_FANJIAN_DELETE_NORMALIZE` | 14 | Fanjian + Delete + Normalize combined |
-| `PROCESS_TYPE_PINYIN` | 16 | Chinese characters to space-separated Pinyin |
-| `PROCESS_TYPE_PINYIN_CHAR` | 32 | Chinese characters to Pinyin without boundary spaces |
+| `PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE` | 14 | VariantNorm + Delete + Normalize combined |
+| `PROCESS_TYPE_ROMANIZE` | 16 | CJK characters to space-separated romanization (Pinyin, Romaji, RR) |
+| `PROCESS_TYPE_ROMANIZE_CHAR` | 32 | CJK characters to romanization without boundary spaces |
 
 ### SimpleMatcher
 
@@ -113,7 +113,7 @@ int main() {
         drop_string(normalized);
     }
 
-    char** variants = reduce_text_process(PROCESS_TYPE_FANJIAN_DELETE_NORMALIZE, "你好，世界！");
+    char** variants = reduce_text_process(PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE, "你好，世界！");
     if (variants) {
         for (int i = 0; variants[i] != NULL; i++) {
             printf("Variant %d: %s\n", i, variants[i]);

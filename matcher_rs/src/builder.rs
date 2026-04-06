@@ -22,7 +22,7 @@ use crate::{MatcherError, ProcessType, SimpleMatcher};
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "hello")
 ///     .add_word(ProcessType::None, 2, "world")
-///     .add_word(ProcessType::Fanjian, 3, "你好")
+///     .add_word(ProcessType::VariantNorm, 3, "你好")
 ///     .build()
 ///     .unwrap();
 ///
@@ -125,16 +125,16 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
-    ///     // Match against both raw input and Fanjian-converted text
-    ///     .add_word(ProcessType::None | ProcessType::Fanjian, 1, "测试")
+    ///     // Match against both raw input and VariantNorm-converted text
+    ///     .add_word(ProcessType::None | ProcessType::VariantNorm, 1, "测试")
     ///     // Match after deleting noise characters and normalizing
-    ///     .add_word(ProcessType::FanjianDeleteNormalize, 2, "测试")
+    ///     .add_word(ProcessType::VariantNormDeleteNormalize, 2, "测试")
     ///     .build()
     ///     .unwrap();
     ///
     /// // Raw "测试" matches via the ProcessType::None path
     /// assert!(matcher.is_match("测试世界"));
-    /// // Traditional "測試" matches via the ProcessType::Fanjian path
+    /// // Traditional "測試" matches via the ProcessType::VariantNorm path
     /// assert!(matcher.is_match("測試世界"));
     /// ```
     #[must_use = "builder methods return a new builder; dropping it discards the added word"]

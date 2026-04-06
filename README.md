@@ -23,15 +23,15 @@ It's helpful for
 For detailed implementation, see the [Design Document](./DESIGN.md).
 
 - **Text Transformation**:
-  - **Fanjian**: Simplify traditional Chinese characters to simplified ones.
+  - **VariantNorm**: Simplify traditional Chinese characters to simplified ones.
     Example: `蟲艸` -> `虫艹`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
-  - **PinYin**: Convert Chinese characters to space-separated Pinyin for fuzzy matching.
+  - **Romanize**: Convert CJK characters to space-separated romanized form (Pinyin, Romaji, RR) for fuzzy matching.
     Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
-  - **PinYinChar**: Convert Chinese characters to Pinyin without boundary spaces.
+  - **RomanizeChar**: Convert CJK characters to romanized form without boundary spaces.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.

@@ -109,8 +109,8 @@ pub struct SimpleResult<'a> {
 /// triggered in any variant.
 ///
 /// Composite process types can match across variants. For example,
-/// `ProcessType::None | ProcessType::PinYin` lets one sub-pattern match the raw text and
-/// another match the Pinyin-transformed variant during the same search. NOT segments are
+/// `ProcessType::None | ProcessType::Romanize` lets one sub-pattern match the raw text and
+/// another match the Romanize-transformed variant during the same search. NOT segments are
 /// global across those variants: if a veto pattern appears in any variant, the rule fails.
 ///
 /// # Thread Safety

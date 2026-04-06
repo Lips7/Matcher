@@ -1,7 +1,7 @@
 //! Compiled single-step transforms for the text-processing pipeline.
 //!
-//! Each [`TransformStep`] variant wraps a low-level matcher (Fanjian, Delete,
-//! Normalize, PinYin) and provides a uniform [`apply`](TransformStep::apply)
+//! Each [`TransformStep`] variant wraps a low-level matcher (VariantNorm, Delete,
+//! Normalize, Romanize) and provides a uniform [`apply`](TransformStep::apply)
 //! interface. Returns `Option<String>` — `None` when the input is unaffected.
 //!
 //! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use crate::process::process_type::ProcessType;
 use crate::process::transform::constants::*;
 use crate::process::transform::delete::DeleteMatcher;
-use crate::process::transform::replace::{FanjianMatcher, NormalizeMatcher, PinyinMatcher};
+use crate::process::transform::replace::{NormalizeMatcher, RomanizeMatcher, VariantNormMatcher};
 
 /// Compiled single-bit transformation step.
 ///
@@ -24,28 +24,28 @@ use crate::process::transform::replace::{FanjianMatcher, NormalizeMatcher, Pinyi
 pub(crate) enum TransformStep {
     /// Raw-text path; returns the input unchanged.
     None,
-    /// Traditional-to-Simplified Chinese conversion via page-table lookup.
-    Fanjian(FanjianMatcher),
+    /// CJK variant normalization via page-table lookup.
+    VariantNorm(VariantNormMatcher),
     /// Codepoint deletion using a bitset, with optional SIMD acceleration.
     Delete(DeleteMatcher),
     /// Multi-character normalization replacements via Aho-Corasick.
     Normalize(NormalizeMatcher),
-    /// Pinyin conversion with inter-syllable spaces preserved.
-    PinYin(PinyinMatcher),
-    /// Pinyin conversion that keeps only the initial of each syllable.
-    PinYinChar(PinyinMatcher),
+    /// CJK romanization with inter-syllable spaces preserved.
+    Romanize(RomanizeMatcher),
+    /// CJK romanization with inter-syllable spaces stripped.
+    RomanizeChar(RomanizeMatcher),
 }
 
 impl TransformStep {
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
-    /// - **Fanjian / PinYin / PinYinChar**: no-op — all keys are non-ASCII codepoints.
+    /// - **VariantNorm / Romanize / RomanizeChar**: no-op — all keys are non-ASCII codepoints.
     /// - **Delete / Normalize**: may change ASCII input (punctuation deletion, casefold).
     #[inline(always)]
     pub(crate) fn is_noop_on_ascii_input(&self) -> bool {
         matches!(
             self,
-            Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_)
+            Self::None | Self::VariantNorm(_) | Self::Romanize(_) | Self::RomanizeChar(_)
         )
     }
 
@@ -62,14 +62,16 @@ impl TransformStep {
     /// Applies this step to `text`. Returns `Some(new_string)` if the text was
     /// modified, `None` if the step is a no-op for this input.
     ///
-    /// `parent_is_ascii` enables the ASCII fast path: Fanjian/PinYin/PinYinChar
+    /// `parent_is_ascii` enables the ASCII fast path: VariantNorm/Romanize/RomanizeChar
     /// are guaranteed no-ops on ASCII input, and Delete/Normalize produce ASCII
     /// output from ASCII input (proven by process map analysis).
     #[inline(always)]
     pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> Option<String> {
         if parent_is_ascii {
             return match self {
-                Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => None,
+                Self::None | Self::VariantNorm(_) | Self::Romanize(_) | Self::RomanizeChar(_) => {
+                    None
+                }
                 Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
                 Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
             };
@@ -77,10 +79,10 @@ impl TransformStep {
 
         match self {
             Self::None => None,
-            Self::Fanjian(matcher) => matcher.replace(text),
+            Self::VariantNorm(matcher) => matcher.replace(text),
             Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
             Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
-            Self::PinYin(matcher) | Self::PinYinChar(matcher) => {
+            Self::Romanize(matcher) | Self::RomanizeChar(matcher) => {
                 matcher.replace(text).map(|(s, _)| s)
             }
         }
@@ -117,25 +119,26 @@ pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static Tran
 fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
     match process_type_bit {
         ProcessType::None => TransformStep::None,
-        ProcessType::Fanjian => {
-            TransformStep::Fanjian(FanjianMatcher::new(FANJIAN_L1_BYTES, FANJIAN_L2_BYTES))
-        }
+        ProcessType::VariantNorm => TransformStep::VariantNorm(VariantNormMatcher::new(
+            VARIANT_NORM_L1_BYTES,
+            VARIANT_NORM_L2_BYTES,
+        )),
         ProcessType::Delete => TransformStep::Delete(DeleteMatcher::new(DELETE_BITSET_BYTES)),
         ProcessType::Normalize => TransformStep::Normalize(NormalizeMatcher::new(
             NORMALIZE_L1_BYTES,
             NORMALIZE_L2_BYTES,
             NORMALIZE_STR_BYTES,
         )),
-        ProcessType::PinYin => TransformStep::PinYin(PinyinMatcher::new(
-            PINYIN_L1_BYTES,
-            PINYIN_L2_BYTES,
-            PINYIN_STR_BYTES,
+        ProcessType::Romanize => TransformStep::Romanize(RomanizeMatcher::new(
+            ROMANIZE_L1_BYTES,
+            ROMANIZE_L2_BYTES,
+            ROMANIZE_STR_BYTES,
             false,
         )),
-        ProcessType::PinYinChar => TransformStep::PinYinChar(PinyinMatcher::new(
-            PINYIN_L1_BYTES,
-            PINYIN_L2_BYTES,
-            PINYIN_STR_BYTES,
+        ProcessType::RomanizeChar => TransformStep::RomanizeChar(RomanizeMatcher::new(
+            ROMANIZE_L1_BYTES,
+            ROMANIZE_L2_BYTES,
+            ROMANIZE_STR_BYTES,
             true,
         )),
         _ => unreachable!("unsupported single-bit ProcessType"),

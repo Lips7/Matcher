@@ -1,4 +1,4 @@
-//! Text-replacement engines for Fanjian, Pinyin, and Normalize transformations.
+//! Text-replacement engines for VariantNorm, Romanize, and Normalize transformations.
 //!
 //! All three engines share a **two-stage page table** for O(1) codepoint lookup:
 //!
@@ -7,8 +7,8 @@
 //!   page has no mappings.
 //! - **L2** (`&[u32]`): indexed by `page * 256 + (codepoint & 0xFF)`. The
 //!   interpretation of the stored `u32` depends on the engine:
-//!   - **Fanjian**: the simplified codepoint value. `0` = unmapped.
-//!   - **Pinyin / Normalize**: packed `(byte_offset << 8) | byte_length` into a
+//!   - **VariantNorm**: the normalized codepoint value. `0` = unmapped.
+//!   - **Romanize / Normalize**: packed `(byte_offset << 8) | byte_length` into a
 //!     shared string buffer, unpacked via [`unpack_str_ref`]. `0` = unmapped.
 //!
 //! Shared helpers ([`page_table_lookup`], [`decode_page_table`], [`unpack_str_ref`],
@@ -24,13 +24,13 @@
 //! - **Span-copy output**: unchanged byte ranges are bulk-copied; only mapped
 //!   codepoints incur per-replacement overhead.
 
-mod fanjian;
 mod normalize;
-mod pinyin;
+mod romanize;
+mod variant_norm;
 
-pub(crate) use fanjian::FanjianMatcher;
 pub(crate) use normalize::NormalizeMatcher;
-pub(crate) use pinyin::PinyinMatcher;
+pub(crate) use romanize::RomanizeMatcher;
+pub(crate) use variant_norm::VariantNormMatcher;
 
 use crate::process::string_pool::get_string_from_pool;
 use crate::process::transform::simd::skip_ascii_simd;
@@ -147,7 +147,7 @@ fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
     }
 }
 
-fn trim_pinyin_packed(value: u32, strings: &str) -> u32 {
+fn trim_romanize_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
         return 0;
     }

@@ -15,11 +15,11 @@ def test_text_process():
 
 
 def test_reduce_text_process():
-    res1 = reduce_text_process(ProcessType.FANJIAN | ProcessType.PINYIN, "测试")
+    res1 = reduce_text_process(ProcessType.VARIANT_NORM | ProcessType.ROMANIZE, "测试")
     assert isinstance(res1, list)
     assert len(res1) > 0
 
-    res2 = reduce_text_process(ProcessType.PINYIN_CHAR, "测试")
+    res2 = reduce_text_process(ProcessType.ROMANIZE_CHAR, "测试")
     assert isinstance(res2, list)
     assert len(res2) > 0
 

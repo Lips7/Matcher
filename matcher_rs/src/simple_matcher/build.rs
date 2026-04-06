@@ -171,7 +171,7 @@ impl SimpleMatcher {
     /// must NOT themselves be Delete-transformed before indexing — they are stored verbatim
     /// and matched against the already-deleted text variants. The sub-patterns are then
     /// emitted through [`reduce_text_process_emit`] which applies only the non-Delete
-    /// portion of the transformation (Fanjian, Normalize, PinYin, etc.).
+    /// portion of the transformation (VariantNorm, Normalize, Romanize, etc.).
     ///
     /// # Deduplication
     ///
@@ -374,18 +374,22 @@ mod tests {
 
     #[test]
     fn test_pt_index_table_none_always_zero() {
-        let keys = vec![ProcessType::Fanjian, ProcessType::Delete];
+        let keys = vec![ProcessType::VariantNorm, ProcessType::Delete];
         let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
     }
 
     #[test]
     fn test_pt_index_table_sequential() {
-        let keys = vec![ProcessType::None, ProcessType::Fanjian, ProcessType::Delete];
+        let keys = vec![
+            ProcessType::None,
+            ProcessType::VariantNorm,
+            ProcessType::Delete,
+        ];
         let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
-        // Fanjian and Delete should get indices 1 and 2 (order may vary)
-        let fj = table[ProcessType::Fanjian.bits() as usize];
+        // VariantNorm and Delete should get indices 1 and 2 (order may vary)
+        let fj = table[ProcessType::VariantNorm.bits() as usize];
         let del = table[ProcessType::Delete.bits() as usize];
         assert!(fj == 1 || fj == 2);
         assert!(del == 1 || del == 2);
@@ -394,7 +398,7 @@ mod tests {
         for (i, &val) in table.iter().enumerate() {
             let pt_bits = i as u8;
             if pt_bits != ProcessType::None.bits()
-                && pt_bits != ProcessType::Fanjian.bits()
+                && pt_bits != ProcessType::VariantNorm.bits()
                 && pt_bits != ProcessType::Delete.bits()
             {
                 assert_eq!(val, u8::MAX);
@@ -404,12 +408,12 @@ mod tests {
 
     #[test]
     fn test_pt_index_table_dedup() {
-        let keys = vec![ProcessType::Fanjian, ProcessType::Fanjian];
+        let keys = vec![ProcessType::VariantNorm, ProcessType::VariantNorm];
         let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
-        // None=0, Fanjian=1, no index 2 allocated
-        assert_eq!(table[ProcessType::Fanjian.bits() as usize], 1);
+        // None=0, VariantNorm=1, no index 2 allocated
+        assert_eq!(table[ProcessType::VariantNorm.bits() as usize], 1);
         let count = table.iter().filter(|&&v| v != u8::MAX).count();
-        assert_eq!(count, 2); // None + Fanjian
+        assert_eq!(count, 2); // None + VariantNorm
     }
 
     // --- parse_rules tests ---
