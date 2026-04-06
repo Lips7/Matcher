@@ -7,7 +7,8 @@
 //!    sequential index (0..N) to each distinct [`ProcessType`] present in the input.
 //!
 //! 2. **Rule parsing** ([`SimpleMatcher::parse_rules`]) — splits each rule string on
-//!    `&`/`~` operators, counts repeated sub-patterns, determines bitmask-vs-matrix mode,
+//!    `&`/`~` operators, then splits each segment on `|` to extract OR alternatives,
+//!    counts repeated sub-patterns, determines bitmask-vs-matrix mode,
 //!    emits transformed sub-patterns via [`reduce_text_process_emit`], and deduplicates
 //!    them into a global pattern table with attached [`PatternEntry`] metadata.
 //!
@@ -161,8 +162,15 @@ impl SimpleMatcher {
 
     /// Parses the raw rule table into deduplicated emitted patterns and rule metadata.
     ///
-    /// This stage handles logical operators (`&`/`~`), repeated sub-pattern counts, and
-    /// the delete-adjusted emit behavior described in the design docs.
+    /// This stage handles logical operators (`&`/`~`/`|`), repeated sub-pattern counts,
+    /// and the delete-adjusted emit behavior described in the design docs.
+    ///
+    /// # OR alternatives
+    ///
+    /// Each segment (delimited by `&`/`~`) may contain `|`-separated alternatives.
+    /// All alternatives within a segment share the same offset and kind — any single
+    /// alternative matching satisfies that segment. `|` binds tighter than `&`/`~`,
+    /// so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f).
     ///
     /// # Delete-adjusted indexing
     ///
@@ -316,28 +324,37 @@ impl SimpleMatcher {
                         PatternKind::Not
                     };
 
-                    for ac_word in reduce_text_process_emit(word_process_type, split_word) {
-                        let pt_index = pt_index_table[process_type.bits() as usize];
-                        let Some(&dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
-                            pattern_id_map.insert(ac_word.clone(), next_pattern_id);
-                            dedup_entries.push(vec![PatternEntry {
+                    // Split on '|' for OR alternatives within this segment.
+                    // Each alternative becomes a separate AC pattern mapping to the
+                    // same segment offset — any single alternative matching satisfies
+                    // the segment.
+                    for alternative in split_word.split('|') {
+                        if alternative.is_empty() {
+                            continue;
+                        }
+                        for ac_word in reduce_text_process_emit(word_process_type, alternative) {
+                            let pt_index = pt_index_table[process_type.bits() as usize];
+                            let Some(&dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
+                                pattern_id_map.insert(ac_word.clone(), next_pattern_id);
+                                dedup_entries.push(vec![PatternEntry {
+                                    rule_idx: rule_idx as u32,
+                                    offset: offset as u8,
+                                    pt_index,
+                                    kind,
+                                    shape,
+                                }]);
+                                dedup_patterns.push(ac_word);
+                                next_pattern_id += 1;
+                                continue;
+                            };
+                            dedup_entries[dedup_id].push(PatternEntry {
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u8,
                                 pt_index,
                                 kind,
                                 shape,
-                            }]);
-                            dedup_patterns.push(ac_word);
-                            next_pattern_id += 1;
-                            continue;
-                        };
-                        dedup_entries[dedup_id].push(PatternEntry {
-                            rule_idx: rule_idx as u32,
-                            offset: offset as u8,
-                            pt_index,
-                            kind,
-                            shape,
-                        });
+                            });
+                        }
                     }
                 }
             }
@@ -469,6 +486,44 @@ mod tests {
             .count();
         assert_eq!(and_count, 1);
         assert_eq!(not_count, 1);
+    }
+
+    #[test]
+    fn test_parse_rules_or_alternatives() {
+        let table = single_rule_table(ProcessType::None, 1, "a|b");
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        // "a|b" should produce 2 dedup patterns ("a" and "b")
+        assert_eq!(parsed.dedup_patterns.len(), 2);
+        assert!(parsed.dedup_patterns.iter().any(|p| p.as_ref() == "a"));
+        assert!(parsed.dedup_patterns.iter().any(|p| p.as_ref() == "b"));
+        // Both map to the same rule with Simple kind
+        for bucket in &parsed.dedup_entries {
+            assert_eq!(bucket.len(), 1);
+            assert_eq!(bucket[0].rule_idx, 0);
+            assert_eq!(bucket[0].offset, 0);
+            assert_eq!(bucket[0].kind, PatternKind::Simple);
+        }
+        assert_eq!(parsed.rules.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_rules_or_with_and() {
+        let table = single_rule_table(ProcessType::None, 1, "a|b&c");
+        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+
+        // 3 dedup patterns: "a", "b", "c"
+        assert_eq!(parsed.dedup_patterns.len(), 3);
+        // "a" and "b" share offset 0; "c" has offset 1 (or vice versa depending on HashMap order)
+        let all_entries: Vec<_> = parsed
+            .dedup_entries
+            .iter()
+            .flat_map(|bucket| bucket.iter())
+            .collect();
+        assert!(all_entries.iter().all(|e| e.kind == PatternKind::And));
+        assert_eq!(parsed.rules.len(), 1);
     }
 
     #[test]

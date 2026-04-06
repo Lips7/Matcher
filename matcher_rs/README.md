@@ -1,6 +1,6 @@
 # Matcher
 
-A high-performance Rust library for multi-pattern matching with logical operators (`&`/`~`) and configurable text normalization pipelines. Designed for content moderation, keyword filtering, and any scenario where you need to match thousands of rules against text with precision control over recall.
+A high-performance Rust library for multi-pattern matching with logical operators (`&`/`~`/`|`) and configurable text normalization pipelines. Designed for content moderation, keyword filtering, and any scenario where you need to match thousands of rules against text with precision control over recall.
 
 For internal architecture details, see the [Design Document](../DESIGN.md).
 
@@ -56,7 +56,10 @@ Including `None` in a composite type keeps the raw-text path alongside transform
 | Operator | Meaning | Example |
 |----------|---------|---------|
 | `&` | All sub-patterns must appear (any order) | `"apple&pie"` fires when both appear |
+| `\|` | Any alternative matches the segment | `"color\|colour"` fires when either appears |
 | `~` | Following sub-pattern must be absent | `"banana~peel"` fires when banana appears without peel |
+
+`|` binds tighter than `&`/`~`: `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f).
 
 Repeated segments count: `"无&法&无&天"` requires two matches of `"无"`.
 

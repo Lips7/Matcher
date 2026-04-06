@@ -2,8 +2,9 @@
 //!
 //! This module contains the types that bind deduplicated scan-engine patterns back to the
 //! logical rules they came from. During construction ([`super::build`]), each user-supplied
-//! rule string is split on `&`/`~` operators into sub-patterns. Those sub-patterns are
-//! deduplicated across all rules, and each unique string receives a single automaton entry.
+//! rule string is split on `&`/`~` operators into segments, then each segment is split on
+//! `|` into OR alternatives. Those sub-patterns are deduplicated across all rules, and each
+//! unique string receives a single automaton entry.
 //! The [`PatternEntry`] records how every automaton hit maps back to a specific rule and
 //! segment offset.
 //!
@@ -26,7 +27,8 @@ use super::state::{ScanContext, ScanState, init_matrix};
 /// pipeline to apply before matching. The inner key is a caller-chosen rule id
 /// (`word_id`) that will be returned in [`SimpleResult::word_id`](super::SimpleResult::word_id)
 /// on a match. The inner value is the pattern string, which may contain `&`
-/// (AND) and `~` (NOT) operators to combine sub-patterns.
+/// (AND), `~` (NOT), and `|` (OR) operators to combine sub-patterns.
+/// `|` binds tighter than `&`/`~`: `"a|b&c"` means (a OR b) AND c.
 ///
 /// This is the borrowed-string variant — all pattern strings must outlive the
 /// table reference passed to [`SimpleMatcher::new`](super::SimpleMatcher::new).
@@ -633,15 +635,22 @@ impl PatternIndex {
         self.ranges.is_empty()
     }
 
-    /// Returns whether every entry across all patterns is a [`PatternKind::Simple`] segment.
+    /// Returns whether every entry across all patterns is a [`PatternKind::Simple`] segment
+    /// and every pattern maps to exactly one rule.
     ///
     /// When true, the matcher can use [`AllSimple`](super::SearchMode::AllSimple)
     /// which skips the full state machine and processes every hit as a completed rule.
+    ///
+    /// The single-entry requirement exists because the AllSimple fast path extracts
+    /// `rule_idx` directly from the raw scan value via [`DIRECT_RULE_MASK`]. Patterns
+    /// shared across multiple rules (e.g., via OR alternatives `"cat|dog"` + `"dog|bird"`)
+    /// produce multi-entry buckets that require the General dispatch path.
     #[inline(always)]
     pub(super) fn all_simple(&self) -> bool {
         self.entries
             .iter()
             .all(|entry| entry.kind == PatternKind::Simple)
+            && self.ranges.iter().all(|&(_, len)| len == 1)
     }
 
     /// Builds the raw scan-value mapping used by the automata.

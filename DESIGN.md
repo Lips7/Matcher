@@ -51,7 +51,7 @@ We will trace both construction and query evaluation using these rules.
 
 **R1: `"hello&world"` under `ProcessType::None`**
 
-Split on `&`/`~` → two AND segments: `["hello", "world"]`. No NOT segments. `and_count = 2`, `use_matrix = false` (both counts are 1, total ≤ 64), `has_not = false`.
+Split on `&`/`~` → two AND segments: `["hello", "world"]`. Each segment is then split on `|` for OR alternatives (neither has any here). No NOT segments. `and_count = 2`, `use_matrix = false` (both counts are 1, total ≤ 64), `has_not = false`.
 
 Each sub-pattern is emitted via `reduce_text_process_emit(process_type - Delete, pattern)`. Since `None - Delete = None`, both `"hello"` and `"world"` emit themselves unchanged.
 
@@ -64,6 +64,8 @@ Single AND segment: `["你好"]`. `and_count = 1`, simple rule. Emitted under `V
 Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delete = Romanize`. Since `"zhongguo"` is pure ASCII and Romanize only transforms CJK, it emits unchanged.
 
 **Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Double-deleting would break matches.
+
+**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (Simple, And, or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the AllSimple fast path.
 
 After deduplication, we have a flat pattern table:
 

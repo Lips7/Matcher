@@ -35,9 +35,11 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
 - **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
-  - Example: `hello&world` matches `hello world` and `world,hello`
-  - Example: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
-  - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
+  - `&` (AND): `hello&world` matches `hello world` and `world,hello`
+  - `|` (OR): `color|colour` matches `color` and `colour`
+  - `~` (NOT): `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
+  - Repeated segments: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
+  - Combined: `color|colour&bright~dark` matches "bright color" but not "dark colour"
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
 ## Quick Start

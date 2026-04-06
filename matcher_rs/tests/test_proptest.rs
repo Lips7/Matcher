@@ -261,7 +261,7 @@ proptest! {
     #[test]
     fn prop_ascii_parent_child_transforms_match_materialized_output(
         input in prop::collection::vec(
-            (32u8..=125u8).prop_filter("exclude matcher operators", |b| *b != b'&' && *b != b'~'),
+            (32u8..=125u8).prop_filter("exclude matcher operators", |b| *b != b'&' && *b != b'~' && *b != b'|'),
             1..80
         ).prop_map(|bytes| String::from_utf8(bytes).expect("ASCII strategy should stay valid UTF-8"))
     ) {

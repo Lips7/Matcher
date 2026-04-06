@@ -205,6 +205,204 @@ fn test_large_overlapping_and_not_set() {
 }
 
 // ---------------------------------------------------------------------------
+// OR semantics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_or_basic() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "color|colour")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("color"), "should match first alternative");
+    assert!(
+        matcher.is_match("colour"),
+        "should match second alternative"
+    );
+    assert!(
+        !matcher.is_match("colr"),
+        "should not match non-alternative"
+    );
+}
+
+#[test]
+fn test_or_multiple_alternatives() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|b|c|d")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("a"));
+    assert!(matcher.is_match("b"));
+    assert!(matcher.is_match("c"));
+    assert!(matcher.is_match("d"));
+    assert!(!matcher.is_match("e"));
+}
+
+#[test]
+fn test_or_with_and() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "color|colour&bright")
+        .build()
+        .unwrap();
+
+    assert!(
+        matcher.is_match("bright color"),
+        "(color OR colour) AND bright"
+    );
+    assert!(
+        matcher.is_match("bright colour"),
+        "(color OR colour) AND bright"
+    );
+    assert!(
+        !matcher.is_match("bright"),
+        "needs at least one alternative"
+    );
+    assert!(!matcher.is_match("color"), "needs bright too");
+}
+
+#[test]
+fn test_or_with_not() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello~bad|evil")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("hello"), "no veto tokens present");
+    assert!(
+        !matcher.is_match("hello bad"),
+        "first OR alternative vetoes"
+    );
+    assert!(
+        !matcher.is_match("hello evil"),
+        "second OR alternative vetoes"
+    );
+    assert!(
+        !matcher.is_match("hello bad evil"),
+        "both OR alternatives veto"
+    );
+}
+
+#[test]
+fn test_or_combined_and_not() {
+    // (a OR b) AND (c OR d) AND NOT (e OR f)
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|b&c|d~e|f")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("a c"), "(a) AND (c)");
+    assert!(matcher.is_match("b d"), "(b) AND (d)");
+    assert!(matcher.is_match("a d"), "(a) AND (d)");
+    assert!(matcher.is_match("b c"), "(b) AND (c)");
+    assert!(!matcher.is_match("a"), "missing second AND segment");
+    assert!(!matcher.is_match("a c e"), "NOT e vetoes");
+    assert!(!matcher.is_match("b d f"), "NOT f vetoes");
+}
+
+#[test]
+fn test_or_result_returns_original_word() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 42, "color|colour")
+        .build()
+        .unwrap();
+
+    let results = matcher.process("colour is nice");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 42);
+    // The original rule string (with |) is preserved
+    assert_eq!(results[0].word.as_ref(), "color|colour");
+}
+
+#[test]
+fn test_or_redundant_alternative() {
+    // "a|a" is redundant but valid — same as "a"
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|a")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("a"));
+    assert!(!matcher.is_match("b"));
+    let results = matcher.process("a");
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn test_or_with_process_type() {
+    let matcher = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::VariantNorm,
+        HashMap::from([(1, "测试|世界")]),
+    )]))
+    .unwrap();
+
+    assert!(matcher.is_match("测试"));
+    assert!(matcher.is_match("世界"));
+    // VariantNorm: Traditional 測試 normalizes to Simplified 测试
+    assert!(matcher.is_match("測試"));
+}
+
+// ---------------------------------------------------------------------------
+// OR edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_or_empty_alternatives_skipped() {
+    // Leading/trailing/double pipes produce empty alternatives that are skipped.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|")
+        .add_word(ProcessType::None, 2, "|b")
+        .add_word(ProcessType::None, 3, "c||d")
+        .build()
+        .unwrap();
+
+    // "a|" -> effectively "a"
+    assert!(matcher.is_match("a"));
+    // "|b" -> effectively "b"
+    assert!(matcher.is_match("b"));
+    // "c||d" -> effectively "c|d"
+    assert!(matcher.is_match("c"));
+    assert!(matcher.is_match("d"));
+}
+
+#[test]
+fn test_or_pipe_only_pattern() {
+    // "|" produces no non-empty alternatives — rule should not match anything
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "|")
+        .add_word(ProcessType::None, 2, "||")
+        .add_word(ProcessType::None, 3, "hello")
+        .build()
+        .unwrap();
+
+    // Only "hello" rule should work
+    assert!(matcher.is_match("hello"));
+    assert!(!matcher.is_match("anything else"));
+}
+
+#[test]
+fn test_or_across_rules_dedup() {
+    // Two rules sharing an alternative through dedup
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "cat|dog")
+        .add_word(ProcessType::None, 2, "dog|bird")
+        .build()
+        .unwrap();
+
+    let results = matcher.process("dog");
+    assert_eq!(results.len(), 2, "dog matches both rules");
+
+    let results = matcher.process("cat");
+    assert_eq!(results.len(), 1, "cat matches only rule 1");
+    assert_eq!(results[0].word_id, 1);
+
+    let results = matcher.process("bird");
+    assert_eq!(results.len(), 1, "bird matches only rule 2");
+    assert_eq!(results[0].word_id, 2);
+}
+
+// ---------------------------------------------------------------------------
 // Edge-case patterns
 // ---------------------------------------------------------------------------
 
