@@ -1,6 +1,52 @@
 # Changelog
 
 
+## 0.14.0 - 2026-04-06
+
+### Features
+- Add word boundary matching (`\b`) for whole-word precision in pattern rules.
+- Add OR operator (`|`) for alternative patterns within rules.
+- Add `EmojiNorm` ProcessType for emoji-to-English-word normalization via CLDR short names.
+- Generalize CJK transforms — rename Fanjian→VariantNorm, PinYin→Romanize with expanded JP/KR data.
+
+### Performance
+- Replace `is_ascii` + Harry SIMD dispatch with density-based engine selection (`count_non_ascii_simd` NEON/AVX2/portable). Harry matcher removed entirely.
+- 3-way fused scan dispatch — DFA materialize at low density, streaming charwise at high density, with 0.67 non-ASCII threshold.
+- Always build DFA + DAAC bytewise together; raise DFA pattern threshold to 25K.
+- Replace Normalize AC DFA with page-table + fused streaming scan.
+- Implement fused delete-scan path to stream non-deleted bytes directly into AC.
+- Eliminate `Vec` pointer re-resolution in scan hot path via `ScanState` split-borrow.
+- Optimize AC scan closure by pre-resolving `&[RuleHot]` slice and removing per-hit indirection.
+- Enhance bytewise matcher with prefilter acceleration.
+- Replace PrefixMap binary search with AHashMap for O(1) verification.
+- Specialize `AllSimple` process loop for single-transform-type matchers.
+- Skip `is_ascii()` dispatch when all patterns are ASCII.
+
+### Refactor
+- Split `simple_matcher/rule.rs` into `encoding.rs`, `pattern.rs`, and `rule.rs` modules.
+- Split `replace.rs` into `variant_norm.rs`, `romanize.rs`, `normalize.rs` sub-modules.
+- Add `Fanjian` streaming byte iterator and integrate into transform pipeline.
+- Replace `#[inline(always)]` with `#[inline]` for improved inlining heuristics.
+- Remove `runtime_build` feature.
+- Merge duplicate leaf-node scan paths in `walk_and_scan`.
+- Remove dead abstractions and fix stale doc links.
+
+### Bug Fixes
+- Resolve broken rustdoc links after module split.
+- Propagate transform output density for correct engine dispatch.
+
+### Tooling
+- Add interactive benchmark visualization with Plotly (`just bench-viz`).
+- Add engine dispatch characterization example and visualization.
+- Add Instruments profiling with `atos` inline resolution and source attribution.
+- Add pre-commit configuration with hooks for all languages.
+- Simplify bench/profiling tooling and add missing operator coverage.
+
+### Documentation
+- Enhance documentation with examples and performance notes across modules.
+- Document `ScanState` split-borrow optimization and `RuleHot` compaction in DESIGN.md.
+- Streamline CLAUDE.md with updated architecture and commands.
+
 ## 0.13.0 - 2026-04-03
 
 ### Features
