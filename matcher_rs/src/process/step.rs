@@ -1,16 +1,11 @@
-//! Compiled transformation steps and their lazy-initialization registry.
+//! Compiled single-step transforms for the text-processing pipeline.
 //!
-//! A [`TransformStep`] wraps one of the low-level transform engines (Fanjian, Delete,
-//! Normalize, PinYin, PinYinChar) and provides a uniform [`apply`](TransformStep::apply)
-//! interface. [`StepOutput`] carries the result: either `changed = None` (the text was
-//! unaffected) or `changed = Some(new_string)` together with an updated `is_ascii` flag.
+//! Each [`TransformStep`] variant wraps a low-level matcher (Fanjian, Delete,
+//! Normalize, PinYin) and provides a uniform [`apply`](TransformStep::apply)
+//! interface. Returns `Option<String>` — `None` when the input is unaffected.
 //!
 //! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
-//! [`ProcessType`]. On first access the corresponding [`TransformStep`] is compiled
-//! (from build-time binary artifacts in [`super::transform::constants`]) and cached for
-//! the lifetime of the process. All [`crate::SimpleMatcher`] instances
-//! share the same compiled steps, so the heavy initialization cost (Aho-Corasick
-//! compilation, page-table construction) is paid at most once per step per process.
+//! [`ProcessType`]. Each slot is lazily initialized on first access.
 
 use std::sync::OnceLock;
 
@@ -18,41 +13,6 @@ use crate::process::process_type::ProcessType;
 use crate::process::transform::constants::*;
 use crate::process::transform::delete::DeleteMatcher;
 use crate::process::transform::replace::{FanjianMatcher, NormalizeMatcher, PinyinMatcher};
-
-/// Result of applying one compiled pipeline step to a text variant.
-///
-/// `changed` is [`None`] when the step is a no-op for the provided input (the text was
-/// not modified at all). `is_ascii` always describes the *post-step* text, regardless of
-/// whether the text changed. Callers use this to decide whether to scan with the
-/// bytewise or charwise Aho-Corasick automaton.
-pub(crate) struct StepOutput {
-    /// The transformed string, or [`None`] if the step did not modify the input.
-    pub(crate) changed: Option<String>,
-    /// Whether the post-step text consists entirely of ASCII bytes.
-    pub(crate) is_ascii: bool,
-}
-
-/// Constructors for [`StepOutput`].
-impl StepOutput {
-    /// Creates an unchanged result that preserves the caller-provided ASCII flag.
-    ///
-    /// Used when a step determines that no characters in the input are affected by its
-    /// transformation table.
-    pub(crate) fn unchanged(is_ascii: bool) -> Self {
-        Self {
-            changed: None,
-            is_ascii,
-        }
-    }
-
-    /// Creates a changed result with the produced `String` and its ASCII status.
-    pub(crate) fn changed(changed: String, is_ascii: bool) -> Self {
-        Self {
-            changed: Some(changed),
-            is_ascii,
-        }
-    }
-}
 
 /// Compiled single-bit transformation step.
 ///
@@ -72,17 +32,12 @@ pub(crate) enum TransformStep {
     Normalize(NormalizeMatcher),
     /// Pinyin conversion with inter-syllable spaces preserved.
     PinYin(PinyinMatcher),
-    /// Pinyin conversion with inter-syllable spaces stripped.
+    /// Pinyin conversion that keeps only the initial of each syllable.
     PinYinChar(PinyinMatcher),
 }
 
-/// Execution policy for one cached transform step.
 impl TransformStep {
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
-    ///
-    /// Used by `walk_and_scan` to detect the no-op case for leaf nodes: when `true`,
-    /// the leaf can reuse its parent's text and variant index instead of streaming
-    /// a new byte iterator through the AC engine.
     ///
     /// - **Fanjian / PinYin / PinYinChar**: no-op — all keys are non-ASCII codepoints.
     /// - **Delete / Normalize**: may change ASCII input (punctuation deletion, casefold).
@@ -94,66 +49,40 @@ impl TransformStep {
         )
     }
 
-    /// Applies this step to `text`, returning a [`StepOutput`] indicating what changed.
+    /// Conservative estimate of the non-ASCII byte density after this transform.
     ///
-    /// `parent_is_ascii` is the ASCII flag inherited from the parent text variant.
-    ///
-    /// ```ignore
-    /// let step = get_transform_step(ProcessType::Delete);
-    /// let output = step.apply("hello, world!", true);
-    /// match output {
-    ///     StepOutput::Unchanged { .. } => { /* nothing to delete */ }
-    ///     StepOutput::Changed { text, is_ascii } => { /* text with deletions */ }
-    /// }
-    /// ```
-    ///
-    /// When `parent_is_ascii` is `true`, ASCII-in → ASCII-out is guaranteed for all
-    /// transforms (proven by process map analysis), so the output `is_ascii` flag is
-    /// forced to `true` without re-scanning the result.
-    ///
-    /// - **Fanjian / PinYin / PinYinChar on ASCII**: always unchanged (no-op).
-    /// - **Delete / Normalize on ASCII**: may change text but output stays ASCII.
-    /// - **Fanjian on non-ASCII**: CJK→CJK, `is_ascii = false`.
-    /// - **Delete / Normalize / PinYin / PinYinChar on non-ASCII**: `is_ascii` determined
-    ///   by the underlying engine via `result.is_ascii()`.
+    /// Returns `parent_density` — a safe bound since no transform increases
+    /// non-ASCII density. Used by `walk_and_scan` to propagate engine-dispatch
+    /// density through the transform tree without re-scanning each variant.
     #[inline(always)]
-    pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> StepOutput {
+    pub(crate) fn output_density(&self, parent_density: f32) -> f32 {
+        parent_density
+    }
+
+    /// Applies this step to `text`. Returns `Some(new_string)` if the text was
+    /// modified, `None` if the step is a no-op for this input.
+    ///
+    /// `parent_is_ascii` enables the ASCII fast path: Fanjian/PinYin/PinYinChar
+    /// are guaranteed no-ops on ASCII input, and Delete/Normalize produce ASCII
+    /// output from ASCII input (proven by process map analysis).
+    #[inline(always)]
+    pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> Option<String> {
         if parent_is_ascii {
-            // ASCII-in → ASCII-out for all transforms; Fanjian/PinYin/PinYinChar are no-ops.
             return match self {
-                Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => {
-                    StepOutput::unchanged(true)
-                }
-                Self::Delete(matcher) => matcher.delete(text).map_or_else(
-                    || StepOutput::unchanged(true),
-                    |(changed, _)| StepOutput::changed(changed, true),
-                ),
-                Self::Normalize(matcher) => matcher.replace(text).map_or_else(
-                    || StepOutput::unchanged(true),
-                    |(changed, _)| StepOutput::changed(changed, true),
-                ),
+                Self::None | Self::Fanjian(_) | Self::PinYin(_) | Self::PinYinChar(_) => None,
+                Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
+                Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
             };
         }
 
-        // Non-ASCII parent: use engine-reported is_ascii.
         match self {
-            Self::None => StepOutput::unchanged(false),
-            Self::Fanjian(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(false),
-                |changed| StepOutput::changed(changed, false), // CJK→CJK
-            ),
-            Self::Delete(matcher) => matcher.delete(text).map_or_else(
-                || StepOutput::unchanged(false),
-                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
-            ),
-            Self::Normalize(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(false),
-                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
-            ),
-            Self::PinYin(matcher) | Self::PinYinChar(matcher) => matcher.replace(text).map_or_else(
-                || StepOutput::unchanged(false),
-                |(changed, is_ascii)| StepOutput::changed(changed, is_ascii),
-            ),
+            Self::None => None,
+            Self::Fanjian(matcher) => matcher.replace(text),
+            Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
+            Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
+            Self::PinYin(matcher) | Self::PinYinChar(matcher) => {
+                matcher.replace(text).map(|(s, _)| s)
+            }
         }
     }
 }
@@ -162,11 +91,6 @@ impl TransformStep {
 // Lazy registry
 // ---------------------------------------------------------------------------
 
-/// Lazily initialized cache keyed by the bit position of a single-bit [`ProcessType`].
-///
-/// The array has 8 slots — one for each possible bit in the `u8` bitflags. Slots are
-/// initialized on first access via [`OnceLock::get_or_init`] and live for the duration
-/// of the process. All [`crate::SimpleMatcher`] instances share these compiled steps.
 static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
     OnceLock::new(),
     OnceLock::new(),
@@ -178,26 +102,6 @@ static TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8] = [
     OnceLock::new(),
 ];
 
-/// Returns the cached compiled step for a single-bit [`ProcessType`].
-///
-/// Uses `process_type_bit.bits().trailing_zeros()` as the index into
-/// [`TRANSFORM_STEP_CACHE`], which maps directly to the bit position of the
-/// single-bit flag (e.g., `ProcessType::Fanjian` = bit 1 → index 1).
-///
-/// If the cache slot has not been initialized yet, `build_transform_step` is
-/// called once via [`OnceLock::get_or_init`] and the result is stored for the
-/// lifetime of the process. Subsequent calls for the same bit return immediately
-/// with an atomic load.
-///
-/// The returned reference is `'static`: it lives as long as the process, so
-/// [`ProcessTypeBitNode`](super::graph::ProcessTypeBitNode) can store it without
-/// lifetime parameters.
-///
-/// # Panics
-///
-/// Debug-asserts that `process_type_bit` has exactly one bit set and that the
-/// resulting index is within the cache bounds. In release mode, passing a
-/// multi-bit or out-of-range value causes an out-of-bounds array access.
 pub(crate) fn get_transform_step(process_type_bit: ProcessType) -> &'static TransformStep {
     debug_assert!(
         process_type_bit.bits().is_power_of_two() || process_type_bit == ProcessType::None,

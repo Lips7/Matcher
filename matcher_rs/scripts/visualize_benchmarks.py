@@ -41,7 +41,6 @@ ENGINE_COLORS = {
     "ac_dfa": SERIES_PALETTE[0],
     "daac_byte": SERIES_PALETTE[1],
     "daac_char": SERIES_PALETTE[2],
-    "harry": SERIES_PALETTE[3],
 }
 
 LAYOUT_DEFAULTS = dict(
@@ -325,7 +324,7 @@ def build_heatmap_fig(groups: list[ChartGroup]) -> go.Figure | None:
     # Check if data looks like engine benchmarks (series are engine names)
     sample_group = scaling_groups[0]
     series_names, sizes, by_series = decompose_scaling(sample_group)
-    known_engines = {"ac_dfa", "daac_byte", "daac_char", "harry"}
+    known_engines = {"ac_dfa", "daac_byte", "daac_char"}
     if not any(s in known_engines for s in series_names):
         return None
 

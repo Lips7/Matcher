@@ -6,7 +6,7 @@
 //! ```
 //!
 //! Env vars (comma-separated lists override defaults):
-//!   ENGINES=ac_dfa,daac_bytewise,daac_charwise,harry
+//!   ENGINES=ac_dfa,daac_bytewise,daac_charwise
 //!   SIZES=10,50,100,500,1000,2000,5000,7000,10000,20000,50000,100000
 //!   PAT_CJK=0,10,20,30,40,50,60,70,80,90,100
 //!   TEXT_CJK=0,10,20,30,40,50,60,70,80,90,100
@@ -23,9 +23,6 @@ use daachorse::{
     CharwiseDoubleArrayAhoCorasickBuilder, DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
     MatchKind as DaacMatchKind, charwise::CharwiseDoubleArrayAhoCorasick,
 };
-#[cfg(feature = "harry")]
-use matcher_rs::HarryMatcher;
-
 const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
 const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
 
@@ -36,7 +33,6 @@ enum EngineKind {
     AcDfa,
     DaacBytewise,
     DaacCharwise,
-    Harry,
 }
 
 impl EngineKind {
@@ -45,7 +41,6 @@ impl EngineKind {
             Self::AcDfa => "ac_dfa",
             Self::DaacBytewise => "daac_bytewise",
             Self::DaacCharwise => "daac_charwise",
-            Self::Harry => "harry",
         }
     }
 
@@ -54,7 +49,6 @@ impl EngineKind {
             "ac_dfa" => Some(Self::AcDfa),
             "daac_bytewise" => Some(Self::DaacBytewise),
             "daac_charwise" => Some(Self::DaacCharwise),
-            "harry" => Some(Self::Harry),
             _ => None,
         }
     }
@@ -64,8 +58,6 @@ enum BuiltEngine {
     AcDfa(AhoCorasick),
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
     DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
-    #[cfg(feature = "harry")]
-    Harry(Box<HarryMatcher>),
 }
 
 fn build_engine(kind: EngineKind, patterns: &[String]) -> Option<BuiltEngine> {
@@ -89,17 +81,6 @@ fn build_engine(kind: EngineKind, patterns: &[String]) -> Option<BuiltEngine> {
                 .build(&strs)
                 .ok()?,
         )),
-        #[cfg(feature = "harry")]
-        EngineKind::Harry => {
-            let patvals: Vec<(&str, u32)> = patterns
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (p.as_str(), i as u32))
-                .collect();
-            Some(BuiltEngine::Harry(Box::new(HarryMatcher::build(&patvals)?)))
-        }
-        #[cfg(not(feature = "harry"))]
-        EngineKind::Harry => None,
     }
 }
 
@@ -109,15 +90,6 @@ fn count_overlapping(engine: &BuiltEngine, text: &str) -> usize {
         BuiltEngine::AcDfa(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacBytewise(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacCharwise(ac) => ac.find_overlapping_iter(text).count(),
-        #[cfg(feature = "harry")]
-        BuiltEngine::Harry(m) => {
-            let mut c = 0usize;
-            m.for_each_match_value(text, |_| {
-                c += 1;
-                false
-            });
-            c
-        }
     }
 }
 
@@ -127,8 +99,6 @@ fn engine_is_match(engine: &BuiltEngine, text: &str) -> bool {
         BuiltEngine::AcDfa(ac) => ac.is_match(text),
         BuiltEngine::DaacBytewise(ac) => ac.find_iter(text).next().is_some(),
         BuiltEngine::DaacCharwise(ac) => ac.find_iter(text).next().is_some(),
-        #[cfg(feature = "harry")]
-        BuiltEngine::Harry(m) => m.is_match(text),
     }
 }
 
@@ -232,7 +202,6 @@ fn parse_engine_env() -> Vec<EngineKind> {
         EngineKind::AcDfa,
         EngineKind::DaacBytewise,
         EngineKind::DaacCharwise,
-        EngineKind::Harry,
     ];
     match std::env::var("ENGINES") {
         Ok(val) => val
@@ -320,12 +289,6 @@ fn main() {
         for mode in &modes {
             for &n in &sizes {
                 for &pat_cjk in &pat_cjks {
-                    // Skip invalid Harry configs
-                    if engine == EngineKind::Harry && (pat_cjk > 0 || n < 64) {
-                        done += text_cjks.len();
-                        continue;
-                    }
-
                     let patterns = patterns_with_cjk_pct(n, pat_cjk);
 
                     let built = match build_engine(engine, &patterns) {

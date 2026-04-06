@@ -16,8 +16,8 @@
 //!
 //! # Internal structure
 //!
-//! - [`step`] — [`TransformStep`](step::TransformStep) enum, [`StepOutput`](step::StepOutput),
-//!   and the global `OnceLock` cache that lazily compiles each single-bit step once.
+//! - [`step`] — [`TransformStep`](step::TransformStep) enum and the global `OnceLock` cache
+//!   that lazily compiles each single-bit step once.
 //! - [`graph`] — Trie construction (reuses shared prefixes across process types).
 //! - [`string_pool`] — Thread-local string pool.
 //! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`], etc.).

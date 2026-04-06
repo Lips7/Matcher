@@ -149,7 +149,6 @@ profile *args:
 
 coverage:
     cargo tarpaulin -p matcher_rs --fail-under 75 --out xml \
-        --exclude-files 'matcher_rs/src/simple_matcher/harry/avx512.rs' \
         --exclude-files 'matcher_rs/benches/*' \
         --exclude-files 'matcher_rs/examples/*' \
         --exclude-files 'matcher_py/*' \

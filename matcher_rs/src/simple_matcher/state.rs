@@ -176,11 +176,13 @@ pub(super) struct ScanContext {
     /// `true` for `is_match` calls; `false` for `process` calls that must collect all
     /// matching rules.
     pub(super) exit_early: bool,
-    /// Whether the current variant is pure ASCII.
+    /// Non-ASCII byte density of the current variant (0.0 = pure ASCII, 1.0 = all non-ASCII).
     ///
     /// Passed through to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
-    /// to select the bytewise or charwise automaton.
-    pub(super) is_ascii: bool,
+    /// to select the bytewise or charwise automaton. Computed once at the root
+    /// via a 512-byte sample, then propagated through the transform tree using
+    /// [`TransformStep::output_density`](crate::process::step::TransformStep::output_density).
+    pub(super) non_ascii_density: f32,
 }
 
 /// Hot-path methods on the split-borrow scan state.
@@ -376,7 +378,7 @@ mod tests {
             process_type_mask: u64::MAX,
             num_variants,
             exit_early,
-            is_ascii: true,
+            non_ascii_density: 0.0,
         }
     }
 

@@ -87,17 +87,16 @@ For more examples, see [test_simple_matcher.rs](./tests/test_simple_matcher.rs).
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `perf` | on | Meta-feature enabling `dfa`, `simd_runtime_dispatch`, and `harry` |
-| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 ASCII patterns). Higher throughput, ~17× more memory. |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and Harry backend |
-| `harry` | via `perf` | Column-vector SIMD scan backend, auto-selected for `is_match` when ≥64 patterns |
+| `perf` | on | Meta-feature enabling `dfa` and `simd_runtime_dispatch` |
+| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 patterns). Higher throughput, ~17× more memory. |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and density counting |
 
 ### Feature Comparison
 
 | Feature Set | Engine | Speed | Memory | Best For |
 |:---|:---|:---|:---|:---|
-| **Default (`perf`)** | DFA + Harry + SIMD transforms | Fastest | Higher | General purpose |
-| `--no-default-features --features dfa` | DFA, no Harry/SIMD transforms | Fast | Higher | When Harry is not needed |
+| **Default (`perf`)** | DFA + SIMD density dispatch | Fastest | Higher | General purpose |
+| `--no-default-features --features dfa` | DFA, no SIMD transforms | Fast | Higher | When SIMD dispatch is not needed |
 | `--no-default-features` | `daachorse`-only, portable transforms | Good | Lower | Lean builds |
 
 ## Benchmarks
@@ -111,7 +110,7 @@ just bench-search                          # Main throughput workflow
 just bench-search --quick                  # Quick directional signal (~2-3 min)
 just bench-build                           # Matcher construction workflow
 just bench-engine-search                   # Raw engine throughput workflow
-just bench-engine-is-match                 # Engine is_match (Harry) workflow
+just bench-engine-is-match                 # Engine is_match workflow
 just bench-all                             # All presets
 ```
 

@@ -23,15 +23,12 @@ use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
 mod engine;
-#[cfg(feature = "harry")]
-mod harry;
 mod rule;
 mod search;
+mod simd;
 mod state;
 
 use engine::ScanPlan;
-#[cfg(feature = "harry")]
-pub use harry::HarryMatcher;
 use rule::RuleSet;
 pub use rule::{SimpleTable, SimpleTableSerde};
 
@@ -311,7 +308,7 @@ impl SimpleMatcher {
 
     /// Returns the estimated heap memory in bytes owned by this matcher.
     ///
-    /// Includes the AC automata, Harry tables, rule metadata, and the process-type
+    /// Includes the AC automata, rule metadata, and the process-type
     /// tree. Does **not** include thread-local scan state or global transform caches
     /// (those are shared infrastructure, not per-matcher).
     #[must_use]

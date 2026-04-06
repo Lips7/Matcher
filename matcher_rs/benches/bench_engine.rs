@@ -16,8 +16,6 @@ use daachorse::{
 };
 use divan::Bencher;
 use divan::counter::BytesCount;
-#[cfg(feature = "harry")]
-use matcher_rs::HarryMatcher;
 use std::collections::HashSet;
 use std::env;
 use std::hint::black_box;
@@ -32,8 +30,6 @@ enum Engine {
     AcDfa,
     DaacBytewise,
     DaacCharwise,
-    #[cfg(feature = "harry")]
-    Harry,
 }
 
 impl std::fmt::Display for Engine {
@@ -42,28 +38,16 @@ impl std::fmt::Display for Engine {
             Engine::AcDfa => write!(f, "ac_dfa"),
             Engine::DaacBytewise => write!(f, "daac_byte"),
             Engine::DaacCharwise => write!(f, "daac_char"),
-            #[cfg(feature = "harry")]
-            Engine::Harry => write!(f, "harry"),
         }
     }
 }
 
-#[cfg(feature = "harry")]
-const ALL_ENGINES: &[Engine] = &[
-    Engine::AcDfa,
-    Engine::DaacBytewise,
-    Engine::DaacCharwise,
-    Engine::Harry,
-];
-#[cfg(not(feature = "harry"))]
 const ALL_ENGINES: &[Engine] = &[Engine::AcDfa, Engine::DaacBytewise, Engine::DaacCharwise];
 
 enum BuiltEngine {
     AcDfa(AhoCorasick),
     DaacBytewise(DoubleArrayAhoCorasick<u32>),
     DaacCharwise(CharwiseDoubleArrayAhoCorasick<u32>),
-    #[cfg(feature = "harry")]
-    Harry(Box<HarryMatcher>),
 }
 
 // ── Pattern preparation ──────────────────────────────────────────────────────
@@ -155,17 +139,6 @@ fn build_engine(engine: Engine, patterns: &[String]) -> BuiltEngine {
                 .build(&strs)
                 .unwrap(),
         ),
-        #[cfg(feature = "harry")]
-        Engine::Harry => {
-            let patvals: Vec<(&str, u32)> = patterns
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (p.as_str(), i as u32))
-                .collect();
-            BuiltEngine::Harry(Box::new(HarryMatcher::build(&patvals).expect(
-                "harry build requires ≥64 patterns with at least one length-≥2 pattern",
-            )))
-        }
     }
 }
 
@@ -175,15 +148,6 @@ fn count_overlapping(engine: &BuiltEngine, text: &str) -> usize {
         BuiltEngine::AcDfa(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacBytewise(ac) => ac.find_overlapping_iter(text).count(),
         BuiltEngine::DaacCharwise(ac) => ac.find_overlapping_iter(text).count(),
-        #[cfg(feature = "harry")]
-        BuiltEngine::Harry(matcher) => {
-            let mut count = 0usize;
-            matcher.for_each_match_value(text, |_| {
-                count += 1;
-                false
-            });
-            count
-        }
     }
 }
 
@@ -193,20 +157,14 @@ fn engine_is_match(engine: &BuiltEngine, text: &str) -> bool {
         BuiltEngine::AcDfa(ac) => ac.is_match(text),
         BuiltEngine::DaacBytewise(ac) => ac.find_iter(text).next().is_some(),
         BuiltEngine::DaacCharwise(ac) => ac.find_iter(text).next().is_some(),
-        #[cfg(feature = "harry")]
-        BuiltEngine::Harry(matcher) => matcher.is_match(text),
     }
 }
-
-// ── Memory report ────────────────────────────────────────────────────────────
 
 fn heap_bytes(engine: &BuiltEngine) -> usize {
     match engine {
         BuiltEngine::AcDfa(ac) => ac.memory_usage(),
         BuiltEngine::DaacBytewise(ac) => ac.heap_bytes(),
         BuiltEngine::DaacCharwise(ac) => ac.heap_bytes(),
-        #[cfg(feature = "harry")]
-        BuiltEngine::Harry(m) => m.heap_bytes(),
     }
 }
 
@@ -216,10 +174,6 @@ fn print_memory_report() {
         for &size in &[500usize, 2_000, 10_000, 25_000, 50_000] {
             let patterns = patterns_with_cjk_pct(size, cjk_pct);
             for &engine in ALL_ENGINES {
-                #[cfg(feature = "harry")]
-                if matches!(engine, Engine::Harry) && (cjk_pct > 0 || size < 64) {
-                    continue;
-                }
                 let built = build_engine(engine, &patterns);
                 println!(
                     "  {engine:<12} cjk={cjk_pct:>3}% n={size:<6} -> {} bytes",
@@ -254,7 +208,6 @@ const TARGET_BYTES: usize = 200_000;
 // - Pure ASCII text (DFA territory)
 // - Crossover zone (~30% CJK)
 // - CJK-dominant (charwise territory)
-// - Pure CJK (Harry territory on is_match)
 // - Mixed patterns (no DFA in production)
 
 #[derive(Clone, Copy)]
@@ -380,23 +333,6 @@ macro_rules! define_dispatch_bench {
                     .bench(|| black_box($measure_fn(&engine, &text)));
             }
 
-            #[cfg(feature = "harry")]
-            #[divan::bench(
-                                                args = DISPATCH_CONFIGS,
-                                                consts = [500usize, 2000, 10000, 25000, 50000],
-                                                max_time = 3,
-                                            )]
-            fn harry<const N: usize>(bencher: Bencher, cfg: &DispatchConfig) {
-                if cfg.pat_cjk_pct > 0 || N < 64 {
-                    return;
-                }
-                let patterns = patterns_with_cjk_pct(N, cfg.pat_cjk_pct);
-                let engine = build_engine(Engine::Harry, &patterns);
-                let text = synthetic_text(cfg.text_cjk_pct, TARGET_BYTES);
-                bencher
-                    .counter(BytesCount::new(text.len()))
-                    .bench(|| black_box($measure_fn(&engine, &text)));
-            }
         }
     };
 }

@@ -39,6 +39,7 @@ use tinyvec::TinyVec;
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
+use super::engine::text_non_ascii_density;
 use super::rule::{
     DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT, DIRECT_RULE_MASK, PatternDispatch,
 };
@@ -48,36 +49,20 @@ use super::{SimpleMatcher, SimpleResult};
 /// Hot-path search helpers layered on top of the compiled scan engines.
 impl SimpleMatcher {
     /// Fast path for matchers that contain only direct simple literal rules.
-    ///
-    /// No state machine, no thread-local state, no transform tree — just a single
-    /// automaton `is_match` call. Used when [`SearchMode::AllSimple`](super::SearchMode::AllSimple)
-    /// is active.
     pub(super) fn is_match_simple(&self, text: &str) -> bool {
         self.scan.is_match(text)
     }
 
     /// Collects matches for an all-simple matcher without building transformed variants.
-    ///
-    /// Every automaton hit is a completed rule, so results are emitted immediately
-    /// via [`RuleSet::push_result_if_new`](super::rule::RuleSet::push_result_if_new).
-    /// Deduplication is handled by the generation stamp in [`ScanState::mark_positive`](super::state::ScanState::mark_positive).
-    ///
-    /// All patterns have `DIRECT_RULE_BIT` encoding
-    /// in all-simple mode, so every hit is resolved inline via the bit-packed value.
-    ///
-    /// # Safety
-    ///
-    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
-    /// See module-level safety documentation.
     pub(super) fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
         let mut ss = state.as_scan_state();
 
-        let is_ascii = self.scan.all_patterns_ascii() || text.is_ascii();
+        let density = text_non_ascii_density(text);
         self.scan
-            .for_each_rule_idx_simple(text, is_ascii, |rule_idx| {
+            .for_each_rule_idx_simple(text, density, |rule_idx| {
                 self.rules.push_result_if_new(rule_idx, &mut ss, results);
             });
     }
@@ -86,17 +71,12 @@ impl SimpleMatcher {
     #[inline(always)]
     fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         self.scan
-            .for_each_match_value(processed_text, ctx.is_ascii, |raw_value| {
+            .for_each_match_value(processed_text, ctx.non_ascii_density, |raw_value| {
                 self.process_match(raw_value, ctx, ss)
             })
     }
 
     /// Processes one raw match value reported by the scan engine.
-    ///
-    /// Checks `DIRECT_RULE_BIT` inline for the common direct-rule case (marks positive
-    /// immediately, returns `exit_early`). Falls through to
-    /// [`PatternIndex::dispatch_indirect`](super::rule::PatternIndex::dispatch_indirect)
-    /// for non-direct values (`SingleEntry` / `Entries`).
     #[inline(always)]
     fn process_match(&self, raw_value: u32, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         if raw_value & DIRECT_RULE_BIT != 0 {
@@ -124,26 +104,6 @@ impl SimpleMatcher {
     }
 
     /// Unified tree walk that transforms, scans, and evaluates rules in a single pass.
-    ///
-    /// Walks the process-type trie built at construction time, scanning each text variant
-    /// as soon as it is produced:
-    ///
-    /// - **Root**: Scanned directly if it terminates (`pt_index_mask != 0`).
-    /// - **Leaf + ASCII no-op** (currently only Fanjian on ASCII text):
-    ///   Reuses the parent's text and variant index, scans with the child's mask bits.
-    /// - **Leaf + real transform**: Materializes the transform output, scans, and returns
-    ///   the string to the pool.
-    /// - **Non-leaf**: Materializes the transform output for children, scans if the node
-    ///   also terminates.
-    ///
-    /// When `exit_early` is `true` (used by `is_match`), the walk stops as soon as any
-    /// rule is satisfied. When `false` (used by `process`), all variants are exhausted and
-    /// results are collected into `results`.
-    ///
-    /// # Safety
-    ///
-    /// Obtains `&mut SimpleMatchState` from [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`.
-    /// See module-level safety documentation.
     #[inline]
     pub(super) fn walk_and_scan<'a>(
         &'a self,
@@ -162,7 +122,9 @@ impl SimpleMatcher {
             return false;
         }
 
-        let root_is_ascii = text.is_ascii();
+        // One SIMD pass: exact non-ASCII byte density for engine dispatch.
+        // density == 0.0 ↔ text is pure ASCII (replaces text.is_ascii()).
+        let root_density = text_non_ascii_density(text);
 
         // Scan root (ProcessType::None) if it terminates here.
         if tree[0].pt_index_mask != 0 {
@@ -171,7 +133,7 @@ impl SimpleMatcher {
                 process_type_mask: tree[0].pt_index_mask,
                 num_variants,
                 exit_early,
-                is_ascii: root_is_ascii,
+                non_ascii_density: root_density,
             };
             if self.scan_variant(text, ctx, &mut ss) {
                 return true;
@@ -194,10 +156,11 @@ impl SimpleMatcher {
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
         let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
         texts.push(Cow::Borrowed(text));
-        // `ascii_flags[i]` — whether the text at arena index `i` is pure ASCII.
-        // TinyVec inlines up to 16 entries, covering all practical trees.
-        let mut ascii_flags: TinyVec<[bool; 16]> = TinyVec::new();
-        ascii_flags.push(root_is_ascii);
+        // density_flags[i] — non-ASCII byte density for arena index i.
+        // density == 0.0 means pure ASCII (used for both engine dispatch and
+        // transform correctness: is_noop_on_ascii_input, step.apply).
+        let mut density_flags: TinyVec<[f32; 16]> = TinyVec::new();
+        density_flags.push(root_density);
 
         // Maps tree node index -> arena index for its text.
         let mut node_arena: TinyVec<[usize; 16]> = TinyVec::new();
@@ -223,16 +186,17 @@ impl SimpleMatcher {
                     .step
                     .expect("non-root process tree nodes always cache a transform step");
                 let is_leaf = child.children.is_empty();
-                let parent_ascii = ascii_flags[parent_aidx];
+                let parent_density = density_flags[parent_aidx];
+                let parent_ascii = parent_density == 0.0;
 
                 if is_leaf {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
+                        let child_density = step.output_density(parent_density);
 
                         // Fused transform-scan: stream transformed bytes directly
                         // into the AC automaton, skipping intermediate allocation.
-                        // Only when daachorse is the engine (DFA has no streaming API).
-                        let fused_result = if !is_noop && self.scan.can_stream(parent_ascii) {
+                        let fused_result = if !is_noop && self.scan.can_stream(child_density) {
                             let parent_text = texts[parent_aidx].as_ref();
                             let vi = variant_counter;
                             let ctx = ScanContext {
@@ -240,15 +204,13 @@ impl SimpleMatcher {
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
                                 exit_early,
-                                // Both delete and normalize of ASCII input stay ASCII;
-                                // of non-ASCII, conservatively assume non-ASCII.
-                                is_ascii: parent_ascii,
+                                non_ascii_density: child_density,
                             };
                             macro_rules! fused {
                                 ($m:expr) => {
                                     self.scan.for_each_match_value_from_iter(
                                         $m.filter_bytes(parent_text),
-                                        ctx.is_ascii,
+                                        ctx.non_ascii_density,
                                         |v| self.process_match(v, ctx, &mut ss),
                                     )
                                 };
@@ -271,13 +233,12 @@ impl SimpleMatcher {
                         } else {
                             // Normal path: materialize then scan.
                             let changed = if !is_noop {
-                                let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
-                                output.changed.map(|s| (s, output.is_ascii))
+                                step.apply(texts[parent_aidx].as_ref(), parent_ascii)
                             } else {
                                 None
                             };
 
-                            if let Some((s, is_ascii)) = changed {
+                            if let Some(s) = changed {
                                 let vi = variant_counter;
                                 variant_counter += 1;
                                 let ctx = ScanContext {
@@ -285,7 +246,7 @@ impl SimpleMatcher {
                                     process_type_mask: child.pt_index_mask,
                                     num_variants,
                                     exit_early,
-                                    is_ascii,
+                                    non_ascii_density: child_density,
                                 };
                                 let result = self.scan_variant(&s, ctx, &mut ss);
                                 return_string_to_pool(s);
@@ -296,7 +257,7 @@ impl SimpleMatcher {
                                     process_type_mask: child.pt_index_mask,
                                     num_variants,
                                     exit_early,
-                                    is_ascii: parent_ascii,
+                                    non_ascii_density: parent_density,
                                 };
                                 self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
                             }
@@ -314,11 +275,12 @@ impl SimpleMatcher {
                     }
                 } else {
                     // Non-leaf: materialize for children.
-                    let output = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
-                    let (child_aidx, child_vi) = match output.changed {
+                    let changed = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
+                    let child_density = step.output_density(parent_density);
+                    let (child_aidx, child_vi) = match changed {
                         Some(s) => {
                             let idx = texts.len();
-                            ascii_flags.push(output.is_ascii);
+                            density_flags.push(child_density);
                             texts.push(Cow::Owned(s));
                             let vi = variant_counter;
                             variant_counter += 1;
@@ -336,7 +298,7 @@ impl SimpleMatcher {
                             process_type_mask: child.pt_index_mask,
                             num_variants,
                             exit_early,
-                            is_ascii: ascii_flags[child_aidx],
+                            non_ascii_density: density_flags[child_aidx],
                         };
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
                         if stopped {

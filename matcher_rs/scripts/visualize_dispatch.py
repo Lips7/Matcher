@@ -28,14 +28,12 @@ ENGINE_COLORS = {
     "ac_dfa": "#1f77b4",
     "daac_bytewise": "#ff7f0e",
     "daac_charwise": "#2ca02c",
-    "harry": "#d62728",
 }
 
 WINNER_COLORS = {
     "ac_dfa": "blue",
     "daac_bytewise": "orange",
     "daac_charwise": "green",
-    "harry": "red",
 }
 
 

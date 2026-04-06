@@ -76,11 +76,11 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 
 **PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for simple single-entry patterns, the value is `rule_idx | DIRECT_RULE_BIT` (bit 31 set), encoding the rule index directly in the automaton hit value so the scan hot path skips the entry table lookup.
 
-**Bytewise engine** (`BytewiseMatcher`): compiled from ASCII-only patterns (`"hello"`, `"world"`, `"zhongguo"`). With the `dfa` feature and ≤ 25,000 patterns, uses `aho-corasick` DFA for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
+**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature and ≤ 25,000 patterns, uses `aho-corasick` DFA (with Teddy/memchr prefilter) for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
 
-**Charwise engine** (`CharwiseMatcher`): compiled from **all** patterns (ASCII + CJK). Always built. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on non-ASCII text.
+**Charwise engine** (`CharwiseMatcher`): compiled from **all** patterns. Always built. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on non-ASCII text.
 
-**Harry engine** (with `harry` feature): built when all patterns are ASCII and ≥ 64 exist. In our example with only 4 patterns, Harry is not built.
+**Engine selection** is density-based at runtime: a SIMD scan counts non-ASCII bytes in the text. Below the crossover threshold (~40% CJK characters ≈ 0.67 non-ASCII byte fraction), bytewise/DFA is faster; above it, charwise wins.
 
 ### 1.4 Assemble
 
@@ -88,7 +88,7 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 SimpleMatcher {
     tree: Vec<ProcessTypeBitNode>,  // the 4-node trie above
     mode: SearchMode::General,      // R1 has &-operator → not AllSimple
-    scan: ScanPlan { bytewise, charwise, harry, pattern_index },
+    scan: ScanPlan { bytewise, charwise, pattern_index },
     rules: RuleSet { hot: [RuleHot; 3], cold: [RuleCold; 3] },
 }
 ```
@@ -173,7 +173,7 @@ R3 was never touched (no hit). Final output: `[SimpleResult { word_id: 2, word: 
 
 When every rule is a pure literal (no `&`/`~` operators) under a single `ProcessType` (typically `None`), `SearchMode::AllSimple` activates:
 
-- **`is_match`** → delegates directly to `ScanPlan::is_match`, which dispatches to Harry (≥64 patterns), AC DFA, or DAAC bytewise. No TLS state, no generation counters, no trie walk.
+- **`is_match`** → delegates directly to `ScanPlan::is_match`, which uses a SIMD density scan to dispatch to bytewise (DFA or DAAC) or charwise. No TLS state, no generation counters, no trie walk.
 - **`process`** → uses `process_simple`, which scans via `for_each_rule_idx_simple`. Each hit maps directly to a rule result via `DIRECT_RULE_BIT`. Deduplication uses only `positive_generation` — no `touched_indices` bookkeeping.
 
 This path handles the common case of "check if any of these N keywords appear" with minimal overhead.
@@ -240,49 +240,20 @@ This eliminates the intermediate `String` allocation and the second text travers
 
 ---
 
-### Harry Column-Vector SIMD Backend
+### Density-Based Engine Dispatch
 
-`HarryMatcher` (in `simple_matcher/harry/`) is a column-vector SIMD scan engine for `is_match` when the pattern set is large (≥ 64 patterns) and `AllSimple`.
+Engine selection uses non-ASCII byte density rather than a binary `is_ascii()` check. A SIMD scan (`simple_matcher/simd.rs`) counts non-ASCII bytes (≥ 0x80) across the full text in one pass (~2 µs for 200 KB). The density determines which engine is faster:
 
-#### Dual-Index Encoding
+| Text density | Engine | Reason |
+|---|---|---|
+| ≤ 0.67 non-ASCII bytes (~≤40% CJK chars) | Bytewise (DFA+Teddy or DAAC) | Teddy prefilter SIMD-skips non-matching regions |
+| > 0.67 non-ASCII bytes (~>40% CJK chars) | Charwise DAAC | 1 transition per char vs 3 bytewise on CJK |
 
-Patterns are grouped into 8 buckets by `byte[0] & 0x07`. A single unified matcher covers prefix lengths 2–8. Two mask tables per column — `low_mask[byte & 0x3F]` (bits [0:5]) and `high_mask[(byte >> 1) & 0x3F]` (bits [1:6]) — are ORed per lane:
+Both engines are built from the **full** pattern set (not split by ASCII/CJK), so either engine is correct for any text. The dispatch is a pure speed optimization.
 
-```
-byte = 0x68 ('h') = 0b_0110_1000
+The threshold (0.67) was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
 
-low_mask  index:  byte & 0x3F        = 40
-high_mask index:  (byte >> 1) & 0x3F = 52
-
-   low_mask[col][40]  ──┐
-                         OR ──► state (8 bits, one per bucket)
-   high_mask[col][52] ──┘
-
-After all columns:  hit_mask = !state
-Bit k set ═► bucket k has a candidate match
-```
-
-Coverage: 7 of 8 bits per byte. ASCII patterns → zero false positives. Non-ASCII bytes may collide at bit 7 — caught by exact-match verification.
-
-#### Column-0 Early Exit
-
-After applying column 0, check if every lane's state byte is 0xFF. If true, skip the entire chunk. Fires ~95% of the time on CJK haystacks with ASCII patterns, yielding 3–6× speedup over AC.
-
-#### Wildcarding
-
-Columns beyond a pattern's actual prefix length are wildcarded (bucket bit cleared for all 64 rows). Patterns of different lengths coexist in the same unified tables.
-
-#### Verification
-
-Bucket hits pass through `BucketVerify`: a `length_mask: u8` indicates which prefix lengths have entries, and a `PrefixMap` per length stores sorted `keys: Box<[u64]>` for binary search. Matches dispatch to `PrefixGroup`: `exact_values` (prefix == full pattern) or `long_literals` (need suffix comparison).
-
-#### SIMD Kernels
-
-- **AArch64 NEON** (`harry/neon.rs`): 16-byte chunks, `M = 16 - max_prefix_len + 1` positions. Compile-time intrinsics.
-- **x86-64 AVX512-VBMI** (`harry/avx512.rs`): 64-byte chunks, M=56 positions. Runtime detection.
-- **Scalar** (`harry/mod.rs`): byte-at-a-time fallback.
-
-Single-byte patterns bypass the column pipeline via a dedicated `single_byte_values: Box<[Vec<u32>; 128]>` lookup table with SIMD-accelerated scanning (≤ 4 distinct keys).
+In `walk_and_scan`, density propagates through the transform tree via `TransformStep::output_density()` (conservative: returns parent density). The materialized path can refine this when the transform produces confirmed-ASCII output. `density == 0.0` replaces the old `is_ascii` boolean for transform no-op detection.
 
 ---
 
@@ -367,10 +338,9 @@ Both use `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminat
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` + `harry` |
-| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 ASCII patterns). ~17× more memory, ~1.7–1.9× faster. |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON) and Harry (AVX512-VBMI/NEON) |
-| `harry` | via `perf` | Column-vector SIMD scan backend for `is_match` when ≥64 patterns, `AllSimple` mode |
+| `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
+| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 patterns). ~17× more memory, ~1.7–1.9× faster. |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON/portable) and density counting |
 
 ---
 

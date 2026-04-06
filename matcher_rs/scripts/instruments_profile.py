@@ -246,7 +246,6 @@ def _build_source_attribution(
     """
     OUR_FILES = {
         "mod.rs", "build.rs", "engine.rs", "search.rs", "state.rs", "rule.rs",
-        "harry", "neon.rs", "avx512.rs",
         "step.rs", "graph.rs", "api.rs", "process_type.rs", "string_pool.rs",
         "replace.rs", "delete.rs", "utf8.rs", "simd.rs", "constants.rs",
         "builder.rs",
@@ -429,7 +428,6 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
-    ("Harry scan",        ["harry", "HarryMatcher"]),
     ("DFA scan",          ["dfa::", "DFA::", "aho_corasick::dfa"]),
     ("Daachorse scan",    ["bytewise", "charwise", "daachorse"]),
     ("AC normalize scan", ["automaton::", "NormalizeMatcher"]),

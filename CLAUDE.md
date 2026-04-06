@@ -46,7 +46,7 @@ just bench-search --profile bench-dev                  # Faster rebuild (thin LT
 just bench-build                                       # Matcher construction workflow
 just bench-engine-search                               # Raw engine throughput workflow
 just bench-engine-build                                # Raw engine build workflow
-just bench-engine-is-match                             # Engine is_match (Harry) workflow
+just bench-engine-is-match                             # Engine is_match workflow
 just bench-all                                         # All presets
 just bench-compare <baseline_dir> <candidate_dir>      # aggregated run-set comparison
 just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file-to-file comparison
@@ -85,7 +85,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 
 - **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
 - **Transform trie**: shared-prefix DAG so `Fanjian|Delete` reuses the Fanjian result.
-- **ScanPlan**: bytewise AC (ASCII patterns, optional DFA) + charwise AC (all patterns, CJK-optimized) + Harry (column-vector SIMD for ≥64 patterns).
+- **ScanPlan**: bytewise AC (all patterns, optional DFA) + charwise AC (all patterns, CJK-optimized). Engine selection via SIMD density scan (≤0.67 non-ASCII → bytewise, >0.67 → charwise).
 - **RuleSet**: hot/cold split for cache efficiency. Generation-stamped sparse set for O(1) state reset.
 - **DIRECT_RULE_BIT**: single-entry simple patterns encode `rule_idx | (1 << 31)` directly in the automaton value, skipping the entry table on the hot path.
 
@@ -97,10 +97,9 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch + harry` |
-| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for pure-ASCII sets ≤ 25,000 patterns |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and Harry (AVX512-VBMI/NEON) |
-| `harry` | via `perf` | Harry column-vector SIMD scan backend; auto-selected for `is_match` when ≥ 64 patterns exist; handles both ASCII and CJK |
+| `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch` |
+| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for ≤ 25,000 patterns |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and density counting |
 
 ### Workspace Layout
 
@@ -114,8 +113,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores four fields: `tree` (transform trie), `mode` (`SearchMode`), `scan` (`ScanPlan`), `rules` (`RuleSet`).
 - `mod.rs` — `SimpleMatcher`, `SimpleResult`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
-- `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise for ASCII), `CharwiseMatcher` (DAAC charwise) — AC automaton compilation and scan iteration; Harry dispatch in `is_match`
-- `harry/` — `HarryMatcher` — column-vector SIMD scan engine (Harry12b dual-index encoding); `mod.rs` (core types + dispatch + scalar), `build.rs` (construction), `neon.rs` (AArch64), `avx512.rs` (x86-64); auto-selected for `is_match` via `ScanPlan` when ≥ 64 patterns exist
+- `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise), `CharwiseMatcher` (DAAC charwise) — AC automaton compilation, density-based dispatch, scan iteration
+- `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `rule.rs` — `RuleSet`, `RuleHot`, `RuleCold`, `PatternEntry`, `PatternKind`, `PatternDispatch`, `DIRECT_RULE_BIT`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
 - `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified tree walk with materialize+scan), `process_simple`, `scan_variant`, `process_match`
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
@@ -124,7 +123,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `process_type.rs` — `ProcessType` bitflags + serde/display
 - `string_pool.rs` — Thread-local `STRING_POOL` (string buffer recycling)
 - `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
-- `step.rs` — `TransformStep` enum, `StepOutput`, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
+- `step.rs` — `TransformStep` enum, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
 - `transform/replace/` — `FanjianMatcher` (`fanjian.rs`), `PinyinMatcher` (`pinyin.rs`), `NormalizeMatcher` (`normalize.rs`), shared page-table helpers (`mod.rs`)
 - `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip), `DeleteFilterIterator` (streaming)

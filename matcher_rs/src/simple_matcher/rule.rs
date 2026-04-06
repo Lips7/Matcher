@@ -719,7 +719,7 @@ mod tests {
             process_type_mask: u64::MAX,
             num_variants: 1,
             exit_early,
-            is_ascii: true,
+            non_ascii_density: 0.0,
         }
     }
 
@@ -1010,7 +1010,7 @@ mod tests {
             process_type_mask: 0b0101,
             num_variants: 1,
             exit_early: true,
-            is_ascii: true,
+            non_ascii_density: 0.0,
         };
         assert!(!rules.process_entry(&entry, ctx, &mut ss));
         assert!(!ss.rule_is_satisfied(0), "entry should be filtered by mask");
