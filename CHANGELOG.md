@@ -1,6 +1,32 @@
 # Changelog
 
 
+## 0.14.1 - 2026-04-07
+
+### Performance
+- LUT + unchecked indexing for word boundary checks.
+- Fused romanize-scan path via `RomanizeFilterIterator`.
+- Store `and_count` in `PatternEntry` to eliminate `RuleHot` cache misses.
+
+### Documentation
+- Add `# Panics` sections for `compile_automata`, `walk_and_scan`, `process_entry`, and `get_transform_step`.
+- Fix 2 broken `RuleHot::and_count` intra-doc links (field moved to `PatternEntry`).
+- Update CLAUDE.md and DESIGN.md for RuleHot/PatternEntry restructure.
+
+### Refactor
+- Unify `NormalizeFilterIterator` state into single remainder struct.
+- Remove OPTIMIZATION_IDEAS.md (no longer needed).
+
+### Bug Fixes
+- Remove unused import of `text_process` in bench.rs.
+- Update profiling category rules for current architecture.
+- Expand DFA scan category in time profile parser for improved accuracy.
+
+### Tooling
+- Add `profile_build` example and `--target build` support to profiler.
+- Add overlap comparison benchmarks for 3 AC engines.
+- Rewrite `text_transform` benchmarks to measure full matcher pipeline.
+
 ## 0.14.0 - 2026-04-06
 
 ### Features
