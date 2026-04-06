@@ -51,7 +51,7 @@ We will trace both construction and query evaluation using these rules.
 
 **R1: `"hello&world"` under `ProcessType::None`**
 
-Split on `&`/`~` → two AND segments: `["hello", "world"]`. Each segment is then split on `|` for OR alternatives (neither has any here). No NOT segments. `and_count = 2`, `use_matrix = false` (both counts are 1, total ≤ 64), `has_not = false`.
+Split on `&`/`~` → two AND segments: `["hello", "world"]`. Each segment is then split on `|` for OR alternatives (neither has any here). No NOT segments. `and_count = 2`, shape = `Bitmask` (both counts are 1, total ≤ 64), `has_not = false`.
 
 Each sub-pattern is emitted via `reduce_text_process_emit(process_type - Delete, pattern)`. Since `None - Delete = None`, both `"hello"` and `"world"` emit themselves unchanged.
 
@@ -114,7 +114,7 @@ SimpleMatcher {
     tree: Vec<ProcessTypeBitNode>,  // the 4-node trie above
     mode: SearchMode::General,      // R1 has &-operator → not AllSimple
     scan: ScanPlan { bytewise, charwise, pattern_index },
-    rules: RuleSet { hot: [RuleHot; 3], cold: [RuleCold; 3] },
+    rules: RuleSet { hot: [RuleHot; 3], cold: [RuleCold; 3] },  // RuleHot only stores segment_counts
 }
 ```
 
@@ -297,7 +297,7 @@ In `walk_and_scan`, density propagates through the transform tree via `Transform
 
 Rules are split into hot and cold structs for cache efficiency:
 
-- **`RuleHot`** (accessed on every pattern hit): `segment_counts: Vec<i32>`, `and_count`, `use_matrix`, `has_not`.
+- **`RuleHot`** (accessed only for matrix-mode rules on first touch): `segment_counts: Vec<i32>`. The `and_count` field lives in `PatternEntry` for cache locality (avoids loading `RuleHot` on the hot path). `use_matrix` is derived from `RuleShape`.
 - **`RuleCold`** (accessed only when producing output): `word_id: u32`, `word: String`.
 - **`WordState`** (per-rule mutable state): three generation stamps (`matrix_generation`, `positive_generation`, `not_generation`), a `satisfied_mask: u64`, and `remaining_and: u16`.
 
@@ -311,13 +311,15 @@ Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u3
 
 #### PatternKind Dispatch
 
-Each `PatternEntry` carries a pre-computed `PatternKind`:
+Each `PatternEntry` carries a pre-computed `PatternKind`, `RuleShape`, and `and_count`:
 
 | Kind | Condition | Behavior |
 |------|-----------|----------|
 | `Simple` | 1 AND segment, no NOT, no matrix | First hit sets `positive_generation`. Done. |
 | `And` | `offset < and_count` | Decrements counter or sets bitmask bit. |
 | `Not` | `offset >= and_count` | Sets `not_generation` to veto the rule. |
+
+`and_count` is duplicated from build-time rule metadata into `PatternEntry` so the init block in `process_entry` can initialize `WordState` without loading `RuleHot` (which is only needed for the cold matrix-init path). This fits in the existing struct padding (9→10 bytes, still padded to 12).
 
 #### DIRECT_RULE_BIT
 
@@ -332,7 +334,7 @@ For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 
 Rule parsed from pattern string
         │
         ▼
-  and_count == 1, no NOT? ──► Simple (no counters)
+  shape == SingleAnd, no NOT? ──► Simple (no counters)
         │ NO
         ▼
   ≤64 segs, no repeats?  ──► Bitmask (u64 + remaining_and)

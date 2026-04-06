@@ -118,8 +118,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `encoding.rs` — Bit-packing constants (`DIRECT_RULE_BIT`, `DIRECT_PT_SHIFT`, etc.), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise), `CharwiseMatcher` (DAAC charwise) — AC automaton compilation, density-based dispatch, scan iteration
-- `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch
-- `rule.rs` — `RuleSet`, `RuleHot`, `RuleCold`, `RuleShape`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
+- `pattern.rs` — `PatternEntry` (includes `and_count` for cache locality), `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch
+- `rule.rs` — `RuleSet`, `RuleHot` (matrix-only: `segment_counts`), `RuleCold`, `RuleShape`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
 - `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified tree walk with materialize+scan), `process_simple`, `scan_variant`, `process_match`
 - `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
