@@ -51,6 +51,80 @@ impl<'a> Iterator for RomanizeFindIter<'a> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Streaming byte iterator (for fused romanize-scan)
+// ---------------------------------------------------------------------------
+
+/// Streaming byte iterator that yields romanized bytes from a UTF-8 string.
+///
+/// Created by [`RomanizeMatcher::filter_bytes`]. ASCII bytes pass through unchanged;
+/// mapped CJK codepoints emit their romanization string's bytes. Output is valid UTF-8,
+/// satisfying `daachorse`'s `find_overlapping_iter_from_iter` safety requirement.
+///
+/// Uses the same unified `remaining` slice pattern as [`super::normalize::NormalizeFilterIterator`]
+/// to handle both replacement-string bytes and multi-byte continuation bytes with a single
+/// fast-path branch.
+pub(crate) struct RomanizeFilterIterator<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    /// Pending bytes to yield before decoding the next codepoint.
+    ///
+    /// Points into `self.strings` (replacement bytes) or `self.bytes`
+    /// (continuation bytes of an unmapped multi-byte character).
+    remaining: &'a [u8],
+    l1: &'a [u16],
+    l2: &'a [u32],
+    strings: &'a str,
+}
+
+impl Iterator for RomanizeFilterIterator<'_> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        // Fast path: yield from pending slice (replacement OR continuation bytes).
+        if let Some((&byte, rest)) = self.remaining.split_first() {
+            self.remaining = rest;
+            return Some(byte);
+        }
+
+        if self.offset >= self.bytes.len() {
+            return None;
+        }
+
+        // SAFETY: offset < len checked above.
+        let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+
+        // ASCII passthrough: romanize only maps non-ASCII CJK codepoints.
+        if byte < 0x80 {
+            self.offset += 1;
+            return Some(byte);
+        }
+
+        // SAFETY: byte >= 0x80 in a valid UTF-8 &str means multi-byte lead byte.
+        let (cp, char_len) = unsafe { decode_utf8_raw(self.bytes, self.offset) };
+
+        if let Some(value) = page_table_lookup(cp, self.l1, self.l2)
+            && let Some(s) = unpack_str_ref(value, self.strings)
+        {
+            self.offset += char_len;
+            let s_bytes = s.as_bytes();
+            self.remaining = &s_bytes[1..];
+            return Some(s_bytes[0]);
+        }
+
+        // Unmapped multi-byte: yield lead byte, buffer continuation bytes.
+        let cont_start = self.offset + 1;
+        self.offset += char_len;
+        self.remaining = &self.bytes[cont_start..self.offset];
+        Some(byte)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Matcher
+// ---------------------------------------------------------------------------
+
 /// Two-stage page-table matcher for CJK romanization.
 ///
 /// Each non-zero L2 entry encodes `(byte_offset << 8) | byte_length` into a
@@ -89,6 +163,22 @@ impl RomanizeMatcher {
     /// ```
     pub(crate) fn replace(&self, text: &str) -> Option<String> {
         replace_spans(text, self.iter(text))
+    }
+
+    /// Returns a streaming byte iterator over the romanized form of `text`.
+    ///
+    /// Used by the fused romanize-scan path to feed romanized bytes directly
+    /// into the Aho-Corasick automaton without materializing the full string.
+    #[inline(always)]
+    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> RomanizeFilterIterator<'a> {
+        RomanizeFilterIterator {
+            bytes: text.as_bytes(),
+            offset: 0,
+            remaining: &[],
+            l1: &self.l1,
+            l2: &self.l2,
+            strings: self.strings.as_ref(),
+        }
     }
 
     /// Decodes L1/L2 page tables from build-time binary artifacts.

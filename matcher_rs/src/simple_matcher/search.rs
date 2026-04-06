@@ -272,8 +272,8 @@ impl SimpleMatcher {
                         // - No DFA + low density: stream via DAAC bytewise.
                         // - High density: stream via DAAC charwise.
                         //
-                        // Fused paths only cover Delete/Normalize/VariantNorm (never
-                        // Romanize), so parent_density is the correct density estimate.
+                        // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
+                        // Parent density is the correct estimate for all fused transforms.
                         let use_fused = !(is_noop
                             || self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
@@ -309,6 +309,9 @@ impl SimpleMatcher {
                                 TransformStep::Delete(m) => fused!(m),
                                 TransformStep::Normalize(m) => fused!(m),
                                 TransformStep::VariantNorm(m) => fused!(m),
+                                TransformStep::Romanize(m) | TransformStep::RomanizeChar(m) => {
+                                    fused!(m)
+                                }
                                 _ => None,
                             }
                             .inspect(|_| {
