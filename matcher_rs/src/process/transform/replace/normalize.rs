@@ -75,12 +75,19 @@ impl<'a> Iterator for NormalizeFindIter<'a> {
 /// through byte-for-byte; mapped codepoints emit their replacement string's
 /// bytes. Output is valid UTF-8, satisfying `daachorse`'s
 /// `find_overlapping_iter_from_iter` safety requirement.
+///
+/// Uses a unified `remaining` slice to handle both replacement-string bytes
+/// and multi-byte continuation bytes, reducing the per-byte branch count
+/// from 3 to 2 on the hot path.
 pub(crate) struct NormalizeFilterIterator<'a> {
     bytes: &'a [u8],
     offset: usize,
-    char_remaining: u8,
-    replace_bytes: &'a [u8],
-    replace_pos: usize,
+    /// Pending bytes to yield before decoding the next codepoint.
+    ///
+    /// Points into either `self.strings` (replacement bytes) or `self.bytes`
+    /// (continuation bytes of an unmapped multi-byte character). Empty when
+    /// at a codepoint boundary ready for fresh decode.
+    remaining: &'a [u8],
     l1: &'a [u16],
     l2: &'a [u32],
     strings: &'a str,
@@ -91,17 +98,9 @@ impl Iterator for NormalizeFilterIterator<'_> {
 
     #[inline(always)]
     fn next(&mut self) -> Option<u8> {
-        if self.replace_pos < self.replace_bytes.len() {
-            let byte = self.replace_bytes[self.replace_pos];
-            self.replace_pos += 1;
-            return Some(byte);
-        }
-
-        if self.char_remaining > 0 {
-            // SAFETY: within a kept multi-byte character; offset is in bounds.
-            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
-            self.offset += 1;
-            self.char_remaining -= 1;
+        // Fast path: yield from pending slice (replacement OR continuation bytes).
+        if let Some((&byte, rest)) = self.remaining.split_first() {
+            self.remaining = rest;
             return Some(byte);
         }
 
@@ -113,16 +112,15 @@ impl Iterator for NormalizeFilterIterator<'_> {
         let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
 
         if byte < 0x80 {
+            self.offset += 1;
             if byte.is_ascii_uppercase()
                 && let Some(value) = page_table_lookup(byte as u32, self.l1, self.l2)
                 && let Some(s) = unpack_str_ref(value, self.strings)
             {
-                self.offset += 1;
-                self.replace_bytes = s.as_bytes();
-                self.replace_pos = 1;
-                return Some(self.replace_bytes[0]);
+                let s_bytes = s.as_bytes();
+                self.remaining = &s_bytes[1..];
+                return Some(s_bytes[0]);
             }
-            self.offset += 1;
             return Some(byte);
         }
 
@@ -133,13 +131,15 @@ impl Iterator for NormalizeFilterIterator<'_> {
             && let Some(s) = unpack_str_ref(value, self.strings)
         {
             self.offset += char_len;
-            self.replace_bytes = s.as_bytes();
-            self.replace_pos = 1;
-            return Some(self.replace_bytes[0]);
+            let s_bytes = s.as_bytes();
+            self.remaining = &s_bytes[1..];
+            return Some(s_bytes[0]);
         }
 
-        self.offset += 1;
-        self.char_remaining = (char_len - 1) as u8;
+        // Unmapped multi-byte: yield lead byte, buffer continuation bytes.
+        let cont_start = self.offset + 1;
+        self.offset += char_len;
+        self.remaining = &self.bytes[cont_start..self.offset];
         Some(byte)
     }
 }
@@ -204,9 +204,7 @@ impl NormalizeMatcher {
         NormalizeFilterIterator {
             bytes: text.as_bytes(),
             offset: 0,
-            char_remaining: 0,
-            replace_bytes: &[],
-            replace_pos: 0,
+            remaining: &[],
             l1: &self.l1,
             l2: &self.l2,
             strings: self.strings.as_ref(),
