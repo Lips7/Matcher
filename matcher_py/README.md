@@ -28,6 +28,7 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
   - `&` (AND): `hello&world` matches `hello world` and `world,hello`
   - `|` (OR): `color|colour` matches `color` and `colour`
   - `~` (NOT): `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
+  - `\b` (word boundary): `\bcat\b` matches "the cat" but not "concatenate"
   - Repeated segments: `无&法&无&天` matches `无无法天` (because `无` is repeated twice), but not `无法天`
   - Combined: `color|colour&bright~dark` matches "bright color" but not "dark colour"
 - **Pickle Support**: `SimpleMatcher` instances can be pickled and unpickled for serialization.

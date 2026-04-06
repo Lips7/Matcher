@@ -67,6 +67,8 @@ Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delet
 
 **OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (Simple, And, or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the AllSimple fast path.
 
+**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries cannot use `DIRECT_RULE_BIT` and disable `AllSimple` mode, falling back to the General path.
+
 After deduplication, we have a flat pattern table:
 
 ```

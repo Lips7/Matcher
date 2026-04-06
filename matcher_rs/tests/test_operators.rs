@@ -455,3 +455,167 @@ fn test_pattern_with_nul_byte() {
     assert!(!matcher.is_match("hello world"));
     assert!(!matcher.is_match("helloworld"));
 }
+
+// ---------------------------------------------------------------------------
+// Word boundary (\b) semantics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_boundary_basic() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("the cat sat"));
+    assert!(matcher.is_match("cat"));
+    assert!(!matcher.is_match("concatenate"));
+    assert!(!matcher.is_match("scat"));
+    assert!(!matcher.is_match("cats"));
+}
+
+#[test]
+fn test_boundary_left_only() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("cat"));
+    assert!(matcher.is_match("cats"));
+    assert!(matcher.is_match("catch"));
+    assert!(!matcher.is_match("scat"));
+    assert!(!matcher.is_match("concatenate"));
+}
+
+#[test]
+fn test_boundary_right_only() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"cat\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("cat"));
+    assert!(matcher.is_match("scat"));
+    assert!(!matcher.is_match("cats"));
+    assert!(!matcher.is_match("catch"));
+}
+
+#[test]
+fn test_boundary_with_and() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b&\bdog\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("cat and dog"));
+    assert!(!matcher.is_match("cats and dogs"));
+    assert!(!matcher.is_match("concatenate and dogma"));
+}
+
+#[test]
+fn test_boundary_with_not() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b~\bcatch\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("the cat"));
+    assert!(matcher.is_match("the cat catches fish"));
+    assert!(!matcher.is_match("the cat catch"));
+}
+
+#[test]
+fn test_boundary_with_or() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcolor\b|\bcolour\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("nice color"));
+    assert!(matcher.is_match("nice colour"));
+    assert!(!matcher.is_match("colorful"));
+    assert!(!matcher.is_match("discolour"));
+}
+
+#[test]
+fn test_boundary_punctuation() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("cat!"));
+    assert!(matcher.is_match(",cat,"));
+    assert!(matcher.is_match("(cat)"));
+    assert!(matcher.is_match("cat.dog"));
+}
+
+#[test]
+fn test_boundary_mixed_with_non_boundary() {
+    // V2: per-entry boundary checking. Same pattern string with different
+    // boundary requirements are checked independently per entry.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .add_word(ProcessType::None, 2, "cat")
+        .build()
+        .unwrap();
+
+    // "concatenate" — only rule 2 matches (no boundary)
+    let results = matcher.process("concatenate");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 2);
+
+    // "the cat" — both rules match
+    let results = matcher.process("the cat");
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_boundary_at_text_edges() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("cat"));
+    assert!(matcher.is_match("cat "));
+    assert!(matcher.is_match(" cat"));
+}
+
+#[test]
+fn test_boundary_with_normalize() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Normalize, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    // Normalize casefolds: CAT → cat
+    assert!(matcher.is_match("the CAT sat"));
+    assert!(!matcher.is_match("CONCATENATE"));
+}
+
+#[test]
+fn test_boundary_underscore_is_word_char() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    // Underscore is a word char, so no boundary between _ and c
+    assert!(!matcher.is_match("_cat_"));
+    assert!(!matcher.is_match("my_cat_name"));
+}
+
+#[test]
+fn test_boundary_result_preserves_original_word() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 42, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    let results = matcher.process("the cat");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 42);
+    assert_eq!(results[0].word.as_ref(), r"\bcat\b");
+}

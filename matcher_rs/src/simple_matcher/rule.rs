@@ -87,25 +87,31 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 ///
 /// When a deduplicated pattern is attached to exactly one [`PatternKind::Simple`] rule,
 /// the automaton stores an encoded value with this bit set so that callers can
-/// extract `rule_idx` and `pt_index` inline without the entry table indirection.
-///
-/// The encoding packs both `rule_idx` and `pt_index` into 31 bits:
+/// extract `rule_idx`, `pt_index`, and `boundary` inline without the entry table
+/// indirection.
 ///
 /// ```text
 /// Bit 31:     DIRECT_RULE_BIT flag
-/// Bits 26-30: pt_index (5 bits, max 31)
+/// Bits 28-30: pt_index (3 bits, max 7)
+/// Bits 26-27: boundary (2 bits: bit 26 = left, bit 27 = right)
 /// Bits 0-25:  rule_idx (26 bits, max ~67M rules)
 /// ```
 pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
 
 /// Bit shift for the process-type index inside a direct-rule encoded value.
-pub(super) const DIRECT_PT_SHIFT: u32 = 26;
+pub(super) const DIRECT_PT_SHIFT: u32 = 28;
 
 /// Mask for extracting the process-type index from a direct-rule encoded value.
-pub(super) const DIRECT_PT_MASK: u32 = 0x1F << DIRECT_PT_SHIFT;
+pub(super) const DIRECT_PT_MASK: u32 = 0x07 << DIRECT_PT_SHIFT;
+
+/// Bit shift for boundary flags inside a direct-rule encoded value.
+pub(super) const DIRECT_BOUNDARY_SHIFT: u32 = 26;
+
+/// Mask for extracting boundary flags from a direct-rule encoded value.
+pub(super) const DIRECT_BOUNDARY_MASK: u32 = 0x03 << DIRECT_BOUNDARY_SHIFT;
 
 /// Mask for extracting the rule index from a direct-rule encoded value.
-pub(super) const DIRECT_RULE_MASK: u32 = (1 << DIRECT_PT_SHIFT) - 1;
+pub(super) const DIRECT_RULE_MASK: u32 = (1 << DIRECT_BOUNDARY_SHIFT) - 1;
 
 /// Maximum number of segments handled by the bitmask fast path.
 ///
@@ -240,7 +246,7 @@ pub(super) struct RuleCold {
 /// contain the sub-pattern `"hello"`). Each such binding is stored as a separate
 /// `PatternEntry` in the same bucket of the [`PatternIndex`].
 ///
-/// Size: 8 bytes (u32 + u8 + u8 + u8 + u8).
+/// Size: 12 bytes (u32 + 5×u8 + padding).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {
     /// Rule index inside [`RuleSet`] (indexes into the hot/cold `Vec`s).
@@ -262,6 +268,11 @@ pub(super) struct PatternEntry {
     /// Lets [`RuleSet::process_entry`] branch on rule properties without touching the
     /// `hot` array (only needed on first-touch in `ScanState::init_rule`).
     pub(super) shape: RuleShape,
+    /// Word boundary flags (bit 0 = left `\b`, bit 1 = right `\b`).
+    ///
+    /// When non-zero, the scan dispatch checks `is_word_byte` at match start/end
+    /// before forwarding the hit to [`RuleSet::process_entry`].
+    pub(super) boundary: u8,
 }
 
 /// All hot and cold metadata for the compiled rule set.
@@ -297,6 +308,8 @@ pub(super) struct PatternIndex {
     entries: Vec<PatternEntry>,
     /// `(start_offset, length)` into `entries` for each deduplicated pattern id.
     ranges: Vec<(usize, usize)>,
+    /// `true` when at least one entry has non-zero boundary flags.
+    has_boundary: bool,
 }
 
 /// Dispatch result for a non-direct raw scan value.
@@ -422,6 +435,7 @@ impl RuleSet {
             pt_index,
             kind,
             shape,
+            boundary: _,
         } = entry;
 
         let rule_idx = rule_idx as usize;
@@ -620,7 +634,17 @@ impl PatternIndex {
             ranges.push((start, len));
         }
 
-        Self { entries, ranges }
+        let has_boundary = entries.iter().any(|e| e.boundary != 0);
+        Self {
+            entries,
+            ranges,
+            has_boundary,
+        }
+    }
+
+    /// Returns whether any entry requires word boundary checking.
+    pub(super) fn has_boundary(&self) -> bool {
+        self.has_boundary
     }
 
     /// Returns the estimated heap memory in bytes owned by the pattern index.
@@ -673,11 +697,12 @@ impl PatternIndex {
                 // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by `Self::new`.
                 let entry = unsafe { self.entries.get_unchecked(start) };
                 if entry.kind == PatternKind::Simple
-                    && (entry.pt_index as u32) < 32
-                    && entry.rule_idx < (1 << DIRECT_PT_SHIFT)
+                    && (entry.pt_index as u32) < 8
+                    && entry.rule_idx < (1 << DIRECT_BOUNDARY_SHIFT)
                 {
                     let encoded = DIRECT_RULE_BIT
                         | ((entry.pt_index as u32) << DIRECT_PT_SHIFT)
+                        | ((entry.boundary as u32) << DIRECT_BOUNDARY_SHIFT)
                         | entry.rule_idx;
                     value_map.push(encoded);
                     continue;
@@ -757,6 +782,7 @@ mod tests {
             pt_index: 2,
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
+            boundary: 0,
         }]];
         let index = PatternIndex::new(entries);
         let value_map = index.build_value_map();
@@ -780,6 +806,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::And,
             shape: RuleShape::Bitmask,
+            boundary: 0,
         }]];
         let index = PatternIndex::new(entries);
         let value_map = index.build_value_map();
@@ -807,6 +834,7 @@ mod tests {
                 pt_index: 0,
                 kind: PatternKind::Simple,
                 shape: RuleShape::SingleAnd,
+                boundary: 0,
             },
             PatternEntry {
                 rule_idx: 1,
@@ -814,6 +842,7 @@ mod tests {
                 pt_index: 0,
                 kind: PatternKind::Simple,
                 shape: RuleShape::SingleAnd,
+                boundary: 0,
             },
         ]];
         let index = PatternIndex::new(entries);
@@ -864,6 +893,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
+            boundary: 0,
         };
 
         let result = rules.process_entry(&entry, make_ctx(true), &mut ss);
@@ -902,6 +932,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::And,
             shape: RuleShape::Bitmask,
+            boundary: 0,
         };
         assert!(!rules.process_entry(&e0, ctx, &mut ss));
         assert!(!ss.rule_is_satisfied(0));
@@ -940,6 +971,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::And,
             shape: RuleShape::SingleAndNot,
+            boundary: 0,
         };
         rules.process_entry(&and_entry, ctx, &mut ss);
         assert!(ss.rule_is_satisfied(0));
@@ -950,6 +982,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::Not,
             shape: RuleShape::SingleAndNot,
+            boundary: 0,
         };
         rules.process_entry(&not_entry, ctx, &mut ss);
         assert!(!ss.rule_is_satisfied(0), "NOT should veto the rule");
@@ -980,6 +1013,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::And,
             shape: RuleShape::Matrix,
+            boundary: 0,
         };
         let seg1 = PatternEntry {
             rule_idx: 0,
@@ -987,6 +1021,7 @@ mod tests {
             pt_index: 0,
             kind: PatternKind::And,
             shape: RuleShape::Matrix,
+            boundary: 0,
         };
 
         assert!(!rules.process_entry(&seg0, ctx, &mut ss));
@@ -1012,6 +1047,7 @@ mod tests {
             pt_index: 3,
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
+            boundary: 0,
         };
 
         let ctx = ScanContext {

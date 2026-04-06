@@ -39,18 +39,61 @@ use tinyvec::TinyVec;
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
+use super::build::{BOUNDARY_LEFT, BOUNDARY_RIGHT};
 use super::engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density};
 use super::rule::{
-    DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT, DIRECT_RULE_MASK, PatternDispatch,
+    DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT,
+    DIRECT_RULE_MASK, PatternDispatch,
 };
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, ScanState};
 use super::{SimpleMatcher, SimpleResult};
+
+/// Returns whether a byte is a "word" character for boundary checking.
+#[inline(always)]
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80
+}
+
+/// Checks whether word boundaries are satisfied at the given match position.
+#[inline(always)]
+fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool {
+    if flags & BOUNDARY_LEFT != 0
+        && start > 0
+        && is_word_byte(text[start - 1])
+        && is_word_byte(text[start])
+    {
+        return false;
+    }
+    if flags & BOUNDARY_RIGHT != 0
+        && end < text.len()
+        && is_word_byte(text[end - 1])
+        && is_word_byte(text[end])
+    {
+        return false;
+    }
+    true
+}
 
 /// Hot-path search helpers layered on top of the compiled scan engines.
 impl SimpleMatcher {
     /// Fast path for matchers that contain only direct simple literal rules.
     pub(super) fn is_match_simple(&self, text: &str) -> bool {
-        self.scan.is_match(text)
+        if !self.scan.patterns().has_boundary() {
+            return self.scan.is_match(text);
+        }
+        // Boundary patterns need position-aware scanning.
+        let text_bytes = text.as_bytes();
+        let density = text_non_ascii_density(text);
+        let mut matched = false;
+        self.scan
+            .for_each_rule_idx_simple(text, density, |_rule_idx, boundary, start, end| {
+                if !matched
+                    && (boundary == 0 || check_word_boundary(text_bytes, start, end, boundary))
+                {
+                    matched = true;
+                }
+            });
+        matched
     }
 
     /// Collects matches for an all-simple matcher without building transformed variants.
@@ -60,9 +103,13 @@ impl SimpleMatcher {
         state.prepare(self.rules.len());
         let mut ss = state.as_scan_state();
 
+        let text_bytes = text.as_bytes();
         let density = text_non_ascii_density(text);
         self.scan
-            .for_each_rule_idx_simple(text, density, |rule_idx| {
+            .for_each_rule_idx_simple(text, density, |rule_idx, boundary, start, end| {
+                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
+                    return;
+                }
                 self.rules.push_result_if_new(rule_idx, &mut ss, results);
             });
     }
@@ -70,18 +117,32 @@ impl SimpleMatcher {
     /// Scans one processed text variant and forwards each raw hit into rule evaluation.
     #[inline(always)]
     fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
-        self.scan
-            .for_each_match_value(processed_text, ctx.non_ascii_density, |raw_value| {
-                self.process_match(raw_value, ctx, ss)
-            })
+        let text_bytes = processed_text.as_bytes();
+        self.scan.for_each_match_value(
+            processed_text,
+            ctx.non_ascii_density,
+            |raw_value, start, end| self.process_match(raw_value, text_bytes, start, end, ctx, ss),
+        )
     }
 
     /// Processes one raw match value reported by the scan engine.
     #[inline(always)]
-    fn process_match(&self, raw_value: u32, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
+    fn process_match(
+        &self,
+        raw_value: u32,
+        text: &[u8],
+        start: usize,
+        end: usize,
+        ctx: ScanContext,
+        ss: &mut ScanState<'_>,
+    ) -> bool {
         if raw_value & DIRECT_RULE_BIT != 0 {
             let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
             if ctx.process_type_mask & (1u64 << pt_index) == 0 {
+                return false;
+            }
+            let boundary = ((raw_value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+            if boundary != 0 && !check_word_boundary(text, start, end, boundary) {
                 return false;
             }
             let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
@@ -91,9 +152,18 @@ impl SimpleMatcher {
             return ctx.exit_early;
         }
         match self.scan.patterns().dispatch_indirect(raw_value) {
-            PatternDispatch::SingleEntry(entry) => self.rules.process_entry(entry, ctx, ss),
+            PatternDispatch::SingleEntry(entry) => {
+                if entry.boundary != 0 && !check_word_boundary(text, start, end, entry.boundary) {
+                    return false;
+                }
+                self.rules.process_entry(entry, ctx, ss)
+            }
             PatternDispatch::Entries(entries) => {
                 for entry in entries {
+                    if entry.boundary != 0 && !check_word_boundary(text, start, end, entry.boundary)
+                    {
+                        continue;
+                    }
                     if self.rules.process_entry(entry, ctx, ss) {
                         return true;
                     }
@@ -215,12 +285,22 @@ impl SimpleMatcher {
                                 exit_early,
                                 non_ascii_density: parent_density,
                             };
+                            let fused_text_bytes = parent_text.as_bytes();
                             macro_rules! fused {
                                 ($m:expr) => {
                                     Some(self.scan.for_each_match_value_from_iter(
                                         $m.filter_bytes(parent_text),
                                         ctx.non_ascii_density,
-                                        |v| self.process_match(v, ctx, &mut ss),
+                                        |v, start, end| {
+                                            self.process_match(
+                                                v,
+                                                fused_text_bytes,
+                                                start,
+                                                end,
+                                                ctx,
+                                                &mut ss,
+                                            )
+                                        },
                                     ))
                                 };
                             }

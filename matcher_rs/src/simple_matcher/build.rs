@@ -332,7 +332,12 @@ impl SimpleMatcher {
                         if alternative.is_empty() {
                             continue;
                         }
-                        for ac_word in reduce_text_process_emit(word_process_type, alternative) {
+                        // Parse \b word boundary markers at start/end of the alternative.
+                        let (boundary_flags, inner) = parse_boundary_markers(alternative);
+                        if inner.is_empty() {
+                            continue;
+                        }
+                        for ac_word in reduce_text_process_emit(word_process_type, inner) {
                             let pt_index = pt_index_table[process_type.bits() as usize];
                             let Some(&dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
                                 pattern_id_map.insert(ac_word.clone(), next_pattern_id);
@@ -342,6 +347,7 @@ impl SimpleMatcher {
                                     pt_index,
                                     kind,
                                     shape,
+                                    boundary: boundary_flags,
                                 }]);
                                 dedup_patterns.push(ac_word);
                                 next_pattern_id += 1;
@@ -353,6 +359,7 @@ impl SimpleMatcher {
                                 pt_index,
                                 kind,
                                 shape,
+                                boundary: boundary_flags,
                             });
                         }
                     }
@@ -366,6 +373,29 @@ impl SimpleMatcher {
             rules: RuleSet::new(rule_hot, rule_cold, any_has_not),
         }
     }
+}
+
+/// Word boundary flag constants.
+pub(super) const BOUNDARY_LEFT: u8 = 1;
+pub(super) const BOUNDARY_RIGHT: u8 = 2;
+
+/// Parses `\b` markers at the start and end of a pattern string.
+///
+/// Returns `(boundary_flags, inner)` where `boundary_flags` encodes which
+/// boundaries are required (bit 0 = left, bit 1 = right) and `inner` is
+/// the pattern with markers stripped.
+fn parse_boundary_markers(s: &str) -> (u8, &str) {
+    let mut flags = 0u8;
+    let mut inner = s;
+    if inner.starts_with("\\b") {
+        flags |= BOUNDARY_LEFT;
+        inner = &inner[2..];
+    }
+    if inner.ends_with("\\b") {
+        flags |= BOUNDARY_RIGHT;
+        inner = &inner[..inner.len() - 2];
+    }
+    (flags, inner)
 }
 
 #[cfg(test)]

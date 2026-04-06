@@ -61,8 +61,10 @@ Including `None` in a composite type keeps the raw-text path alongside transform
 | `&` | All sub-patterns must appear (any order) | `"apple&pie"` fires when both appear |
 | `\|` | Any alternative matches the segment | `"color\|colour"` fires when either appears |
 | `~` | Following sub-pattern must be absent | `"banana~peel"` fires when banana appears without peel |
+| `\b` | Word boundary at start/end of sub-pattern | `"\bcat\b"` matches "the cat" but not "concatenate" |
 
 `|` binds tighter than `&`/`~`: `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f).
+`\b` is per-sub-pattern (after `&`/`~`/`|` splitting): `"\bcat\b&dog"` requires "cat" as whole word, "dog" as substring.
 
 Repeated segments count: `"无&法&无&天"` requires two matches of `"无"`.
 

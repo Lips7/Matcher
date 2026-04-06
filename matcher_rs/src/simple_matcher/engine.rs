@@ -36,7 +36,9 @@ use daachorse::{
 
 use crate::MatcherError;
 
-use super::rule::{DIRECT_RULE_MASK, PatternEntry, PatternIndex};
+use super::rule::{
+    DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK, PatternEntry, PatternIndex,
+};
 
 /// Non-ASCII byte density threshold for switching from bytewise to charwise engine.
 ///
@@ -217,7 +219,7 @@ impl ScanPlan {
         &self,
         text: &str,
         density: f32,
-        on_value: impl FnMut(u32) -> bool,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
             return false;
@@ -241,7 +243,7 @@ impl ScanPlan {
         &self,
         iter: impl Iterator<Item = u8>,
         density: f32,
-        on_value: impl FnMut(u32) -> bool,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         if density <= CHARWISE_DENSITY_THRESHOLD {
             if let Some(ref matcher) = self.bytewise_matcher {
@@ -262,7 +264,7 @@ impl ScanPlan {
         &self,
         text: &str,
         density: f32,
-        on_rule: impl FnMut(usize),
+        on_rule: impl FnMut(usize, u8, usize, usize),
     ) {
         if density <= CHARWISE_DENSITY_THRESHOLD {
             if let Some(ref matcher) = self.bytewise_matcher {
@@ -289,20 +291,24 @@ impl BytewiseMatcher {
     }
 
     #[inline(always)]
-    fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
+    fn for_each_match_value(
+        &self,
+        text: &str,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
         #[cfg(feature = "dfa")]
         if let Some((ref matcher, ref to_value)) = self.dfa {
             for m in matcher.find_overlapping_iter(text) {
                 // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
                 let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                if on_value(value) {
+                if on_value(value, m.start(), m.end()) {
                     return true;
                 }
             }
             return false;
         }
         for hit in self.daac.find_overlapping_iter(text) {
-            if on_value(hit.value()) {
+            if on_value(hit.value(), hit.start(), hit.end()) {
                 return true;
             }
         }
@@ -310,18 +316,35 @@ impl BytewiseMatcher {
     }
 
     #[inline(always)]
-    fn for_each_rule_idx_simple(&self, text: &str, mut on_rule: impl FnMut(usize)) {
+    fn for_each_rule_idx_simple(
+        &self,
+        text: &str,
+        mut on_rule: impl FnMut(usize, u8, usize, usize),
+    ) {
         #[cfg(feature = "dfa")]
         if let Some((ref matcher, ref to_value)) = self.dfa {
             for m in matcher.find_overlapping_iter(text) {
                 // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
                 let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                on_rule((value & DIRECT_RULE_MASK) as usize);
+                let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+                on_rule(
+                    (value & DIRECT_RULE_MASK) as usize,
+                    boundary,
+                    m.start(),
+                    m.end(),
+                );
             }
             return;
         }
         for hit in self.daac.find_overlapping_iter(text) {
-            on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
+            let value = hit.value();
+            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+            on_rule(
+                (value & DIRECT_RULE_MASK) as usize,
+                boundary,
+                hit.start(),
+                hit.end(),
+            );
         }
     }
 
@@ -330,10 +353,10 @@ impl BytewiseMatcher {
     fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
-        mut on_value: impl FnMut(u32) -> bool,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         for hit in self.daac.find_overlapping_iter_from_iter(iter) {
-            if on_value(hit.value()) {
+            if on_value(hit.value(), hit.start(), hit.end()) {
                 return true;
             }
         }
@@ -353,8 +376,12 @@ impl BytewiseMatcher {
 /// Query helpers for the charwise scan engine.
 trait CharwiseMatcherExt {
     fn is_match_text(&self, text: &str) -> bool;
-    fn for_each_match_value(&self, text: &str, on_value: impl FnMut(u32) -> bool) -> bool;
-    fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize));
+    fn for_each_match_value(
+        &self,
+        text: &str,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool;
+    fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize, u8, usize, usize));
 }
 
 /// Streaming query helpers for the charwise scan engine.
@@ -362,7 +389,7 @@ trait CharwiseMatcherStreamExt {
     fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
-        on_value: impl FnMut(u32) -> bool,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool;
 }
 
@@ -371,13 +398,13 @@ impl CharwiseMatcherStreamExt for CharwiseMatcher {
     fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
-        mut on_value: impl FnMut(u32) -> bool,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         // SAFETY: The streaming iterators (DeleteFilterIterator, NormalizeFilterIterator)
         // yield valid UTF-8: delete outputs a subsequence of complete codepoints;
         // normalize outputs unmapped codepoints verbatim plus valid UTF-8 replacement strings.
         for hit in unsafe { self.find_overlapping_iter_from_iter(iter) } {
-            if on_value(hit.value()) {
+            if on_value(hit.value(), hit.start(), hit.end()) {
                 return true;
             }
         }
@@ -391,9 +418,13 @@ impl CharwiseMatcherExt for CharwiseMatcher {
     }
 
     #[inline(always)]
-    fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
+    fn for_each_match_value(
+        &self,
+        text: &str,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
         for hit in self.find_overlapping_iter(text) {
-            if on_value(hit.value()) {
+            if on_value(hit.value(), hit.start(), hit.end()) {
                 return true;
             }
         }
@@ -401,9 +432,20 @@ impl CharwiseMatcherExt for CharwiseMatcher {
     }
 
     #[inline(always)]
-    fn for_each_rule_idx_simple(&self, text: &str, mut on_rule: impl FnMut(usize)) {
+    fn for_each_rule_idx_simple(
+        &self,
+        text: &str,
+        mut on_rule: impl FnMut(usize, u8, usize, usize),
+    ) {
         for hit in self.find_overlapping_iter(text) {
-            on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
+            let value = hit.value();
+            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+            on_rule(
+                (value & DIRECT_RULE_MASK) as usize,
+                boundary,
+                hit.start(),
+                hit.end(),
+            );
         }
     }
 }
