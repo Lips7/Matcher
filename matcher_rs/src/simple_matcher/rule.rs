@@ -137,15 +137,8 @@ pub(super) struct RuleHot {
     ///
     /// AND entries hold the required hit count (decremented toward zero);
     /// NOT entries hold a starting value of 0 (incremented on hit; any positive value
-    /// means the veto segment was observed). Only read when `use_matrix` is true.
+    /// means the veto segment was observed). Only read when `RuleShape::use_matrix()` is true.
     pub(super) segment_counts: Vec<i32>,
-    /// Number of positive (AND) segments at the front of `segment_counts`.
-    pub(super) and_count: usize,
-    /// Whether the rule needs the per-variant counter matrix instead of the `u64` bitmask.
-    ///
-    /// True when any segment requires a count other than 1, or when the total number
-    /// of segments exceeds [`BITMASK_CAPACITY`](super::encoding::BITMASK_CAPACITY).
-    pub(super) use_matrix: bool,
 }
 
 /// Cold rule metadata only needed when returning results.
@@ -291,6 +284,7 @@ impl RuleSet {
             kind,
             shape,
             boundary: _,
+            and_count: _,
         } = entry;
 
         let rule_idx = rule_idx as usize;
@@ -335,15 +329,15 @@ impl RuleSet {
                 // Inline init: disjoint field borrows keep word_state valid across
                 // touched_indices.push() and matrix access.
                 if word_state.matrix_generation != generation {
-                    // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                    let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                    let and_count = entry.and_count;
                     word_state.matrix_generation = generation;
-                    word_state.positive_generation =
-                        if rule.and_count == 0 { generation } else { 0 };
-                    word_state.remaining_and = rule.and_count as u16;
+                    word_state.positive_generation = if and_count == 0 { generation } else { 0 };
+                    word_state.remaining_and = and_count as u16;
                     word_state.satisfied_mask = 0;
                     ss.touched_indices.push(rule_idx);
-                    if rule.use_matrix {
+                    if shape.use_matrix() {
+                        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                        let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                         init_matrix(
                             // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
                             unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
@@ -408,15 +402,15 @@ impl RuleSet {
 
                 // Inline init (same rationale as AND path).
                 if word_state.matrix_generation != generation {
-                    // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                    let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                    let and_count = entry.and_count;
                     word_state.matrix_generation = generation;
-                    word_state.positive_generation =
-                        if rule.and_count == 0 { generation } else { 0 };
-                    word_state.remaining_and = rule.and_count as u16;
+                    word_state.positive_generation = if and_count == 0 { generation } else { 0 };
+                    word_state.remaining_and = and_count as u16;
                     word_state.satisfied_mask = 0;
                     ss.touched_indices.push(rule_idx);
-                    if rule.use_matrix {
+                    if shape.use_matrix() {
+                        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                        let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                         init_matrix(
                             // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
                             unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
@@ -490,8 +484,6 @@ mod tests {
         RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![1],
-                and_count: 1,
-                use_matrix: false,
             }],
             vec![RuleCold {
                 word_id,
@@ -536,6 +528,7 @@ mod tests {
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
             boundary: 0,
+            and_count: 1,
         };
 
         let result = rules.process_entry(&entry, make_ctx(true), &mut ss);
@@ -554,8 +547,6 @@ mod tests {
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![1, 1, 1],
-                and_count: 3,
-                use_matrix: false,
             }],
             vec![RuleCold {
                 word_id: 1,
@@ -575,6 +566,7 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::Bitmask,
             boundary: 0,
+            and_count: 3,
         };
         assert!(!rules.process_entry(&e0, ctx, &mut ss));
         assert!(!ss.rule_is_satisfied(0));
@@ -593,8 +585,6 @@ mod tests {
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![1, 0],
-                and_count: 1,
-                use_matrix: false,
             }],
             vec![RuleCold {
                 word_id: 1,
@@ -614,6 +604,7 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::SingleAndNot,
             boundary: 0,
+            and_count: 1,
         };
         rules.process_entry(&and_entry, ctx, &mut ss);
         assert!(ss.rule_is_satisfied(0));
@@ -625,6 +616,7 @@ mod tests {
             kind: PatternKind::Not,
             shape: RuleShape::SingleAndNot,
             boundary: 0,
+            and_count: 1,
         };
         rules.process_entry(&not_entry, ctx, &mut ss);
         assert!(!ss.rule_is_satisfied(0), "NOT should veto the rule");
@@ -635,8 +627,6 @@ mod tests {
         let rules = RuleSet::new(
             vec![RuleHot {
                 segment_counts: vec![2, 1],
-                and_count: 2,
-                use_matrix: true,
             }],
             vec![RuleCold {
                 word_id: 1,
@@ -656,6 +646,7 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::Matrix,
             boundary: 0,
+            and_count: 2,
         };
         let seg1 = PatternEntry {
             rule_idx: 0,
@@ -664,6 +655,7 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::Matrix,
             boundary: 0,
+            and_count: 2,
         };
 
         assert!(!rules.process_entry(&seg0, ctx, &mut ss));
@@ -690,6 +682,7 @@ mod tests {
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
             boundary: 0,
+            and_count: 1,
         };
 
         let ctx = ScanContext {

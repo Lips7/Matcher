@@ -59,7 +59,7 @@ pub(super) struct WordState {
     /// Bitset fast path for tracking which AND segments have been satisfied.
     ///
     /// Bit `i` is set when segment `i` has been observed at least once. Only used
-    /// when [`RuleHot::use_matrix`](super::rule::RuleHot::use_matrix) is `false`
+    /// when the rule does not use the matrix path (i.e., `RuleShape::use_matrix()` is `false`)
     /// and the rule has more than one AND segment.
     pub(super) satisfied_mask: u64,
     /// Remaining AND segments still needed before the rule can fire.
@@ -78,7 +78,7 @@ pub(super) struct WordState {
 ///
 /// # Matrix layout
 ///
-/// For rules with [`RuleHot::use_matrix`](super::rule::RuleHot::use_matrix) = `true`,
+/// For rules with `RuleShape::use_matrix()` = `true`,
 /// `matrix[rule_idx]` is a flat 2-D array of shape `[num_segments × num_variants]`
 /// stored in row-major order. Each cell starts at the segment's required count and is
 /// decremented (AND) or incremented (NOT) on each hit. `matrix_status[rule_idx]` is a
@@ -254,6 +254,7 @@ impl ScanState<'_> {
     pub(super) fn init_rule(
         &mut self,
         rule: &super::rule::RuleHot,
+        and_count: usize,
         rule_idx: usize,
         ctx: ScanContext,
     ) {
@@ -261,12 +262,17 @@ impl ScanState<'_> {
         // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
         let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
         word_state.matrix_generation = generation;
-        word_state.positive_generation = if rule.and_count == 0 { generation } else { 0 };
-        word_state.remaining_and = rule.and_count as u16;
+        word_state.positive_generation = if and_count == 0 { generation } else { 0 };
+        word_state.remaining_and = and_count as u16;
         word_state.satisfied_mask = 0;
         self.touched_indices.push(rule_idx);
 
-        if rule.use_matrix {
+        // Derive use_matrix from segment_counts (same logic as build.rs).
+        let use_matrix = and_count > super::encoding::BITMASK_CAPACITY
+            || rule.segment_counts.len() > super::encoding::BITMASK_CAPACITY
+            || rule.segment_counts[..and_count].iter().any(|&v| v != 1)
+            || rule.segment_counts[and_count..].iter().any(|&v| v != 0);
+        if use_matrix {
             init_matrix(
                 // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match word_states.
                 unsafe { self.matrix.get_unchecked_mut(rule_idx) },
@@ -467,13 +473,11 @@ mod tests {
         state.prepare(1);
 
         let rule = super::super::rule::RuleHot {
-            segment_counts: vec![1, 1, 0],
-            and_count: 2,
-            use_matrix: true,
+            segment_counts: vec![2, 1, 0],
         };
         let ctx = make_ctx(2, false);
         let mut ss = state.as_scan_state();
-        ss.init_rule(&rule, 0, ctx);
+        ss.init_rule(&rule, 2, 0, ctx);
 
         assert_eq!(ss.word_states[0].matrix_generation, ss.generation());
         assert_eq!(ss.word_states[0].remaining_and, 2);
@@ -481,7 +485,7 @@ mod tests {
         assert_eq!(ss.touched_indices(), &[0]);
 
         assert_eq!(ss.matrix[0].len(), 6);
-        assert_eq!(&ss.matrix[0][..], &[1, 1, 1, 1, 0, 0]);
+        assert_eq!(&ss.matrix[0][..], &[2, 2, 1, 1, 0, 0]);
         assert_eq!(ss.matrix_status[0].len(), 3);
         assert!(ss.matrix_status[0].iter().all(|&s| s == 0));
     }

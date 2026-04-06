@@ -74,6 +74,14 @@ pub(super) struct PatternEntry {
     /// When non-zero, the scan dispatch checks `is_word_byte` at match start/end
     /// before forwarding the hit to [`RuleSet::process_entry`](super::rule::RuleSet::process_entry).
     pub(super) boundary: u8,
+    /// Number of positive (AND) segments in the owning rule.
+    ///
+    /// Duplicated from [`RuleHot::and_count`](super::rule::RuleHot::and_count) so that
+    /// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) can initialize
+    /// per-rule state without loading the `RuleHot` struct (avoiding a cache miss on
+    /// the 400KB+ hot array). Fits in the existing struct padding (9→10 bytes, still
+    /// padded to 12).
+    pub(super) and_count: u8,
 }
 
 /// Flat storage for deduplicated pattern entries plus their original bucket ranges.
@@ -251,6 +259,7 @@ mod tests {
             kind: PatternKind::Simple,
             shape: RuleShape::SingleAnd,
             boundary: 0,
+            and_count: 1,
         }]];
         let index = PatternIndex::new(entries);
         let value_map = index.build_value_map();
@@ -275,6 +284,7 @@ mod tests {
             kind: PatternKind::And,
             shape: RuleShape::Bitmask,
             boundary: 0,
+            and_count: 2,
         }]];
         let index = PatternIndex::new(entries);
         let value_map = index.build_value_map();
@@ -303,6 +313,7 @@ mod tests {
                 kind: PatternKind::Simple,
                 shape: RuleShape::SingleAnd,
                 boundary: 0,
+                and_count: 1,
             },
             PatternEntry {
                 rule_idx: 1,
@@ -311,6 +322,7 @@ mod tests {
                 kind: PatternKind::Simple,
                 shape: RuleShape::SingleAnd,
                 boundary: 0,
+                and_count: 1,
             },
         ]];
         let index = PatternIndex::new(entries);

@@ -273,11 +273,7 @@ impl SimpleMatcher {
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
                 {
-                    rule_hot[existing_idx] = RuleHot {
-                        segment_counts,
-                        and_count,
-                        use_matrix,
-                    };
+                    rule_hot[existing_idx] = RuleHot { segment_counts };
                     rule_cold[existing_idx] = RuleCold {
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
@@ -286,11 +282,7 @@ impl SimpleMatcher {
                 } else {
                     let idx = rule_hot.len();
                     word_id_to_idx.insert((process_type, simple_word_id), idx);
-                    rule_hot.push(RuleHot {
-                        segment_counts,
-                        and_count,
-                        use_matrix,
-                    });
+                    rule_hot.push(RuleHot { segment_counts });
                     rule_cold.push(RuleCold {
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
@@ -313,6 +305,10 @@ impl SimpleMatcher {
                     assert!(
                         offset < 256,
                         "rule has {offset} segments; PatternEntry::offset is u8 (max 255)"
+                    );
+                    assert!(
+                        and_count < 256,
+                        "rule has {and_count} AND segments; PatternEntry::and_count is u8 (max 255)"
                     );
 
                     let kind = if is_simple {
@@ -347,6 +343,7 @@ impl SimpleMatcher {
                                     kind,
                                     shape,
                                     boundary: boundary_flags,
+                                    and_count: and_count as u8,
                                 }]);
                                 dedup_patterns.push(ac_word);
                                 next_pattern_id += 1;
@@ -359,6 +356,7 @@ impl SimpleMatcher {
                                 kind,
                                 shape,
                                 boundary: boundary_flags,
+                                and_count: and_count as u8,
                             });
                         }
                     }
