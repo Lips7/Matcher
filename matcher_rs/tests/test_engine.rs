@@ -496,11 +496,7 @@ fn test_density_dispatch_boundary() {
     // ~80% non-ASCII density (charwise path): mostly CJK with the ASCII needle embedded
     // Each CJK char is 3 bytes, so 20 CJK chars = 60 non-ASCII bytes
     // "needle" = 6 ASCII bytes, total ~66 bytes, density = 60/66 ≈ 0.91
-    let high_density = format!(
-        "{}needle{}",
-        "你好世界测试国语中文".repeat(1),
-        "你好世界测试国语中文".repeat(1)
-    );
+    let high_density = format!("{}needle{}", "你好世界测试国语中文", "你好世界测试国语中文");
     assert!(
         matcher.is_match(&high_density),
         "high density: ASCII match in CJK text"
