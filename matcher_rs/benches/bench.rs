@@ -110,6 +110,13 @@ fn build_shaped_map(lang: &str, size: usize, shape: &str) -> HashMap<u32, String
                 format!("{a}&{b}&{c}")
             }
             "not" => format!("{}~__never_block_{i}__", patterns[idx]),
+            "or" => {
+                let a = patterns[idx];
+                let b = patterns[(idx + 101) % patterns.len()];
+                let c = patterns[(idx + 211) % patterns.len()];
+                format!("{a}|{b}|{c}")
+            }
+            "word_boundary" => format!("\\b{}\\b", patterns[idx]),
             _ => unreachable!("unknown rule shape: {shape}"),
         };
         map.insert((i + 1) as u32, shaped);
@@ -423,7 +430,7 @@ mod text_transform {
 mod rule_complexity {
     use super::*;
 
-    const SHAPES: &[&str] = &["literal", "and", "not"];
+    const SHAPES: &[&str] = &["literal", "and", "not", "or", "word_boundary"];
 
     #[divan::bench(args = SHAPES, max_time = 5)]
     fn shape_is_match(bencher: Bencher, shape: &str) {

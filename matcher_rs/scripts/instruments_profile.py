@@ -73,14 +73,15 @@ def build_profiling_binary() -> Path:
 
 def record_profile(
     *,
-    mode: str,
-    shape: str,
-    dict_lang: str,
-    rules: int,
-    pt: str,
-    seconds: int,
-    output: Path | None,
-    build: bool,
+    scene: str | None = None,
+    mode: str = "process",
+    shape: str = "literal",
+    dict_lang: str = "en",
+    rules: int = 10_000,
+    pt: str = "none",
+    seconds: int = 10,
+    output: Path | None = None,
+    build: bool = True,
 ) -> Path:
     binary = find_profiling_binary()
     if build:
@@ -88,34 +89,40 @@ def record_profile(
     elif not binary.exists():
         binary = build_profiling_binary()
 
-    if output is None:
-        output = Path(f"/tmp/prof_{mode}_{shape}_{dict_lang}_{rules}.trace")
+    # Build CLI args for profile_search binary
+    binary_args: list[str] = []
+    if scene:
+        if output is None:
+            output = Path(f"/tmp/prof_{scene}.trace")
+        binary_args += ["--scene", scene, "--seconds", str(seconds)]
+        print(f"Recording: scene={scene} seconds={seconds}s")
+    else:
+        if output is None:
+            output = Path(f"/tmp/prof_{mode}_{shape}_{dict_lang}_{rules}.trace")
+        binary_args += [
+            "--dict", dict_lang,
+            "--rules", str(rules),
+            "--mode", mode,
+            "--shape", shape,
+            "--pt", pt,
+            "--seconds", str(seconds),
+        ]
+        print(f"Recording: mode={mode} shape={shape} dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s")
 
     if output.exists():
         subprocess.run(["rm", "-rf", str(output)], check=True)
-
-    env = {
-        **os.environ,
-        "RULES": str(rules),
-        "DICT": dict_lang,
-        "PT": pt,
-        "MODE": mode,
-        "SHAPE": shape,
-        "SECONDS": str(seconds),
-    }
 
     cmd = [
         "xctrace", "record",
         "--template", "Time Profiler",
         "--time-limit", f"{seconds + 5}s",
         "--output", str(output),
-        "--launch", "--", str(binary),
+        "--launch", "--", str(binary), *binary_args,
     ]
 
-    print(f"Recording: mode={mode} shape={shape} dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s")
     print(f"Output: {output}")
 
-    result = subprocess.run(cmd, env=env)
+    result = subprocess.run(cmd)
     if result.returncode != 0:
         sys.exit(f"xctrace record failed (exit {result.returncode})")
 
@@ -952,8 +959,11 @@ def main():
 
     # --- record ---
     rec = sub.add_parser("record", help="Record a Time Profiler trace")
+    rec.add_argument("--scene", default=None,
+                     help="Named scene (e.g. en-search, cn-transform, all). Overrides --mode/--dict/etc.")
     rec.add_argument("--mode", default="process", choices=["is_match", "process"])
-    rec.add_argument("--shape", default="literal", choices=["literal", "and", "not"])
+    rec.add_argument("--shape", default="literal",
+                     choices=["literal", "and", "not", "or", "word_boundary"])
     rec.add_argument("--dict", default="en", choices=["en", "cn", "mixed"], dest="dict_lang")
     rec.add_argument("--rules", type=int, default=10_000)
     rec.add_argument("--pt", default="none",
@@ -977,6 +987,7 @@ def main():
 
     if args.command == "record":
         trace = record_profile(
+            scene=args.scene,
             mode=args.mode,
             shape=args.shape,
             dict_lang=args.dict_lang,

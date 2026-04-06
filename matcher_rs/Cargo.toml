@@ -52,10 +52,6 @@ allowlist = ["perf"]
 name = "bench"
 harness = false
 
-[[bench]]
-name = "bench_engine"
-harness = false
-required-features = ["dfa"]
 
 [[example]]
 name = "characterize_engines"

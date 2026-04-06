@@ -37,25 +37,25 @@ just lint-py                        # cargo fmt + cargo clippy + ruff + ty check
 just lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
 just lint-c                         # cargo fmt + cargo clippy (matcher_c)
 
-# Benchmarks (harness: divan, two targets: bench, bench_engine)
+# Benchmarks (harness: divan, single target: bench)
 # All bench recipes accept pass-through args: --quick, --profile, --repeats, --filter, etc.
 just bench-search                                      # Main throughput workflow (~15 min)
 just bench-search --quick                              # Quick directional signal (~2-3 min)
 just bench-search --filter text_transform              # Only transform benchmarks (~2 min)
+just bench-search --filter rule_complexity             # Only rule shape benchmarks (~3 min)
 just bench-search --filter "scaling::process_cn"       # Single benchmark group (~1 min)
 just bench-search --profile bench-dev                  # Faster rebuild (thin LTO)
 just bench-build                                       # Matcher construction workflow
-just bench-engine-search                               # Raw engine throughput workflow
-just bench-engine-build                                # Raw engine build workflow
-just bench-engine-is-match                             # Engine is_match workflow
-just bench-all                                         # All presets
+just bench-all                                         # All presets (search + build)
 just bench-compare <baseline_dir> <candidate_dir>      # aggregated run-set comparison
 just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file-to-file comparison
 just bench-viz <run_dir>                               # interactive HTML dashboard (Plotly)
 just bench-viz <baseline_dir> <candidate_dir>          # comparison visualization
 
-# Profiling (uses release + debug symbols)
-cargo build --profile profiling -p matcher_rs
+# Profiling (scene-based, uses release + debug symbols)
+cargo run --profile profiling --example profile_search -p matcher_rs -- --list        # list scenes
+cargo run --profile profiling --example profile_search -p matcher_rs -- --scene all   # all scenes
+just profile record --scene en-search --analyze        # Instruments + auto-analyze
 
 # Coverage
 just coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html

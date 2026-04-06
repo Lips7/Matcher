@@ -92,8 +92,9 @@ test-c:
 # -- Bench ---------------------------------------------------------------------
 # All bench recipes accept pass-through args: --quick, --filter, --repeats, etc.
 #   just bench-search                              # Full search preset (~15 min)
-#   just bench-search --quick                      # Quick directional signal (~2 min)
+#   just bench-search --quick                      # Quick directional signal (~2-3 min)
 #   just bench-search --filter text_transform      # Only transform benchmarks (~2 min)
+#   just bench-search --filter rule_complexity     # Only rule shape benchmarks (~3 min)
 #   just bench-search --filter scaling             # Only scaling benchmarks (~5 min)
 
 _bench_script := "matcher_rs/scripts/run_benchmarks.py"
@@ -103,15 +104,6 @@ bench-search *args:
 
 bench-build *args:
     uv run {{_bench_script}} --preset build {{args}}
-
-bench-engine-search *args:
-    uv run {{_bench_script}} --preset engine-search {{args}}
-
-bench-engine-build *args:
-    uv run {{_bench_script}} --preset engine-build {{args}}
-
-bench-engine-is-match *args:
-    uv run {{_bench_script}} --preset engine-is-match {{args}}
 
 bench-all *args:
     uv run {{_bench_script}} --preset all {{args}}

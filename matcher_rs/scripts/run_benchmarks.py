@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=["search", "build", "engine-search", "engine-build", "engine-is-match", "all"],
+        choices=["search", "build", "all"],
         default="search",
         help="Benchmark preset to run. Default: search.",
     )
@@ -167,9 +167,6 @@ def preset_commands(
             "search",
         ),
         "build": ("bench", ["build"], "build"),
-        "engine-search": ("bench_engine", ["search_"], "search"),
-        "engine-build": ("bench_engine", ["build_"], "build"),
-        "engine-is-match": ("bench_engine", ["is_match_"], "search"),
     }
 
     result = OrderedDict()
