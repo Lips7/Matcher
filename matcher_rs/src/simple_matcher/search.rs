@@ -49,28 +49,51 @@ use super::pattern::PatternDispatch;
 use super::state::{SIMPLE_MATCH_STATE, ScanContext, ScanState};
 use super::{SimpleMatcher, SimpleResult};
 
-/// Returns whether a byte is a "word" character for boundary checking.
-#[inline(always)]
-fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80
-}
+/// Lookup table: entry is non-zero iff the byte is a word character
+/// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
+/// multi-branch checks with a single indexed load.
+static WORD_BYTE_LUT: [u8; 256] = {
+    let mut lut = [0u8; 256];
+    let mut i = 0u16;
+    while i < 256 {
+        let b = i as u8;
+        lut[i as usize] = if b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80 {
+            1
+        } else {
+            0
+        };
+        i += 1;
+    }
+    lut
+};
 
 /// Checks whether word boundaries are satisfied at the given match position.
+///
+/// # Safety (internal)
+///
+/// Uses `get_unchecked` after explicit bounds guards: `start > 0` ensures
+/// `start - 1` and `start` are valid; `end < text.len()` ensures `end - 1`
+/// and `end` are valid (match spans are always non-empty, so `end >= 1`).
 #[inline(always)]
 fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool {
-    if flags & BOUNDARY_LEFT != 0
-        && start > 0
-        && is_word_byte(text[start - 1])
-        && is_word_byte(text[start])
-    {
-        return false;
+    if flags & BOUNDARY_LEFT != 0 && start > 0 {
+        // SAFETY: `start > 0` guarantees `start - 1` in bounds;
+        // `start <= end <= text.len()` guarantees `start` in bounds.
+        let prev = unsafe { *text.get_unchecked(start - 1) };
+        // SAFETY: same guard — `start` is at most `text.len() - 1`.
+        let curr = unsafe { *text.get_unchecked(start) };
+        if WORD_BYTE_LUT[prev as usize] != 0 && WORD_BYTE_LUT[curr as usize] != 0 {
+            return false;
+        }
     }
-    if flags & BOUNDARY_RIGHT != 0
-        && end < text.len()
-        && is_word_byte(text[end - 1])
-        && is_word_byte(text[end])
-    {
-        return false;
+    if flags & BOUNDARY_RIGHT != 0 && end < text.len() {
+        // SAFETY: `end >= 1` (non-empty match) guarantees `end - 1` in bounds.
+        let prev = unsafe { *text.get_unchecked(end - 1) };
+        // SAFETY: `end < text.len()` guarantees `end` in bounds.
+        let next = unsafe { *text.get_unchecked(end) };
+        if WORD_BYTE_LUT[prev as usize] != 0 && WORD_BYTE_LUT[next as usize] != 0 {
+            return false;
+        }
     }
     true
 }
