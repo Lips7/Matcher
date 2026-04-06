@@ -34,18 +34,24 @@ pub(crate) enum TransformStep {
     Romanize(RomanizeMatcher),
     /// CJK romanization with inter-syllable spaces stripped.
     RomanizeChar(RomanizeMatcher),
+    /// Emoji → English words via CLDR short names; strips modifiers.
+    EmojiNorm(RomanizeMatcher),
 }
 
 impl TransformStep {
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
-    /// - **VariantNorm / Romanize / RomanizeChar**: no-op — all keys are non-ASCII codepoints.
+    /// - **VariantNorm / Romanize / RomanizeChar / EmojiNorm**: no-op — all keys are non-ASCII.
     /// - **Delete / Normalize**: may change ASCII input (punctuation deletion, casefold).
     #[inline(always)]
     pub(crate) fn is_noop_on_ascii_input(&self) -> bool {
         matches!(
             self,
-            Self::None | Self::VariantNorm(_) | Self::Romanize(_) | Self::RomanizeChar(_)
+            Self::None
+                | Self::VariantNorm(_)
+                | Self::Romanize(_)
+                | Self::RomanizeChar(_)
+                | Self::EmojiNorm(_)
         )
     }
 
@@ -66,9 +72,11 @@ impl TransformStep {
     pub(crate) fn apply(&self, text: &str, parent_density: f32) -> Option<(String, f32)> {
         if parent_density == 0.0 {
             return match self {
-                Self::None | Self::VariantNorm(_) | Self::Romanize(_) | Self::RomanizeChar(_) => {
-                    None
-                }
+                Self::None
+                | Self::VariantNorm(_)
+                | Self::Romanize(_)
+                | Self::RomanizeChar(_)
+                | Self::EmojiNorm(_) => None,
                 Self::Delete(matcher) => matcher.delete(text).map(|s| (s, 0.0)),
                 Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, 0.0)),
             };
@@ -79,7 +87,7 @@ impl TransformStep {
             Self::VariantNorm(matcher) => matcher.replace(text).map(|s| (s, parent_density)),
             Self::Delete(matcher) => matcher.delete(text).map(|s| (s, parent_density)),
             Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, parent_density)),
-            Self::Romanize(matcher) | Self::RomanizeChar(matcher) => {
+            Self::Romanize(matcher) | Self::RomanizeChar(matcher) | Self::EmojiNorm(matcher) => {
                 matcher.replace(text).map(|s| (s, 0.0))
             }
         }
@@ -137,6 +145,12 @@ fn build_transform_step(process_type_bit: ProcessType) -> TransformStep {
             ROMANIZE_L2_BYTES,
             ROMANIZE_STR_BYTES,
             true,
+        )),
+        ProcessType::EmojiNorm => TransformStep::EmojiNorm(RomanizeMatcher::new(
+            EMOJI_NORM_L1_BYTES,
+            EMOJI_NORM_L2_BYTES,
+            EMOJI_NORM_STR_BYTES,
+            false,
         )),
         _ => unreachable!("unsupported single-bit ProcessType"),
     }

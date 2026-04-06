@@ -35,6 +35,7 @@ typedef uint8_t ProcessType;
 #define PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE 14
 #define PROCESS_TYPE_ROMANIZE 16
 #define PROCESS_TYPE_ROMANIZE_CHAR 32
+#define PROCESS_TYPE_EMOJI_NORM 64
 
 // Apply a single ProcessType transform to text. Caller must free result with drop_string.
 char* text_process(ProcessType process_type, const char* text);

@@ -789,3 +789,88 @@ fn test_romanize_mixed_cjk_matcher() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 1);
 }
+
+// ===========================================================================
+// EmojiNorm transform tests
+// ===========================================================================
+
+#[test]
+fn test_emoji_norm_basic() {
+    let result = text_process(ProcessType::EmojiNorm, "👍");
+    assert_eq!(result, " thumbs_up");
+}
+
+#[test]
+fn test_emoji_norm_fire() {
+    let result = text_process(ProcessType::EmojiNorm, "🔥");
+    assert_eq!(result, " fire");
+}
+
+#[test]
+fn test_emoji_norm_mixed_text() {
+    // "Hello " + " fire" + " World" → "Hello  fire World"
+    let result = text_process(ProcessType::EmojiNorm, "Hello 🔥 World");
+    assert_eq!(result, "Hello  fire World");
+}
+
+#[test]
+fn test_emoji_norm_skin_tone_stripped() {
+    // 👍🏽 = U+1F44D + U+1F3FD (skin tone modifier)
+    // Skin tone stripped, base emoji normalized
+    let result = text_process(ProcessType::EmojiNorm, "👍🏽");
+    assert_eq!(result, " thumbs_up");
+}
+
+#[test]
+fn test_emoji_norm_zwj_sequence() {
+    // ZWJ (U+200D) stripped, each component normalized independently
+    let result = text_process(ProcessType::EmojiNorm, "👨\u{200D}👩\u{200D}👧");
+    assert_eq!(result, " man woman girl");
+}
+
+#[test]
+fn test_emoji_norm_vs16_stripped() {
+    // VS16 (U+FE0F) should be stripped
+    let result = text_process(ProcessType::EmojiNorm, "❤\u{FE0F}");
+    assert_eq!(result, " red_heart");
+}
+
+#[test]
+fn test_emoji_norm_ascii_passthrough() {
+    let result = text_process(ProcessType::EmojiNorm, "hello world");
+    assert_eq!(result, "hello world");
+}
+
+#[test]
+fn test_emoji_norm_multiple_emoji() {
+    let result = text_process(ProcessType::EmojiNorm, "🔥❤🎉");
+    assert_eq!(result, " fire red_heart party_popper");
+}
+
+#[test]
+fn test_emoji_norm_matcher_integration() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::EmojiNorm, 1, "fire")
+        .add_word(ProcessType::EmojiNorm, 2, "thumbs_up")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("🔥"));
+    assert!(matcher.is_match("👍🏽"));
+    assert!(!matcher.is_match("hello"));
+
+    let results = matcher.process("I love 🔥 and 👍");
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_emoji_norm_with_normalize() {
+    // EmojiNorm | Normalize: emoji→words + casefold
+    let pt = ProcessType::EmojiNorm | ProcessType::Normalize;
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(pt, 1, "fire")
+        .build()
+        .unwrap();
+
+    assert!(matcher.is_match("🔥"));
+}

@@ -102,6 +102,8 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | `dfa` | via `perf` | Aho-Corasick DFA — 1.7–3.3× faster than DAAC via Teddy prefilter; ~17× more memory |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and density counting |
 
+**Note:** `EmojiNorm` (bit 6) maps emoji to English words via CLDR short names. Does NOT compose usefully with `Delete` — Delete removes emoji before EmojiNorm sees them. Use `EmojiNorm | Normalize` for emoji→word matching.
+
 ### Workspace Layout
 
 - `matcher_rs/` — Core library (`rlib`); all algorithms live here

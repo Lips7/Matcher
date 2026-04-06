@@ -95,7 +95,7 @@ impl ProcessTypeBitNode {
 /// ```
 pub(crate) fn build_process_type_tree(
     process_type_set: &HashSet<ProcessType>,
-    pt_index_table: &[u8; 64],
+    pt_index_table: &[u8; 128],
 ) -> Vec<ProcessTypeBitNode> {
     let max_nodes: usize = 1 + process_type_set
         .iter()
@@ -154,9 +154,9 @@ mod tests {
     use super::*;
     use crate::process::ProcessType;
 
-    fn identity_index_table() -> [u8; 64] {
-        let mut table = [u8::MAX; 64];
-        for i in 0..64u8 {
+    fn identity_index_table() -> [u8; 128] {
+        let mut table = [u8::MAX; 128];
+        for i in 0..128u8 {
             table[i as usize] = i;
         }
         table
@@ -224,7 +224,7 @@ mod tests {
             .into_iter()
             .collect();
 
-        let mut pt_index_table = [u8::MAX; 64];
+        let mut pt_index_table = [u8::MAX; 128];
         pt_index_table[ProcessType::None.bits() as usize] = 0;
         pt_index_table[ProcessType::VariantNorm.bits() as usize] = 1;
 

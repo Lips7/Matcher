@@ -1,9 +1,10 @@
 {
   "counts": {
+    "emoji_norm": 1535,
     "norm": 6786,
-    "num_norm": 1912,
+    "num_norm": 1902,
     "romanize": 53271,
-    "text_delete": 11321,
+    "text_delete": 11316,
     "variant_norm": 6762
   },
   "delete_categories": [
@@ -31,13 +32,16 @@
     "opencc": "1.2.0",
     "pypinyin": "0.55.0"
   },
-  "python_version": "3.13.12",
+  "emoji_norm_sources": [
+    "cldr_annotations_derived_en"
+  ],
+  "python_version": "3.12.13",
   "romanize_sources": [
     "pypinyin",
     "kana_romaji",
     "korean_rr"
   ],
-  "unicodedata_version": "15.1.0",
+  "unicodedata_version": "15.0.0",
   "variant_norm_configs": [
     "t2s",
     "tw2s",

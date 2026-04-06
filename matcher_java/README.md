@@ -52,6 +52,7 @@ cp target/release/libmatcher_java.dylib matcher_java/src/main/resources/  # .so 
 | `VARIANT_NORM_DELETE_NORMALIZE` | `0b00001110` | VariantNorm + Delete + Normalize combined |
 | `ROMANIZE` | `0b00010000` | CJK characters to space-separated romanization (Pinyin, Romaji, RR) |
 | `ROMANIZE_CHAR` | `0b00100000` | CJK characters to romanization without boundary spaces |
+| `EMOJI_NORM` | `0b01000000` | Emoji → English words (CLDR short names), strips modifiers |
 
 ### SimpleMatcher (recommended)
 

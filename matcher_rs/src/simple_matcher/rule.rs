@@ -116,9 +116,9 @@ pub(super) const BITMASK_CAPACITY: usize = 64;
 
 /// Size of the compact process-type lookup table indexed by raw [`ProcessType`] bits.
 ///
-/// [`ProcessType`] is a 6-bit bitflag, so `2^6 = 64` covers every possible combination.
+/// [`ProcessType`] is a 7-bit bitflag, so `2^7 = 128` covers every possible combination.
 /// The table maps each bitflag value to a dense sequential index used in the scan masks.
-pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 64;
+pub(super) const PROCESS_TYPE_TABLE_SIZE: usize = 128;
 
 /// Pre-resolved rule shape encoding the combination of `use_matrix`, `and_count == 1`,
 /// and `has_not` for one [`PatternEntry`].

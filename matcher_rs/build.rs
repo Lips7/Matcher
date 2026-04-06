@@ -40,6 +40,7 @@ fn main() -> Result<()> {
     const NUM_NORM: &str = include_str!("./process_map/NUM-NORM.txt");
     const NORM: &str = include_str!("./process_map/NORM.txt");
     const ROMANIZE: &str = include_str!("./process_map/ROMANIZE.txt");
+    const EMOJI_NORM: &str = include_str!("./process_map/EMOJI_NORM.txt");
     const TEXT_DELETE: &str = include_str!("./process_map/TEXT-DELETE.txt");
     const UNICODE_BITSET_SIZE: usize = 0x110000 / 8;
 
@@ -168,7 +169,47 @@ fn main() -> Result<()> {
         .write_all(romanize_str_buffer.as_bytes())?;
     build_2_stage_table(&romanize_map, &format!("{out_dir}/romanize"))?;
 
-    // 4. Build Text Delete BitSet
+    // 4. Build EmojiNorm 2-stage flat array & string buffer
+    let mut emoji_norm_map = HashMap::new();
+    // Start with a dummy byte so that offset 0 is never used — packed value 0
+    // means "unmapped" in page_table_lookup. Empty-string entries (modifier
+    // codepoints to strip) need a non-zero packed value: (offset << 8) | 0.
+    let mut emoji_norm_str_buffer = String::from("\0");
+
+    for (line_num, line) in EMOJI_NORM.trim().lines().enumerate() {
+        let mut split = line.split('\t');
+        let key = split.next().unwrap_or_else(|| {
+            panic!(
+                "EMOJI_NORM.txt:{}: missing key (line is empty)",
+                line_num + 1
+            )
+        });
+        assert!(
+            key.chars().count() == 1,
+            "EMOJI_NORM.txt:{}: key must be exactly one character, got {key:?}",
+            line_num + 1
+        );
+        let k = key.chars().next().unwrap() as u32;
+        let v = split.next().unwrap_or(""); // empty value = delete the codepoint
+
+        let offset = emoji_norm_str_buffer.len();
+        emoji_norm_str_buffer.push_str(v);
+        let length = v.len();
+        assert!(
+            length < 256,
+            "EMOJI_NORM.txt:{}: string length {length} exceeds 8-bit packing limit for key U+{k:04X}",
+            line_num + 1
+        );
+
+        let packed = ((offset as u32) << 8) | (length as u32);
+        emoji_norm_map.insert(k, packed);
+    }
+
+    File::create(format!("{out_dir}/emoji_norm_str.bin"))?
+        .write_all(emoji_norm_str_buffer.as_bytes())?;
+    build_2_stage_table(&emoji_norm_map, &format!("{out_dir}/emoji_norm"))?;
+
+    // 5. Build Text Delete BitSet
     let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
     for (line_num, token) in TEXT_DELETE.trim().lines().enumerate() {
         let cp = parse_delete_codepoint(token, line_num + 1) as usize;

@@ -55,6 +55,9 @@ impl PyProcessType {
     #[classattr]
     const ROMANIZE_CHAR: u8 = ProcessType::RomanizeChar.bits();
 
+    #[classattr]
+    const EMOJI_NORM: u8 = ProcessType::EmojiNorm.bits();
+
     #[new]
     fn new(bits: u8) -> Self {
         PyProcessType(ProcessType::from_bits_retain(bits))

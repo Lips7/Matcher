@@ -46,8 +46,11 @@ Controls which text transformations are applied before matching:
 | `Normalize` | NFKC casefold + numeric: `ＡＢⅣ①` → `ab41` |
 | `Romanize` | CJK → space-separated romanization: `你好` → ` ni hao`, `한글` → ` han geul` |
 | `RomanizeChar` | CJK → romanization (no spaces): `你好` → `nihao` |
+| `EmojiNorm` | Emoji → English words (CLDR short names): `👍🏽` → `thumbs_up`, `🔥` → `fire` |
 
 Compose with `|`: `ProcessType::VariantNorm | ProcessType::Delete`. Pre-defined aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
+
+**Note:** `EmojiNorm` does not compose usefully with `Delete` — Delete removes emoji before EmojiNorm can see them. Use `EmojiNorm | Normalize` for emoji→word matching.
 
 Including `None` in a composite type keeps the raw-text path alongside transformed variants — one sub-pattern can match raw text while another matches the transformed variant.
 

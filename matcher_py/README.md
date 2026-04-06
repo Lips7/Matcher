@@ -21,6 +21,8 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
     Example: `西安` -> ` xi an`, matches `洗按` -> ` xi an`, but not `先` -> ` xian`
   - **RomanizeChar**: Convert CJK characters to romanized form without boundary spaces.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
+  - **EmojiNorm**: Convert emoji to English words (CLDR short names) and strip modifiers.
+    Example: `👍🏽` -> `thumbs_up`, `🔥` -> `fire`
 - **AND OR NOT Word Matching**:
   - Takes into account the number of repetitions of words.
   - `&` (AND): `hello&world` matches `hello world` and `world,hello`
@@ -123,6 +125,9 @@ print(result)
 * `ROMANIZE_CHAR`: Convert CJK characters to romanized form without boundary spaces. Based on [ROMANIZE](../matcher_rs/process_map/ROMANIZE.txt).
   * `你好` -> `nihao`
   * `西安` -> `xian`
+* `EMOJI_NORM`: Convert emoji to English words (CLDR short names) and strip modifiers. Based on [EMOJI_NORM](../matcher_rs/process_map/EMOJI_NORM.txt).
+  * `👍🏽` -> `thumbs_up`
+  * `🔥` -> `fire`
 
 You can combine these transformations as needed. Pre-defined combinations like `DELETE_NORMALIZE` and `VARIANT_NORM_DELETE_NORMALIZE` are provided for convenience.
 

@@ -45,6 +45,23 @@ pub(crate) const ROMANIZE_L2_BYTES: &[u8] =
 pub(crate) const ROMANIZE_STR_BYTES: &str =
     include_str!(concat!(env!("OUT_DIR"), "/romanize_str.bin"));
 
+// ── EmojiNorm page tables ────────────────────────────────────────────────
+
+/// L1 index for the EmojiNorm 2-stage page table (`u16[4352]`, little-endian).
+pub(crate) const EMOJI_NORM_L1_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/emoji_norm_l1.bin"));
+
+/// L2 data for the EmojiNorm 2-stage page table (`u32[num_pages * 256]`, little-endian).
+///
+/// Each entry packs `(offset << 8) | length` into a `u32`, pointing into [`EMOJI_NORM_STR_BYTES`].
+/// Length 0 means the codepoint is stripped (emoji modifiers).
+pub(crate) const EMOJI_NORM_L2_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/emoji_norm_l2.bin"));
+
+/// Concatenated emoji name strings referenced by [`EMOJI_NORM_L2_BYTES`].
+pub(crate) const EMOJI_NORM_STR_BYTES: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/emoji_norm_str.bin"));
+
 // ── Delete BitSet ──────────────────────────────────────────────────────────
 
 /// Flat 139 KB bitset (`u8[139264]`) covering all Unicode codepoints 0x0–0x10FFFF.

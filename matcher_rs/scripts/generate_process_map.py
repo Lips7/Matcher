@@ -432,6 +432,85 @@ def build_romanize_map() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Emoji Normalization: CLDR short names → snake_case English words
+# ---------------------------------------------------------------------------
+
+CLDR_ANNOTATIONS_URL = (
+    "https://raw.githubusercontent.com/unicode-org/cldr/main"
+    "/common/annotations/en.xml"
+)
+
+# Emoji modifier codepoints to strip (map to empty string).
+EMOJI_MODIFIER_CODEPOINTS = {
+    0x200D,   # Zero Width Joiner
+    0xFE0F,   # Variation Selector-16
+    0xFE0E,   # Variation Selector-15
+    *range(0x1F3FB, 0x1F400),  # Skin tone modifiers (Fitzpatrick types 1-2 through 6)
+}
+
+# Regional indicator symbols (U+1F1E6–U+1F1FF) → lowercase letter.
+REGIONAL_INDICATOR_BASE = 0x1F1E6
+
+
+def _download_cldr_annotations() -> str:
+    resp = requests.get(CLDR_ANNOTATIONS_URL, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+def _parse_cldr_tts(xml_text: str) -> dict[str, str]:
+    """Extract type='tts' annotations from CLDR annotationsDerived XML."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml_text)
+    tts: dict[str, str] = {}
+    for ann in root.iter("annotation"):
+        if ann.get("type") != "tts":
+            continue
+        cp_str = ann.get("cp", "")
+        text = (ann.text or "").strip()
+        if len(cp_str) == 1 and text:
+            tts[cp_str] = text
+    return tts
+
+
+def _to_snake_case(name: str) -> str:
+    """Convert CLDR short name to snake_case: 'thumbs up' → 'thumbs_up'."""
+    return "_".join(name.lower().split())
+
+
+def build_emoji_norm_map() -> dict[str, str]:
+    xml_text = _download_cldr_annotations()
+    cldr_tts = _parse_cldr_tts(xml_text)
+
+    mapping: dict[str, str] = {}
+
+    # 1. CLDR short names for So (Other Symbol) codepoints >= U+0200
+    for char, name in cldr_tts.items():
+        code = ord(char)
+        cat = unicodedata.category(char)
+        if cat != "So" or code < 0x200:
+            continue
+        snake = _to_snake_case(name)
+        if snake:
+            mapping[char] = f" {snake}"
+
+    # 2. Modifier codepoints → empty string (strip them)
+    for cp in sorted(EMOJI_MODIFIER_CODEPOINTS):
+        char = chr(cp)
+        if char not in mapping:
+            mapping[char] = ""
+
+    # 3. Regional indicator symbols → lowercase letter
+    for offset in range(26):
+        char = chr(REGIONAL_INDICATOR_BASE + offset)
+        if char not in mapping:
+            mapping[char] = chr(ord("a") + offset)
+
+    return mapping
+
+
+# ---------------------------------------------------------------------------
 # Output rendering and main
 # ---------------------------------------------------------------------------
 
@@ -453,6 +532,7 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
     norm = build_norm_map(chars)
     num_norm = build_num_norm_map(chars)
     romanize = build_romanize_map()
+    emoji_norm = build_emoji_norm_map()
 
     outputs = {
         process_map_dir / "VARIANT_NORM.txt": render_mapping(variant_norm),
@@ -460,6 +540,7 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
         process_map_dir / "NORM.txt": render_mapping(norm),
         process_map_dir / "NUM-NORM.txt": render_mapping(num_norm),
         process_map_dir / "ROMANIZE.txt": render_mapping(romanize),
+        process_map_dir / "EMOJI_NORM.txt": render_mapping(emoji_norm),
     }
 
     manifest = {
@@ -480,6 +561,9 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
             "kana_romaji",
             "korean_rr",
         ],
+        "emoji_norm_sources": [
+            "cldr_annotations_derived_en",
+        ],
         "delete_categories": sorted(DELETE_CATEGORIES),
         "counts": {
             "variant_norm": len(variant_norm),
@@ -487,6 +571,7 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
             "norm": len(norm),
             "num_norm": len(num_norm),
             "romanize": len(romanize),
+            "emoji_norm": len(emoji_norm),
         },
     }
     outputs[process_map_dir / "manifest.json"] = (

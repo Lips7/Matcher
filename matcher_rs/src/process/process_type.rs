@@ -36,6 +36,7 @@ bitflags! {
     /// | `Normalize` | 3 | `0x08` |
     /// | `Romanize` | 4 | `0x10` |
     /// | `RomanizeChar` | 5 | `0x20` |
+    /// | `EmojiNorm` | 6 | `0x40` |
     ///
     /// # Examples
     ///
@@ -110,6 +111,15 @@ bitflags! {
         /// Uses the same source as [`Romanize`](Self::Romanize) but trims the leading space
         /// from each mapping at build time.
         const RomanizeChar = 0b00100000;
+
+        /// Converts emoji codepoints to space-prefixed English words using CLDR short names.
+        ///
+        /// Uses a page-table lookup compiled from `process_map/EMOJI_NORM.txt`.
+        /// Also strips emoji modifiers (ZWJ, VS16, skin tones) by mapping them to empty string.
+        ///
+        /// Does NOT compose usefully with [`Delete`](Self::Delete) — Delete removes emoji
+        /// before EmojiNorm can see them. Use one or the other.
+        const EmojiNorm = 0b01000000;
     }
 }
 
@@ -143,8 +153,8 @@ impl Serialize for ProcessType {
 
 /// Compact serde deserialization: reads a `u8` and validates that only known bits are set.
 ///
-/// Rejects values with undefined bits (bits 6–7) to prevent out-of-bounds indexing in
-/// downstream lookup tables that are sized for the 6-bit flag space.
+/// Rejects values with undefined bits (bit 7) to prevent out-of-bounds indexing in
+/// downstream lookup tables that are sized for the 7-bit flag space.
 ///
 /// # Examples
 ///

@@ -251,7 +251,7 @@ fn test_serde_round_trip_process_type() {
 
 #[test]
 fn test_serde_rejects_invalid_process_type_bits() {
-    for bits in [64u8, 128, 192, 255] {
+    for bits in [128u8, 192, 255] {
         let json = bits.to_string();
         let result: Result<ProcessType, _> = serde_json::from_str(&json);
         assert!(
@@ -263,7 +263,7 @@ fn test_serde_rejects_invalid_process_type_bits() {
 
 #[test]
 fn test_serde_accepts_all_valid_process_type_bits() {
-    for bits in 0u8..64 {
+    for bits in 0u8..128 {
         let json = bits.to_string();
         let result: Result<ProcessType, _> = serde_json::from_str(&json);
         assert!(

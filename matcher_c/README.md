@@ -41,6 +41,7 @@ The full API is declared in [`matcher_c.h`](./matcher_c.h).
 | `PROCESS_TYPE_VARIANT_NORM_DELETE_NORMALIZE` | 14 | VariantNorm + Delete + Normalize combined |
 | `PROCESS_TYPE_ROMANIZE` | 16 | CJK characters to space-separated romanization (Pinyin, Romaji, RR) |
 | `PROCESS_TYPE_ROMANIZE_CHAR` | 32 | CJK characters to romanization without boundary spaces |
+| `PROCESS_TYPE_EMOJI_NORM` | 64 | Emoji → English words (CLDR short names), strips modifiers |
 
 ### SimpleMatcher
 

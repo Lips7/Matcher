@@ -219,8 +219,9 @@ This path handles the common case of "check if any of these N keywords appear" w
 | `Normalize` | 3 | NFKC casefold + numeric normalization | `unicodedata.normalize().casefold()` |
 | `Romanize` | 4 | CJK → space-separated romanization (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization) | `pypinyin` + kana/hangul tables |
 | `RomanizeChar` | 5 | CJK → romanization (no inter-syllable spaces) | same as Romanize |
+| `EmojiNorm` | 6 | Emoji → English words, strips modifiers (ZWJ, VS16, skin tones) | CLDR `annotations/en.xml` short names |
 
-Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
+Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`. Note: `EmojiNorm` does not compose usefully with `Delete` — Delete removes emoji before EmojiNorm can see them.
 
 #### Page-Table Lookup
 
