@@ -5,8 +5,9 @@
 //! — the core state-transition function that tracks bitmasks, matrix counters, and
 //! generation stamps in the thread-local [`super::state::SimpleMatchState`].
 //!
-//! Pattern types ([`PatternEntry`], [`PatternIndex`], [`PatternDispatch`]) live in
-//! [`super::pattern`]. Bit-packing constants live in [`super::encoding`].
+//! Pattern types ([`super::pattern::PatternEntry`], [`super::pattern::PatternIndex`],
+//! [`super::pattern::PatternDispatch`]) live in [`super::pattern`].
+//! Bit-packing constants live in [`super::encoding`].
 
 use std::borrow::Cow;
 use std::collections::HashMap;

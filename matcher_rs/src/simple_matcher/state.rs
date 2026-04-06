@@ -48,7 +48,7 @@ pub(super) struct WordState {
     /// Generation in which all positive (AND) requirements became satisfied.
     ///
     /// Set to the current generation when `remaining_and` reaches zero or on a
-    /// [`PatternKind::Simple`](super::rule::PatternKind::Simple) hit. A rule is
+    /// [`PatternKind::Simple`](super::pattern::PatternKind::Simple) hit. A rule is
     /// considered "satisfied" when `positive_generation == current_generation` and
     /// `not_generation != current_generation`.
     pub(super) positive_generation: u32,
@@ -164,7 +164,7 @@ pub(super) struct ScanContext {
     ///
     /// Bit `i` is set if the variant was produced by (or is reachable from) the process
     /// type whose compact index is `i`. Checked against
-    /// [`PatternEntry::pt_index`](super::rule::PatternEntry::pt_index) to filter hits
+    /// [`PatternEntry::pt_index`](super::pattern::PatternEntry::pt_index) to filter hits
     /// from irrelevant variants.
     pub(super) process_type_mask: u64,
     /// Total number of transformed variants participating in this scan.

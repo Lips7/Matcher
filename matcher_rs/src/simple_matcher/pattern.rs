@@ -160,7 +160,7 @@ impl PatternIndex {
     /// which skips the full state machine and processes every hit as a completed rule.
     ///
     /// The single-entry requirement exists because the AllSimple fast path extracts
-    /// `rule_idx` directly from the raw scan value via [`DIRECT_RULE_MASK`]. Patterns
+    /// `rule_idx` directly from the raw scan value via [`super::encoding::DIRECT_RULE_MASK`]. Patterns
     /// shared across multiple rules (e.g., via OR alternatives `"cat|dog"` + `"dog|bird"`)
     /// produce multi-entry buckets that require the General dispatch path.
     #[inline(always)]
