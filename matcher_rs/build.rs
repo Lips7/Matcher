@@ -49,17 +49,28 @@ fn main() -> Result<()> {
     let mut normalize_cp_map = HashMap::new();
     let mut normalize_str_buffer = String::new();
 
-    for process_map in [NORM, NUM_NORM] {
-        for pair_str in process_map.trim().lines() {
+    for (source_name, process_map) in [("NORM.txt", NORM), ("NUM-NORM.txt", NUM_NORM)] {
+        for (line_num, pair_str) in process_map.trim().lines().enumerate() {
             let mut split = pair_str.split('\t');
-            let key = split.next().expect("missing key in normalization source");
-            let value = split.next().expect("missing value in normalization source");
+            let key = split.next().unwrap_or_else(|| {
+                panic!(
+                    "{source_name}:{}: missing key (line is empty)",
+                    line_num + 1
+                )
+            });
+            let value = split.next().unwrap_or_else(|| {
+                panic!(
+                    "{source_name}:{}: missing tab-separated value for key {key:?}",
+                    line_num + 1
+                )
+            });
             if key == value {
                 continue;
             }
             assert!(
                 key.chars().count() == 1,
-                "Normalize key must be exactly one codepoint: {key:?}"
+                "{source_name}:{}: key must be exactly one codepoint, got {key:?}",
+                line_num + 1
             );
             let cp = key.chars().next().unwrap() as u32;
             let offset = normalize_str_buffer.len();
@@ -67,7 +78,8 @@ fn main() -> Result<()> {
             let length = value.len();
             assert!(
                 length < 256,
-                "normalize replacement length {length} exceeds 8-bit packing limit for key U+{cp:04X}"
+                "{source_name}:{}: replacement length {length} exceeds 8-bit packing limit for key U+{cp:04X}",
+                line_num + 1
             );
             let packed = ((offset as u32) << 8) | (length as u32);
             normalize_cp_map.insert(cp, packed);
@@ -80,17 +92,29 @@ fn main() -> Result<()> {
 
     // 2. Build VariantNorm 2-stage flat array
     let mut variant_norm_map = HashMap::new();
-    for line in VARIANT_NORM.trim().lines() {
+    for (line_num, line) in VARIANT_NORM.trim().lines().enumerate() {
         let mut split = line.split('\t');
-        let key = split.next().expect("missing key in VARIANT_NORM.txt");
-        let value = split.next().expect("missing value in VARIANT_NORM.txt");
+        let key = split.next().unwrap_or_else(|| {
+            panic!(
+                "VARIANT_NORM.txt:{}: missing key (line is empty)",
+                line_num + 1
+            )
+        });
+        let value = split.next().unwrap_or_else(|| {
+            panic!(
+                "VARIANT_NORM.txt:{}: missing tab-separated value for key {key:?}",
+                line_num + 1
+            )
+        });
         assert!(
             key.chars().count() == 1,
-            "VARIANT_NORM key must be exactly one character: {key:?}"
+            "VARIANT_NORM.txt:{}: key must be exactly one character, got {key:?}",
+            line_num + 1
         );
         assert!(
             value.chars().count() == 1,
-            "VARIANT_NORM value must be exactly one character: {value:?}"
+            "VARIANT_NORM.txt:{}: value must be exactly one character, got {value:?}",
+            line_num + 1
         );
         let k = key.chars().next().unwrap() as u32;
         let v = value.chars().next().unwrap() as u32;
@@ -104,18 +128,27 @@ fn main() -> Result<()> {
     let mut romanize_map = HashMap::new();
     let mut romanize_str_buffer = String::new();
 
-    for line in ROMANIZE.trim().lines() {
+    for (line_num, line) in ROMANIZE.trim().lines().enumerate() {
         let mut split = line.split('\t');
-        let key = split.next().expect("missing key in ROMANIZE.txt");
+        let key = split.next().unwrap_or_else(|| {
+            panic!("ROMANIZE.txt:{}: missing key (line is empty)", line_num + 1)
+        });
         assert!(
             key.chars().count() == 1,
-            "ROMANIZE key must be exactly one character: {key:?}"
+            "ROMANIZE.txt:{}: key must be exactly one character, got {key:?}",
+            line_num + 1
         );
         let k = key.chars().next().unwrap() as u32;
-        let v = split.next().expect("missing value in ROMANIZE.txt");
+        let v = split.next().unwrap_or_else(|| {
+            panic!(
+                "ROMANIZE.txt:{}: missing tab-separated value for key {key:?}",
+                line_num + 1
+            )
+        });
         assert!(
             !v.is_empty(),
-            "ROMANIZE value must not be empty for key U+{k:04X}"
+            "ROMANIZE.txt:{}: value must not be empty for key U+{k:04X}",
+            line_num + 1
         );
 
         let offset = romanize_str_buffer.len();
@@ -123,7 +156,8 @@ fn main() -> Result<()> {
         let length = v.len();
         assert!(
             length < 256,
-            "romanize string length {length} exceeds 8-bit packing limit for key U+{k:04X}"
+            "ROMANIZE.txt:{}: string length {length} exceeds 8-bit packing limit for key U+{k:04X}",
+            line_num + 1
         );
 
         let packed = ((offset as u32) << 8) | (length as u32);
@@ -136,8 +170,8 @@ fn main() -> Result<()> {
 
     // 4. Build Text Delete BitSet
     let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
-    for token in TEXT_DELETE.trim().lines() {
-        let cp = parse_delete_codepoint(token) as usize;
+    for (line_num, token) in TEXT_DELETE.trim().lines().enumerate() {
+        let cp = parse_delete_codepoint(token, line_num + 1) as usize;
         delete_bitset[cp / 8] |= 1 << (cp % 8);
     }
     File::create(format!("{out_dir}/delete_bitset.bin"))?.write_all(&delete_bitset)?;
@@ -145,14 +179,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_delete_codepoint(token: &str) -> u32 {
-    u32::from_str_radix(
-        token
-            .strip_prefix("U+")
-            .expect("TEXT-DELETE entries must use U+XXXX format"),
-        16,
-    )
-    .expect("TEXT-DELETE entry must contain a valid hexadecimal codepoint")
+fn parse_delete_codepoint(token: &str, line_num: usize) -> u32 {
+    let hex = token.strip_prefix("U+").unwrap_or_else(|| {
+        panic!("TEXT-DELETE.txt:{line_num}: expected U+XXXX format, got {token:?}")
+    });
+    u32::from_str_radix(hex, 16).unwrap_or_else(|e| {
+        panic!("TEXT-DELETE.txt:{line_num}: invalid hex codepoint {token:?}: {e}")
+    })
 }
 
 fn build_2_stage_table(map: &HashMap<u32, u32>, prefix: &str) -> std::io::Result<()> {

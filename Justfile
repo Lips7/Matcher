@@ -27,9 +27,12 @@ fmt-check:
 
 # -- Lint ----------------------------------------------------------------------
 
-lint: lint-all lint-rs lint-py lint-java lint-c
+lint: lint-rs lint-py lint-java lint-c
+    cargo all-features clippy --workspace --all-targets -- -D warnings
+    cargo doc --workspace --all-features --no-deps
 
-lint-all:
+# Check-only lint (no auto-fix) — used in CI
+lint-check:
     cargo fmt --all --check
     cargo all-features clippy --workspace --all-targets -- -D warnings
     cargo doc --workspace --all-features --no-deps
@@ -155,3 +158,11 @@ coverage:
         --exclude-files 'matcher_java/*' \
         --exclude-files 'matcher_c/*'
     @echo "Coverage report: cobertura.xml"
+
+# -- Clean ---------------------------------------------------------------------
+
+clean:
+    cargo clean
+    rm -f matcher_c/libmatcher_c.{{ext}}
+    rm -f matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    rm -f matcher_c/tests/test_matcher

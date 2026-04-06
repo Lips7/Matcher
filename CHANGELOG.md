@@ -389,19 +389,19 @@
 ## 0.5.0 - 2024-07-18
 
 ### Changed
-- A bunch of changes and I don't want to explain one by one.
+- Major internal refactor of SimpleMatcher internals. See git history for details.
 
 ## 0.4.6 - 2024-07-15
 
 ### Performance
-- Optimize performance.
+- Optimize SimpleMatcher hot-path performance.
 
 ## 0.4.5 - 2024-07-12
 
 ### Changed
 - Optimize Simple Matcher `process` function when multiple simple_match_type are used.
-- add `dfa` feature to matcher_rs.
-- shrink `VARIANT_NORM` conversion map.
+- Add `dfa` feature to matcher_rs.
+- Shrink `VARIANT_NORM` conversion map.
 
 ## 0.4.4 - 2024-07-09
 
@@ -425,8 +425,8 @@
 
 ## 0.4.2 - 2024-07-07
 
-### Changed
-- Optimize performance.
+### Performance
+- Optimize SimpleMatcher construction and search throughput.
 
 ## 0.4.1 - 2024-07-06
 

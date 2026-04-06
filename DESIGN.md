@@ -2,6 +2,27 @@
 
 This document explains how `matcher_rs` works by walking through a concrete example end to end — from rule construction to query evaluation. Deep-dive sections at the end cover SIMD engines, state management, and memory efficiency.
 
+## Table of Contents
+
+- [Running Example](#running-example)
+- [1. Construction](#1-construction)
+  - [1.1 Parse Rules](#11-parse-rules)
+  - [1.2 Build Transform Trie](#12-build-transform-trie)
+  - [1.3 Compile Scan Engines](#13-compile-scan-engines)
+  - [1.4 Assemble](#14-assemble)
+- [2. Query](#2-query-processhello-你好世界-china-is-cool)
+  - [2.1 Prepare State](#21-prepare-state)
+  - [2.2 Walk the Trie](#22-walk-the-trie)
+  - [2.3 Evaluate](#23-evaluate-pass-2)
+- [3. Fast Path: AllSimple](#3-fast-path-allsimple)
+- [Deep Dives](#deep-dives)
+  - [Text Transformation Engines](#text-transformation-engines)
+  - [Density-Based Engine Dispatch](#density-based-engine-dispatch)
+  - [State Management](#state-management)
+  - [Memory Efficiency](#memory-efficiency)
+  - [Feature Flags](#feature-flags)
+  - [Compiled Transformation Tables](#compiled-transformation-tables)
+
 ---
 
 ## Running Example

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage: dev-setup.sh [--check] [--ci]
+#   --check   Non-interactive: report missing prerequisites and exit (exit 1 if any missing)
+#   --ci      Auto-accept all install prompts (for CI environments)
+
 # Colors (disabled when not a terminal or --ci flag).
 if [[ -t 1 ]] && [[ "${1:-}" != "--ci" ]]; then
     GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; RESET='\033[0m'

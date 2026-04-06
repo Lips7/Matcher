@@ -1,6 +1,9 @@
 class ProcessType:
     """
     An enumeration representing various types of text processing operations.
+
+    Flags compose with ``|``. For example, ``ProcessType.DELETE | ProcessType.NORMALIZE``
+    is equivalent to ``ProcessType.DELETE_NORMALIZE``.
     """
 
     NONE: int
@@ -14,7 +17,7 @@ class ProcessType:
 
 class SimpleResult:
     """
-    A class representing a simplified result of a text processing operation.
+    A match result returned by :meth:`SimpleMatcher.process`.
 
     Attributes:
         word_id (int): The identifier of the word within the word list.
@@ -26,51 +29,87 @@ class SimpleResult:
 
 def text_process(process_type: int | ProcessType, text: str) -> str:
     """
-    Processes the given text based on the specified process type.
+    Apply all transformations in *process_type* to *text* and return the
+    final transformed string.
 
     Parameters:
-    - process_type (int | ProcessType): The type of process to be applied to the text.
-    - text (str): The text string that is to be processed.
+        process_type: Which transformations to apply (e.g. ``ProcessType.DELETE``).
+        text: The input text.
 
     Returns:
-    - str: The text string after processing.
+        The fully transformed text.
     """
 
 def reduce_text_process(process_type: int | ProcessType, text: str) -> list[str]:
     """
-    Reduces the given text based on the specified process type and returns a list of strings.
+    Apply transformations in *process_type* incrementally and return every
+    intermediate variant (one per transform step).
 
     Parameters:
-    - process_type (int | ProcessType): The type of process to be applied to the text.
-    - text (str): The text string that is to be reduced.
+        process_type: Which transformations to apply.
+        text: The input text.
 
     Returns:
-    - list[str]: A list of strings after the reduction process.
+        A list of strings, one for each intermediate transformation stage.
     """
 
 class SimpleMatcher:
     """
-    A class used to perform simplified matching operations using a provided set of simple table bytes.
+    High-performance multi-pattern matcher with logical operators and text
+    normalization.
 
-    Methods:
-    - __init__(self, simple_table_bytes: bytes) -> None:
-        Initializes the SimpleMatcher with the provided simple table bytes.
-    - __getnewargs__(self) -> bytes:
-        Returns the arguments necessary to create a new instance of the SimpleMatcher.
-    - __getstate__(self) -> bytes:
-        Returns the state of the SimpleMatcher, typically used for pickling.
-    - __setstate__(self, simple_table_bytes: bytes):
-        Sets the state of the SimpleMatcher from the provided simple table bytes, typically used for unpickling.
-    - is_match(self, text: str) -> bool:
-        Checks whether the given text matches any patterns in the simple table.
-    - process(self, text: str) -> list[SimpleResult]:
-        Processes the given text and returns a list of SimpleResult objects corresponding to the matches found.
+    Construct from a JSON-encoded ``SimpleTable`` mapping
+    ``{ProcessType: {word_id: pattern_string}}``.  Once built, matching
+    methods are infallible and thread-safe.
     """
-    def __init__(self, simple_table_bytes: bytes) -> None: ...
-    def __getnewargs__(self) -> tuple[bytes]: ...
-    def __getstate__(self) -> bytes: ...
-    def __setstate__(self, simple_table_bytes: bytes): ...
-    def is_match(self, text: str) -> bool: ...
-    def process(self, text: str) -> list[SimpleResult]: ...
-    def batch_is_match(self, texts: list[str]) -> list[bool]: ...
-    def batch_process(self, texts: list[str]) -> list[list[SimpleResult]]: ...
+
+    def __init__(self, simple_table_bytes: bytes) -> None:
+        """
+        Build a matcher from a JSON-encoded ``SimpleTable``.
+
+        Parameters:
+            simple_table_bytes: UTF-8 JSON bytes of the form
+                ``{ProcessType: {word_id: pattern}}``.
+
+        Raises:
+            ValueError: If the JSON is malformed or contains invalid
+                ``ProcessType`` values.
+        """
+
+    def __getnewargs__(self) -> tuple[bytes]:
+        """Return constructor args for pickle support."""
+
+    def __getstate__(self) -> bytes:
+        """Serialize matcher state for pickling."""
+
+    def __setstate__(self, simple_table_bytes: bytes) -> None:
+        """Restore matcher state from pickle data."""
+
+    def is_match(self, text: str) -> bool:
+        """
+        Return ``True`` if *text* matches any pattern in the matcher.
+
+        This is the fastest check — use it when you only need a boolean answer.
+        """
+
+    def process(self, text: str) -> list[SimpleResult]:
+        """
+        Return all patterns that match *text*.
+
+        Each :class:`SimpleResult` contains the ``word_id`` and ``word``
+        of a matched pattern. Results are deduplicated but unordered.
+        """
+
+    def batch_is_match(self, texts: list[str]) -> list[bool]:
+        """
+        Check multiple texts in one call. Releases the GIL internally.
+
+        Returns a list of booleans, one per input text.
+        """
+
+    def batch_process(self, texts: list[str]) -> list[list[SimpleResult]]:
+        """
+        Process multiple texts in one call. Releases the GIL internally.
+
+        Returns a list of result lists, one per input text.
+        """

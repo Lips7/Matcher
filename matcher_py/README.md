@@ -126,6 +126,11 @@ You can combine these transformations as needed. Pre-defined combinations like `
 
 Be careful combining `ROMANIZE` and `ROMANIZE_CHAR`: they preserve different word boundaries, so the same input can behave like `xi` + `an` in one pipeline and `xian` in the other.
 
+## Error Handling
+
+- **Construction** (`SimpleMatcher(bytes)`): raises `ValueError` if the JSON is malformed or contains invalid `ProcessType` values. This is the only operation that can fail.
+- **Matching** (`is_match`, `process`, `batch_*`): infallible once the matcher is built. These methods never raise exceptions.
+
 ## Contributing
 
 Contributions to `matcher_py` are welcome! If you find a bug or have a feature request, please open an issue on the [GitHub repository](https://github.com/Lips7/Matcher). If you would like to contribute code, please fork the repository and submit a pull request.

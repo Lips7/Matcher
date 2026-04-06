@@ -121,6 +121,11 @@ String json = MatcherJava.simpleMatcherProcessAsString(ptr, text.getBytes(Standa
 MatcherJava.dropSimpleMatcher(ptr);
 ```
 
+## Error Handling
+
+- **Construction** (`new SimpleMatcher(bytes)`): throws a `RuntimeException` if the JSON config is malformed or contains invalid `ProcessType` values. This is the only operation that can fail.
+- **Matching** (`isMatch`, `process`, `batchIsMatch`, `batchProcess`): infallible once the matcher is built. These methods never throw.
+
 ## Contributing
 
 Contributions to `matcher_java` are welcome! If you find a bug or have a feature request, please open an issue on the [GitHub repository](https://github.com/Lips7/Matcher). If you would like to contribute code, please fork the repository and submit a pull request.

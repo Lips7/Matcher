@@ -40,19 +40,85 @@ For detailed implementation, see the [Design Document](./DESIGN.md).
   - Example: `hello~helloo~hhello` matches `hello` but not `helloo` and `hhello`
 - **Efficient Handling of Large Word Lists**: Optimized for performance.
 
-### Rust Users
+## Quick Start
 
-See the [Rust README](./matcher_rs/README.md).
+<details>
+<summary><b>Rust</b></summary>
 
-### Python Users
+```toml
+# Cargo.toml
+[dependencies]
+matcher_rs = "0.13"
+```
 
-See the [Python README](./matcher_py/README.md).
+```rust
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 
-### C, Java and Other Users
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::None, 1, "hello&world")
+    .build()
+    .unwrap();
 
-We provide dynamic library to link. See the [C README](./matcher_c/README.md) and [Java README](./matcher_java/README.md).
+assert!(matcher.is_match("hello, world!"));
+```
 
-#### Build from source
+See the [Rust README](./matcher_rs/README.md) for full docs.
+
+</details>
+
+<details>
+<summary><b>Python</b></summary>
+
+```shell
+pip install matcher_py
+```
+
+```python
+import json
+from matcher_py import ProcessType, SimpleMatcher
+
+matcher = SimpleMatcher(
+    json.dumps({ProcessType.NONE: {1: "hello&world"}}).encode()
+)
+assert matcher.is_match("hello, world!")
+```
+
+See the [Python README](./matcher_py/README.md) for full docs.
+
+</details>
+
+<details>
+<summary><b>Java</b></summary>
+
+```java
+import com.matcherjava.SimpleMatcher;
+
+byte[] config = "{\"1\":{\"1\":\"hello&world\"}}".getBytes();
+try (SimpleMatcher matcher = new SimpleMatcher(config)) {
+    assert matcher.isMatch("hello, world!");
+}
+```
+
+See the [Java README](./matcher_java/README.md) for full docs.
+
+</details>
+
+<details>
+<summary><b>C</b></summary>
+
+```c
+#include "matcher_c.h"
+
+void* m = init_simple_matcher("{\"1\":{\"1\":\"hello&world\"}}");
+bool matched = simple_matcher_is_match(m, "hello, world!");
+drop_simple_matcher(m);
+```
+
+See the [C README](./matcher_c/README.md) for full docs.
+
+</details>
+
+### Build from source
 
 ```shell
 git clone https://github.com/Lips7/Matcher.git

@@ -2,12 +2,26 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <new-version>"
-    echo "  e.g. $0 0.13.0"
+    echo "Usage: $0 [--dry-run] <new-version>"
+    echo "  e.g. $0 0.14.0"
+    echo "       $0 --dry-run 0.14.0"
     echo ""
     echo "Updates version in all workspace manifests, binding deps, and CHANGELOG."
+    echo ""
+    echo "Options:"
+    echo "  --dry-run   Show what would change without modifying any files"
     exit 1
 }
+
+DRY_RUN=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) DRY_RUN=true; shift ;;
+        -h|--help) usage ;;
+        -*) echo "Unknown option: $1"; usage ;;
+        *) break ;;
+    esac
+done
 
 [[ $# -ne 1 ]] && usage
 
@@ -32,6 +46,21 @@ fi
 CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 echo "Bumping $CURRENT → $NEW_VERSION"
 echo ""
+
+if $DRY_RUN; then
+    echo "Dry run — files that would be modified:"
+    echo "  Cargo.toml"
+    echo "  matcher_py/pyproject.toml"
+    echo "  matcher_java/pom.xml"
+    echo "  matcher_py/Cargo.toml"
+    echo "  matcher_java/Cargo.toml"
+    echo "  matcher_c/Cargo.toml"
+    echo "  matcher_java/README.md"
+    echo "  CHANGELOG.md (new section: $NEW_VERSION - $(date +%Y-%m-%d))"
+    echo ""
+    echo "No files were changed."
+    exit 0
+fi
 
 # 1. Workspace root Cargo.toml
 sedi "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" Cargo.toml

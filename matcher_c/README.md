@@ -125,6 +125,11 @@ int main() {
 }
 ```
 
+## Error Handling
+
+- **Construction** (`init_simple_matcher`): returns `NULL` if the JSON config is malformed or contains invalid `ProcessType` values. Always check the return value.
+- **Matching** (`simple_matcher_is_match`, `simple_matcher_process_as_string`): infallible once the matcher is built. These functions never return error states.
+
 ## Contributing
 
 Contributions to `matcher_c` are welcome! If you find a bug or have a feature request, please open an issue on the [GitHub repository](https://github.com/Lips7/Matcher). If you would like to contribute code, please fork the repository and submit a pull request.

@@ -30,7 +30,8 @@ just test-java                                     # Java bindings
 just test-c                                        # C bindings
 
 # Lint/Format
-just lint                           # All languages (rs + py + java)
+just lint                           # All languages + workspace clippy + doc build
+just lint-check                     # Check-only (no auto-fix) — used in CI
 just lint-rs                        # cargo fmt + cargo clippy (matcher_rs)
 just lint-py                        # cargo fmt + cargo clippy + ruff + ty check (matcher_py)
 just lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
