@@ -4,7 +4,7 @@ ext := if os() == "macos" { "dylib" } else if os() == "linux" { "so" } else { "d
 
 build:
     cargo update
-    cargo build --release
+    cargo build --release -p matcher_c -p matcher_java -p matcher_py
     cp ./target/release/libmatcher_c.{{ext}} ./matcher_c/libmatcher_c.{{ext}}
     mkdir -p ./matcher_java/src/main/resources
     cp ./target/release/libmatcher_java.{{ext}} ./matcher_java/src/main/resources/libmatcher_java.{{ext}}

@@ -117,7 +117,7 @@ jobs:
         with:
           tool: cargo-all-features,cargo-nextest
       - name: Build
-        run: cargo build --release --target ${{ matrix.platform.target }}
+        run: cargo build --release -p matcher_c -p matcher_java -p matcher_py --target ${{ matrix.platform.target }}
         env:
           RUSTFLAGS: -Z threads=0
 
