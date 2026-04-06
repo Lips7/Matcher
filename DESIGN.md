@@ -76,7 +76,7 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 
 **PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for simple single-entry patterns, the value is `rule_idx | DIRECT_RULE_BIT` (bit 31 set), encoding the rule index directly in the automaton hit value so the scan hot path skips the entry table lookup.
 
-**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature and ≤ 25,000 patterns, uses `aho-corasick` DFA (with Teddy/memchr prefilter) for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
+**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature, uses `aho-corasick` DFA (with Teddy/memchr prefilter) for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
 
 **Charwise engine** (`CharwiseMatcher`): compiled from **all** patterns. Always built. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on non-ASCII text.
 
@@ -339,7 +339,7 @@ Both use `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminat
 | Flag | Default | Effect |
 |------|---------|--------|
 | `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
-| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 patterns). ~17× more memory, ~1.7–1.9× faster. |
+| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster (Teddy prefilter). |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON/portable) and density counting |
 
 ---

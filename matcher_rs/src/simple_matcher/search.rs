@@ -195,8 +195,9 @@ impl SimpleMatcher {
                         let child_density = step.output_density(parent_density);
 
                         // Fused transform-scan: stream transformed bytes directly
-                        // into the AC automaton, skipping intermediate allocation.
-                        let fused_result = if !is_noop && self.scan.can_stream(child_density) {
+                        // into the AC automaton via DAAC bytewise, skipping
+                        // intermediate allocation.
+                        let fused_result = if !is_noop {
                             let parent_text = texts[parent_aidx].as_ref();
                             let vi = variant_counter;
                             let ctx = ScanContext {
@@ -208,11 +209,11 @@ impl SimpleMatcher {
                             };
                             macro_rules! fused {
                                 ($m:expr) => {
-                                    self.scan.for_each_match_value_from_iter(
+                                    Some(self.scan.for_each_match_value_from_iter(
                                         $m.filter_bytes(parent_text),
                                         ctx.non_ascii_density,
                                         |v| self.process_match(v, ctx, &mut ss),
-                                    )
+                                    ))
                                 };
                             }
                             match step {

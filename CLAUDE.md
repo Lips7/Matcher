@@ -98,7 +98,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | Flag | Default | Notes |
 |------|---------|-------|
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch` |
-| `dfa` | via `perf` | Aho-Corasick DFA — faster but ~17× memory vs DAAC; preferred for ≤ 25,000 patterns |
+| `dfa` | via `perf` | Aho-Corasick DFA — 1.7–3.3× faster than DAAC via Teddy prefilter; ~17× more memory |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and density counting |
 
 ### Workspace Layout

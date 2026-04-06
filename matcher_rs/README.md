@@ -88,7 +88,7 @@ For more examples, see [test_simple_matcher.rs](./tests/test_simple_matcher.rs).
 | Flag | Default | Effect |
 |------|---------|--------|
 | `perf` | on | Meta-feature enabling `dfa` and `simd_runtime_dispatch` |
-| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine (≤25,000 patterns). Higher throughput, ~17× more memory. |
+| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine. 1.7–3.3× faster (Teddy prefilter), ~17× more memory. |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and density counting |
 
 ### Feature Comparison

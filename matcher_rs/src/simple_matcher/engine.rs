@@ -62,36 +62,6 @@ pub(super) fn text_non_ascii_density(text: &str) -> f32 {
     super::simd::count_non_ascii_simd(bytes) as f32 / len as f32
 }
 
-/// Upper bound on pattern count where the `aho-corasick` DFA engine is still preferred.
-///
-/// Benchmarked on Apple M3 Max (`search_ascii_en`, 580 KB English haystack,
-/// `find_overlapping_iter` — full-text scan counting all hits):
-///
-///   N=7,000  → AcDfa 2.536 ms vs DaacBytewise 4.818 ms (DFA 1.9× faster)
-///   N=8,000  → AcDfa 2.588 ms vs DaacBytewise 4.586 ms (DFA 1.8× faster)
-///   N=10,000 → AcDfa 2.699 ms vs DaacBytewise 4.541 ms (DFA 1.7× faster)
-///   N=50,000 → AcDfa 5.473 ms vs DaacBytewise 5.827 ms (DFA 1.07× faster)
-///
-/// Memory (heap bytes, ASCII patterns only):
-///   N=10,000 → AcDfa 9.7 MB vs DaacBytewise 553 KB (DFA 17× larger)
-///   N=50,000 → AcDfa 35 MB  vs DaacBytewise 2.1 MB (DFA 17× larger)
-///
-/// The DFA is faster at all measured pattern counts (up to 50 K). However, at 50 K
-/// the DFA + charwise combined footprint (~38 MB) causes L3 cache pressure and a
-/// net regression. Threshold raised from 7,000 → 15,000 → 25,000: at 20 K patterns
-/// the DFA weighs ~19 MB and with charwise (~1.6 MB) totals ~21 MB. This exceeds
-/// L2 on M-series (16 MB), causing a ~4-7% regression on scan-dominated workloads
-/// with few matches (e.g. AND patterns that rarely fire). However, for workloads
-/// with frequent matches (NOT shapes, large rule sets) the DFA's 1.7× faster scan
-/// offsets the cache pressure, yielding 15-20% net improvement. Since most
-/// real-world matchers produce matches, the higher threshold is net positive.
-///
-/// Only used when all patterns are pure ASCII; for mixed or non-ASCII pattern sets the
-/// DFA state table would be much larger (3-byte UTF-8 sequences), so DaacBytewise is
-/// always used in that case. Only relevant when the `dfa` feature is enabled.
-#[cfg(feature = "dfa")]
-const AC_DFA_PATTERN_THRESHOLD: usize = 25_000;
-
 /// Compiled scan engines together with the pattern metadata they report into.
 ///
 /// Immutable after construction. Shared across all threads via `Arc` or by virtue of
@@ -128,33 +98,14 @@ pub(super) struct ScanPlan {
 
 /// Bytewise scan engine chosen at build time.
 ///
-/// Contains the ASCII pattern subset. The variant is selected by [`compile_automata`]
-/// based on the `dfa` feature flag and the number of ASCII patterns:
-///
-/// - [`AcDfa`](Self::AcDfa) — `aho-corasick` DFA. Fastest throughput but ~10x memory
-///   vs NFA. Only used when the `dfa` feature is on, all patterns are ASCII, and pattern
-///   count ≤ [`AC_DFA_PATTERN_THRESHOLD`].
-/// - [`DaacBytewise`](Self::DaacBytewise) — `daachorse` bytewise double-array
-///   Aho-Corasick. Lower memory; used for mixed/non-ASCII pattern sets or when
-///   the DFA threshold is exceeded.
+/// Bytewise scan engines. DAAC bytewise is always built (supports streaming).
+/// DFA is built alongside it when the `dfa` feature is enabled (1.7–3.3× faster
+/// for non-streaming scan via Teddy prefilter).
 #[derive(Clone)]
-enum BytewiseMatcher {
-    /// `aho-corasick` DFA engine with prefilter acceleration.
-    ///
-    /// Uses the high-level [`AhoCorasick`](AcEngine) wrapper (forced to DFA kind) rather
-    /// than the low-level `dfa::DFA`, because `AhoCorasick` integrates Teddy/memchr
-    /// prefilter logic that the raw DFA doesn't expose. The prefilter SIMD-skips
-    /// non-matching regions in `is_match`, giving 2–4× on sparse haystacks.
-    ///
-    /// The crate uses pattern indices (not user-supplied values) in its match output,
-    /// so `to_value` maps pattern index → raw value.
+struct BytewiseMatcher {
+    daac: DoubleArrayAhoCorasick<u32>,
     #[cfg(feature = "dfa")]
-    AcDfa {
-        matcher: AcEngine,
-        to_value: Vec<u32>,
-    },
-    /// `daachorse` bytewise double-array engine with user-supplied `u32` values.
-    DaacBytewise(DoubleArrayAhoCorasick<u32>),
+    dfa: Option<(AcEngine, Vec<u32>)>,
 }
 
 type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
@@ -265,44 +216,23 @@ impl ScanPlan {
 
     /// Calls `on_value` for each raw match value from a streaming byte iterator.
     ///
-    /// Used by the fused delete-scan path. Returns `Some(bool)` when streaming
-    /// succeeded, `None` when DFA would be selected (caller must fall back to
-    /// materialized scan).
+    /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has no
+    /// streaming API). Falls back to charwise for high-density text.
     #[inline(always)]
     pub(super) fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
         density: f32,
         on_value: impl FnMut(u32) -> bool,
-    ) -> Option<bool> {
+    ) -> bool {
         if density <= CHARWISE_DENSITY_THRESHOLD {
-            match self.bytewise_matcher {
-                #[cfg(feature = "dfa")]
-                Some(BytewiseMatcher::AcDfa { .. }) => return None,
-                Some(ref matcher) => {
-                    return Some(matcher.for_each_match_value_from_iter(iter, on_value));
-                }
-                None => return Some(false),
+            if let Some(ref matcher) = self.bytewise_matcher {
+                return matcher.for_each_match_value_from_iter(iter, on_value);
             }
+        } else if let Some(ref matcher) = self.charwise_matcher {
+            return matcher.for_each_match_value_from_iter(iter, on_value);
         }
-        if let Some(ref matcher) = self.charwise_matcher {
-            Some(matcher.for_each_match_value_from_iter(iter, on_value))
-        } else {
-            Some(false)
-        }
-    }
-
-    /// Returns whether the streaming `_from_iter` scan path is available for the
-    /// given density. `false` when the DFA engine would be selected (no streaming API).
-    #[inline(always)]
-    pub(super) fn can_stream(&self, density: f32) -> bool {
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            #[cfg(feature = "dfa")]
-            if matches!(self.bytewise_matcher, Some(BytewiseMatcher::AcDfa { .. })) {
-                return false;
-            }
-        }
-        true
+        false
     }
 
     /// AllSimple-specialized scan: yields rule indices directly.
@@ -327,94 +257,78 @@ impl ScanPlan {
 }
 
 /// Query helpers for the bytewise scan engine.
+///
+/// Non-streaming methods prefer DFA (when available) for Teddy prefilter acceleration.
+/// Streaming uses DAAC bytewise (DFA has no `_from_iter` API).
 impl BytewiseMatcher {
-    /// Returns whether the bytewise engine matches `text`.
     #[inline(always)]
     fn is_match(&self, text: &str) -> bool {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, .. } => matcher.is_match(text),
-            Self::DaacBytewise(matcher) => matcher.find_iter(text).next().is_some(),
+        #[cfg(feature = "dfa")]
+        if let Some((ref matcher, _)) = self.dfa {
+            return matcher.is_match(text);
         }
+        self.daac.find_iter(text).next().is_some()
     }
 
-    /// Calls `on_value` for each raw match value produced by the bytewise engine.
     #[inline(always)]
     fn for_each_match_value(&self, text: &str, mut on_value: impl FnMut(u32) -> bool) -> bool {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, to_value } => {
-                for m in matcher.find_overlapping_iter(text) {
-                    // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
-                    let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                    if on_value(value) {
-                        return true;
-                    }
+        #[cfg(feature = "dfa")]
+        if let Some((ref matcher, ref to_value)) = self.dfa {
+            for m in matcher.find_overlapping_iter(text) {
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+                if on_value(value) {
+                    return true;
                 }
-                false
             }
-            Self::DaacBytewise(matcher) => {
-                for hit in matcher.find_overlapping_iter(text) {
-                    if on_value(hit.value()) {
-                        return true;
-                    }
-                }
-                false
+            return false;
+        }
+        for hit in self.daac.find_overlapping_iter(text) {
+            if on_value(hit.value()) {
+                return true;
             }
         }
+        false
     }
 
-    /// AllSimple-specialized: yields rule indices directly, no early exit, no
-    /// DIRECT_RULE_BIT check. Every value is assumed to have DIRECT_RULE_BIT set.
     #[inline(always)]
     fn for_each_rule_idx_simple(&self, text: &str, mut on_rule: impl FnMut(usize)) {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, to_value } => {
-                for m in matcher.find_overlapping_iter(text) {
-                    // SAFETY: `to_value` has one entry per pattern.
-                    let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                    on_rule((value & DIRECT_RULE_MASK) as usize);
-                }
+        #[cfg(feature = "dfa")]
+        if let Some((ref matcher, ref to_value)) = self.dfa {
+            for m in matcher.find_overlapping_iter(text) {
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+                on_rule((value & DIRECT_RULE_MASK) as usize);
             }
-            Self::DaacBytewise(matcher) => {
-                for hit in matcher.find_overlapping_iter(text) {
-                    on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
-                }
-            }
+            return;
+        }
+        for hit in self.daac.find_overlapping_iter(text) {
+            on_rule((hit.value() & DIRECT_RULE_MASK) as usize);
         }
     }
 
-    /// Streaming variant: accepts a byte iterator instead of a complete `&str`.
-    /// Only available for DaacBytewise (DFA has no streaming API).
+    /// Streaming: always uses DAAC bytewise (DFA has no streaming API).
     #[inline(always)]
     fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
         mut on_value: impl FnMut(u32) -> bool,
     ) -> bool {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { .. } => unreachable!("DFA has no streaming API"),
-            Self::DaacBytewise(matcher) => {
-                for hit in matcher.find_overlapping_iter_from_iter(iter) {
-                    if on_value(hit.value()) {
-                        return true;
-                    }
-                }
-                false
+        for hit in self.daac.find_overlapping_iter_from_iter(iter) {
+            if on_value(hit.value()) {
+                return true;
             }
         }
+        false
     }
 
     fn heap_bytes(&self) -> usize {
-        match self {
-            #[cfg(feature = "dfa")]
-            Self::AcDfa { matcher, to_value } => {
-                matcher.memory_usage() + to_value.capacity() * size_of::<u32>()
-            }
-            Self::DaacBytewise(matcher) => matcher.heap_bytes(),
+        let total = self.daac.heap_bytes();
+        #[cfg(feature = "dfa")]
+        if let Some((ref matcher, ref to_value)) = self.dfa {
+            return total + matcher.memory_usage() + to_value.capacity() * size_of::<u32>();
         }
+        total
     }
 }
 
@@ -529,26 +443,31 @@ fn compile_automata(
 
 /// Builds the bytewise engine from the full pattern set.
 ///
-/// Uses DFA (with Teddy prefilter) when pattern count ≤ [`AC_DFA_PATTERN_THRESHOLD`],
-/// regardless of pattern encoding. Falls back to DAAC bytewise otherwise.
+/// Always builds DAAC bytewise (needed for streaming). With the `dfa` feature,
+/// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan
+/// via Teddy prefilter).
 fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatcher, MatcherError> {
+    let daac = DoubleArrayAhoCorasickBuilder::new()
+        .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+        .build_with_values(all_patvals.clone())
+        .map_err(MatcherError::automaton_build)?;
+
     #[cfg(feature = "dfa")]
-    if all_patvals.len() <= AC_DFA_PATTERN_THRESHOLD {
+    let dfa = {
         let to_value: Vec<u32> = all_patvals.iter().map(|&(_, v)| v).collect();
-        return Ok(BytewiseMatcher::AcDfa {
-            matcher: AhoCorasickBuilder::new()
+        Some((
+            AhoCorasickBuilder::new()
                 .kind(Some(AhoCorasickKind::DFA))
                 .match_kind(AhoCorasickMatchKind::Standard)
                 .build(all_patvals.iter().map(|(p, _)| p))
                 .map_err(MatcherError::automaton_build)?,
             to_value,
-        });
-    }
+        ))
+    };
 
-    Ok(BytewiseMatcher::DaacBytewise(
-        DoubleArrayAhoCorasickBuilder::new()
-            .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
-            .build_with_values(all_patvals)
-            .map_err(MatcherError::automaton_build)?,
-    ))
+    Ok(BytewiseMatcher {
+        daac,
+        #[cfg(feature = "dfa")]
+        dfa,
+    })
 }
