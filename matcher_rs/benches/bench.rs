@@ -388,7 +388,10 @@ mod scaling {
 }
 
 // ── 5. Text Transform ───────────────────────────────────────────────────────────
-// Question: How expensive is each text transformation step in isolation?
+// Question: How does each text transformation step affect end-to-end matcher throughput?
+//
+// Builds a SimpleMatcher with rules under the given ProcessType, then benchmarks
+// the full process() pipeline — including the fused transform-scan path when applicable.
 
 mod text_transform {
     use super::*;
@@ -405,20 +408,24 @@ mod text_transform {
 
     #[divan::bench(args = CN_TRANSFORMS, max_time = 5)]
     fn cn(bencher: Bencher, pt: ProcessType) {
+        let table = wrap_table(pt, build_literal_map("cn", DEFAULT_RULE_COUNT, true));
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = CN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
-                let _ = black_box(text_process(pt, line));
+                let _ = black_box(matcher.process(line));
             }
         });
     }
 
     #[divan::bench(args = EN_TRANSFORMS, max_time = 5)]
     fn en(bencher: Bencher, pt: ProcessType) {
+        let table = wrap_table(pt, build_literal_map("en", DEFAULT_RULE_COUNT, true));
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
             for line in haystack.lines() {
-                let _ = black_box(text_process(pt, line));
+                let _ = black_box(matcher.process(line));
             }
         });
     }
