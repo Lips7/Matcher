@@ -1,6 +1,6 @@
 use divan::Bencher;
 use divan::counter::BytesCount;
-use matcher_rs::{ProcessType, SimpleMatcher, text_process};
+use matcher_rs::{ProcessType, SimpleMatcher};
 use std::collections::HashMap;
 use std::hint::black_box;
 
