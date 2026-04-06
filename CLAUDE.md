@@ -15,19 +15,19 @@ cargo build --release               # Rust only
 
 # Quick iteration
 just check                          # Fast type-check (no codegen)
-just test-quick                     # Default-features tests only
 just fmt                            # Auto-format
 just fmt-check                      # Check formatting without modifying
 
-# Test
-just test                           # All languages (Rust + Python + Java + C)
-just test-rs                        # All feature combos + doctests + docs
-just test-py                        # Python bindings
-just test-java                      # Java bindings
-just test-c                         # C bindings
-cd matcher_rs && cargo nextest run <test_name>                  # Single test by name
-cd matcher_rs && cargo nextest run --no-default-features        # Without DFA
-cd matcher_rs && cargo nextest run --test test_engine           # Single test file by name
+# Test (test-rs and test-quick accept pass-through args)
+just test                                          # All languages (Rust + Python + Java + C)
+just test-rs                                       # All feature combos + doctests + docs
+just test-quick                                    # Default-features tests only
+just test-quick test_name                          # Single test by name (substring match)
+just test-quick --no-default-features              # Without DFA
+just test-quick --test test_engine                 # Single test file by name
+just test-py                                       # Python bindings
+just test-java                                     # Java bindings
+just test-c                                        # C bindings
 
 # Lint/Format
 just lint                           # All languages (rs + py + java)
@@ -54,7 +54,7 @@ just bench-viz <run_dir>                               # interactive HTML dashbo
 just bench-viz <baseline_dir> <candidate_dir>          # comparison visualization
 
 # Profiling (uses release + debug symbols)
-cd matcher_rs && cargo build --profile profiling
+cargo build --profile profiling -p matcher_rs
 
 # Coverage
 just coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html

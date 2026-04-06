@@ -61,13 +61,13 @@ lint-c:
 test: test-rs test-py test-java test-c
 
 [working-directory: 'matcher_rs']
-test-rs:
-    cargo all-features nextest run
+test-rs *args:
+    cargo all-features nextest run {{args}}
     cargo test --doc
 
 [working-directory: 'matcher_rs']
-test-quick:
-    cargo nextest run
+test-quick *args:
+    cargo nextest run {{args}}
 
 [working-directory: 'matcher_py']
 test-py:
