@@ -42,10 +42,10 @@ fn reduce_text_process_inner<'a>(
         let current = text_list
             .last_mut()
             .expect("text_list is never empty (seeded with original text)");
-        let changed =
-            get_transform_step(process_type_bit).apply(current.as_ref(), current.is_ascii());
+        let density = if current.is_ascii() { 0.0 } else { 1.0 };
+        let changed = get_transform_step(process_type_bit).apply(current.as_ref(), density);
 
-        if let Some(s) = changed {
+        if let Some((s, _)) = changed {
             if overwrite_replace && process_type_bit != ProcessType::Delete {
                 replace_cow(current, s);
             } else {
@@ -86,9 +86,8 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     let mut result = Cow::Borrowed(text);
 
     for process_type_bit in process_type.iter() {
-        if let Some(s) =
-            get_transform_step(process_type_bit).apply(result.as_ref(), result.is_ascii())
-        {
+        let density = if result.is_ascii() { 0.0 } else { 1.0 };
+        if let Some((s, _)) = get_transform_step(process_type_bit).apply(result.as_ref(), density) {
             replace_cow(&mut result, s);
         }
     }

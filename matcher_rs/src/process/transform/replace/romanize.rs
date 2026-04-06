@@ -11,8 +11,8 @@
 use std::borrow::Cow;
 
 use super::{
-    decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii,
-    skip_ascii_simd, trim_romanize_packed, unpack_str_ref,
+    decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans, skip_ascii_simd,
+    trim_romanize_packed, unpack_str_ref,
 };
 
 struct RomanizeFindIter<'a> {
@@ -84,12 +84,11 @@ impl RomanizeMatcher {
     ///
     /// ```ignore
     /// let matcher = RomanizeMatcher::new(ROMANIZE_L1_BYTES, ROMANIZE_L2_BYTES, ROMANIZE_STR_BYTES, false);
-    /// let (result, is_ascii) = matcher.replace("中国").unwrap();
+    /// let result = matcher.replace("中国").unwrap();
     /// assert_eq!(result, " zhong  guo "); // space-separated syllables
-    /// assert!(is_ascii);
     /// ```
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        replace_spans_tracking_ascii(text, self.iter(text))
+    pub(crate) fn replace(&self, text: &str) -> Option<String> {
+        replace_spans(text, self.iter(text))
     }
 
     /// Decodes L1/L2 page tables from build-time binary artifacts.

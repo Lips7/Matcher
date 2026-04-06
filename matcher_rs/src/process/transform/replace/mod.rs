@@ -12,7 +12,7 @@
 //!     shared string buffer, unpacked via [`unpack_str_ref`]. `0` = unmapped.
 //!
 //! Shared helpers ([`page_table_lookup`], [`decode_page_table`], [`unpack_str_ref`],
-//! [`replace_scan`], [`replace_spans_tracking_ascii`]) live in this module; each
+//! [`replace_scan`], [`replace_spans`]) live in this module; each
 //! engine has its own sub-module.
 //!
 //! # Performance
@@ -63,7 +63,7 @@ where
 }
 
 #[inline(always)]
-fn replace_spans_tracking_ascii<'a, I>(text: &str, mut iter: I) -> Option<(String, bool)>
+fn replace_spans<'a, I>(text: &str, mut iter: I) -> Option<String>
 where
     I: Iterator<Item = (usize, usize, &'a str)>,
 {
@@ -78,8 +78,7 @@ where
             last_end = end;
         }
         result.push_str(&text[last_end..]);
-        let is_ascii = result.is_ascii();
-        Some((result, is_ascii))
+        Some(result)
     } else {
         None
     }

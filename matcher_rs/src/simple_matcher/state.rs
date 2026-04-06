@@ -180,8 +180,8 @@ pub(super) struct ScanContext {
     ///
     /// Passed through to [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
     /// to select the bytewise or charwise automaton. Computed once at the root
-    /// via a 512-byte sample, then propagated through the transform tree using
-    /// [`TransformStep::output_density`](crate::process::step::TransformStep::output_density).
+    /// via SIMD, then propagated through the transform tree via the density
+    /// estimate returned by [`TransformStep::apply`](crate::process::step::TransformStep::apply).
     pub(super) non_ascii_density: f32,
 }
 

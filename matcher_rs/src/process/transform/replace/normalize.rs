@@ -11,10 +11,7 @@
 
 use std::borrow::Cow;
 
-use super::{
-    decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans_tracking_ascii,
-    unpack_str_ref,
-};
+use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans, unpack_str_ref};
 
 // ---------------------------------------------------------------------------
 // Find iterator (for materialized replace)
@@ -181,12 +178,11 @@ impl NormalizeMatcher {
     ///
     /// ```ignore
     /// let matcher = NormalizeMatcher::new(NORMALIZE_L1_BYTES, NORMALIZE_L2_BYTES, NORMALIZE_STR_BYTES);
-    /// let (result, is_ascii) = matcher.replace("Hello WORLD").unwrap();
+    /// let result = matcher.replace("Hello WORLD").unwrap();
     /// assert_eq!(result, "hello world"); // casefold
-    /// assert!(is_ascii);
     /// ```
-    pub(crate) fn replace(&self, text: &str) -> Option<(String, bool)> {
-        replace_spans_tracking_ascii(text, self.iter(text))
+    pub(crate) fn replace(&self, text: &str) -> Option<String> {
+        replace_spans(text, self.iter(text))
     }
 
     /// Decodes L1/L2 page tables from build-time binary artifacts.

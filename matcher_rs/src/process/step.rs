@@ -49,41 +49,38 @@ impl TransformStep {
         )
     }
 
-    /// Conservative estimate of the non-ASCII byte density after this transform.
+    /// Applies this step to `text`. Returns `Some((new_string, output_density))`
+    /// if the text was modified, `None` if the step is a no-op for this input.
     ///
-    /// Returns `parent_density` — a safe bound since no transform increases
-    /// non-ASCII density. Used by `walk_and_scan` to propagate engine-dispatch
-    /// density through the transform tree without re-scanning each variant.
-    #[inline(always)]
-    pub(crate) fn output_density(&self, parent_density: f32) -> f32 {
-        parent_density
-    }
-
-    /// Applies this step to `text`. Returns `Some(new_string)` if the text was
-    /// modified, `None` if the step is a no-op for this input.
+    /// `parent_density` is the non-ASCII byte density of `text` (0.0 = pure ASCII).
+    /// The returned density is an estimate for engine dispatch:
+    /// - **VariantNorm**: CJK→CJK, density unchanged → `parent_density`
+    /// - **Delete / Normalize**: density approximately unchanged → `parent_density`
+    /// - **Romanize / RomanizeChar**: CJK→ASCII, density drops → `0.0`
     ///
-    /// `parent_is_ascii` enables the ASCII fast path: VariantNorm/Romanize/RomanizeChar
-    /// are guaranteed no-ops on ASCII input, and Delete/Normalize produce ASCII
-    /// output from ASCII input (proven by process map analysis).
+    /// When `parent_density == 0.0` the ASCII fast path fires:
+    /// VariantNorm/Romanize/RomanizeChar are guaranteed no-ops on ASCII input,
+    /// and Delete/Normalize produce ASCII output from ASCII input (proven by
+    /// process map analysis).
     #[inline(always)]
-    pub(crate) fn apply(&self, text: &str, parent_is_ascii: bool) -> Option<String> {
-        if parent_is_ascii {
+    pub(crate) fn apply(&self, text: &str, parent_density: f32) -> Option<(String, f32)> {
+        if parent_density == 0.0 {
             return match self {
                 Self::None | Self::VariantNorm(_) | Self::Romanize(_) | Self::RomanizeChar(_) => {
                     None
                 }
-                Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
-                Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
+                Self::Delete(matcher) => matcher.delete(text).map(|s| (s, 0.0)),
+                Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, 0.0)),
             };
         }
 
         match self {
             Self::None => None,
-            Self::VariantNorm(matcher) => matcher.replace(text),
-            Self::Delete(matcher) => matcher.delete(text).map(|(s, _)| s),
-            Self::Normalize(matcher) => matcher.replace(text).map(|(s, _)| s),
+            Self::VariantNorm(matcher) => matcher.replace(text).map(|s| (s, parent_density)),
+            Self::Delete(matcher) => matcher.delete(text).map(|s| (s, parent_density)),
+            Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, parent_density)),
             Self::Romanize(matcher) | Self::RomanizeChar(matcher) => {
-                matcher.replace(text).map(|(s, _)| s)
+                matcher.replace(text).map(|s| (s, 0.0))
             }
         }
     }

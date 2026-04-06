@@ -192,7 +192,6 @@ impl SimpleMatcher {
                 if is_leaf {
                     if child.pt_index_mask != 0 {
                         let is_noop = parent_ascii && step.is_noop_on_ascii_input();
-                        let child_density = step.output_density(parent_density);
 
                         // Fused transform-scan dispatch:
                         //
@@ -201,8 +200,11 @@ impl SimpleMatcher {
                         //   bytewise streaming on ASCII-heavy text.
                         // - No DFA + low density: stream via DAAC bytewise.
                         // - High density: stream via DAAC charwise.
+                        //
+                        // Fused paths only cover Delete/Normalize/VariantNorm (never
+                        // Romanize), so parent_density is the correct density estimate.
                         let use_fused = !(is_noop
-                            || self.scan.has_dfa() && child_density <= CHARWISE_DENSITY_THRESHOLD);
+                            || self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             let vi = variant_counter;
@@ -211,7 +213,7 @@ impl SimpleMatcher {
                                 process_type_mask: child.pt_index_mask,
                                 num_variants,
                                 exit_early,
-                                non_ascii_density: child_density,
+                                non_ascii_density: parent_density,
                             };
                             macro_rules! fused {
                                 ($m:expr) => {
@@ -240,12 +242,12 @@ impl SimpleMatcher {
                         } else {
                             // Normal path: materialize then scan.
                             let changed = if !is_noop {
-                                step.apply(texts[parent_aidx].as_ref(), parent_ascii)
+                                step.apply(texts[parent_aidx].as_ref(), parent_density)
                             } else {
                                 None
                             };
 
-                            if let Some(s) = changed {
+                            if let Some((s, child_density)) = changed {
                                 let vi = variant_counter;
                                 variant_counter += 1;
                                 let ctx = ScanContext {
@@ -282,10 +284,9 @@ impl SimpleMatcher {
                     }
                 } else {
                     // Non-leaf: materialize for children.
-                    let changed = step.apply(texts[parent_aidx].as_ref(), parent_ascii);
-                    let child_density = step.output_density(parent_density);
+                    let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
                     let (child_aidx, child_vi) = match changed {
-                        Some(s) => {
+                        Some((s, child_density)) => {
                             let idx = texts.len();
                             density_flags.push(child_density);
                             texts.push(Cow::Owned(s));

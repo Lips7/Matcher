@@ -68,7 +68,7 @@ impl DeleteMatcher {
     ///
     /// ```ignore
     /// let matcher = DeleteMatcher::new(DELETE_BITSET_BYTES);
-    /// let (result, is_ascii) = matcher.delete("hello, world!").unwrap();
+    /// let result = matcher.delete("hello, world!").unwrap();
     /// assert_eq!(result, "hello world"); // commas and exclamation deleted
     /// assert!(matcher.delete("helloworld").is_none()); // nothing to delete
     /// ```
@@ -78,14 +78,10 @@ impl DeleteMatcher {
     /// Uses `get_unchecked` to read the current byte at `offset` after the
     /// `offset < len` / `offset >= len` guards have confirmed it is in bounds.
     /// The byte value is then used to branch into the ASCII or multi-byte path.
-    pub(crate) fn delete(&self, text: &str) -> Option<(String, bool)> {
+    pub(crate) fn delete(&self, text: &str) -> Option<String> {
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut offset = 0usize;
-        // Continuation bytes kept in output — accumulated during seek and copy-skip.
-        // For pure-ASCII input, the non-ASCII branch never executes, so cont_kept stays
-        // 0 and output_density is correctly 0.0 without any special-casing.
-        let mut cont_kept: usize = 0;
 
         loop {
             if offset >= len {
@@ -106,7 +102,6 @@ impl DeleteMatcher {
                 if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     break;
                 }
-                cont_kept += char_len - 1; // kept non-ASCII char
                 offset += char_len;
             }
         }
@@ -122,7 +117,6 @@ impl DeleteMatcher {
             // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
             let (_, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
             offset += char_len;
-            // Deleted non-ASCII char: does not contribute to cont_kept.
         }
 
         let mut gap_start = offset;
@@ -146,17 +140,14 @@ impl DeleteMatcher {
                     result.push_str(&text[gap_start..offset]);
                     offset += char_len;
                     gap_start = offset;
-                    // Deleted non-ASCII char: does not contribute to cont_kept.
                 } else {
-                    cont_kept += char_len - 1; // kept non-ASCII char
                     offset += char_len;
                 }
             }
         }
 
         result.push_str(&text[gap_start..]);
-        // `cont_kept == 0` means no multi-byte chars were kept → result is pure ASCII.
-        Some((result, cont_kept == 0))
+        Some(result)
     }
 
     /// Returns a byte iterator that yields only non-deleted bytes from `text`.
