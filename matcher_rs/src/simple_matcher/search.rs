@@ -36,6 +36,7 @@ use std::borrow::Cow;
 
 use tinyvec::TinyVec;
 
+use crate::process::graph::ProcessTypeBitNode;
 use crate::process::step::TransformStep;
 use crate::process::string_pool::return_string_to_pool;
 
@@ -96,6 +97,38 @@ fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool
         }
     }
     true
+}
+
+/// Recursively folds no-op children's `pt_index_mask` into the parent's mask.
+///
+/// When the parent text is pure ASCII, certain transforms (VariantNorm, Romanize,
+/// RomanizeChar, EmojiNorm) are guaranteed no-ops — the child's text is identical
+/// to the parent's. Scanning that text again with a different mask wastes an entire
+/// DFA traversal. By folding the child's mask into the parent's scan, we eliminate
+/// redundant scans while preserving correctness:
+///
+/// - Each `PatternEntry` has a fixed `pt_index` → hits pass exactly one mask branch.
+/// - `mark_positive` / `satisfied_mask |= bit` are idempotent (bitmask path).
+/// - Matrix path uses the same `text_index` (parent_vi) → same column, same counters.
+/// - The AC engine reports each position exactly once per scan → no double-counting.
+fn fold_noop_children_masks(
+    tree: &[ProcessTypeBitNode],
+    node_idx: usize,
+    parent_ascii: bool,
+) -> u64 {
+    let mut mask = tree[node_idx].pt_index_mask;
+    if !parent_ascii {
+        return mask;
+    }
+    for &ci in &tree[node_idx].children {
+        let child = &tree[ci];
+        if child.pt_index_mask != 0 && child.step.is_some_and(|s| s.is_noop_on_ascii_input()) {
+            // Recurse: a no-op non-leaf may itself have no-op children whose
+            // masks should also fold up to the same scan point.
+            mask |= fold_noop_children_masks(tree, ci, true);
+        }
+    }
+    mask
 }
 
 /// Hot-path search helpers layered on top of the compiled scan engines.
@@ -226,11 +259,17 @@ impl SimpleMatcher {
         // density == 0.0 ↔ text is pure ASCII (replaces text.is_ascii()).
         let root_density = text_non_ascii_density(text);
 
-        // Scan root (ProcessType::None) if it terminates here.
-        if tree[0].pt_index_mask != 0 {
+        // Fold no-op children's masks into the root scan to eliminate redundant
+        // DFA traversals. On ASCII text, transforms like VariantNorm/Romanize
+        // produce identical text — scanning it again with a different mask is
+        // pure waste. Folding merges those masks into one scan.
+        let root_scan_mask = fold_noop_children_masks(tree, 0, root_density == 0.0);
+
+        // Scan root text if any PT terminates here (including folded no-ops).
+        if root_scan_mask != 0 {
             let ctx = ScanContext {
                 text_index: 0,
-                process_type_mask: tree[0].pt_index_mask,
+                process_type_mask: root_scan_mask,
                 num_variants,
                 exit_early,
                 non_ascii_density: root_density,
@@ -290,9 +329,15 @@ impl SimpleMatcher {
                 let parent_density = density_flags[parent_aidx];
                 let parent_ascii = parent_density == 0.0;
 
+                let is_noop = parent_ascii && step.is_noop_on_ascii_input();
+
                 if is_leaf {
                     if child.pt_index_mask != 0 {
-                        let is_noop = parent_ascii && step.is_noop_on_ascii_input();
+                        // No-op leaves were already folded into the parent's scan
+                        // mask by fold_noop_children_masks — skip entirely.
+                        if is_noop {
+                            continue;
+                        }
 
                         // Fused transform-scan dispatch:
                         //
@@ -304,8 +349,9 @@ impl SimpleMatcher {
                         //
                         // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
                         // Parent density is the correct estimate for all fused transforms.
-                        let use_fused = !(is_noop
-                            || self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
+                        // Note: is_noop leaves are already skipped above.
+                        let use_fused =
+                            !(self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             let vi = variant_counter;
@@ -355,11 +401,9 @@ impl SimpleMatcher {
                             result
                         } else {
                             // Normal path: materialize then scan.
-                            let changed = if !is_noop {
-                                step.apply(texts[parent_aidx].as_ref(), parent_density)
-                            } else {
-                                None
-                            };
+                            // Note: is_noop leaves are skipped above, so apply()
+                            // always runs here.
+                            let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
 
                             if let Some((s, child_density)) = changed {
                                 let vi = variant_counter;
@@ -413,11 +457,15 @@ impl SimpleMatcher {
                     node_arena[child_idx] = child_aidx;
                     node_variant[child_idx] = child_vi;
 
-                    // Scan if this node terminates.
-                    if child.pt_index_mask != 0 {
+                    // Scan if this node terminates. No-op non-leaves were
+                    // already folded into the parent's scan — skip.
+                    // Also fold this node's own no-op children into its mask.
+                    if child.pt_index_mask != 0 && !is_noop {
+                        let child_ascii = density_flags[child_aidx] == 0.0;
+                        let scan_mask = fold_noop_children_masks(tree, child_idx, child_ascii);
                         let ctx = ScanContext {
                             text_index: child_vi,
-                            process_type_mask: child.pt_index_mask,
+                            process_type_mask: scan_mask,
                             num_variants,
                             exit_early,
                             non_ascii_density: density_flags[child_aidx],

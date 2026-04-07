@@ -482,135 +482,52 @@ mod rule_complexity {
     }
 }
 
-// ── 7. Overlap Comparison ──────────────────────────────────────────────────────
-// Question: How much faster is non-overlapping find_iter vs find_overlapping_iter?
+// ── 7. No-op Fold ─────────────────────────────────────────────────────────────
+// Question: How much throughput is gained by folding no-op transform scans?
 //
-// Builds a standalone aho-corasick DFA (same patterns as our matcher) and compares
-// the two iteration modes directly. Isolates AC engine cost from callback overhead.
+// Uses multiple PTs where VariantNorm and Romanize are no-ops on ASCII text.
+// Miss scenario isolates scan cost (no hit processing, no early exit).
 
-mod overlap_comparison {
+mod noop_fold {
     use super::*;
-    use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
-    use daachorse::{
-        DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind as DaacMatchKind,
-        charwise::{CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder},
-    };
 
-    fn build_ac_dfa(lang: &str, size: usize) -> AhoCorasick {
-        let patterns = word_list(lang);
-        let selected: Vec<&str> = (0..size)
-            .map(|i| patterns[(i * 997) % patterns.len()])
-            .collect();
-        AhoCorasickBuilder::new()
-            .kind(Some(AhoCorasickKind::DFA))
-            .match_kind(MatchKind::Standard)
-            .build(&selected)
-            .unwrap()
+    fn build_noop_heavy_table(size: usize) -> HashMap<ProcessType, HashMap<u32, String>> {
+        let slice = (size / 4).max(1);
+        HashMap::from([
+            (ProcessType::None, build_literal_map("en", slice, false)),
+            (
+                ProcessType::VariantNorm,
+                build_literal_map("en", slice, false),
+            ),
+            (ProcessType::Romanize, build_literal_map("en", slice, false)),
+            (
+                ProcessType::Delete,
+                build_literal_map("en", size - slice * 3, false),
+            ),
+        ])
     }
 
-    fn build_daac_bytewise(lang: &str, size: usize) -> DoubleArrayAhoCorasick<u32> {
-        let patterns = word_list(lang);
-        let patvals: Vec<(&str, u32)> = (0..size)
-            .map(|i| (patterns[(i * 997) % patterns.len()], i as u32))
-            .collect();
-        DoubleArrayAhoCorasickBuilder::new()
-            .match_kind(DaacMatchKind::Standard)
-            .build_with_values(patvals)
-            .unwrap()
-    }
-
-    fn build_daac_charwise(lang: &str, size: usize) -> CharwiseDoubleArrayAhoCorasick<u32> {
-        let patterns = word_list(lang);
-        let patvals: Vec<(&str, u32)> = (0..size)
-            .map(|i| (patterns[(i * 997) % patterns.len()], i as u32))
-            .collect();
-        CharwiseDoubleArrayAhoCorasickBuilder::new()
-            .match_kind(DaacMatchKind::Standard)
-            .build_with_values(patvals)
-            .unwrap()
-    }
-
-    // --- aho-corasick DFA ---
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn dfa_overlapping_en(bencher: Bencher, size: usize) {
-        let ac = build_ac_dfa("en", size);
+    #[divan::bench(max_time = 5)]
+    fn is_match_miss(bencher: Bencher) {
+        let table = build_noop_heavy_table(DEFAULT_RULE_COUNT);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
             for line in haystack.lines() {
-                count += ac.find_overlapping_iter(line).count() as u64;
+                let _ = black_box(matcher.is_match(line));
             }
-            count
         });
     }
 
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn dfa_non_overlapping_en(bencher: Bencher, size: usize) {
-        let ac = build_ac_dfa("en", size);
+    #[divan::bench(max_time = 5)]
+    fn process_miss(bencher: Bencher) {
+        let table = build_noop_heavy_table(DEFAULT_RULE_COUNT);
+        let matcher = SimpleMatcher::new(&table).unwrap();
         let haystack = EN_HAYSTACK;
         bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
             for line in haystack.lines() {
-                count += ac.find_iter(line).count() as u64;
+                let _ = black_box(matcher.process(line));
             }
-            count
-        });
-    }
-
-    // --- daachorse bytewise ---
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn daac_bw_overlapping_en(bencher: Bencher, size: usize) {
-        let daac = build_daac_bytewise("en", size);
-        let haystack = EN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
-            for line in haystack.lines() {
-                count += daac.find_overlapping_iter(line).count() as u64;
-            }
-            count
-        });
-    }
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn daac_bw_non_overlapping_en(bencher: Bencher, size: usize) {
-        let daac = build_daac_bytewise("en", size);
-        let haystack = EN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
-            for line in haystack.lines() {
-                count += daac.find_iter(line).count() as u64;
-            }
-            count
-        });
-    }
-
-    // --- daachorse charwise ---
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn daac_cw_overlapping_cn(bencher: Bencher, size: usize) {
-        let daac = build_daac_charwise("cn", size);
-        let haystack = CN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
-            for line in haystack.lines() {
-                count += daac.find_overlapping_iter(line).count() as u64;
-            }
-            count
-        });
-    }
-
-    #[divan::bench(args = RULE_COUNTS, max_time = 5)]
-    fn daac_cw_non_overlapping_cn(bencher: Bencher, size: usize) {
-        let daac = build_daac_charwise("cn", size);
-        let haystack = CN_HAYSTACK;
-        bencher.counter(BytesCount::new(haystack.len())).bench(|| {
-            let mut count = 0u64;
-            for line in haystack.lines() {
-                count += daac.find_iter(line).count() as u64;
-            }
-            count
         });
     }
 }

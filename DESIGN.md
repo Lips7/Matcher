@@ -289,6 +289,19 @@ The threshold (0.67) was calibrated from an 8,932-point characterization sweep a
 
 In `walk_and_scan`, density propagates through the transform tree via `TransformStep::output_density()` (conservative: returns parent density). The materialized path can refine this when the transform produces confirmed-ASCII output. `density == 0.0` replaces the old `is_ascii` boolean for transform no-op detection.
 
+#### No-op Scan Folding
+
+When the parent text is pure ASCII (`density == 0.0`), transforms like VariantNorm, Romanize, RomanizeChar, and EmojiNorm produce identical text (they only operate on non-ASCII codepoints). Scanning the same text again with a different `pt_index_mask` wastes an entire DFA traversal.
+
+`fold_noop_children_masks` recursively merges no-op children's `pt_index_mask` into the parent's scan mask. The parent scans once with the OR'd mask; no-op children are skipped entirely during the walk. This is correct because:
+
+- Each `PatternEntry` has a fixed `pt_index` — hits pass exactly one mask branch.
+- `mark_positive` and `satisfied_mask |= bit` are idempotent.
+- Matrix path uses the same `text_index` (`parent_vi`) — same column, same counters.
+- The AC engine reports each position exactly once per scan.
+
+For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this reduces 4 scans to 2 (root+VN+Romanize merged, Delete separate), yielding ~7-8% throughput improvement on the scan-dominated path.
+
 ---
 
 ### State Management
