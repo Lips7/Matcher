@@ -1,0 +1,27 @@
+{
+    "folders": [
+        {
+            "path": "matcher_py",
+            "name": "matcher_py"
+        },
+        {
+            "path": "matcher_rs/scripts",
+            "name": "matcher_rs/scripts"
+        },
+        {
+            "path": ".",
+            "name": "Matcher (root)"
+        }
+    ],
+    "settings": {
+        "java.test.config": [
+            {
+                "name": "MatcherJavaConfig",
+                "vmArgs": [
+                    "-Djava.library.path=${workspaceFolder:Matcher (root)}/matcher_java/src/main/resources"
+                ]
+            }
+        ],
+        "java.test.defaultConfig": "MatcherJavaConfig"
+    }
+}
