@@ -25,6 +25,30 @@
         ],
         "java.test.defaultConfig": "MatcherJavaConfig",
 
+        // ── Python ────────────────────────────────────────────
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+
+        // ── Rust ──────────────────────────────────────────────
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.cargo.targetDir": true,
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.check.features": "all",
+        "rust-analyzer.completion.autoimport.enable": true,
+        "rust-analyzer.completion.postfix.enable": true,
+        "rust-analyzer.diagnostics.disabled": [],
+        "rust-analyzer.inlayHints.chainingHints.enable": true,
+        "rust-analyzer.inlayHints.closureReturnTypeHints.enable": "with_block",
+        "rust-analyzer.inlayHints.lifetimeElisionHints.enable": "skip_trivial",
+        "rust-analyzer.inlayHints.parameterHints.enable": true,
+        "rust-analyzer.inlayHints.typeHints.enable": true,
+        "rust-analyzer.lens.debug.enable": true,
+        "rust-analyzer.lens.references.adt.enable": true,
+        "rust-analyzer.lens.references.trait.enable": true,
+        "rust-analyzer.lens.run.enable": true,
+        "rust-analyzer.testExplorer": true,
+        "rust-analyzer.procMacro.enable": true,
+
         // ── Editor ────────────────────────────────────────────
         "[rust]": {
             "editor.defaultFormatter": "rust-lang.rust-analyzer"
