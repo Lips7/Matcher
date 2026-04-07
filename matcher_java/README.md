@@ -35,7 +35,7 @@ cp target/release/libmatcher_java.dylib matcher_java/src/main/resources/  # .so 
 ```xml
 <groupId>com.matcher_java</groupId>
 <artifactId>matcher_java</artifactId>
-<version>0.14.1</version>
+<version>0.14.2</version>
 ```
 
 ## Usage

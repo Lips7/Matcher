@@ -1,6 +1,31 @@
 # Changelog
 
 
+## 0.14.2 - 2026-04-07
+
+### Documentation
+- Add Architecture section and Common Pitfalls FAQ to root README.
+- Add performance tuning guidance ("When to Use Which") to matcher_rs README.
+- Add format header comments to all `process_map/*.txt` files (with `#` comment support in `build.rs`).
+- Add `data/README.md` documenting benchmark haystack and word list files.
+
+### Testing
+- Add 4 ProcessType composition edge case tests (`Delete|EmojiNorm`, `None|Delete`, `Romanize` vs `RomanizeChar`, `VariantNormDeleteNormalize`).
+- Add `cargo-fuzz` targets for `SimpleMatcher::new` and `text_process` (adversarial input fuzzing).
+- Fix proptest ASCII generator: exclude backslash to prevent `\b` word-boundary false negatives.
+
+### Bindings
+- Python: add `__repr__` to `SimpleMatcher` (shows search mode and rule count).
+- Python: add missing `EMOJI_NORM` to `.pyi` type stub.
+- C: add `matcher_version()` function for runtime version queries.
+
+### Tooling
+- Add `cargo-semver-checks` CI job to catch accidental API breaks.
+- Add `just fuzz` / `just fuzz-list` recipes.
+
+### Refactor
+- Replace `.expect()` with `let-else unreachable!()` in `api.rs` and `search.rs`.
+
 ## 0.14.1 - 2026-04-07
 
 ### Performance
