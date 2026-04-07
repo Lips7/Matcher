@@ -1,0 +1,11 @@
+{
+    "java.test.config": [
+        {
+            "name": "MatcherJavaConfig",
+            "vmArgs": [
+                "-Djava.library.path=${workspaceFolder}/matcher_java/src/main/resources"
+            ]
+        }
+    ],
+    "java.test.defaultConfig": "MatcherJavaConfig"
+}

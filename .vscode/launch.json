@@ -1,0 +1,73 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "python": "${workspaceFolder}/matcher_py/.venv/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/matcher_py"
+        },
+        {
+            "name": "Python: pytest (matcher_py)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "python": "${workspaceFolder}/matcher_py/.venv/bin/python",
+            "args": [
+                "tests"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/matcher_py"
+        },
+        {
+            "name": "C: Debug test_matcher",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/matcher_c/tests/test_matcher",
+            "args": [],
+            "cwd": "${workspaceFolder}/matcher_c",
+            "env": {
+                "DYLD_LIBRARY_PATH": "${workspaceFolder}/matcher_c",
+                "LD_LIBRARY_PATH": "${workspaceFolder}/matcher_c"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug Example 'basic'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=basic",
+                    "--package=matcher_rs"
+                ],
+                "filter": {
+                    "name": "basic",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}/matcher_rs"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug Unit Tests (matcher_rs)",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--package=matcher_rs"
+                ],
+                "filter": {
+                    "name": "matcher_rs",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}/matcher_rs"
+        }
+    ]
+}

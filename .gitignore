@@ -28,7 +28,6 @@ __pycache__/
 **/.DS_Store
 .idea/
 .metals/
-.vscode/
 
 # Rust-specific
 Cargo.lock
