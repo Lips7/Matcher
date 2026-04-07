@@ -111,17 +111,20 @@ public class TestSimpleMatcher {
 
   @Test(expected = NullPointerException.class)
   public void testNullBytes() {
-    new SimpleMatcher(null);
+    SimpleMatcher matcher = new SimpleMatcher(null);
+    matcher.close();
   }
 
   @Test(expected = RuntimeException.class)
   public void testEmptyBytes() {
-    new SimpleMatcher(new byte[0]);
+    SimpleMatcher matcher = new SimpleMatcher(new byte[0]);
+    matcher.close();
   }
 
   @Test(expected = RuntimeException.class)
   public void testInvalidJson() {
-    new SimpleMatcher("not json".getBytes());
+    SimpleMatcher matcher = new SimpleMatcher("not json".getBytes());
+    matcher.close();
   }
 
   @Test

@@ -40,6 +40,9 @@ dev = ["pytest", "pip", "maturin"]
 [tool.uv]
 cache-keys = [{ file = "matcher_py.pyi"}, { file = "**/*.rs"}, { file = "**/*.toml"}, { file = "../matcher_rs/**/*.rs"}, { file = "../matcher_rs/**/*.toml"} ]
 
+[tool.ty.environment]
+python = ".venv"
+
 [tool.maturin]
 bindings = "pyo3"
 module-name = "matcher_py"

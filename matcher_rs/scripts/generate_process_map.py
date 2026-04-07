@@ -16,7 +16,6 @@ import io
 import json
 import math
 import sys
-import tempfile
 import unicodedata
 import zipfile
 from fractions import Fraction
