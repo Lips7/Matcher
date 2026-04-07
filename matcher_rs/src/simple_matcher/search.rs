@@ -282,9 +282,10 @@ impl SimpleMatcher {
             for ci in 0..num_children {
                 let child_idx = tree[node_idx].children[ci];
                 let child = &tree[child_idx];
-                let step = child
-                    .step
-                    .expect("non-root process tree nodes always cache a transform step");
+                // Invariant: non-root tree nodes always cache a transform step.
+                let Some(step) = child.step else {
+                    unreachable!()
+                };
                 let is_leaf = child.children.is_empty();
                 let parent_density = density_flags[parent_aidx];
                 let parent_ascii = parent_density == 0.0;

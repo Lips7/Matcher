@@ -79,16 +79,24 @@ const ROMANIZE_TEST_DATA: &str = include_str!("../process_map/ROMANIZE.txt");
 #[test]
 fn test_process_map_ascii_invariants() {
     assert!(
-        VARIANT_NORM_TEST_DATA.trim().lines().all(|line| !line
-            .split('\t')
-            .next()
-            .expect("Missing VARIANT_NORM key")
-            .is_ascii()),
+        VARIANT_NORM_TEST_DATA
+            .trim()
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .all(|line| !line
+                .split('\t')
+                .next()
+                .expect("Missing VARIANT_NORM key")
+                .is_ascii()),
         "VARIANT_NORM.txt should not contain ASCII keys"
     );
 
     let mut saw_ascii_delete = false;
-    for token in DELETE_TEST_DATA.trim().lines() {
+    for token in DELETE_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let cp = u32::from_str_radix(
             token
                 .strip_prefix("U+")
@@ -104,7 +112,7 @@ fn test_process_map_ascii_invariants() {
     );
 
     for data in [NORM_TEST_DATA, NUM_NORM_TEST_DATA] {
-        for line in data.trim().lines() {
+        for line in data.trim().lines().filter(|l| !l.starts_with('#')) {
             let mut split = line.split('\t');
             let k = split.next().expect("Missing normalize key");
             let v = split.next().expect("Missing normalize value");
@@ -115,7 +123,11 @@ fn test_process_map_ascii_invariants() {
         }
     }
 
-    for line in ROMANIZE_TEST_DATA.trim().lines() {
+    for line in ROMANIZE_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing romanize key");
         let v = split.next().expect("Missing romanize value");
@@ -126,7 +138,11 @@ fn test_process_map_ascii_invariants() {
 
 #[test]
 fn test_process_map_variant_norm_exhaustive() {
-    for line in VARIANT_NORM_TEST_DATA.trim().lines() {
+    for line in VARIANT_NORM_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing key in VARIANT_NORM.txt");
         let v = split.next().expect("Missing value in VARIANT_NORM.txt");
@@ -152,7 +168,11 @@ fn test_process_map_variant_norm_exhaustive() {
 
 #[test]
 fn test_process_map_delete_exhaustive() {
-    for token in DELETE_TEST_DATA.trim().lines() {
+    for token in DELETE_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let cp = u32::from_str_radix(
             token
                 .strip_prefix("U+")
@@ -176,7 +196,7 @@ fn test_process_map_normalize_exhaustive() {
 
     // Merging logic matches the step registry: NORM then NUM_NORM overwrites
     for data in [NORM_TEST_DATA, NUM_NORM_TEST_DATA] {
-        for line in data.trim().lines() {
+        for line in data.trim().lines().filter(|l| !l.starts_with('#')) {
             let mut split = line.split('\t');
             let k = split.next().expect("Missing key");
             let v = split.next().expect("Missing value");
@@ -198,7 +218,11 @@ fn test_process_map_normalize_exhaustive() {
 
 #[test]
 fn test_process_map_romanize_exhaustive() {
-    for line in ROMANIZE_TEST_DATA.trim().lines() {
+    for line in ROMANIZE_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing key in ROMANIZE.txt");
         let v = split.next().expect("Missing value in ROMANIZE.txt");
@@ -216,7 +240,11 @@ fn test_process_map_romanize_exhaustive() {
 
 #[test]
 fn test_process_map_romanize_char_exhaustive() {
-    for line in ROMANIZE_TEST_DATA.trim().lines() {
+    for line in ROMANIZE_TEST_DATA
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
         let mut split = line.split('\t');
         let k = split.next().expect("Missing key in ROMANIZE.txt");
         let v = split.next().expect("Missing value in ROMANIZE.txt");
@@ -873,4 +901,89 @@ fn test_emoji_norm_with_normalize() {
         .unwrap();
 
     assert!(matcher.is_match("🔥"));
+}
+
+// ===========================================================================
+// ProcessType composition edge cases
+// ===========================================================================
+
+#[test]
+fn test_delete_emoji_norm_composition_gotcha() {
+    // Delete strips emoji codepoints BEFORE EmojiNorm can convert them.
+    // This is a documented pitfall: Delete | EmojiNorm won't match emoji→word patterns.
+    let pt = ProcessType::Delete | ProcessType::EmojiNorm;
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(pt, 1, "fire")
+        .build()
+        .unwrap();
+
+    // "fire" as emoji is deleted before EmojiNorm runs, so no match
+    assert!(
+        !matcher.is_match("🔥"),
+        "Delete|EmojiNorm should NOT match emoji (Delete strips it first)"
+    );
+    // But literal "fire" in text still matches (Delete doesn't remove letters)
+    assert!(matcher.is_match("fire"));
+}
+
+#[test]
+fn test_none_in_composite_preserves_raw_path() {
+    // Including None in a composite type matches against both raw and transformed text.
+    let pt = ProcessType::None | ProcessType::Delete;
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(pt, 1, "helloworld")
+        .build()
+        .unwrap();
+
+    // "helloworld" matches raw text
+    assert!(matcher.is_match("helloworld"));
+    // "hello world" doesn't match raw (space), but Delete strips space → "helloworld"
+    assert!(matcher.is_match("hello world"));
+    // "hello-world" → Delete strips hyphen → "helloworld"
+    assert!(matcher.is_match("hello-world"));
+}
+
+#[test]
+fn test_romanize_vs_romanize_char() {
+    // Romanize adds boundary spaces: 西安 → " xi  an " (two separate syllables)
+    // RomanizeChar omits them:        西安 → "xian" (no boundaries)
+    let matcher_r = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Romanize, 1, "xian")
+        .build()
+        .unwrap();
+
+    let matcher_rc = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::RomanizeChar, 1, "xian")
+        .build()
+        .unwrap();
+
+    // 先 → Romanize: " xian " (single syllable, contains "xian")
+    // 西安 → Romanize: " xi  an " (two syllables, does NOT contain "xian")
+    assert!(
+        matcher_r.is_match("先"),
+        "Romanize: 先 → ' xian ' should contain 'xian'"
+    );
+    assert!(
+        !matcher_r.is_match("西安"),
+        "Romanize: 西安 → ' xi  an ' should NOT contain 'xian' (boundary-separated)"
+    );
+
+    // RomanizeChar: both 先 and 西安 → "xian" (no spaces)
+    assert!(matcher_rc.is_match("先"));
+    assert!(matcher_rc.is_match("西安"));
+}
+
+#[test]
+fn test_variant_norm_delete_normalize_composition() {
+    // VariantNormDeleteNormalize is the kitchen-sink transform.
+    let pt = ProcessType::VariantNormDeleteNormalize;
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(pt, 1, "测试")
+        .build()
+        .unwrap();
+
+    // Traditional + punctuation + width variants all normalize
+    assert!(matcher.is_match("測試"));
+    assert!(matcher.is_match("測，試"));
+    assert!(matcher.is_match("測 試"));
 }

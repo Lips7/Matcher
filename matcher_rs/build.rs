@@ -51,7 +51,12 @@ fn main() -> Result<()> {
     let mut normalize_str_buffer = String::new();
 
     for (source_name, process_map) in [("NORM.txt", NORM), ("NUM-NORM.txt", NUM_NORM)] {
-        for (line_num, pair_str) in process_map.trim().lines().enumerate() {
+        for (line_num, pair_str) in process_map
+            .trim()
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .enumerate()
+        {
             let mut split = pair_str.split('\t');
             let key = split.next().unwrap_or_else(|| {
                 panic!(
@@ -93,7 +98,12 @@ fn main() -> Result<()> {
 
     // 2. Build VariantNorm 2-stage flat array
     let mut variant_norm_map = HashMap::new();
-    for (line_num, line) in VARIANT_NORM.trim().lines().enumerate() {
+    for (line_num, line) in VARIANT_NORM
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .enumerate()
+    {
         let mut split = line.split('\t');
         let key = split.next().unwrap_or_else(|| {
             panic!(
@@ -129,7 +139,12 @@ fn main() -> Result<()> {
     let mut romanize_map = HashMap::new();
     let mut romanize_str_buffer = String::new();
 
-    for (line_num, line) in ROMANIZE.trim().lines().enumerate() {
+    for (line_num, line) in ROMANIZE
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .enumerate()
+    {
         let mut split = line.split('\t');
         let key = split.next().unwrap_or_else(|| {
             panic!("ROMANIZE.txt:{}: missing key (line is empty)", line_num + 1)
@@ -176,7 +191,12 @@ fn main() -> Result<()> {
     // codepoints to strip) need a non-zero packed value: (offset << 8) | 0.
     let mut emoji_norm_str_buffer = String::from("\0");
 
-    for (line_num, line) in EMOJI_NORM.trim().lines().enumerate() {
+    for (line_num, line) in EMOJI_NORM
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .enumerate()
+    {
         let mut split = line.split('\t');
         let key = split.next().unwrap_or_else(|| {
             panic!(
@@ -211,7 +231,12 @@ fn main() -> Result<()> {
 
     // 5. Build Text Delete BitSet
     let mut delete_bitset = vec![0u8; UNICODE_BITSET_SIZE];
-    for (line_num, token) in TEXT_DELETE.trim().lines().enumerate() {
+    for (line_num, token) in TEXT_DELETE
+        .trim()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .enumerate()
+    {
         let cp = parse_delete_codepoint(token, line_num + 1) as usize;
         delete_bitset[cp / 8] |= 1 << (cp % 8);
     }

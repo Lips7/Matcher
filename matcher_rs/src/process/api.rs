@@ -27,10 +27,6 @@ fn replace_cow<'a>(current: &mut Cow<'a, str>, next: String) {
 /// `true`, replace-style steps overwrite the last entry in place while `Delete` still appends,
 /// preserving the emitted-variant semantics used by matcher construction.
 ///
-/// # Panics
-///
-/// Panics (via `.expect()`) if `text_list` is somehow emptied during iteration, which
-/// cannot happen since the original input is always the first entry.
 fn reduce_text_process_inner<'a>(
     process_type: ProcessType,
     text: &'a str,
@@ -39,9 +35,10 @@ fn reduce_text_process_inner<'a>(
     let mut text_list = vec![Cow::Borrowed(text)];
 
     for process_type_bit in process_type.iter() {
-        let current = text_list
-            .last_mut()
-            .expect("text_list is never empty (seeded with original text)");
+        // SAFETY invariant: text_list is seeded with `text` above and only grows.
+        let Some(current) = text_list.last_mut() else {
+            unreachable!()
+        };
         let density = if current.is_ascii() { 0.0 } else { 1.0 };
         let changed = get_transform_step(process_type_bit).apply(current.as_ref(), density);
 

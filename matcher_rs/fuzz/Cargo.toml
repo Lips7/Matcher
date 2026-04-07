@@ -1,0 +1,30 @@
+[package]
+name = "matcher_rs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.matcher_rs]
+path = ".."
+
+[dependencies.arbitrary]
+version = "1"
+features = ["derive"]
+
+[[bin]]
+name = "fuzz_matcher_new"
+path = "fuzz_targets/fuzz_matcher_new.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_text_process"
+path = "fuzz_targets/fuzz_text_process.rs"
+doc = false
+
+[workspace]
