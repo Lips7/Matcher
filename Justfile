@@ -109,9 +109,6 @@ bench-all *args:
     uv run {{_bench_script}} --preset all {{args}}
 
 bench-compare baseline candidate *args:
-    uv run matcher_rs/scripts/compare_benchmark_runs.py "{{baseline}}" "{{candidate}}" {{args}}
-
-bench-compare-raw baseline candidate *args:
     uv run matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
 bench-viz *args:

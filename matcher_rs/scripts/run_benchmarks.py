@@ -159,20 +159,29 @@ def preset_commands(
         cmd += ["--bench", bench_name, "--"]
         return cmd
 
-    # Default module-level filters per preset. Replaced by --filter when provided.
-    presets: dict[str, tuple[str, list[str], str]] = {
-        "search": (
-            "bench",
-            ["search_mode", "match_vs_nomatch", "scaling", "text_transform", "rule_complexity"],
-            "search",
-        ),
-        "build": ("bench", ["build"], "build"),
+    # Each preset maps to a list of (bench_target, divan_kind) pairs.
+    # When --filter is provided, it's applied across all targets in the preset.
+    presets: dict[str, list[tuple[str, str]]] = {
+        "search": [
+            ("bench_search", "search"),
+            ("bench_scaling", "search"),
+            ("bench_transform", "search"),
+            ("bench_complexity", "search"),
+            ("bench_optimization", "search"),
+            ("bench_edge_cases", "search"),
+        ],
+        "build": [("bench_build", "build")],
     }
 
     result = OrderedDict()
-    for name, (bench_target, default_filters, divan_kind) in presets.items():
-        filters = [filter_pattern] if filter_pattern else default_filters
-        result[name] = [*cargo_bench(bench_target), *filters, *divan_args(divan_kind)]
+    for preset_name, targets in presets.items():
+        for bench_target, divan_kind in targets:
+            filters = [filter_pattern] if filter_pattern else []
+            result[f"{preset_name}:{bench_target}"] = [
+                *cargo_bench(bench_target),
+                *filters,
+                *divan_args(divan_kind),
+            ]
     return result
 
 
@@ -188,7 +197,9 @@ def command_sets_for_preset(
     )
     if preset == "all":
         return commands
-    return OrderedDict([(preset, commands[preset])])
+    return OrderedDict(
+        (key, cmd) for key, cmd in commands.items() if key.startswith(f"{preset}:")
+    )
 
 
 def prebuild(command_sets: OrderedDict[str, list[str]], profile: str = "bench") -> None:

@@ -195,8 +195,7 @@ just bench-build                                       # Matcher construction wo
 just bench-all                                         # All presets (search + build)
 
 # Compare runs
-just bench-compare <baseline_dir> <candidate_dir>      # Aggregated run-set comparison
-just bench-compare-raw <baseline.txt> <candidate.txt>  # Raw file-to-file comparison
+just bench-compare <baseline> <candidate>              # Compare runs, dirs, or raw files
 
 # Visualize
 just bench-viz <run_dir>                               # Interactive HTML dashboard (Plotly)

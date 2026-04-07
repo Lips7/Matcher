@@ -148,6 +148,62 @@ def test_batch_process():
     assert results[2][0].word == "hello"
 
 
+def test_from_dict():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
+    assert matcher.is_match("hello")
+    assert matcher.is_match("world")
+    assert not matcher.is_match("miss")
+
+    results = matcher.process("hello world")
+    ids = sorted(r.word_id for r in results)
+    assert ids == [1, 2]
+
+
+def test_from_dict_empty():
+    matcher = SimpleMatcher.from_dict({})
+    assert not matcher.is_match("anything")
+
+
+def test_from_dict_invalid():
+    with pytest.raises((ValueError, TypeError)):
+        SimpleMatcher.from_dict("not a dict")  # ty: ignore[invalid-argument-type]
+
+
+def test_stats():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
+    s = matcher.stats()
+    assert s["rule_count"] == 2
+    assert ProcessType.NONE in s["process_types"]  # ty: ignore[unsupported-operator]
+    assert s["search_mode"] == "AllSimple"
+
+
+def test_stats_general():
+    matcher = SimpleMatcher.from_dict(
+        {
+            ProcessType.NONE: {1: "hello"},
+            ProcessType.DELETE: {2: "world"},
+        }
+    )
+    s = matcher.stats()
+    assert s["rule_count"] == 2
+    assert s["search_mode"] == "General"
+
+
+def test_pickle_roundtrip():
+    import pickle
+
+    original = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello"}})
+    restored = pickle.loads(pickle.dumps(original))
+    assert restored.is_match("hello")
+    assert not restored.is_match("miss")
+
+
+def test_repr():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello"}})
+    r = repr(matcher)
+    assert "SimpleMatcher" in r
+
+
 def test_threading():
     import concurrent.futures
 

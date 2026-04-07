@@ -47,8 +47,7 @@ just bench-search --filter "scaling::process_cn"       # Single benchmark group 
 just bench-search --profile bench-dev                  # Faster rebuild (thin LTO)
 just bench-build                                       # Matcher construction workflow
 just bench-all                                         # All presets (search + build)
-just bench-compare <baseline_dir> <candidate_dir>      # aggregated run-set comparison
-just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file-to-file comparison
+just bench-compare <baseline> <candidate>               # compare runs, dirs, or raw files
 just bench-viz <run_dir>                               # interactive HTML dashboard (Plotly)
 just bench-viz <baseline_dir> <candidate_dir>          # comparison visualization
 

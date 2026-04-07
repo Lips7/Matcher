@@ -89,6 +89,31 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 // matcher.close() is called automatically here
 ```
 
+### Batch Operations
+
+Process multiple texts in a single native call to avoid per-text JNI overhead:
+
+```java
+try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
+    List<String> texts = Arrays.asList("hello world", "no match", "hello");
+
+    List<Boolean> matches = matcher.batchIsMatch(texts);
+    // [true, false, true]
+
+    List<List<SimpleResult>> results = matcher.batchProcess(texts);
+    // [[SimpleResult(1, "hello"), ...], [], [SimpleResult(1, "hello")]]
+}
+```
+
+### Composing ProcessTypes
+
+Use `ProcessType.or()`, `ProcessType.combine()`, or raw bitwise OR to create composite flags:
+
+```java
+int deleteNormalize = ProcessType.or(ProcessType.DELETE, ProcessType.NORMALIZE);
+int custom = ProcessType.combine(ProcessType.VARIANT_NORM, ProcessType.DELETE, ProcessType.NORMALIZE);
+```
+
 ### OR, NOT, and Word Boundary
 
 ```java

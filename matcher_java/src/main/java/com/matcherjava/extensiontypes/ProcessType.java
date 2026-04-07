@@ -25,6 +25,25 @@ public enum ProcessType {
     return value;
   }
 
+  /** Combine two process types with bitwise OR. */
+  public static int or(ProcessType first, ProcessType second) {
+    return first.value | second.value;
+  }
+
+  /** Intersect two process types with bitwise AND. */
+  public static int and(ProcessType first, ProcessType second) {
+    return first.value & second.value;
+  }
+
+  /** Combine any number of process types with bitwise OR. */
+  public static int combine(ProcessType... types) {
+    int result = 0;
+    for (ProcessType pt : types) {
+      result |= pt.value;
+    }
+    return result;
+  }
+
   @Override
   public String toString() {
     return String.valueOf(value);

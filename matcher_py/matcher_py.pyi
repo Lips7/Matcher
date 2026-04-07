@@ -77,6 +77,20 @@ class SimpleMatcher:
                 ``ProcessType`` values.
         """
 
+    @classmethod
+    def from_dict(cls, table: dict) -> SimpleMatcher:
+        """
+        Build a matcher from a Python dict.
+
+        Equivalent to ``SimpleMatcher(json.dumps(table).encode())``.
+
+        Parameters:
+            table: Mapping of ``{ProcessType_int: {word_id: pattern}}``.
+
+        Raises:
+            ValueError: If the table structure is invalid.
+        """
+
     def __getnewargs__(self) -> tuple[bytes]:
         """Return constructor args for pickle support."""
 
@@ -88,6 +102,17 @@ class SimpleMatcher:
 
     def __repr__(self) -> str:
         """Return a summary string showing search mode and rule count."""
+
+    def stats(self) -> dict[str, int | list[int] | str]:
+        """
+        Return metadata about the compiled matcher.
+
+        Returns a dict with keys:
+
+        - ``rule_count`` (int): Total number of rules across all process types.
+        - ``process_types`` (list[int]): Sorted list of ProcessType bit values.
+        - ``search_mode`` (str): ``"AllSimple"`` or ``"General"``.
+        """
 
     def is_match(self, text: str) -> bool:
         """

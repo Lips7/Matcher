@@ -1,9 +1,11 @@
 package com.matcherjava;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
 import com.matcherjava.extensiontypes.SimpleResult;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -44,6 +46,35 @@ public final class SimpleMatcher implements AutoCloseable {
     }
 
     return JSON.parseArray(json, SimpleResult.class);
+  }
+
+  /** Check multiple texts in a single native call. */
+  public List<Boolean> batchIsMatch(List<String> texts) {
+    checkClosed();
+    byte[][] bytesArray = new byte[texts.size()][];
+    for (int i = 0; i < texts.size(); i++) {
+      bytesArray[i] = utf8Bytes(texts.get(i));
+    }
+    boolean[] results = MatcherJava.simpleMatcherBatchIsMatch(matcherPtr, bytesArray);
+    List<Boolean> list = new ArrayList<>(results.length);
+    for (boolean b : results) {
+      list.add(b);
+    }
+    return list;
+  }
+
+  /** Process multiple texts in a single native call. */
+  public List<List<SimpleResult>> batchProcess(List<String> texts) {
+    checkClosed();
+    byte[][] bytesArray = new byte[texts.size()][];
+    for (int i = 0; i < texts.size(); i++) {
+      bytesArray[i] = utf8Bytes(texts.get(i));
+    }
+    String json = MatcherJava.simpleMatcherBatchProcessAsString(matcherPtr, bytesArray);
+    if (json == null) {
+      return null;
+    }
+    return JSON.parseObject(json, new TypeReference<List<List<SimpleResult>>>() {});
   }
 
   @Override

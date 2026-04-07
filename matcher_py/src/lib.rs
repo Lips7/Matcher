@@ -2,7 +2,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::{
     Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
 };
-use pyo3::types::{PyAnyMethods, PyModuleMethods, PyString};
+use pyo3::types::{PyAnyMethods, PyDict, PyModuleMethods, PyString, PyType};
 use pyo3::{Bound, pyfunction};
 use std::borrow::Cow;
 
@@ -25,7 +25,7 @@ fn deserialize_table(bytes: &[u8]) -> PyResult<SimpleTableSerde<'_>> {
         .map_err(|e| PyValueError::new_err(format!("Deserialize simple_table_bytes failed: {e}")))
 }
 
-#[pyclass(name = "ProcessType", eq, from_py_object)]
+#[pyclass(name = "ProcessType", module = "matcher_py", eq, from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
 pub struct PyProcessType(ProcessType);
 
@@ -88,7 +88,7 @@ impl PyProcessType {
     }
 }
 
-#[pyclass(name = "SimpleResult")]
+#[pyclass(name = "SimpleResult", module = "matcher_py")]
 pub struct PySimpleResult {
     #[pyo3(get)]
     pub word_id: u32,
@@ -114,7 +114,7 @@ fn py_reduce_text_process<'a>(
     ))
 }
 
-#[pyclass(name = "SimpleMatcher")]
+#[pyclass(name = "SimpleMatcher", module = "matcher_py")]
 pub struct PySimpleMatcher {
     simple_matcher: SimpleMatcher,
     simple_table_bytes: Vec<u8>,
@@ -130,6 +130,22 @@ impl PySimpleMatcher {
             simple_matcher: SimpleMatcher::new(&simple_table)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
             simple_table_bytes: simple_table_bytes.to_vec(),
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature=(table))]
+    fn from_dict(_cls: &Bound<'_, PyType>, py: Python, table: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let json_mod = py.import("json")?;
+        let json_str = json_mod.call_method1("dumps", (table,))?;
+        let bytes_str = json_str.call_method1("encode", ("utf-8",))?;
+        let bytes: Vec<u8> = bytes_str.extract()?;
+
+        let simple_table = deserialize_table(&bytes)?;
+        Ok(PySimpleMatcher {
+            simple_matcher: SimpleMatcher::new(&simple_table)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            simple_table_bytes: bytes,
         })
     }
 
@@ -152,6 +168,30 @@ impl PySimpleMatcher {
 
     fn __repr__(&self) -> String {
         format!("{:?}", self.simple_matcher)
+    }
+
+    fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+
+        let table: std::collections::HashMap<u8, std::collections::HashMap<u32, String>> =
+            sonic_rs::from_slice(&self.simple_table_bytes).unwrap_or_default();
+
+        let rule_count: usize = table.values().map(|m| m.len()).sum();
+        dict.set_item("rule_count", rule_count)?;
+
+        let mut process_types: Vec<u8> = table.keys().copied().collect();
+        process_types.sort_unstable();
+        dict.set_item("process_types", process_types)?;
+
+        let repr = format!("{:?}", self.simple_matcher);
+        let search_mode = repr
+            .split("search_mode: ")
+            .nth(1)
+            .and_then(|s| s.split(',').next())
+            .unwrap_or("Unknown");
+        dict.set_item("search_mode", search_mode)?;
+
+        Ok(dict)
     }
 
     #[pyo3(signature=(text))]

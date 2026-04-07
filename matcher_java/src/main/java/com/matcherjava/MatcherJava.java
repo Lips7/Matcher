@@ -23,5 +23,11 @@ public final class MatcherJava {
 
   public static native String simpleMatcherProcessAsString(long matcherPtr, byte[] textBytes);
 
+  public static native boolean[] simpleMatcherBatchIsMatch(
+      long matcherPtr, byte[][] textsBytes);
+
+  public static native String simpleMatcherBatchProcessAsString(
+      long matcherPtr, byte[][] textsBytes);
+
   public static native void dropSimpleMatcher(long matcherPtr);
 }
