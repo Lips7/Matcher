@@ -101,7 +101,7 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 
 **PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for simple single-entry patterns, the value is `rule_idx | DIRECT_RULE_BIT` (bit 31 set), encoding the rule index directly in the automaton hit value so the scan hot path skips the entry table lookup.
 
-**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature, uses `aho-corasick` DFA (with Teddy/memchr prefilter) for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
+**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature, uses `aho-corasick` DFA for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
 
 **Charwise engine** (`CharwiseMatcher`): compiled from **all** patterns. Always built. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on non-ASCII text.
 
@@ -268,7 +268,7 @@ The fused path uses a 3-way dispatch based on DFA availability and text density:
 
 | Condition | Strategy | Rationale |
 |---|---|---|
-| `dfa` feature ON + density ≤ 0.67 | Materialize via `step.apply()` → DFA scan | DFA+Teddy is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text; allocation cost is negligible |
+| `dfa` feature ON + density ≤ 0.67 | Materialize via `step.apply()` → DFA scan | DFA is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text; allocation cost is negligible |
 | `dfa` feature OFF + density ≤ 0.67 | Stream via `filter_bytes()` → DAAC bytewise | Best available option without DFA |
 | density > 0.67 | Stream via `filter_bytes()` → DAAC charwise | Charwise does 1 transition per CJK char vs 3 bytewise; streaming avoids allocation |
 
@@ -280,7 +280,7 @@ Engine selection uses non-ASCII byte density rather than a binary `is_ascii()` c
 
 | Text density | Engine | Reason |
 |---|---|---|
-| ≤ 0.67 non-ASCII bytes (~≤40% CJK chars) | Bytewise (DFA+Teddy or DAAC) | Teddy prefilter SIMD-skips non-matching regions |
+| ≤ 0.67 non-ASCII bytes (~≤40% CJK chars) | Bytewise (DFA or DAAC) | DFA is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text |
 | > 0.67 non-ASCII bytes (~>40% CJK chars) | Charwise DAAC | 1 transition per char vs 3 bytewise on CJK |
 
 Both engines are built from the **full** pattern set (not split by ASCII/CJK), so either engine is correct for any text. The dispatch is a pure speed optimization.

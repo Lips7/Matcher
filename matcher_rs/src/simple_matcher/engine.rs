@@ -100,7 +100,7 @@ pub(super) struct ScanPlan {
 ///
 /// Bytewise scan engines. DAAC bytewise is always built (supports streaming).
 /// DFA is built alongside it when the `dfa` feature is enabled (1.7–3.3× faster
-/// for non-streaming scan via Teddy prefilter).
+/// for non-streaming scan).
 #[derive(Clone)]
 struct BytewiseMatcher {
     daac: DoubleArrayAhoCorasick<u32>,
@@ -277,7 +277,7 @@ impl ScanPlan {
 
 /// Query helpers for the bytewise scan engine.
 ///
-/// Non-streaming methods prefer DFA (when available) for Teddy prefilter acceleration.
+/// Non-streaming methods prefer DFA (when available) for acceleration.
 /// Streaming uses DAAC bytewise (DFA has no `_from_iter` API).
 impl BytewiseMatcher {
     #[inline(always)]
@@ -509,8 +509,7 @@ fn compile_automata(
 /// Builds the bytewise engine from the full pattern set.
 ///
 /// Always builds DAAC bytewise (needed for streaming). With the `dfa` feature,
-/// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan
-/// via Teddy prefilter).
+/// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan).
 fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatcher, MatcherError> {
     let daac = DoubleArrayAhoCorasickBuilder::new()
         .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
