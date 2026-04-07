@@ -141,6 +141,14 @@ characterize-viz *args:
 profile *args:
     uv run matcher_rs/scripts/instruments_profile.py {{args}}
 
+# -- Fuzz ----------------------------------------------------------------------
+
+fuzz target="fuzz_matcher_new" *args="":
+    cd matcher_rs && cargo fuzz run {{target}} {{args}}
+
+fuzz-list:
+    cd matcher_rs && cargo fuzz list
+
 # -- Coverage ------------------------------------------------------------------
 
 coverage:

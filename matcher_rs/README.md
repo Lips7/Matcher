@@ -171,6 +171,13 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_si
 | `--no-default-features --features dfa` | DFA, no SIMD transforms | Fast | Higher | When SIMD dispatch is not needed |
 | `--no-default-features` | `daachorse`-only, portable transforms | Good | Lower | Lean builds |
 
+### When to Use Which
+
+- **Default (`perf`)**: Best for most use cases. DFA + SIMD gives maximum throughput. Use this unless you have a specific constraint.
+- **Drop DFA** (`--no-default-features --features simd_runtime_dispatch`): When memory is constrained — DFA uses ~17× more memory than the DAAC fallback. Still gets SIMD-accelerated transforms and density dispatch.
+- **Minimal** (`--no-default-features`): Embedded, WASM, or minimal-dependency builds. Portable across all targets with good baseline performance.
+- **Platform notes**: AVX2 (x86_64) and NEON (aarch64) are auto-detected at runtime when `simd_runtime_dispatch` is enabled — no manual target-feature flags needed.
+
 ## Benchmarks
 
 Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).

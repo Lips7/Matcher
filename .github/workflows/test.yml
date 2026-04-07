@@ -76,6 +76,26 @@ jobs:
       - run: cargo all-features clippy --workspace --all-targets -- -D warnings
       - run: cargo doc --workspace --all-features --no-deps
 
+  semver:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Z threads=0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - name: Check semver compatibility
+        run: cargo semver-checks -p matcher_rs
+
   build:
     runs-on: ${{ matrix.platform.runner }}
     strategy:

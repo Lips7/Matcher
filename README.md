@@ -18,9 +18,29 @@ It's helpful for
 - **Spam Detection**: Identifying spam content in emails or messages.
 - ···
 
-## Features
+## Architecture
 
-For detailed implementation, see the [Design Document](./DESIGN.md).
+```
+                          Construction
+┌─────────────────────────────────────────────────────────────┐
+│  Rules ──▶ parse & dedup ──▶ transform trie ──▶ AC automata │
+└─────────────────────────────────────────────────────────────┘
+
+                             Query
+┌─────────────────────────────────────────────────────────────┐
+│  Text ──▶ walk trie ──▶ scan variants ──▶ evaluate ──▶ hits │
+│             │                 │                              │
+│        transform text    AC automaton                       │
+│        (reuse shared     (bytewise or                       │
+│         prefixes)         charwise)                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+All sub-patterns are deduplicated into a single Aho-Corasick automaton for O(N) text scanning. Text transformations share a prefix trie so `VariantNorm|Delete` reuses the VariantNorm result. When every rule is a plain literal under one ProcessType, an **AllSimple** fast path skips the trie and state machinery entirely — each automaton hit maps directly to a result.
+
+For the full narrative walkthrough, see the [Design Document](./DESIGN.md).
+
+## Features
 
 - **Text Transformation**:
   - **VariantNorm**: Simplify traditional Chinese characters to simplified ones.
@@ -153,6 +173,14 @@ just build
 This builds all packages and copies the dynamic libraries to the right locations. You can also run `cargo build --release` directly — the C and Java libraries will be in `target/release/`:
 - `libmatcher_c.so` / `libmatcher_c.dylib` / `matcher_c.dll`
 - `libmatcher_java.so` / `libmatcher_java.dylib` / `matcher_java.dll`
+
+## Common Pitfalls
+
+- **`EmojiNorm` + `Delete` don't compose**: `Delete` strips emoji codepoints before `EmojiNorm` can convert them to words. Use `EmojiNorm | Normalize` instead.
+- **`Romanize` vs `RomanizeChar`**: `Romanize` adds boundary spaces (`西安` → ` xi  an `) so homophones like `洗按` match but `先` doesn't. `RomanizeChar` omits spaces (`xian`) for fuzzier matching.
+- **Including `None` in a composite ProcessType**: `None | Delete` matches against *both* the original text and the delete-transformed text. Useful when some sub-patterns should match raw input.
+- **Repeated AND segments count repetitions**: `无&法&无&天` requires `无` to appear at least twice in the text.
+- **`\b` is per-sub-pattern, not per-rule**: `\bcat\b&dog` requires "cat" as a whole word but "dog" as a substring.
 
 ## Benchmarks
 

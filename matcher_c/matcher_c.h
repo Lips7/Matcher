@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+// Returns the library version as a static string (do NOT free).
+const char* matcher_version(void);
+
 // Initialize a SimpleMatcher from JSON bytes. Returns null on error.
 // Caller must free with drop_simple_matcher.
 void* init_simple_matcher(const char* simple_table_bytes);

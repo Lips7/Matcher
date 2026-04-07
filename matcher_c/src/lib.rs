@@ -4,6 +4,14 @@ use std::{
     ptr, str,
 };
 
+/// Returns the library version as a static null-terminated string.
+///
+/// The returned pointer is valid for the lifetime of the process and must NOT be freed.
+#[unsafe(no_mangle)]
+pub extern "C" fn matcher_version() -> *const c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
+}
+
 use matcher_rs::{
     ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,

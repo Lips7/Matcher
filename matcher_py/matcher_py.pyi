@@ -14,6 +14,7 @@ class ProcessType:
     VARIANT_NORM_DELETE_NORMALIZE: int
     ROMANIZE: int
     ROMANIZE_CHAR: int
+    EMOJI_NORM: int
 
 class SimpleResult:
     """
@@ -84,6 +85,9 @@ class SimpleMatcher:
 
     def __setstate__(self, simple_table_bytes: bytes) -> None:
         """Restore matcher state from pickle data."""
+
+    def __repr__(self) -> str:
+        """Return a summary string showing search mode and rule count."""
 
     def is_match(self, text: str) -> bool:
         """

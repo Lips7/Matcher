@@ -150,6 +150,10 @@ impl PySimpleMatcher {
         Ok(())
     }
 
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.simple_matcher)
+    }
+
     #[pyo3(signature=(text))]
     fn is_match(&self, py: Python<'_>, text: &str) -> bool {
         let matcher = &self.simple_matcher;
