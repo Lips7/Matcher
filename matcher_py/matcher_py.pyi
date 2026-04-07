@@ -1,3 +1,10 @@
+import typing
+
+class Stats(typing.TypedDict):
+    rule_count: int
+    process_types: list[int]
+    search_mode: str
+
 class ProcessType:
     """
     An enumeration representing various types of text processing operations.
@@ -103,7 +110,7 @@ class SimpleMatcher:
     def __repr__(self) -> str:
         """Return a summary string showing search mode and rule count."""
 
-    def stats(self) -> dict[str, int | list[int] | str]:
+    def stats(self) -> Stats:
         """
         Return metadata about the compiled matcher.
 

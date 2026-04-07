@@ -1,5 +1,0 @@
-[environment]
-python = "matcher_py/.venv"
-
-[src]
-include = ["matcher_py/"]

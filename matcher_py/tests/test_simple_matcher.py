@@ -171,7 +171,7 @@ def test_stats():
     matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
     s = matcher.stats()
     assert s["rule_count"] == 2
-    assert ProcessType.NONE in s["process_types"]  # ty: ignore[unsupported-operator]
+    assert ProcessType.NONE in s["process_types"]
     assert s["search_mode"] == "AllSimple"
 
 
