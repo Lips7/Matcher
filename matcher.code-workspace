@@ -14,6 +14,7 @@
         }
     ],
     "settings": {
+        // ── Java ──────────────────────────────────────────────
         "java.test.config": [
             {
                 "name": "MatcherJavaConfig",
@@ -22,6 +23,138 @@
                 ]
             }
         ],
-        "java.test.defaultConfig": "MatcherJavaConfig"
+        "java.test.defaultConfig": "MatcherJavaConfig",
+
+        // ── Editor ────────────────────────────────────────────
+        "[rust]": {
+            "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        },
+        "[python]": {
+            "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+
+        // ── Search / Explorer exclusions ──────────────────────
+        "search.exclude": {
+            "**/target": true,
+            "**/.venv": true,
+            "**/node_modules": true,
+            "matcher_java/target": true,
+            "matcher_rs/process_map": true
+        },
+        "files.exclude": {
+            "**/.DS_Store": true,
+            "**/__pycache__": true,
+            "**/*.egg-info": true
+        },
+        "files.watcherExclude": {
+            "**/target/**": true,
+            "**/.venv/**": true
+        },
+
+        // ── File nesting (collapse generated/ancillary files) ─
+        "explorer.fileNesting.enabled": true,
+        "explorer.fileNesting.expand": false
+    },
+
+    // ── Tasks (Ctrl+Shift+P → "Run Task") ─────────────────
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "build",
+                "type": "shell",
+                "command": "just build",
+                "group": "build",
+                "problemMatcher": ["$rustc"]
+            },
+            {
+                "label": "check",
+                "type": "shell",
+                "command": "just check",
+                "group": "build",
+                "problemMatcher": ["$rustc"]
+            },
+            {
+                "label": "test",
+                "type": "shell",
+                "command": "just test",
+                "group": "test"
+            },
+            {
+                "label": "test-rs",
+                "type": "shell",
+                "command": "just test-rs",
+                "group": "test",
+                "problemMatcher": ["$rustc"]
+            },
+            {
+                "label": "test-quick",
+                "type": "shell",
+                "command": "just test-quick",
+                "group": {
+                    "kind": "test",
+                    "isDefault": true
+                },
+                "problemMatcher": ["$rustc"]
+            },
+            {
+                "label": "test-py",
+                "type": "shell",
+                "command": "just test-py",
+                "group": "test"
+            },
+            {
+                "label": "test-java",
+                "type": "shell",
+                "command": "just test-java",
+                "group": "test"
+            },
+            {
+                "label": "test-c",
+                "type": "shell",
+                "command": "just test-c",
+                "group": "test"
+            },
+            {
+                "label": "lint",
+                "type": "shell",
+                "command": "just lint",
+                "problemMatcher": ["$rustc"]
+            },
+            {
+                "label": "fmt",
+                "type": "shell",
+                "command": "just fmt"
+            },
+            {
+                "label": "bench-search (quick)",
+                "type": "shell",
+                "command": "just bench-search --quick"
+            },
+            {
+                "label": "bench-build",
+                "type": "shell",
+                "command": "just bench-build --quick"
+            },
+            {
+                "label": "coverage",
+                "type": "shell",
+                "command": "just coverage"
+            }
+        ]
+    },
+
+    // ── Recommended extensions ─────────────────────────────
+    "extensions": {
+        "recommendations": [
+            "rust-lang.rust-analyzer",
+            "vadimcn.vscode-lldb",
+            "charliermarsh.ruff",
+            "ms-python.python",
+            "ms-python.debugpy",
+            "tamasfe.even-better-toml",
+            "redhat.java",
+            "vscjava.vscode-java-test"
+        ]
     }
 }
