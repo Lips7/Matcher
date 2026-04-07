@@ -108,6 +108,43 @@ fn main() {
         combined.is_match("the lazy fox can jump")
     );
 
+    // OR: any alternative matches the segment
+    let or_matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "color|colour")
+        .build()
+        .unwrap();
+
+    println!("\n  Rule: \"color|colour\" (OR)");
+    println!(
+        "    \"nice color\"  => {}",
+        or_matcher.is_match("nice color")
+    );
+    println!(
+        "    \"nice colour\" => {}",
+        or_matcher.is_match("nice colour")
+    );
+    println!("    \"nice hue\"    => {}", or_matcher.is_match("nice hue"));
+
+    // Word boundary: \b restricts to whole-word matches
+    let boundary_matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .build()
+        .unwrap();
+
+    println!("\n  Rule: \"\\bcat\\b\" (word boundary)");
+    println!(
+        "    \"the cat sat\"  => {}",
+        boundary_matcher.is_match("the cat sat")
+    );
+    println!(
+        "    \"concatenate\"  => {}",
+        boundary_matcher.is_match("concatenate")
+    );
+    println!(
+        "    \"cats and dogs\" => {}",
+        boundary_matcher.is_match("cats and dogs")
+    );
+
     // Count semantics: "a&a" requires at least 2 occurrences
     let count = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "ha&ha")
@@ -117,6 +154,33 @@ fn main() {
     println!("\n  Rule: \"ha&ha\" (requires 2 occurrences)");
     println!("    \"ha\"    => {}", count.is_match("ha"));
     println!("    \"ha ha\" => {}", count.is_match("ha ha"));
+
+    // Combined: AND + OR + NOT + word boundary
+    // "bright&color|colour~\bdark\b" means:
+    //   - must contain "bright" AND ("color" OR "colour")
+    //   - must NOT contain "dark" as a whole word
+    let full = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, r"bright&color|colour~\bdark\b")
+        .build()
+        .unwrap();
+
+    println!("\n  Rule: \"bright&color|colour~\\bdark\\b\" (AND + OR + NOT + boundary)");
+    println!(
+        "    \"bright colour\"      => {}",
+        full.is_match("bright colour")
+    );
+    println!(
+        "    \"bright color\"       => {}",
+        full.is_match("bright color")
+    );
+    println!(
+        "    \"bright dark color\"  => {}",
+        full.is_match("bright dark color")
+    );
+    println!(
+        "    \"bright darken color\" => {}",
+        full.is_match("bright darken color")
+    );
 
     // ── 6. HashMap construction (for serde / dynamic scenarios) ─────────────────
     println!("\n=== 6. HashMap Construction ===\n");

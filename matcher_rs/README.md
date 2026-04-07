@@ -70,12 +70,16 @@ Repeated segments count: `"无&法&无&天"` requires two matches of `"无"`.
 
 ## Examples
 
+### Text Processing
+
 ```rust
 use matcher_rs::{text_process, reduce_text_process, ProcessType};
 
 let result = text_process(ProcessType::Delete, "你好，世界！");
 let results = reduce_text_process(ProcessType::VariantNormDeleteNormalize, "你好，世界！");
 ```
+
+### AND Matching
 
 ```rust
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
@@ -89,7 +93,67 @@ let matcher = SimpleMatcherBuilder::new()
 let results = matcher.process("你好，世界！");
 ```
 
-For more examples, see [test_simple_matcher.rs](./tests/test_simple_matcher.rs).
+### OR Matching
+
+```rust
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::None, 1, "color|colour")
+    .build()
+    .unwrap();
+
+assert!(matcher.is_match("nice color"));   // matches "color"
+assert!(matcher.is_match("nice colour"));  // matches "colour"
+assert!(!matcher.is_match("nice hue"));
+```
+
+### NOT Matching
+
+```rust
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::None, 1, "banana~peel")
+    .build()
+    .unwrap();
+
+assert!(matcher.is_match("banana split"));   // "banana" present, "peel" absent
+assert!(!matcher.is_match("banana peel"));   // vetoed by "peel"
+```
+
+### Word Boundary
+
+```rust
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::None, 1, r"\bcat\b")
+    .build()
+    .unwrap();
+
+assert!(matcher.is_match("the cat sat"));    // whole word "cat"
+assert!(!matcher.is_match("concatenate"));   // "cat" is a substring, not a word
+assert!(!matcher.is_match("cats and dogs")); // "cats" ≠ "cat"
+```
+
+### Combined Operators
+
+```rust
+use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+
+// (bright) AND (color OR colour) AND NOT (\bdark\b)
+let matcher = SimpleMatcherBuilder::new()
+    .add_word(ProcessType::None, 1, r"bright&color|colour~\bdark\b")
+    .build()
+    .unwrap();
+
+assert!(matcher.is_match("bright colour"));       // AND + OR satisfied, no veto
+assert!(!matcher.is_match("bright dark color"));   // vetoed by whole-word "dark"
+assert!(matcher.is_match("bright darken color"));  // "darken" ≠ "\bdark\b"
+```
+
+For more examples, run `cargo run --example basic -p matcher_rs` or see [test_simple_matcher.rs](./tests/test_simple_matcher.rs).
 
 ## Feature Flags
 
@@ -114,19 +178,45 @@ Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST_100000](.
 Full records: [bench_records/](./bench_records/). Latest: [latest.txt](./bench_records/latest.txt).
 
 ```shell
-just bench-search                          # Main throughput workflow
-just bench-search --quick                  # Quick directional signal (~2-3 min)
-just bench-build                           # Matcher construction workflow
-just bench-engine-search                   # Raw engine throughput workflow
-just bench-engine-is-match                 # Engine is_match workflow
-just bench-all                             # All presets
+# Run benchmarks
+just bench-search                                      # Main throughput workflow (~15 min)
+just bench-search --quick                              # Quick directional signal (~2-3 min)
+just bench-search --filter text_transform              # Only transform benchmarks (~2 min)
+just bench-search --filter rule_complexity             # Only rule shape benchmarks (~3 min)
+just bench-search --filter "scaling::process_cn"       # Single benchmark group (~1 min)
+just bench-build                                       # Matcher construction workflow
+just bench-all                                         # All presets (search + build)
+
+# Compare runs
+just bench-compare <baseline_dir> <candidate_dir>      # Aggregated run-set comparison
+just bench-compare-raw <baseline.txt> <candidate.txt>  # Raw file-to-file comparison
+
+# Visualize
+just bench-viz <run_dir>                               # Interactive HTML dashboard (Plotly)
+just bench-viz <baseline_dir> <candidate_dir>          # Comparison visualization
 ```
 
 Protocol: run serially, benchmark only the affected preset, let the script warm the binary, compare aggregated run sets (not single medians), prefer plugged-in power and low background load.
 
+### Engine Characterization
+
+Sweep the full (engine × size × pat_cjk × text_cjk) matrix to understand dispatch behavior:
+
 ```shell
-just bench-compare <baseline_dir> <candidate_dir>     # aggregated comparison
-just bench-compare-raw <baseline.txt> <candidate.txt>  # raw file comparison
+just characterize-engines                              # Full sweep (~20-30 min)
+just characterize-engines-quick                        # Subset (~3 min)
+just characterize-viz <csv_file>                       # Interactive Plotly heatmap
+```
+
+### Profiling
+
+Profile with Xcode Instruments (Time Profiler):
+
+```shell
+cargo run --profile profiling --example profile_search -p matcher_rs -- --list
+cargo run --profile profiling --example profile_search -p matcher_rs -- --scene all
+just profile record --scene en-search --analyze
+just profile record --mode is_match --dict en --rules 10000 --analyze
 ```
 
 ## Contributing

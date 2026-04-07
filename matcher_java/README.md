@@ -89,6 +89,32 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 // matcher.close() is called automatically here
 ```
 
+### OR, NOT, and Word Boundary
+
+```java
+import com.matcherjava.SimpleMatcher;
+
+// ProcessType.NONE = 1
+// Rules: OR (word 1), NOT (word 2), word boundary (word 3), combined (word 4)
+String json = """
+    {"1":{
+        "1":"color|colour",
+        "2":"banana~peel",
+        "3":"\\\\bcat\\\\b",
+        "4":"bright&color|colour~\\\\bdark\\\\b"
+    }}""";
+try (SimpleMatcher matcher = new SimpleMatcher(json.getBytes())) {
+    assert matcher.isMatch("nice colour");            // OR
+    assert matcher.isMatch("banana split");            // NOT (no veto)
+    assert !matcher.isMatch("banana peel");            // NOT (vetoed)
+    assert matcher.isMatch("the cat sat");             // word boundary
+    assert !matcher.isMatch("concatenate");            // substring, not whole word
+    assert matcher.isMatch("bright colour");           // combined: AND + OR
+    assert !matcher.isMatch("bright dark color");      // combined: vetoed by \bdark\b
+    assert matcher.isMatch("bright darken color");     // "darken" ≠ \bdark\b
+}
+```
+
 ### Text Processing
 
 Use `MatcherJava.textProcess` and `MatcherJava.reduceTextProcess` to apply transformations without a matcher:

@@ -104,6 +104,36 @@ result = simple_matcher.process("hello,world,word,word,hallo")
 print(result)
 ```
 
+### OR, NOT, and Word Boundary
+
+```python
+import json
+
+from matcher_py import ProcessType, SimpleMatcher
+
+matcher = SimpleMatcher(
+    json.dumps(
+        {
+            ProcessType.NONE: {
+                1: "color|colour",          # OR: matches either spelling
+                2: "banana~peel",           # NOT: "banana" without "peel"
+                3: r"\bcat\b",             # word boundary: whole word only
+                4: r"bright&color|colour~\bdark\b",  # combined
+            }
+        }
+    ).encode()
+)
+
+assert matcher.is_match("nice colour")            # OR
+assert matcher.is_match("banana split")            # NOT (no veto)
+assert not matcher.is_match("banana peel")         # NOT (vetoed)
+assert matcher.is_match("the cat sat")             # word boundary
+assert not matcher.is_match("concatenate")         # "cat" is substring
+assert matcher.is_match("bright colour")           # combined: AND + OR
+assert not matcher.is_match("bright dark color")   # combined: vetoed by \bdark\b
+assert matcher.is_match("bright darken color")     # "darken" ≠ \bdark\b
+```
+
 ## Explanation of the configuration
 
 * `SimpleMatcher`'s configuration is defined by the `SimpleTable = Dict[ProcessType, Dict[int, str]]` type, the value `Dict[int, str]`'s key is called `word_id`, **`word_id` is required to be globally unique**.

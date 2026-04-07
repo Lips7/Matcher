@@ -107,6 +107,25 @@ int main() {
 
     drop_simple_matcher(matcher);
 
+    // --- OR, NOT, and Word Boundary ---
+    // Rules: OR (word 1), NOT (word 2), word boundary (word 3), combined (word 4)
+    char* rules_config = "{\"1\":{"
+        "\"1\":\"color|colour\","
+        "\"2\":\"banana~peel\","
+        "\"3\":\"\\\\bcat\\\\b\","
+        "\"4\":\"bright&color|colour~\\\\bdark\\\\b\""
+    "}}";
+    void* rules_matcher = init_simple_matcher(rules_config);
+    if (rules_matcher) {
+        printf("OR:       %d\n", simple_matcher_is_match(rules_matcher, "nice colour"));     // 1
+        printf("NOT ok:   %d\n", simple_matcher_is_match(rules_matcher, "banana split"));    // 1
+        printf("NOT veto: %d\n", simple_matcher_is_match(rules_matcher, "banana peel"));     // 0
+        printf("Boundary: %d\n", simple_matcher_is_match(rules_matcher, "the cat sat"));     // 1
+        printf("Substr:   %d\n", simple_matcher_is_match(rules_matcher, "concatenate"));     // 0
+        printf("Combined: %d\n", simple_matcher_is_match(rules_matcher, "bright colour"));   // 1
+        drop_simple_matcher(rules_matcher);
+    }
+
     // --- Text Processing ---
     char* normalized = text_process(PROCESS_TYPE_NORMALIZE, "Ｈｅｌｌｏ");
     if (normalized) {

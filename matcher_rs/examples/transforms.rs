@@ -85,6 +85,22 @@ fn main() {
         m.is_match("中国")
     );
 
+    // EmojiNorm: emoji → English words (CLDR short names), strip modifiers
+    println!("\n  [EmojiNorm] Emoji → English words");
+    let emoji_input = "I love 🔥 and 👍🏽!";
+    println!(
+        "    text_process(\"{emoji_input}\") => \"{}\"",
+        text_process(ProcessType::EmojiNorm, emoji_input)
+    );
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::EmojiNorm, 1, "fire")
+        .build()
+        .unwrap();
+    println!(
+        "    matcher(\"fire\").is_match(\"🔥\") => {}",
+        m.is_match("🔥")
+    );
+
     // ── 2. Composite ProcessTypes ───────────────────────────────────────────────
     println!("\n=== 2. Composite ProcessTypes ===\n");
 
