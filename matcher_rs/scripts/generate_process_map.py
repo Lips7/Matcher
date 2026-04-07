@@ -216,10 +216,10 @@ def iter_scalar_chars() -> list[str]:
     ]
 
 
-def format_numeric_value(value: float) -> str:
+def format_numeric_value(value: int | float) -> str:
     if not math.isfinite(value):
         raise ValueError(f"unsupported numeric value: {value!r}")
-    if value.is_integer():
+    if isinstance(value, int) or value.is_integer():
         return str(int(value))
 
     fraction = Fraction(value).limit_denominator(MAX_FRACTION_DENOMINATOR)
@@ -514,7 +514,7 @@ def build_emoji_norm_map() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def render_mapping(mapping: dict[str, str]) -> str:
-    lines = [f"{key}\t{mapping[key]}" for key in sorted(mapping, key=ord)]
+    lines = [f"{key}\t{mapping[key]}" for key in sorted(mapping)]
     return "\n".join(lines) + "\n"
 
 
@@ -522,7 +522,7 @@ def render_codepoints(codepoints: list[int]) -> str:
     return "\n".join(f"U+{codepoint:04X}" for codepoint in sorted(codepoints)) + "\n"
 
 
-def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, object]]:
+def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, str | dict[str, str] | list[str] | dict[str, int]]]:
     chars = iter_scalar_chars()
     process_map_dir = root / "matcher_rs" / "process_map"
 

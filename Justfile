@@ -27,7 +27,7 @@ fmt-check:
 
 # -- Lint ----------------------------------------------------------------------
 
-lint: lint-rs lint-py lint-java lint-c
+lint: lint-rs lint-py lint-java lint-c lint-scripts
     cargo all-features clippy --workspace --all-targets -- -D warnings
     cargo doc --workspace --all-features --no-deps
 
@@ -58,6 +58,10 @@ lint-java:
 lint-c:
     cargo fmt --all
     cargo clippy -- -D warnings
+
+[working-directory: 'matcher_rs/scripts']
+lint-scripts:
+    uv run ty check
 
 # -- Test ----------------------------------------------------------------------
 

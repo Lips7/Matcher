@@ -1,0 +1,2 @@
+[environment]
+root = ["matcher_py", "matcher_rs/scripts"]

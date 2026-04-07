@@ -46,6 +46,13 @@ repos:
         files: ^matcher_py/.*\.py$
         pass_filenames: false
 
+      - id: ty-check-scripts
+        name: ty check scripts
+        entry: bash -c 'cd matcher_rs/scripts && uv run ty check'
+        language: system
+        files: ^matcher_rs/scripts/.*\.py$
+        pass_filenames: false
+
       # matcher_java: clippy + checkstyle
       - id: clippy-matcher-java
         name: clippy matcher_java

@@ -144,7 +144,7 @@ def make_winner_heatmap(rows: list[dict], mode: str, pat_cjk: int) -> go.Figure:
                 margin_row.append(0)
                 hover_row.append("")
                 continue
-            best_engine = max(throughputs, key=throughputs.get)
+            best_engine = max(throughputs, key=lambda k: throughputs[k])
             best_val = throughputs[best_engine]
             second_val = max(v for e, v in throughputs.items() if e != best_engine) if len(throughputs) > 1 else best_val
             margin = ((best_val - second_val) / second_val * 100) if second_val > 0 else 0

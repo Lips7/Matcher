@@ -141,9 +141,9 @@ def compare_result_maps(
     baseline: dict[str, float],
     candidate: dict[str, float],
     min_change_pct: float,
-) -> tuple[list[dict[str, object]], list[dict[str, object]], set[str], set[str]]:
-    regressions: list[dict[str, object]] = []
-    improvements: list[dict[str, object]] = []
+) -> tuple[list[dict[str, str | int | float]], list[dict[str, str | int | float]], set[str], set[str]]:
+    regressions: list[dict[str, str | int | float]] = []
+    improvements: list[dict[str, str | int | float]] = []
 
     shared_paths = sorted(set(baseline) & set(candidate))
     baseline_only = set(baseline) - set(candidate)
@@ -174,7 +174,7 @@ def compare_result_maps(
     return regressions, improvements, baseline_only, candidate_only
 
 
-def print_change_section(title: str, rows: Iterable[dict[str, object]]) -> None:
+def print_change_section(title: str, rows: Iterable[dict[str, str | int | float]]) -> None:
     rows = list(rows)
     print(title)
     if not rows:
