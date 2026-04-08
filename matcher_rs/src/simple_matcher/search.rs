@@ -245,10 +245,6 @@ impl SimpleMatcher {
         state.prepare(self.rules.len());
         let mut ss = state.as_scan_state();
 
-        if self.scan.patterns().is_empty() {
-            return (false, None);
-        }
-
         let mut collect = Some(collect);
 
         // One SIMD pass: exact non-ASCII byte density for engine dispatch.

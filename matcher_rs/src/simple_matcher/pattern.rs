@@ -168,12 +168,6 @@ impl PatternIndex {
             + self.ranges.capacity() * size_of::<(usize, usize)>()
     }
 
-    /// Returns whether there are no deduplicated patterns to scan.
-    #[inline(always)]
-    pub(super) fn is_empty(&self) -> bool {
-        self.ranges.is_empty()
-    }
-
     /// Returns whether any entry requires word boundary checking.
     pub(super) fn has_boundary(&self) -> bool {
         self.has_boundary

@@ -409,15 +409,12 @@ fn test_or_across_rules_dedup() {
 #[test]
 fn test_operator_only_patterns() {
     // Patterns that are pure operators produce empty segments, all skipped.
-    let matcher = SimpleMatcher::new(&HashMap::from([(
+    // With no scannable patterns remaining, construction returns EmptyPatterns.
+    let result = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
-    )]))
-    .unwrap();
-
-    assert!(!matcher.is_match("hello world"));
-    assert!(!matcher.is_match("& ~ && ~~"));
-    assert!(matcher.process("anything at all").is_empty());
+    )]));
+    assert!(result.is_err(), "operator-only patterns should be rejected");
 }
 
 #[test]

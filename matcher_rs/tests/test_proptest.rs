@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
+use matcher_rs::{MatcherError, ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
 use proptest::prelude::*;
 
 proptest! {
@@ -27,7 +27,11 @@ proptest! {
             let mut map = HashMap::new();
             map.insert(ptype, inner_map.clone());
 
-            let matcher = SimpleMatcher::new(&map).unwrap();
+            let matcher = match SimpleMatcher::new(&map) {
+                Ok(m) => m,
+                Err(MatcherError::EmptyPatterns) => continue,
+                Err(e) => panic!("unexpected error: {e}"),
+            };
             let _ = matcher.is_match(&text);
             let results = matcher.process(&text);
 
@@ -46,7 +50,11 @@ proptest! {
         for (i, word) in words.iter().enumerate() {
             builder = builder.add_word(ProcessType::None, i as u32, word);
         }
-        let matcher = builder.build().unwrap();
+        let matcher = match builder.build() {
+            Ok(m) => m,
+            Err(MatcherError::EmptyPatterns) => return Ok(()),
+            Err(e) => panic!("unexpected error: {e}"),
+        };
 
         let is_match = matcher.is_match(&text);
         let results = matcher.process(&text);
@@ -63,10 +71,14 @@ proptest! {
         word in "\\PC{1,50}",
         text in "\\PC{0,100}"
     ) {
-        let matcher = SimpleMatcherBuilder::new()
+        let matcher = match SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
             .build()
-            .unwrap();
+        {
+            Ok(m) => m,
+            Err(MatcherError::EmptyPatterns) => return Ok(()),
+            Err(e) => panic!("unexpected error: {e}"),
+        };
 
         let results = matcher.process(&text);
         let mut into_results = Vec::new();
@@ -84,10 +96,14 @@ proptest! {
         word in "[a-z&~]{1,50}",
         text in "[a-z ]{0,100}"
     ) {
-        let matcher = SimpleMatcherBuilder::new()
+        let matcher = match SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
             .build()
-            .unwrap();
+        {
+            Ok(m) => m,
+            Err(MatcherError::EmptyPatterns) => return Ok(()),
+            Err(e) => panic!("unexpected error: {e}"),
+        };
 
         let _ = matcher.is_match(&text);
         let _ = matcher.process(&text);

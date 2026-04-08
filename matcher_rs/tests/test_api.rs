@@ -8,11 +8,14 @@ use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult}
 
 #[test]
 fn test_init() {
-    let _ = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1, "")]),
-    )]))
-    .unwrap();
+    assert!(
+        SimpleMatcher::new(&HashMap::from([(
+            ProcessType::None,
+            HashMap::from([(1, "")]),
+        )]))
+        .is_err(),
+        "empty-string-only table should return EmptyPatterns error"
+    );
     let _ = SimpleMatcher::new(&HashMap::from([(
         ProcessType::None,
         HashMap::from([(1, "hello"), (2, "world")]),
@@ -47,11 +50,11 @@ fn test_builder() {
 
 #[test]
 fn test_builder_zero_words() {
-    let matcher = SimpleMatcherBuilder::new().build().unwrap();
-
-    assert!(!matcher.is_match("anything"));
-    assert!(!matcher.is_match(""));
-    assert!(matcher.process("hello world").is_empty());
+    let result = SimpleMatcherBuilder::new().build();
+    assert!(
+        result.is_err(),
+        "empty builder should return EmptyPatterns error"
+    );
 }
 
 #[test]

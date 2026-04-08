@@ -38,7 +38,10 @@ use super::{
     pattern::{PatternEntry, PatternKind},
     rule::{RuleCold, RuleHot, RuleSet, RuleShape},
 };
-use crate::process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit};
+use crate::{
+    MatcherError,
+    process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit},
+};
 
 /// Fully parsed matcher construction output before scan-engine compilation.
 ///
@@ -81,8 +84,9 @@ impl SimpleMatcher {
     ///
     /// # Errors
     ///
-    /// Returns [`MatcherError`](crate::MatcherError) if:
+    /// Returns [`MatcherError`] if:
     ///
+    /// - The pattern set is empty after parsing (no scannable patterns).
     /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits
     ///   set (bits 6–7 must be zero).
     /// - The underlying Aho-Corasick automaton construction (`daachorse` or
@@ -112,13 +116,13 @@ impl SimpleMatcher {
     /// ```
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
-    ) -> Result<SimpleMatcher, crate::MatcherError>
+    ) -> Result<SimpleMatcher, MatcherError>
     where
         I: AsRef<str> + 'a,
     {
         for &pt in process_type_word_map.keys() {
             if (pt.bits() as usize) >= PROCESS_TYPE_TABLE_SIZE {
-                return Err(crate::MatcherError::invalid_process_type(pt.bits()));
+                return Err(MatcherError::invalid_process_type(pt.bits()));
             }
         }
 
@@ -128,6 +132,10 @@ impl SimpleMatcher {
             process_type_word_map.keys().copied().collect();
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
+
+        if parsed.dedup_patterns.is_empty() {
+            return Err(MatcherError::EmptyPatterns);
+        }
 
         let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
 

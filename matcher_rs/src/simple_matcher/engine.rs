@@ -64,43 +64,30 @@ pub(super) fn text_non_ascii_density(text: &str) -> f32 {
     super::simd::count_non_ascii_simd(bytes) as f32 / len as f32
 }
 
-/// Compiled scan engines together with the pattern metadata they report into.
-///
-/// Immutable after construction. Shared across all threads via `Arc` or by
-/// virtue of [`SimpleMatcher`](super::SimpleMatcher) being `Send + Sync`.
-///
-/// The charwise engine is always built (even for pure-ASCII pattern sets) so
-/// that non-ASCII haystacks can be scanned at character granularity for
-/// ~1.6–1.9× throughput over bytewise scanning (CJK characters are 3 UTF-8
-/// bytes → 3 bytewise transitions vs 1 charwise transition).
-///
-/// # Performance
-///
-/// - **Bytewise DFA** (when `dfa` feature enabled): ~1.7–1.9× faster than DAAC
-///   bytewise on ASCII text, but ~17× more memory.
-/// - **Charwise DAAC**: 1 state transition per character (vs 3 bytewise for
-///   CJK), yielding ~1.6–1.9× throughput on non-ASCII text.
-///
-/// Engine selection is density-based: bytewise for low non-ASCII density
-/// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
-#[derive(Clone)]
-pub(super) struct ScanPlan {
-    /// Bytewise engine built from ALL patterns.
-    bytewise_matcher: Option<BytewiseMatcher>,
-    /// Charwise engine built from ALL patterns.
-    charwise_matcher: Option<CharwiseMatcher>,
-    /// `true` when every compiled pattern is pure ASCII.
-    ///
-    /// Used only for the `is_match` fast-return: when all patterns are ASCII
-    /// and the text contains zero ASCII bytes, no match is possible.
-    all_patterns_ascii: bool,
-    /// Flat index mapping automaton raw values back to rule-entry metadata.
-    patterns: PatternIndex,
+// ── Unified scan trait ──────────────────────────────────────────────────
+
+/// Common query interface implemented by both bytewise and charwise engines.
+trait ScanEngine {
+    fn is_match(&self, text: &str) -> bool;
+
+    fn for_each_match_value(
+        &self,
+        text: &str,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool;
+
+    fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool;
+
+    fn heap_bytes(&self) -> usize;
 }
 
-/// Bytewise scan engine chosen at build time.
-///
-/// Bytewise scan engines. DAAC bytewise is always built (supports streaming).
+// ── Bytewise engine ─────────────────────────────────────────────────────
+
+/// Bytewise scan engine. DAAC bytewise is always built (supports streaming).
 /// DFA is built alongside it when the `dfa` feature is enabled (1.7–3.3× faster
 /// for non-streaming scan).
 #[derive(Clone)]
@@ -110,138 +97,7 @@ struct BytewiseMatcher {
     dfa: Option<(AcEngine, Vec<u32>)>,
 }
 
-type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
-
-/// Construction and query helpers for compiled scan engines.
-impl ScanPlan {
-    /// Compiles the bytewise and charwise scan engines for the deduplicated
-    /// pattern set.
-    pub(super) fn compile(
-        dedup_patterns: &[Cow<'_, str>],
-        dedup_entries: Vec<Vec<PatternEntry>>,
-    ) -> Result<Self, MatcherError> {
-        let patterns = PatternIndex::new(dedup_entries);
-        let value_map = patterns.build_value_map();
-        let (bytewise_matcher, charwise_matcher) = compile_automata(dedup_patterns, &value_map)?;
-        let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
-
-        Ok(Self {
-            bytewise_matcher,
-            charwise_matcher,
-            all_patterns_ascii,
-            patterns,
-        })
-    }
-
-    /// Returns the pattern metadata referenced by the compiled scan engines.
-    pub(super) fn patterns(&self) -> &PatternIndex {
-        &self.patterns
-    }
-
-    /// Returns whether the bytewise engine has a DFA backend available.
-    ///
-    /// When `true`, the caller should prefer materialized scan over streaming
-    /// at low non-ASCII density — DFA+Teddy is 2–5× faster than DAAC bytewise
-    /// streaming on ASCII-heavy text, outweighing the allocation cost.
-    #[inline(always)]
-    pub(super) fn has_dfa(&self) -> bool {
-        #[cfg(feature = "dfa")]
-        {
-            self.bytewise_matcher
-                .as_ref()
-                .is_some_and(|m| m.dfa.is_some())
-        }
-        #[cfg(not(feature = "dfa"))]
-        {
-            false
-        }
-    }
-
-    /// Returns the estimated heap memory in bytes owned by all scan engines.
-    pub(super) fn heap_bytes(&self) -> usize {
-        let bw = self.bytewise_matcher.as_ref().map_or(0, |m| m.heap_bytes());
-        let cw = self.charwise_matcher.as_ref().map_or(0, |m| m.heap_bytes());
-        bw + cw + self.patterns.heap_bytes()
-    }
-
-    /// Returns whether any compiled pattern matches `text`.
-    ///
-    /// Density-based engine dispatch: bytewise for low non-ASCII density
-    /// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
-    /// Skips TLS state entirely — used as a fast path for
-    /// `SimpleMatcher::is_match` when no text transforms are needed.
-    #[inline(always)]
-    pub(super) fn is_match(&self, text: &str) -> bool {
-        let density = text_non_ascii_density(text);
-        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
-            return false;
-        }
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            self.bytewise_matcher
-                .as_ref()
-                .is_some_and(|m| m.is_match(text))
-        } else {
-            self.charwise_matcher
-                .as_ref()
-                .is_some_and(|m| m.is_match_text(text))
-        }
-    }
-
-    /// Calls `on_value` for each raw match value produced by the chosen engine.
-    ///
-    /// Returns `true` if the callback requests early exit. Engine selection is
-    /// density-based: bytewise for low non-ASCII density (≤
-    /// [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density. When
-    /// `all_patterns_ascii` and the text is entirely non-ASCII, returns
-    /// `false` without scanning (no ASCII pattern can match).
-    #[inline(always)]
-    pub(super) fn for_each_match_value(
-        &self,
-        text: &str,
-        density: f32,
-        on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool {
-        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
-            return false;
-        }
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            if let Some(ref matcher) = self.bytewise_matcher {
-                return matcher.for_each_match_value(text, on_value);
-            }
-        } else if let Some(ref matcher) = self.charwise_matcher {
-            return matcher.for_each_match_value(text, on_value);
-        }
-        false
-    }
-
-    /// Calls `on_value` for each raw match value from a streaming byte
-    /// iterator.
-    ///
-    /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has
-    /// no streaming API). Falls back to charwise for high-density text.
-    #[inline(always)]
-    pub(super) fn for_each_match_value_from_iter(
-        &self,
-        iter: impl Iterator<Item = u8>,
-        density: f32,
-        on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool {
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            if let Some(ref matcher) = self.bytewise_matcher {
-                return matcher.for_each_match_value_from_iter(iter, on_value);
-            }
-        } else if let Some(ref matcher) = self.charwise_matcher {
-            return matcher.for_each_match_value_from_iter(iter, on_value);
-        }
-        false
-    }
-}
-
-/// Query helpers for the bytewise scan engine.
-///
-/// Non-streaming methods prefer DFA (when available) for acceleration.
-/// Streaming uses DAAC bytewise (DFA has no `_from_iter` API).
-impl BytewiseMatcher {
+impl ScanEngine for BytewiseMatcher {
     #[inline(always)]
     fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "dfa")]
@@ -277,7 +133,6 @@ impl BytewiseMatcher {
         false
     }
 
-    /// Streaming: always uses DAAC bytewise (DFA has no streaming API).
     #[inline(always)]
     fn for_each_match_value_from_iter(
         &self,
@@ -302,26 +157,29 @@ impl BytewiseMatcher {
     }
 }
 
-/// Query helpers for the charwise scan engine.
-trait CharwiseMatcherExt {
-    fn is_match_text(&self, text: &str) -> bool;
+// ── Charwise engine ─────────────────────────────────────────────────────
+
+type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
+
+impl ScanEngine for CharwiseMatcher {
+    fn is_match(&self, text: &str) -> bool {
+        self.find_iter(text).next().is_some()
+    }
+
+    #[inline(always)]
     fn for_each_match_value(
         &self,
         text: &str,
-        on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool;
-}
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
+        for hit in self.find_overlapping_iter(text) {
+            if on_value(hit.value(), hit.start(), hit.end()) {
+                return true;
+            }
+        }
+        false
+    }
 
-/// Streaming query helpers for the charwise scan engine.
-trait CharwiseMatcherStreamExt {
-    fn for_each_match_value_from_iter(
-        &self,
-        iter: impl Iterator<Item = u8>,
-        on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool;
-}
-
-impl CharwiseMatcherStreamExt for CharwiseMatcher {
     #[inline(always)]
     fn for_each_match_value_from_iter(
         &self,
@@ -339,35 +197,180 @@ impl CharwiseMatcherStreamExt for CharwiseMatcher {
         }
         false
     }
+
+    fn heap_bytes(&self) -> usize {
+        CharwiseDoubleArrayAhoCorasick::heap_bytes(self)
+    }
 }
 
-impl CharwiseMatcherExt for CharwiseMatcher {
-    fn is_match_text(&self, text: &str) -> bool {
-        self.find_iter(text).next().is_some()
+// ── Engines bundle ──────────────────────────────────────────────────────
+
+/// Both compiled scan engines. Always built together from the full pattern set.
+#[derive(Clone)]
+struct Engines {
+    bytewise: BytewiseMatcher,
+    charwise: CharwiseMatcher,
+}
+
+/// Dispatches to the bytewise or charwise engine based on density.
+///
+/// Expands to: `if density <= threshold { bytewise.$method } else {
+/// charwise.$method }`. Avoids `dyn ScanEngine` (methods have `impl Trait`
+/// params → not object-safe).
+macro_rules! dispatch {
+    ($engines:expr, $density:expr, $method:ident ($($arg:expr),*)) => {
+        if $density <= CHARWISE_DENSITY_THRESHOLD {
+            ScanEngine::$method(&$engines.bytewise, $($arg),*)
+        } else {
+            ScanEngine::$method(&$engines.charwise, $($arg),*)
+        }
+    };
+}
+
+// ── ScanPlan ────────────────────────────────────────────────────────────
+
+/// Compiled scan engines together with the pattern metadata they report into.
+///
+/// Immutable after construction. Shared across all threads via `Arc` or by
+/// virtue of [`SimpleMatcher`](super::SimpleMatcher) being `Send + Sync`.
+///
+/// Both engines are always built from the full pattern set. The charwise
+/// engine gives ~1.6–1.9× throughput over bytewise on CJK-heavy text (3 UTF-8
+/// bytes → 1 charwise transition). Engine selection is density-based at
+/// runtime: bytewise for ≤ [`CHARWISE_DENSITY_THRESHOLD`], charwise above.
+#[derive(Clone)]
+pub(super) struct ScanPlan {
+    engines: Engines,
+    /// `true` when every compiled pattern is pure ASCII.
+    ///
+    /// Used for a fast-return: when all patterns are ASCII and the text
+    /// contains zero ASCII bytes, no match is possible.
+    all_patterns_ascii: bool,
+    /// Flat index mapping automaton raw values back to rule-entry metadata.
+    patterns: PatternIndex,
+}
+
+impl ScanPlan {
+    /// Compiles the bytewise and charwise scan engines for the deduplicated
+    /// pattern set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dedup_patterns` is empty. The caller must reject empty
+    /// pattern sets before calling this function.
+    pub(super) fn compile(
+        dedup_patterns: &[Cow<'_, str>],
+        dedup_entries: Vec<Vec<PatternEntry>>,
+    ) -> Result<Self, MatcherError> {
+        debug_assert!(
+            !dedup_patterns.is_empty(),
+            "ScanPlan::compile called with zero patterns"
+        );
+
+        let patterns = PatternIndex::new(dedup_entries);
+        let value_map = patterns.build_value_map();
+        let engines = compile_automata(dedup_patterns, &value_map)?;
+        let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
+
+        Ok(Self {
+            engines,
+            all_patterns_ascii,
+            patterns,
+        })
     }
 
+    /// Returns the pattern metadata referenced by the compiled scan engines.
+    pub(super) fn patterns(&self) -> &PatternIndex {
+        &self.patterns
+    }
+
+    /// Returns whether the bytewise engine has a DFA backend available.
+    ///
+    /// When `true`, the caller should prefer materialized scan over streaming
+    /// at low non-ASCII density — DFA+Teddy is 2–5× faster than DAAC bytewise
+    /// streaming on ASCII-heavy text, outweighing the allocation cost.
     #[inline(always)]
-    fn for_each_match_value(
+    pub(super) fn has_dfa(&self) -> bool {
+        #[cfg(feature = "dfa")]
+        {
+            self.engines.bytewise.dfa.is_some()
+        }
+        #[cfg(not(feature = "dfa"))]
+        {
+            false
+        }
+    }
+
+    /// Returns the estimated heap memory in bytes owned by all scan engines.
+    pub(super) fn heap_bytes(&self) -> usize {
+        self.engines.bytewise.heap_bytes()
+            + self.engines.charwise.heap_bytes()
+            + self.patterns.heap_bytes()
+    }
+
+    /// Returns whether any compiled pattern matches `text`.
+    ///
+    /// Density-based engine dispatch: bytewise for low non-ASCII density
+    /// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
+    /// Skips TLS state entirely — used as a fast path for
+    /// `SimpleMatcher::is_match` when no text transforms are needed.
+    #[inline(always)]
+    pub(super) fn is_match(&self, text: &str) -> bool {
+        let density = text_non_ascii_density(text);
+        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
+            return false;
+        }
+        dispatch!(self.engines, density, is_match(text))
+    }
+
+    /// Calls `on_value` for each raw match value produced by the chosen engine.
+    ///
+    /// Returns `true` if the callback requests early exit. Engine selection is
+    /// density-based: bytewise for low non-ASCII density (≤
+    /// [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density. When
+    /// `all_patterns_ascii` and the text is entirely non-ASCII, returns
+    /// `false` without scanning (no ASCII pattern can match).
+    #[inline(always)]
+    pub(super) fn for_each_match_value(
         &self,
         text: &str,
-        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+        density: f32,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
-        for hit in self.find_overlapping_iter(text) {
-            if on_value(hit.value(), hit.start(), hit.end()) {
-                return true;
-            }
+        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
+            return false;
         }
-        false
+        dispatch!(self.engines, density, for_each_match_value(text, on_value))
+    }
+
+    /// Calls `on_value` for each raw match value from a streaming byte
+    /// iterator.
+    ///
+    /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has
+    /// no streaming API). Falls back to charwise for high-density text.
+    #[inline(always)]
+    pub(super) fn for_each_match_value_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        density: f32,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
+        dispatch!(
+            self.engines,
+            density,
+            for_each_match_value_from_iter(iter, on_value)
+        )
     }
 }
+
+// ── Automaton compilation ───────────────────────────────────────────────
 
 /// Compiles the bytewise and charwise automata from the deduplicated pattern
 /// list.
 ///
-/// - **ASCII patterns** → [`BytewiseMatcher`] (DFA or DAAC bytewise).
-/// - **All patterns** → [`CharwiseMatcher`] (DAAC charwise), always built from
-///   the full pattern set so that non-ASCII haystacks benefit from
-///   character-granularity scanning (~1.6–1.9× faster on CJK text vs bytewise).
+/// Both engines are built from the FULL pattern set. Bytewise handles any
+/// UTF-8 text via byte-level matching; charwise gives 1.6–1.9× throughput
+/// on CJK text via character-granularity transitions.
 ///
 /// # Panics
 ///
@@ -383,21 +386,13 @@ impl CharwiseMatcherExt for CharwiseMatcher {
 fn compile_automata(
     dedup_patterns: &[Cow<'_, str>],
     value_map: &[u32],
-) -> Result<(Option<BytewiseMatcher>, Option<CharwiseMatcher>), MatcherError> {
-    if dedup_patterns.is_empty() {
-        return Ok((None, None));
-    }
-
+) -> Result<Engines, MatcherError> {
     let all_patvals: Vec<(&str, u32)> = dedup_patterns
         .iter()
         .enumerate()
         .map(|(i, p)| (p.as_ref(), value_map[i]))
         .collect();
 
-    // Both engines are built from the FULL pattern set. Bytewise handles any
-    // UTF-8 text via byte-level matching; charwise gives 1.6–1.9× throughput
-    // on CJK text via character-granularity transitions. The density-based
-    // dispatch in ScanPlan selects the faster engine at runtime.
     let all_patvals_clone = all_patvals.clone();
     let build_bytewise = move || -> Result<BytewiseMatcher, MatcherError> {
         build_current_bytewise(all_patvals_clone)
@@ -416,7 +411,7 @@ fn compile_automata(
         let bytewise = bytewise_handle
             .join()
             .expect("bytewise automaton build panicked")?;
-        Ok((Some(bytewise), Some(charwise)))
+        Ok(Engines { bytewise, charwise })
     })
 }
 
