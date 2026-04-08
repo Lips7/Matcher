@@ -43,6 +43,22 @@ The full API is declared in [`matcher_c.h`](./matcher_c.h).
 | `PROCESS_TYPE_ROMANIZE_CHAR` | 32 | CJK characters to romanization without boundary spaces |
 | `PROCESS_TYPE_EMOJI_NORM` | 64 | Emoji → English words (CLDR short names), strips modifiers |
 
+### Result Types
+
+```c
+// A single match result. word is an owned null-terminated UTF-8 string.
+typedef struct {
+    uint32_t word_id;
+    char* word;
+} SimpleResult;
+
+// A list of match results.
+typedef struct {
+    size_t len;
+    SimpleResult* items;
+} SimpleResultList;
+```
+
 ### SimpleMatcher
 
 ```c
@@ -52,8 +68,11 @@ void* init_simple_matcher(const char* simple_table_bytes);
 // Check if text matches any pattern.
 bool simple_matcher_is_match(const void* simple_matcher, const char* text);
 
-// Get match results as a JSON string. Caller must free with drop_string().
-char* simple_matcher_process_as_string(const void* simple_matcher, const char* text);
+// Get all matches as a SimpleResultList. Caller must free with drop_simple_result_list().
+SimpleResultList* simple_matcher_process(const void* simple_matcher, const char* text);
+
+// Get the first match. Returns NULL if no match. Caller must free with drop_simple_result().
+SimpleResult* simple_matcher_find_match(const void* simple_matcher, const char* text);
 
 // Free a SimpleMatcher instance.
 void drop_simple_matcher(void* simple_matcher);
@@ -73,6 +92,8 @@ char** reduce_text_process(ProcessType process_type, const char* text);
 ### Memory Management
 
 ```c
+void drop_simple_result(SimpleResult* result);
+void drop_simple_result_list(SimpleResultList* list);
 void drop_string(char* ptr);
 void drop_string_array(char** array);
 ```
@@ -99,10 +120,19 @@ int main() {
         printf("Matched!\n");
     }
 
-    char* result = simple_matcher_process_as_string(matcher, "hello world");
-    if (result) {
-        printf("Result: %s\n", result);
-        drop_string(result);
+    SimpleResultList* results = simple_matcher_process(matcher, "hello world");
+    if (results) {
+        for (size_t i = 0; i < results->len; i++) {
+            printf("  word_id=%u, word=%s\n",
+                   results->items[i].word_id, results->items[i].word);
+        }
+        drop_simple_result_list(results);
+    }
+
+    SimpleResult* first = simple_matcher_find_match(matcher, "hello world");
+    if (first) {
+        printf("First match: word_id=%u, word=%s\n", first->word_id, first->word);
+        drop_simple_result(first);
     }
 
     drop_simple_matcher(matcher);
@@ -148,7 +178,7 @@ int main() {
 ## Error Handling
 
 - **Construction** (`init_simple_matcher`): returns `NULL` if the JSON config is malformed or contains invalid `ProcessType` values. Always check the return value.
-- **Matching** (`simple_matcher_is_match`, `simple_matcher_process_as_string`): infallible once the matcher is built. These functions never return error states.
+- **Matching** (`simple_matcher_is_match`, `simple_matcher_process`, `simple_matcher_find_match`): infallible once the matcher is built. `find_match` returns `NULL` for no match (not an error).
 
 ## Contributing
 
