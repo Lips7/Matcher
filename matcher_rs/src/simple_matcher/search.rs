@@ -43,9 +43,7 @@ use super::{
     pattern::PatternDispatch,
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
 };
-use crate::process::{
-    graph::ProcessTypeBitNode, step::TransformStep, string_pool::return_string_to_pool,
-};
+use crate::process::{graph::ProcessTypeBitNode, string_pool::return_string_to_pool};
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -358,44 +356,31 @@ impl SimpleMatcher {
                             !(self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
-                            let vi = variant_counter;
-                            let ctx = ScanContext {
-                                text_index: vi,
-                                process_type_mask: child.pt_index_mask,
-                                num_variants,
-                                exit_early,
-                                non_ascii_density: parent_density,
-                            };
-                            let fused_text_bytes = parent_text.as_bytes();
-                            macro_rules! fused {
-                                ($m:expr) => {
-                                    Some(self.scan.for_each_match_value_from_iter(
-                                        $m.filter_bytes(parent_text),
-                                        ctx.non_ascii_density,
-                                        |v, start, end| {
-                                            self.process_match(
-                                                v,
-                                                fused_text_bytes,
-                                                start,
-                                                end,
-                                                ctx,
-                                                &mut ss,
-                                            )
-                                        },
-                                    ))
+                            step.filter_bytes(parent_text).map(|iter| {
+                                let vi = variant_counter;
+                                let ctx = ScanContext {
+                                    text_index: vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    non_ascii_density: parent_density,
                                 };
-                            }
-                            match step {
-                                TransformStep::Delete(m) => fused!(m),
-                                TransformStep::Normalize(m) => fused!(m),
-                                TransformStep::VariantNorm(m) => fused!(m),
-                                TransformStep::Romanize(m) | TransformStep::RomanizeChar(m) => {
-                                    fused!(m)
-                                }
-                                _ => None,
-                            }
-                            .inspect(|_| {
+                                let fused_text_bytes = parent_text.as_bytes();
                                 variant_counter += 1;
+                                self.scan.for_each_match_value_from_iter(
+                                    iter,
+                                    ctx.non_ascii_density,
+                                    |v, start, end| {
+                                        self.process_match(
+                                            v,
+                                            fused_text_bytes,
+                                            start,
+                                            end,
+                                            ctx,
+                                            &mut ss,
+                                        )
+                                    },
+                                )
                             })
                         } else {
                             None

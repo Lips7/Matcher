@@ -30,9 +30,9 @@ mod normalize;
 mod romanize;
 mod variant_norm;
 
-pub(crate) use normalize::NormalizeMatcher;
-pub(crate) use romanize::RomanizeMatcher;
-pub(crate) use variant_norm::VariantNormMatcher;
+pub(crate) use normalize::{NormalizeFilter, NormalizeMatcher};
+pub(crate) use romanize::{RomanizeFilter, RomanizeMatcher};
+pub(crate) use variant_norm::{VariantNormFilter, VariantNormMatcher};
 
 use crate::process::{
     string_pool::get_string_from_pool,

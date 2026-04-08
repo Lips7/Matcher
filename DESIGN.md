@@ -252,11 +252,7 @@ The delete-mask algorithm probes a 16-byte `ascii_lut` inside the SIMD loop usin
 
 #### Fused Transform-Scan
 
-For leaf Delete or Normalize nodes, `walk_and_scan` can bypass string materialization by streaming transformed bytes directly into the AC automaton via `daachorse`'s `find_overlapping_iter_from_iter`:
-
-- **Delete**: `DeleteFilterIterator` yields only non-deleted bytes
-- **Normalize**: `NormalizeFilterIterator` yields normalized bytes (unmapped pass through, mapped emit replacement bytes)
-- **VariantNorm**: `VariantNormFilterIterator` yields normalized bytes (unmapped CJK pass through, mapped variant→normalized emit replacement char's UTF-8 bytes)
+For leaf nodes, `walk_and_scan` can bypass string materialization by streaming transformed bytes directly into the AC automaton via `daachorse`'s `find_overlapping_iter_from_iter`. `TransformStep::filter_bytes` returns an `Option<TransformFilter>` — an enum iterator wrapping the four fusible `FilterIterator` specializations (Delete, Normalize, VariantNorm, Romanize). Non-fusible steps (`None`, `EmojiNorm`) return `None`, falling through to the materialize path.
 
 This eliminates the intermediate `String` allocation and the second text traversal.
 

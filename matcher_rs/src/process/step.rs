@@ -15,8 +15,12 @@ use crate::process::{
     process_type::ProcessType,
     transform::{
         constants::*,
-        delete::DeleteMatcher,
-        replace::{NormalizeMatcher, RomanizeMatcher, VariantNormMatcher},
+        delete::{DeleteFilter, DeleteMatcher},
+        filter::FilterIterator,
+        replace::{
+            NormalizeFilter, NormalizeMatcher, RomanizeFilter, RomanizeMatcher, VariantNormFilter,
+            VariantNormMatcher,
+        },
     },
 };
 
@@ -44,6 +48,34 @@ pub(crate) enum TransformStep {
     EmojiNorm(RomanizeMatcher),
 }
 
+/// Streaming byte iterator wrapping one of the four fusible
+/// [`FilterIterator`] specializations.
+///
+/// Returned by [`TransformStep::filter_bytes`] for steps that support the
+/// fused transform-scan path (Delete, Normalize, VariantNorm, Romanize,
+/// RomanizeChar). `EmojiNorm` and `None` return `Option::None` from
+/// `filter_bytes`.
+pub(crate) enum TransformFilter<'a> {
+    Delete(FilterIterator<'a, DeleteFilter<'a>>),
+    Normalize(FilterIterator<'a, NormalizeFilter<'a>>),
+    VariantNorm(FilterIterator<'a, VariantNormFilter<'a>>),
+    Romanize(FilterIterator<'a, RomanizeFilter<'a>>),
+}
+
+impl Iterator for TransformFilter<'_> {
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<u8> {
+        match self {
+            Self::Delete(i) => i.next(),
+            Self::Normalize(i) => i.next(),
+            Self::VariantNorm(i) => i.next(),
+            Self::Romanize(i) => i.next(),
+        }
+    }
+}
+
 impl TransformStep {
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
@@ -61,6 +93,27 @@ impl TransformStep {
                 | Self::RomanizeChar(_)
                 | Self::EmojiNorm(_)
         )
+    }
+
+    /// Returns a streaming byte iterator for the fused transform-scan path.
+    ///
+    /// The iterator applies this step's codepoint-level transformation on the
+    /// fly, yielding output bytes one at a time without materializing an
+    /// intermediate `String`. Used when the DFA is unavailable or text density
+    /// is too high for the DFA path.
+    ///
+    /// Returns `None` for non-fusible steps (`None`, `EmojiNorm`).
+    #[inline(always)]
+    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> Option<TransformFilter<'a>> {
+        match self {
+            Self::Delete(m) => Some(TransformFilter::Delete(m.filter_bytes(text))),
+            Self::Normalize(m) => Some(TransformFilter::Normalize(m.filter_bytes(text))),
+            Self::VariantNorm(m) => Some(TransformFilter::VariantNorm(m.filter_bytes(text))),
+            Self::Romanize(m) | Self::RomanizeChar(m) => {
+                Some(TransformFilter::Romanize(m.filter_bytes(text)))
+            }
+            Self::None | Self::EmojiNorm(_) => None,
+        }
     }
 
     /// Applies this step to `text`. Returns `Some((new_string,
