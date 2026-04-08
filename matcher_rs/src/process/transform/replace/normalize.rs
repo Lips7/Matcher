@@ -14,6 +14,7 @@
 use std::borrow::Cow;
 
 use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans, unpack_str_ref};
+use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIterator};
 
 // ---------------------------------------------------------------------------
 // Find iterator (for materialized replace)
@@ -68,81 +69,37 @@ impl<'a> Iterator for NormalizeFindIter<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming byte iterator (for fused normalize-scan)
+// Streaming filter (for fused normalize-scan)
 // ---------------------------------------------------------------------------
 
-/// Streaming byte iterator that yields normalized bytes from a UTF-8 string.
-///
-/// Created by [`NormalizeMatcher::filter_bytes`]. Unmapped codepoints pass
-/// through byte-for-byte; mapped codepoints emit their replacement string's
-/// bytes. Output is valid UTF-8, satisfying `daachorse`'s
-/// `find_overlapping_iter_from_iter` safety requirement.
-///
-/// Uses a unified `remaining` slice to handle both replacement-string bytes
-/// and multi-byte continuation bytes, reducing the per-byte branch count
-/// from 3 to 2 on the hot path.
-pub(crate) struct NormalizeFilterIterator<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    /// Pending bytes to yield before decoding the next codepoint.
-    ///
-    /// Points into either `self.strings` (replacement bytes) or `self.bytes`
-    /// (continuation bytes of an unmapped multi-byte character). Empty when
-    /// at a codepoint boundary ready for fresh decode.
-    remaining: &'a [u8],
+pub(crate) struct NormalizeFilter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
     strings: &'a str,
 }
 
-impl Iterator for NormalizeFilterIterator<'_> {
-    type Item = u8;
+impl<'a> CodepointFilter<'a> for NormalizeFilter<'a> {
+    #[inline(always)]
+    fn filter_ascii(&self, byte: u8) -> FilterAction<'a> {
+        if byte.is_ascii_uppercase()
+            && let Some(value) = page_table_lookup(byte as u32, self.l1, self.l2)
+            && let Some(s) = unpack_str_ref(value, self.strings)
+        {
+            FilterAction::ReplaceBytes(s.as_bytes())
+        } else {
+            FilterAction::Keep
+        }
+    }
 
     #[inline(always)]
-    fn next(&mut self) -> Option<u8> {
-        // Fast path: yield from pending slice (replacement OR continuation bytes).
-        if let Some((&byte, rest)) = self.remaining.split_first() {
-            self.remaining = rest;
-            return Some(byte);
-        }
-
-        if self.offset >= self.bytes.len() {
-            return None;
-        }
-
-        // SAFETY: offset < len checked above.
-        let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
-
-        if byte < 0x80 {
-            self.offset += 1;
-            if byte.is_ascii_uppercase()
-                && let Some(value) = page_table_lookup(byte as u32, self.l1, self.l2)
-                && let Some(s) = unpack_str_ref(value, self.strings)
-            {
-                let s_bytes = s.as_bytes();
-                self.remaining = &s_bytes[1..];
-                return Some(s_bytes[0]);
-            }
-            return Some(byte);
-        }
-
-        // SAFETY: byte >= 0x80 in a valid UTF-8 &str means multi-byte lead byte.
-        let (cp, char_len) = unsafe { decode_utf8_raw(self.bytes, self.offset) };
-
+    fn filter_codepoint(&self, cp: u32) -> FilterAction<'a> {
         if let Some(value) = page_table_lookup(cp, self.l1, self.l2)
             && let Some(s) = unpack_str_ref(value, self.strings)
         {
-            self.offset += char_len;
-            let s_bytes = s.as_bytes();
-            self.remaining = &s_bytes[1..];
-            return Some(s_bytes[0]);
+            FilterAction::ReplaceBytes(s.as_bytes())
+        } else {
+            FilterAction::Keep
         }
-
-        // Unmapped multi-byte: yield lead byte, buffer continuation bytes.
-        let cont_start = self.offset + 1;
-        self.offset += char_len;
-        self.remaining = &self.bytes[cont_start..self.offset];
-        Some(byte)
     }
 }
 
@@ -203,14 +160,17 @@ impl NormalizeMatcher {
     /// Used by the fused normalize-scan path to feed normalized bytes directly
     /// into the Aho-Corasick automaton without materializing the full string.
     #[inline(always)]
-    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> NormalizeFilterIterator<'a> {
-        NormalizeFilterIterator {
-            bytes: text.as_bytes(),
-            offset: 0,
-            remaining: &[],
-            l1: &self.l1,
-            l2: &self.l2,
-            strings: self.strings.as_ref(),
-        }
+    pub(crate) fn filter_bytes<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> FilterIterator<'a, NormalizeFilter<'a>> {
+        FilterIterator::new(
+            text,
+            NormalizeFilter {
+                l1: &self.l1,
+                l2: &self.l2,
+                strings: self.strings.as_ref(),
+            },
+        )
     }
 }

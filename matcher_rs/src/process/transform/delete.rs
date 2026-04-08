@@ -20,7 +20,11 @@ use std::borrow::Cow;
 
 use crate::process::{
     string_pool::get_string_from_pool,
-    transform::{simd::skip_ascii_non_delete_simd, utf8::decode_utf8_raw},
+    transform::{
+        filter::{CodepointFilter, FilterAction, FilterIterator},
+        simd::skip_ascii_non_delete_simd,
+        utf8::decode_utf8_raw,
+    },
 };
 
 /// Bitset-backed matcher for the delete transform.
@@ -159,18 +163,18 @@ impl DeleteMatcher {
     /// automaton without materializing an intermediate `String`. The iterator
     /// decides keep/skip at the codepoint level, then yields all bytes of kept
     /// characters one at a time.
-    ///
-    /// Multi-byte UTF-8 characters are decoded once to check the bitset, then
-    /// their individual bytes are yielded via the `char_remaining` counter.
     #[inline(always)]
-    pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> DeleteFilterIterator<'a> {
-        DeleteFilterIterator {
-            bytes: text.as_bytes(),
-            offset: 0,
-            char_remaining: 0,
-            ascii_lut: &self.ascii_lut,
-            bitset: &self.bitset,
-        }
+    pub(crate) fn filter_bytes<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> FilterIterator<'a, DeleteFilter<'a>> {
+        FilterIterator::new(
+            text,
+            DeleteFilter {
+                ascii_lut: &self.ascii_lut,
+                bitset: &self.bitset,
+            },
+        )
     }
 
     pub(crate) fn new(bitset: &'static [u8]) -> Self {
@@ -184,67 +188,28 @@ impl DeleteMatcher {
     }
 }
 
-/// Streaming byte iterator that yields non-deleted bytes from a UTF-8 string.
-///
-/// Created by [`DeleteMatcher::filter_bytes`]. Walks the source bytes, checking
-/// each codepoint against the delete bitset. Kept codepoints have their bytes
-/// yielded one at a time; deleted codepoints are silently skipped.
-///
-/// The output byte stream is valid UTF-8 (a subsequence of complete codepoints
-/// from the input), which satisfies the safety requirement of `daachorse`'s
-/// `find_overlapping_iter_from_iter`.
-pub(crate) struct DeleteFilterIterator<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    /// Remaining bytes to yield from the current kept multi-byte character.
-    /// 0 when at a codepoint boundary (need to decode next codepoint).
-    char_remaining: u8,
+pub(crate) struct DeleteFilter<'a> {
     ascii_lut: &'a [u8; 16],
     bitset: &'a [u8],
 }
 
-impl Iterator for DeleteFilterIterator<'_> {
-    type Item = u8;
+impl<'a> CodepointFilter<'a> for DeleteFilter<'a> {
+    #[inline(always)]
+    fn filter_ascii(&self, byte: u8) -> FilterAction<'a> {
+        if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
+            FilterAction::Delete
+        } else {
+            FilterAction::Keep
+        }
+    }
 
     #[inline(always)]
-    fn next(&mut self) -> Option<u8> {
-        // Fast path: mid-character continuation bytes (no decode needed).
-        if self.char_remaining > 0 {
-            // SAFETY: we're within a kept multi-byte character; offset is in bounds.
-            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
-            self.offset += 1;
-            self.char_remaining -= 1;
-            return Some(byte);
-        }
-
-        loop {
-            if self.offset >= self.bytes.len() {
-                return None;
-            }
-            // SAFETY: offset < len checked above.
-            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
-            if byte < 0x80 {
-                // ASCII: check delete LUT inline.
-                if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
-                    self.offset += 1;
-                    continue;
-                }
-                self.offset += 1;
-                return Some(byte);
-            }
-            // Non-ASCII: decode codepoint, check bitset.
-            // SAFETY: byte >= 0x80 in a valid UTF-8 &str means multi-byte lead byte.
-            let (cp, char_len) = unsafe { decode_utf8_raw(self.bytes, self.offset) };
-            let cp = cp as usize;
-            if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
-                self.offset += char_len;
-                continue;
-            }
-            // Kept: yield first byte, set remaining for continuation bytes.
-            let first_byte = byte;
-            self.offset += 1;
-            self.char_remaining = (char_len - 1) as u8;
-            return Some(first_byte);
+    fn filter_codepoint(&self, cp: u32) -> FilterAction<'a> {
+        let cp = cp as usize;
+        if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+            FilterAction::Delete
+        } else {
+            FilterAction::Keep
         }
     }
 }

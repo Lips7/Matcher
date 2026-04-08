@@ -23,6 +23,7 @@
 //! [`super::api`] modules.
 pub(crate) mod constants;
 pub(crate) mod delete;
+pub(crate) mod filter;
 pub(crate) mod replace;
 pub(crate) mod simd;
 pub(crate) mod utf8;
