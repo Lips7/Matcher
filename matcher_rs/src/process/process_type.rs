@@ -233,6 +233,7 @@ impl Display for ProcessType {
                 "Delete" => "delete",
                 "Normalize" => "normalize",
                 "Romanize" => "romanize",
+                "EmojiNorm" => "emoji_norm",
                 _ => "unknown",
             }
         }

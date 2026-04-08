@@ -167,7 +167,6 @@ def preset_commands(
             ("bench_scaling", "search"),
             ("bench_transform", "search"),
             ("bench_complexity", "search"),
-            ("bench_optimization", "search"),
             ("bench_edge_cases", "search"),
         ],
         "build": [("bench_build", "build")],

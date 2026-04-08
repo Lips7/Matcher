@@ -73,10 +73,6 @@ name = "bench_complexity"
 harness = false
 
 [[bench]]
-name = "bench_optimization"
-harness = false
-
-[[bench]]
 name = "bench_edge_cases"
 harness = false
 

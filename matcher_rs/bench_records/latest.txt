@@ -1,59 +1,183 @@
-Metric: median
-Benchmarks: 45
-Stable rows: 40
-Noisy rows (>5% spread): 5
-Date: 2026-04-07T01:39:18
-Preset: search
-Repeat Count: 3
-Profile: bench
+Date: 2026-04-08
 Branch: master
 Hardware: Apple M3 Max
 Platform: macOS-26.4-arm64-arm-64bit
 Python: 3.12.13
 
-Rows
-  - match_vs_nomatch / is_match_hit: 494.900 µs | spread=7.31% | runs=3 noisy
-  - match_vs_nomatch / is_match_miss: 292.000 µs | spread=1.40% | runs=3
-  - match_vs_nomatch / process_hit: 3.277 ms | spread=0.76% | runs=3
-  - match_vs_nomatch / process_miss: 338.300 µs | spread=0.33% | runs=3
-  - rule_complexity / mixed_scripts / 1000: 5.779 ms | spread=2.16% | runs=3
-  - rule_complexity / mixed_scripts / 10000: 3.222 ms | spread=2.27% | runs=3
-  - rule_complexity / mixed_scripts / 100000: 914.400 µs | spread=5.30% | runs=3 noisy
-  - rule_complexity / mixed_scripts / 50000: 1.304 ms | spread=3.30% | runs=3
-  - rule_complexity / shape_is_match / and: 7.755 ms | spread=0.63% | runs=3
-  - rule_complexity / shape_is_match / literal: 506.000 µs | spread=3.22% | runs=3
-  - rule_complexity / shape_is_match / not: 3.678 ms | spread=0.60% | runs=3
-  - rule_complexity / shape_is_match / or: 496.800 µs | spread=0.52% | runs=3
-  - rule_complexity / shape_is_match / word_boundary: 2.808 ms | spread=0.71% | runs=3
-  - rule_complexity / shape_process / and: 7.735 ms | spread=0.88% | runs=3
-  - rule_complexity / shape_process / literal: 3.287 ms | spread=1.16% | runs=3
-  - rule_complexity / shape_process / not: 4.070 ms | spread=1.23% | runs=3
-  - rule_complexity / shape_process / or: 7.544 ms | spread=1.06% | runs=3
-  - rule_complexity / shape_process / word_boundary: 3.110 ms | spread=1.16% | runs=3
-  - scaling / is_match_cn / 1000: 5.369 ms | spread=2.61% | runs=3
-  - scaling / is_match_cn / 10000: 1.766 ms | spread=3.23% | runs=3
-  - scaling / is_match_cn / 100000: 629.400 µs | spread=5.24% | runs=3 noisy
-  - scaling / is_match_cn / 50000: 786.300 µs | spread=2.29% | runs=3
-  - scaling / is_match_en / 1000: 889.900 µs | spread=1.81% | runs=3
-  - scaling / is_match_en / 10000: 494.100 µs | spread=3.54% | runs=3
-  - scaling / is_match_en / 100000: 270.800 µs | spread=0.44% | runs=3
-  - scaling / is_match_en / 50000: 323.500 µs | spread=17.09% | runs=3 noisy
-  - scaling / process_cn / 1000: 6.718 ms | spread=0.76% | runs=3
-  - scaling / process_cn / 10000: 6.084 ms | spread=5.62% | runs=3 noisy
-  - scaling / process_cn / 100000: 12.800 ms | spread=0.55% | runs=3
-  - scaling / process_cn / 50000: 9.366 ms | spread=0.42% | runs=3
-  - scaling / process_en / 1000: 1.272 ms | spread=0.31% | runs=3
-  - scaling / process_en / 10000: 3.283 ms | spread=2.68% | runs=3
-  - scaling / process_en / 100000: 12.720 ms | spread=4.64% | runs=3
-  - scaling / process_en / 50000: 6.934 ms | spread=3.27% | runs=3
-  - search_mode / all_simple / is_match: 507.900 µs | spread=4.53% | runs=3
-  - search_mode / all_simple / process: 3.306 ms | spread=2.30% | runs=3
-  - search_mode / general / is_match: 1.247 ms | spread=4.01% | runs=3
-  - search_mode / general / process: 15.230 ms | spread=4.27% | runs=3
-  - text_transform / cn / delete: 7.886 ms | spread=2.83% | runs=3
-  - text_transform / cn / normalize: 15.540 ms | spread=3.80% | runs=3
-  - text_transform / cn / romanize: 51.890 ms | spread=2.70% | runs=3
-  - text_transform / cn / romanize_char: 59.010 ms | spread=3.44% | runs=3
-  - text_transform / cn / variant_norm: 12.560 ms | spread=0.08% | runs=3
-  - text_transform / en / delete: 6.423 ms | spread=0.81% | runs=3
-  - text_transform / en / normalize: 6.753 ms | spread=0.74% | runs=3
+bench_build                             fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ build                                              │               │               │               │         │
+   ├─ by_process_type                                 │               │               │               │         │
+   │  ├─ delete                         26.91 ms      │ 30.45 ms      │ 27.52 ms      │ 27.7 ms       │ 100     │ 100
+   │  ├─ none                           26.79 ms      │ 29.28 ms      │ 27.51 ms      │ 27.56 ms      │ 100     │ 100
+   │  ├─ romanize                       28.26 ms      │ 32.69 ms      │ 29.14 ms      │ 29.22 ms      │ 100     │ 100
+   │  ├─ variant_norm                   27.13 ms      │ 34.59 ms      │ 27.71 ms      │ 28.41 ms      │ 100     │ 100
+   │  ╰─ variant_norm_delete_normalize  28.21 ms      │ 31.37 ms      │ 28.68 ms      │ 28.89 ms      │ 100     │ 100
+   ├─ by_size                                         │               │               │               │         │
+   │  ├─ 1000                           3.013 ms      │ 3.38 ms       │ 3.06 ms       │ 3.082 ms      │ 100     │ 100
+   │  ├─ 10000                          21.28 ms      │ 26.23 ms      │ 21.97 ms      │ 22.07 ms      │ 100     │ 100
+   │  ├─ 50000                          96.98 ms      │ 107.1 ms      │ 98.04 ms      │ 98.73 ms      │ 51      │ 51
+   │  ├─ 100000                         224.7 ms      │ 242.2 ms      │ 226.9 ms      │ 228 ms        │ 22      │ 22
+   │  ╰─ 500000                         358 ms        │ 366.2 ms      │ 362.2 ms      │ 362.2 ms      │ 14      │ 14
+   ╰─ multi_process_type                              │               │               │               │         │
+      ├─ 1000                           2.583 ms      │ 2.938 ms      │ 2.619 ms      │ 2.633 ms      │ 100     │ 100
+      ├─ 10000                          23.57 ms      │ 28.29 ms      │ 23.99 ms      │ 24.11 ms      │ 100     │ 100
+      ├─ 50000                          88.59 ms      │ 102.7 ms      │ 89.95 ms      │ 91.5 ms       │ 55      │ 55
+      ├─ 100000                         177 ms        │ 196.4 ms      │ 180 ms        │ 181.6 ms      │ 28      │ 28
+      ╰─ 500000                         1.121 s       │ 1.129 s       │ 1.126 s       │ 1.126 s       │ 5       │ 5
+
+bench_complexity        fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ rule_complexity                    │               │               │               │         │
+   ├─ mixed_scripts                   │               │               │               │         │
+   │  ├─ 1000           5.523 ms      │ 7.77 ms       │ 5.781 ms      │ 5.815 ms      │ 100     │ 100
+   │  │                 488.4 MB/s    │ 347.1 MB/s    │ 466.6 MB/s    │ 463.9 MB/s    │         │
+   │  ├─ 10000          3.294 ms      │ 3.587 ms      │ 3.334 ms      │ 3.346 ms      │ 100     │ 100
+   │  │                 819 MB/s      │ 752 MB/s      │ 809.1 MB/s    │ 806.2 MB/s    │         │
+   │  ├─ 50000          1.334 ms      │ 1.617 ms      │ 1.45 ms       │ 1.45 ms       │ 100     │ 100
+   │  │                 2.021 GB/s    │ 1.668 GB/s    │ 1.859 GB/s    │ 1.859 GB/s    │         │
+   │  ├─ 100000         951.9 µs      │ 1.292 ms      │ 1.027 ms      │ 1.038 ms      │ 100     │ 100
+   │  │                 2.834 GB/s    │ 2.088 GB/s    │ 2.625 GB/s    │ 2.599 GB/s    │         │
+   │  ╰─ 500000         702.7 µs      │ 4.381 ms      │ 743.5 µs      │ 779.7 µs      │ 100     │ 100
+   │                    3.839 GB/s    │ 615.7 MB/s    │ 3.628 GB/s    │ 3.459 GB/s    │         │
+   ├─ shape_is_match                  │               │               │               │         │
+   │  ├─ and            7.575 ms      │ 8.464 ms      │ 7.609 ms      │ 7.652 ms      │ 100     │ 100
+   │  │                 76.8 MB/s     │ 68.73 MB/s    │ 76.46 MB/s    │ 76.03 MB/s    │         │
+   │  ├─ deep_and       9.405 ms      │ 14.12 ms      │ 9.515 ms      │ 9.823 ms      │ 100     │ 100
+   │  │                 61.86 MB/s    │ 41.18 MB/s    │ 61.14 MB/s    │ 59.23 MB/s    │         │
+   │  ├─ deep_not       8.856 ms      │ 9.708 ms      │ 8.901 ms      │ 8.983 ms      │ 100     │ 100
+   │  │                 65.69 MB/s    │ 59.93 MB/s    │ 65.36 MB/s    │ 64.77 MB/s    │         │
+   │  ├─ literal        488 µs        │ 628.6 µs      │ 518.1 µs      │ 520 µs        │ 100     │ 100
+   │  │                 1.192 GB/s    │ 925.5 MB/s    │ 1.123 GB/s    │ 1.118 GB/s    │         │
+   │  ├─ mixed_ops      8.466 ms      │ 9.685 ms      │ 8.547 ms      │ 8.579 ms      │ 100     │ 100
+   │  │                 68.72 MB/s    │ 60.07 MB/s    │ 68.07 MB/s    │ 67.81 MB/s    │         │
+   │  ├─ not            3.522 ms      │ 4.037 ms      │ 3.55 ms       │ 3.589 ms      │ 100     │ 100
+   │  │                 165.1 MB/s    │ 144.1 MB/s    │ 163.8 MB/s    │ 162 MB/s      │         │
+   │  ├─ or             466.9 µs      │ 936.7 µs      │ 524.3 µs      │ 545.3 µs      │ 100     │ 100
+   │  │                 1.245 GB/s    │ 621.1 MB/s    │ 1.109 GB/s    │ 1.066 GB/s    │         │
+   │  ╰─ word_boundary  2.231 ms      │ 2.664 ms      │ 2.423 ms      │ 2.427 ms      │ 100     │ 100
+   │                    260.7 MB/s    │ 218.3 MB/s    │ 240 MB/s      │ 239.6 MB/s    │         │
+   ╰─ shape_process                   │               │               │               │         │
+      ├─ and            7.688 ms      │ 9.033 ms      │ 7.737 ms      │ 7.83 ms       │ 100     │ 100
+      │                 75.67 MB/s    │ 64.41 MB/s    │ 75.2 MB/s     │ 74.3 MB/s     │         │
+      ├─ deep_and       9.535 ms      │ 11.43 ms      │ 9.593 ms      │ 9.723 ms      │ 100     │ 100
+      │                 61.02 MB/s    │ 50.86 MB/s    │ 60.65 MB/s    │ 59.83 MB/s    │         │
+      ├─ deep_not       9.694 ms      │ 11.32 ms      │ 9.835 ms      │ 10.1 ms       │ 100     │ 100
+      │                 60.01 MB/s    │ 51.39 MB/s    │ 59.16 MB/s    │ 57.58 MB/s    │         │
+      ├─ literal        3.281 ms      │ 5.059 ms      │ 3.526 ms      │ 3.627 ms      │ 100     │ 100
+      │                 177.3 MB/s    │ 114.9 MB/s    │ 164.9 MB/s    │ 160.4 MB/s    │         │
+      ├─ mixed_ops      8.538 ms      │ 11.58 ms      │ 8.613 ms      │ 8.946 ms      │ 100     │ 100
+      │                 68.14 MB/s    │ 50.23 MB/s    │ 67.54 MB/s    │ 65.03 MB/s    │         │
+      ├─ not            3.882 ms      │ 4.427 ms      │ 3.91 ms       │ 3.927 ms      │ 100     │ 100
+      │                 149.8 MB/s    │ 131.4 MB/s    │ 148.7 MB/s    │ 148.1 MB/s    │         │
+      ├─ or             7.432 ms      │ 11.96 ms      │ 7.777 ms      │ 8.073 ms      │ 100     │ 100
+      │                 78.28 MB/s    │ 48.62 MB/s    │ 74.81 MB/s    │ 72.07 MB/s    │         │
+      ╰─ word_boundary  3.141 ms      │ 3.468 ms      │ 3.227 ms      │ 3.234 ms      │ 100     │ 100
+                        185.2 MB/s    │ 167.7 MB/s    │ 180.2 MB/s    │ 179.8 MB/s    │         │
+
+bench_edge_cases      fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ text_length                      │               │               │               │         │
+   ├─ long_is_match   11.83 µs      │ 421.7 µs      │ 11.87 µs      │ 16.05 µs      │ 100     │ 100
+   │                  49.17 GB/s    │ 1.379 GB/s    │ 49 GB/s       │ 36.23 GB/s    │         │
+   ├─ long_process    2.405 ms      │ 2.819 ms      │ 2.564 ms      │ 2.58 ms       │ 100     │ 100
+   │                  241.8 MB/s    │ 206.3 MB/s    │ 226.9 MB/s    │ 225.5 MB/s    │         │
+   ├─ short_is_match  31.58 ns      │ 41.02 ns      │ 31.91 ns      │ 32.15 ns      │ 100     │ 25600
+   ╰─ short_process   81.05 ns      │ 94.07 ns      │ 83.01 ns      │ 83.22 ns      │ 100     │ 6400
+
+bench_scaling      fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ scaling                       │               │               │               │         │
+   ├─ is_match_cn                │               │               │               │         │
+   │  ├─ 1000      5.22 ms       │ 7.669 ms      │ 5.456 ms      │ 5.464 ms      │ 100     │ 100
+   │  │            516.7 MB/s    │ 351.7 MB/s    │ 494.4 MB/s    │ 493.7 MB/s    │         │
+   │  ├─ 10000     1.839 ms      │ 2.085 ms      │ 1.898 ms      │ 1.931 ms      │ 100     │ 100
+   │  │            1.466 GB/s    │ 1.293 GB/s    │ 1.42 GB/s     │ 1.397 GB/s    │         │
+   │  ├─ 50000     869.8 µs      │ 1.312 ms      │ 886.8 µs      │ 908.2 µs      │ 100     │ 100
+   │  │            3.101 GB/s    │ 2.054 GB/s    │ 3.042 GB/s    │ 2.97 GB/s     │         │
+   │  ├─ 100000    701.5 µs      │ 1.052 ms      │ 741.7 µs      │ 747.3 µs      │ 100     │ 100
+   │  │            3.845 GB/s    │ 2.564 GB/s    │ 3.637 GB/s    │ 3.61 GB/s     │         │
+   │  ╰─ 500000    644.7 µs      │ 4.748 ms      │ 677.1 µs      │ 725.4 µs      │ 100     │ 100
+   │               4.184 GB/s    │ 568.2 MB/s    │ 3.984 GB/s    │ 3.719 GB/s    │         │
+   ├─ is_match_en                │               │               │               │         │
+   │  ├─ 1000      810 µs        │ 1.27 ms       │ 873.2 µs      │ 883.3 µs      │ 100     │ 100
+   │  │            718.2 MB/s    │ 457.9 MB/s    │ 666.3 MB/s    │ 658.7 MB/s    │         │
+   │  ├─ 10000     443.5 µs      │ 631 µs        │ 478.7 µs      │ 486.7 µs      │ 100     │ 100
+   │  │            1.311 GB/s    │ 922 MB/s      │ 1.215 GB/s    │ 1.195 GB/s    │         │
+   │  ├─ 50000     316.8 µs      │ 574.7 µs      │ 342.4 µs      │ 345.7 µs      │ 100     │ 100
+   │  │            1.836 GB/s    │ 1.012 GB/s    │ 1.699 GB/s    │ 1.683 GB/s    │         │
+   │  ├─ 100000    229.1 µs      │ 401.3 µs      │ 259.1 µs      │ 266.2 µs      │ 100     │ 100
+   │  │            2.539 GB/s    │ 1.449 GB/s    │ 2.244 GB/s    │ 2.185 GB/s    │         │
+   │  ╰─ 500000    340.9 µs      │ 546.8 µs      │ 378.7 µs      │ 387 µs        │ 100     │ 100
+   │               1.706 GB/s    │ 1.063 GB/s    │ 1.536 GB/s    │ 1.503 GB/s    │         │
+   ├─ process_cn                 │               │               │               │         │
+   │  ├─ 1000      6.536 ms      │ 7.253 ms      │ 6.911 ms      │ 6.905 ms      │ 100     │ 100
+   │  │            412.7 MB/s    │ 371.9 MB/s    │ 390.3 MB/s    │ 390.7 MB/s    │         │
+   │  ├─ 10000     5.941 ms      │ 6.525 ms      │ 6.181 ms      │ 6.2 ms        │ 100     │ 100
+   │  │            454 MB/s      │ 413.4 MB/s    │ 436.4 MB/s    │ 435.1 MB/s    │         │
+   │  ├─ 50000     9.491 ms      │ 10.62 ms      │ 9.805 ms      │ 9.844 ms      │ 100     │ 100
+   │  │            284.2 MB/s    │ 254 MB/s      │ 275.1 MB/s    │ 274 MB/s      │         │
+   │  ├─ 100000    12.99 ms      │ 24.32 ms      │ 13.4 ms       │ 13.8 ms       │ 100     │ 100
+   │  │            207.6 MB/s    │ 110.8 MB/s    │ 201.3 MB/s    │ 195.4 MB/s    │         │
+   │  ╰─ 500000    33.3 ms       │ 75.14 ms      │ 38.78 ms      │ 41.1 ms       │ 100     │ 100
+   │               81.01 MB/s    │ 35.9 MB/s     │ 69.56 MB/s    │ 65.64 MB/s    │         │
+   ╰─ process_en                 │               │               │               │         │
+      ├─ 1000      1.299 ms      │ 1.407 ms      │ 1.359 ms      │ 1.362 ms      │ 100     │ 100
+      │            447.6 MB/s    │ 413.4 MB/s    │ 428 MB/s      │ 426.9 MB/s    │         │
+      ├─ 10000     3.425 ms      │ 5.094 ms      │ 3.804 ms      │ 3.885 ms      │ 100     │ 100
+      │            169.8 MB/s    │ 114.2 MB/s    │ 152.9 MB/s    │ 149.7 MB/s    │         │
+      ├─ 50000     7.201 ms      │ 10.4 ms       │ 7.387 ms      │ 7.896 ms      │ 100     │ 100
+      │            80.8 MB/s     │ 55.9 MB/s     │ 78.76 MB/s    │ 73.68 MB/s    │         │
+      ├─ 100000    13.67 ms      │ 24.45 ms      │ 13.83 ms      │ 14.42 ms      │ 100     │ 100
+      │            42.54 MB/s    │ 23.79 MB/s    │ 42.06 MB/s    │ 40.33 MB/s    │         │
+      ╰─ 500000    36.19 ms      │ 55.19 ms      │ 36.64 ms      │ 39.07 ms      │ 100     │ 100
+                   16.07 MB/s    │ 10.54 MB/s    │ 15.87 MB/s    │ 14.89 MB/s    │         │
+
+bench_search         fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ match_vs_nomatch                │               │               │               │         │
+│  ├─ is_match_hit   502.7 µs      │ 1.201 ms      │ 507.6 µs      │ 520.2 µs      │ 100     │ 100
+│  │                 1.157 GB/s    │ 484.1 MB/s    │ 1.146 GB/s    │ 1.118 GB/s    │         │
+│  ├─ is_match_miss  243 µs        │ 357.2 µs      │ 260.7 µs      │ 262.6 µs      │ 100     │ 100
+│  │                 2.394 GB/s    │ 1.628 GB/s    │ 2.231 GB/s    │ 2.215 GB/s    │         │
+│  ├─ process_hit    3.285 ms      │ 4.046 ms      │ 3.474 ms      │ 3.514 ms      │ 100     │ 100
+│  │                 177.1 MB/s    │ 143.7 MB/s    │ 167.4 MB/s    │ 165.5 MB/s    │         │
+│  ╰─ process_miss   335.2 µs      │ 449.4 µs      │ 362.5 µs      │ 366.6 µs      │ 100     │ 100
+│                    1.735 GB/s    │ 1.294 GB/s    │ 1.604 GB/s    │ 1.586 GB/s    │         │
+╰─ search_mode                     │               │               │               │         │
+   ├─ all_simple                   │               │               │               │         │
+   │  ├─ is_match    451.3 µs      │ 671.9 µs      │ 488.7 µs      │ 491.5 µs      │ 100     │ 100
+   │  │              1.289 GB/s    │ 865.9 MB/s    │ 1.19 GB/s     │ 1.183 GB/s    │         │
+   │  ╰─ process     3.238 ms      │ 3.915 ms      │ 3.507 ms      │ 3.513 ms      │ 100     │ 100
+   │                 179.6 MB/s    │ 148.6 MB/s    │ 165.8 MB/s    │ 165.5 MB/s    │         │
+   ╰─ general                      │               │               │               │         │
+      ├─ is_match    1.149 ms      │ 1.428 ms      │ 1.237 ms      │ 1.232 ms      │ 100     │ 100
+      │              506.3 MB/s    │ 407.2 MB/s    │ 470 MB/s      │ 472.1 MB/s    │         │
+      ╰─ process     13.46 ms      │ 19.53 ms      │ 14.01 ms      │ 14.13 ms      │ 100     │ 100
+                     43.22 MB/s    │ 29.78 MB/s    │ 41.52 MB/s    │ 41.15 MB/s    │         │
+
+bench_transform                         fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ combined_process_types                             │               │               │               │         │
+│  ├─ multi_pt_table                    53.56 ms      │ 73.28 ms      │ 53.91 ms      │ 56.46 ms      │ 88      │ 88
+│  │                                    50.37 MB/s    │ 36.81 MB/s    │ 50.04 MB/s    │ 47.78 MB/s    │         │
+│  ╰─ process_cn                                      │               │               │               │         │
+│     ├─ delete_normalize               21.51 ms      │ 35.51 ms      │ 22.81 ms      │ 23.01 ms      │ 100     │ 100
+│     │                                 125.3 MB/s    │ 75.97 MB/s    │ 118.2 MB/s    │ 117.2 MB/s    │         │
+│     ╰─ variant_norm_delete_normalize  29.24 ms      │ 42.09 ms      │ 29.99 ms      │ 31.01 ms      │ 100     │ 100
+│                                       92.24 MB/s    │ 64.1 MB/s     │ 89.93 MB/s    │ 86.98 MB/s    │         │
+╰─ text_transform                                     │               │               │               │         │
+   ├─ cn                                              │               │               │               │         │
+   │  ├─ delete                         12.58 ms      │ 14.48 ms      │ 13.34 ms      │ 13.34 ms      │ 100     │ 100
+   │  │                                 214.3 MB/s    │ 186.3 MB/s    │ 202.2 MB/s    │ 202.2 MB/s    │         │
+   │  ├─ normalize                      16.45 ms      │ 18.83 ms      │ 17.74 ms      │ 17.62 ms      │ 100     │ 100
+   │  │                                 163.9 MB/s    │ 143.2 MB/s    │ 152 MB/s      │ 153 MB/s      │         │
+   │  ├─ romanize                       50.33 ms      │ 74.14 ms      │ 52.34 ms      │ 53.61 ms      │ 94      │ 94
+   │  │                                 53.6 MB/s     │ 36.39 MB/s    │ 51.54 MB/s    │ 50.32 MB/s    │         │
+   │  ├─ romanize_char                  57.03 ms      │ 78.52 ms      │ 60.23 ms      │ 60.74 ms      │ 83      │ 83
+   │  │                                 47.3 MB/s     │ 34.36 MB/s    │ 44.78 MB/s    │ 44.41 MB/s    │         │
+   │  ├─ emoji_norm                     7.953 ms      │ 9.293 ms      │ 8.47 ms       │ 8.463 ms      │ 100     │ 100
+   │  │                                 339.2 MB/s    │ 290.3 MB/s    │ 318.5 MB/s    │ 318.8 MB/s    │         │
+   │  ╰─ variant_norm                   13.14 ms      │ 15.1 ms       │ 13.29 ms      │ 13.63 ms      │ 100     │ 100
+   │                                    205.2 MB/s    │ 178.6 MB/s    │ 202.8 MB/s    │ 197.9 MB/s    │         │
+   ╰─ en                                              │               │               │               │         │
+      ├─ delete                         6.292 ms      │ 8.187 ms      │ 6.446 ms      │ 6.781 ms      │ 100     │ 100
+      │                                 92.47 MB/s    │ 71.06 MB/s    │ 90.26 MB/s    │ 85.79 MB/s    │         │
+      ├─ normalize                      6.639 ms      │ 8.843 ms      │ 6.766 ms      │ 7.065 ms      │ 100     │ 100
+      │                                 87.63 MB/s    │ 65.79 MB/s    │ 85.98 MB/s    │ 82.34 MB/s    │         │
+      ╰─ emoji_norm                     3.803 ms      │ 5.472 ms      │ 3.953 ms      │ 4.127 ms      │ 100     │ 100
+                                        152.9 MB/s    │ 106.3 MB/s    │ 147.1 MB/s    │ 140.9 MB/s    │         │
