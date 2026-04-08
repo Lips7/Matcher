@@ -1,11 +1,10 @@
 package com.matcherjava;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.TypeReference;
 import com.matcherjava.extensiontypes.SimpleResult;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -39,33 +38,20 @@ public final class SimpleMatcher implements AutoCloseable {
   /** Returns all matches for the input text. */
   public List<SimpleResult> process(String text) {
     checkClosed();
-    String json = MatcherJava.simpleMatcherProcessAsString(matcherPtr, utf8Bytes(text));
-
-    if (json == null) {
-      return null;
-    }
-
-    return JSON.parseArray(json, SimpleResult.class);
+    SimpleResult[] results = MatcherJava.simpleMatcherProcess(matcherPtr, utf8Bytes(text));
+    return results == null ? null : Arrays.asList(results);
   }
 
   /** Returns the first match for the input text, or null if nothing matches. */
   public SimpleResult findMatch(String text) {
     checkClosed();
-    String json = MatcherJava.simpleMatcherFindMatchAsString(matcherPtr, utf8Bytes(text));
-    if (json == null) {
-      return null;
-    }
-    return JSON.parseObject(json, SimpleResult.class);
+    return MatcherJava.simpleMatcherFindMatch(matcherPtr, utf8Bytes(text));
   }
 
   /** Check multiple texts in a single native call. */
   public List<Boolean> batchIsMatch(List<String> texts) {
     checkClosed();
-    byte[][] bytesArray = new byte[texts.size()][];
-    for (int i = 0; i < texts.size(); i++) {
-      bytesArray[i] = utf8Bytes(texts.get(i));
-    }
-    boolean[] results = MatcherJava.simpleMatcherBatchIsMatch(matcherPtr, bytesArray);
+    boolean[] results = MatcherJava.simpleMatcherBatchIsMatch(matcherPtr, toBytesArray(texts));
     List<Boolean> list = new ArrayList<>(results.length);
     for (boolean b : results) {
       list.add(b);
@@ -76,29 +62,24 @@ public final class SimpleMatcher implements AutoCloseable {
   /** Process multiple texts in a single native call. */
   public List<List<SimpleResult>> batchProcess(List<String> texts) {
     checkClosed();
-    byte[][] bytesArray = new byte[texts.size()][];
-    for (int i = 0; i < texts.size(); i++) {
-      bytesArray[i] = utf8Bytes(texts.get(i));
-    }
-    String json = MatcherJava.simpleMatcherBatchProcessAsString(matcherPtr, bytesArray);
-    if (json == null) {
+    byte[][] bytes = toBytesArray(texts);
+    SimpleResult[][] results = MatcherJava.simpleMatcherBatchProcess(matcherPtr, bytes);
+    if (results == null) {
       return null;
     }
-    return JSON.parseObject(json, new TypeReference<List<List<SimpleResult>>>() {});
+    List<List<SimpleResult>> out = new ArrayList<>(results.length);
+    for (SimpleResult[] inner : results) {
+      out.add(Arrays.asList(inner));
+    }
+    return out;
   }
 
   /** Find the first match for each text. Elements may be null when no match is found. */
   public List<SimpleResult> batchFindMatch(List<String> texts) {
     checkClosed();
-    byte[][] bytesArray = new byte[texts.size()][];
-    for (int i = 0; i < texts.size(); i++) {
-      bytesArray[i] = utf8Bytes(texts.get(i));
-    }
-    String json = MatcherJava.simpleMatcherBatchFindMatchAsString(matcherPtr, bytesArray);
-    if (json == null) {
-      return null;
-    }
-    return JSON.parseArray(json, SimpleResult.class);
+    byte[][] bytes = toBytesArray(texts);
+    SimpleResult[] results = MatcherJava.simpleMatcherBatchFindMatch(matcherPtr, bytes);
+    return results == null ? null : Arrays.asList(results);
   }
 
   @Override
@@ -118,5 +99,13 @@ public final class SimpleMatcher implements AutoCloseable {
 
   private static byte[] utf8Bytes(String text) {
     return Objects.requireNonNull(text, "text").getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static byte[][] toBytesArray(List<String> texts) {
+    byte[][] bytesArray = new byte[texts.size()][];
+    for (int i = 0; i < texts.size(); i++) {
+      bytesArray[i] = utf8Bytes(texts.get(i));
+    }
+    return bytesArray;
   }
 }

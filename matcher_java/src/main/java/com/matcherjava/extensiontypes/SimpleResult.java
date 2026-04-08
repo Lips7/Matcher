@@ -1,10 +1,7 @@
 package com.matcherjava.extensiontypes;
 
-import com.alibaba.fastjson.annotation.JSONField;
-
 /** Java view of a single native match result. */
 public class SimpleResult {
-  @JSONField(name = "word_id")
   private int wordId;
   private String word;
 
