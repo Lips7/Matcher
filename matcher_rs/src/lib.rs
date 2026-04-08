@@ -6,28 +6,32 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 #![warn(clippy::undocumented_unsafe_blocks)]
-//! High-performance multi-pattern text matcher with logical operators and transformation pipelines.
+//! High-performance multi-pattern text matcher with logical operators and
+//! transformation pipelines.
 //!
-//! `matcher_rs` is designed for rule matching tasks where plain substring search is too rigid.
-//! A rule can combine multiple sub-patterns, veto on other sub-patterns, and match against
-//! raw text, transformed text, or both.
+//! `matcher_rs` is designed for rule matching tasks where plain substring
+//! search is too rigid. A rule can combine multiple sub-patterns, veto on other
+//! sub-patterns, and match against raw text, transformed text, or both.
 //!
 //! The crate is built around three ideas:
 //!
-//! - **Logical operators** — Rules can require co-occurrence of sub-patterns (`&`) or
-//!   veto a match when a sub-pattern is present (`~`).
-//! - **Transformation pipelines** — Input can be matched after Traditional→Simplified
-//!   CJK variant normalization ([`ProcessType::VariantNorm`]), deletion of configured codepoints
-//!   ([`ProcessType::Delete`]), replacement-table normalization ([`ProcessType::Normalize`]),
-//!   and CJK romanization ([`ProcessType::Romanize`] / [`ProcessType::RomanizeChar`]).
-//! - **Two-pass evaluation** — Construction deduplicates emitted patterns and partitions them
-//!   into ASCII and charwise matcher engines. Search walks the needed transform tree once,
-//!   scans each produced text variant, then evaluates only touched rules.
+//! - **Logical operators** — Rules can require co-occurrence of sub-patterns
+//!   (`&`) or veto a match when a sub-pattern is present (`~`).
+//! - **Transformation pipelines** — Input can be matched after
+//!   Traditional→Simplified CJK variant normalization
+//!   ([`ProcessType::VariantNorm`]), deletion of configured codepoints
+//!   ([`ProcessType::Delete`]), replacement-table normalization
+//!   ([`ProcessType::Normalize`]), and CJK romanization
+//!   ([`ProcessType::Romanize`] / [`ProcessType::RomanizeChar`]).
+//! - **Two-pass evaluation** — Construction deduplicates emitted patterns and
+//!   partitions them into ASCII and charwise matcher engines. Search walks the
+//!   needed transform tree once, scans each produced text variant, then
+//!   evaluates only touched rules.
 //!
 //! # Quick Start
 //!
 //! ```rust
-//! use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+//! use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 //!
 //! let matcher = SimpleMatcherBuilder::new()
 //!     .add_word(ProcessType::None, 1, "hello")
@@ -48,10 +52,11 @@
 //! assert_eq!(results[0].word_id, 1);
 //! ```
 //!
-//! Composite [`ProcessType`] values can also include [`ProcessType::None`] to match
-//! against both the raw text and a transformed variant. For example, a rule with
-//! `ProcessType::None | ProcessType::Romanize` can satisfy one sub-pattern directly from
-//! the input and another via CJK romanization during the same search.
+//! Composite [`ProcessType`] values can also include [`ProcessType::None`] to
+//! match against both the raw text and a transformed variant. For example, a
+//! rule with `ProcessType::None | ProcessType::Romanize` can satisfy one
+//! sub-pattern directly from the input and another via CJK romanization during
+//! the same search.
 //!
 //! # Safety
 //!
@@ -64,8 +69,8 @@
 //! | `SIMPLE_MATCH_STATE` | `simple_matcher/state.rs` |
 //! | `STRING_POOL` | `process/string_pool.rs` |
 //!
-//! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!` macro
-//! to avoid per-access closure overhead. Safety relies on two invariants:
+//! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!`
+//! macro to avoid per-access closure overhead. Safety relies on two invariants:
 //! (1) `#[thread_local]` guarantees single-threaded access — no data races.
 //! (2) No public function is re-entrant: the borrow from `UnsafeCell::get()` is
 //! always dropped before any call that could re-enter the same pool.
@@ -87,11 +92,12 @@
 
 /// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
 ///
-/// `mimalloc` was chosen because `SimpleMatcher` scanning relies heavily on thread-local
-/// buffer pools and short-lived allocations during text transformation. `mimalloc`
-/// provides lower fragmentation under these allocation patterns and significantly better
-/// multi-threaded throughput compared to the system allocator, especially on workloads
-/// where many threads match concurrently.
+/// `mimalloc` was chosen because `SimpleMatcher` scanning relies heavily on
+/// thread-local buffer pools and short-lived allocations during text
+/// transformation. `mimalloc` provides lower fragmentation under these
+/// allocation patterns and significantly better multi-threaded throughput
+/// compared to the system allocator, especially on workloads where many threads
+/// match concurrently.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -108,14 +114,15 @@ use std::fmt;
 /// - **Invalid [`ProcessType`] bits** — the caller passed a bitflag value with
 ///   undefined bits (bits 6–7) set.
 /// - **Automaton build failure** — the underlying Aho-Corasick libraries
-///   (`daachorse` or `aho-corasick`) rejected the compiled pattern set
-///   (e.g., the pattern set exceeded internal capacity limits).
+///   (`daachorse` or `aho-corasick`) rejected the compiled pattern set (e.g.,
+///   the pattern set exceeded internal capacity limits).
 ///
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
 /// use std::collections::HashMap;
+///
+/// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
 ///
 /// // Construction can be checked with standard Result handling.
 /// let empty: SimpleTable = HashMap::new();

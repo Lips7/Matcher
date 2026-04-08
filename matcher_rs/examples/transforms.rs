@@ -2,8 +2,10 @@
 //!
 //! Run: `cargo run --example transforms -p matcher_rs`
 //!
-//! Covers: individual ProcessTypes, composite types, text_process, reduce_text_process,
-//! reduce_text_process_emit, cross-variant matching.
+//! Covers: individual ProcessTypes, composite types, text_process,
+//! reduce_text_process, reduce_text_process_emit, cross-variant matching.
+
+use std::borrow::Cow;
 
 use matcher_rs::{
     ProcessType, SimpleMatcherBuilder, reduce_text_process, reduce_text_process_emit, text_process,
@@ -28,7 +30,8 @@ fn main() {
         m.is_match("測試臺灣")
     );
 
-    // Delete: remove configured codepoints (punctuation, separators, controls, emoji, etc.)
+    // Delete: remove configured codepoints (punctuation, separators, controls,
+    // emoji, etc.)
     println!("\n  [Delete] Strip noise characters");
     let delete_input = "h.e\u{201C}l.l\u{201D}o";
     println!(
@@ -112,7 +115,8 @@ fn main() {
         text_process(ProcessType::VariantNormDeleteNormalize, input)
     );
 
-    // Custom composite via | operator: match both raw and VariantNorm-converted text
+    // Custom composite via | operator: match both raw and VariantNorm-converted
+    // text
     println!("\n  [None | VariantNorm] Match raw OR converted");
     let m = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None | ProcessType::VariantNorm, 1, "测试")
@@ -198,6 +202,6 @@ fn main() {
     let result = text_process(ProcessType::VariantNorm, "pure ascii");
     println!(
         "    text_process(VariantNorm, \"pure ascii\") is borrowed: {}",
-        matches!(result, std::borrow::Cow::Borrowed(_))
+        matches!(result, Cow::Borrowed(_))
     );
 }

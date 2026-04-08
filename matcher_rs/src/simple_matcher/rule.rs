@@ -1,31 +1,34 @@
 //! Rule metadata and rule-state transition logic.
 //!
-//! This module contains the types that bind rule metadata to the scan state machine.
-//! [`RuleSet`] owns parallel hot/cold metadata vectors and exposes [`process_entry`](RuleSet::process_entry)
-//! — the core state-transition function that tracks bitmasks, matrix counters, and
-//! generation stamps in the thread-local [`super::state::SimpleMatchState`].
+//! This module contains the types that bind rule metadata to the scan state
+//! machine. [`RuleSet`] owns parallel hot/cold metadata vectors and exposes
+//! [`process_entry`](RuleSet::process_entry) — the core state-transition
+//! function that tracks bitmasks, matrix counters, and generation stamps in the
+//! thread-local [`super::state::SimpleMatchState`].
 //!
-//! Pattern types ([`super::pattern::PatternEntry`], [`super::pattern::PatternIndex`],
-//! [`super::pattern::PatternDispatch`]) live in [`super::pattern`].
-//! Bit-packing constants live in [`super::encoding`].
+//! Pattern types ([`super::pattern::PatternEntry`],
+//! [`super::pattern::PatternIndex`], [`super::pattern::PatternDispatch`]) live
+//! in [`super::pattern`]. Bit-packing constants live in [`super::encoding`].
 
-use std::borrow::Cow;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
+use super::{
+    SimpleResult,
+    pattern::{PatternEntry, PatternKind},
+    state::{ScanContext, ScanState, init_matrix},
+};
 use crate::process::ProcessType;
 
-use super::SimpleResult;
-use super::pattern::{PatternEntry, PatternKind};
-use super::state::{ScanContext, ScanState, init_matrix};
-
-/// Raw table format accepted by [`SimpleMatcher::new`](super::SimpleMatcher::new).
+/// Raw table format accepted by
+/// [`SimpleMatcher::new`](super::SimpleMatcher::new).
 ///
 /// The outer key is the [`ProcessType`] that governs which text-transformation
 /// pipeline to apply before matching. The inner key is a caller-chosen rule id
-/// (`word_id`) that will be returned in [`SimpleResult::word_id`](super::SimpleResult::word_id)
-/// on a match. The inner value is the pattern string, which may contain `&`
-/// (AND), `~` (NOT), and `|` (OR) operators to combine sub-patterns.
-/// `|` binds tighter than `&`/`~`: `"a|b&c"` means (a OR b) AND c.
+/// (`word_id`) that will be returned in
+/// [`SimpleResult::word_id`](super::SimpleResult::word_id) on a match. The
+/// inner value is the pattern string, which may contain `&` (AND), `~` (NOT),
+/// and `|` (OR) operators to combine sub-patterns. `|` binds tighter than
+/// `&`/`~`: `"a|b&c"` means (a OR b) AND c.
 ///
 /// This is the borrowed-string variant — all pattern strings must outlive the
 /// table reference passed to [`SimpleMatcher::new`](super::SimpleMatcher::new).
@@ -34,13 +37,23 @@ use super::state::{ScanContext, ScanState, init_matrix};
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
 /// use std::collections::HashMap;
 ///
+/// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
+///
 /// let mut table: SimpleTable = HashMap::new();
-/// table.entry(ProcessType::None).or_default().insert(1, "hello");
-/// table.entry(ProcessType::None).or_default().insert(2, "apple&pie");
-/// table.entry(ProcessType::VariantNorm).or_default().insert(3, "你好");
+/// table
+///     .entry(ProcessType::None)
+///     .or_default()
+///     .insert(1, "hello");
+/// table
+///     .entry(ProcessType::None)
+///     .or_default()
+///     .insert(2, "apple&pie");
+/// table
+///     .entry(ProcessType::VariantNorm)
+///     .or_default()
+///     .insert(3, "你好");
 ///
 /// let matcher = SimpleMatcher::new(&table).unwrap();
 /// assert!(matcher.is_match("hello world"));
@@ -58,9 +71,9 @@ pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcher, SimpleTableSerde, ProcessType};
-/// use std::borrow::Cow;
-/// use std::collections::HashMap;
+/// use std::{borrow::Cow, collections::HashMap};
+///
+/// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde};
 ///
 /// // Build programmatically with owned strings.
 /// let mut table: SimpleTableSerde = HashMap::new();
@@ -80,11 +93,12 @@ pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 /// ```
 pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>;
 
-/// Pre-resolved rule shape encoding the combination of `use_matrix`, `and_count == 1`,
-/// and `has_not` for one [`PatternEntry`].
+/// Pre-resolved rule shape encoding the combination of `use_matrix`, `and_count
+/// == 1`, and `has_not` for one [`PatternEntry`].
 ///
-/// Stored in [`PatternEntry::shape`] so the hot path in [`RuleSet::process_entry`] can
-/// branch on rule properties without loading [`RuleHot`].
+/// Stored in [`PatternEntry::shape`] so the hot path in
+/// [`RuleSet::process_entry`] can branch on rule properties without loading
+/// [`RuleHot`].
 ///
 /// `repr(u8)` values are chosen so that:
 /// - `has_not` = `self as u8 & 1 != 0` (odd values)
@@ -120,31 +134,33 @@ impl RuleShape {
 
 /// Hot-path per-rule metadata used during scanning.
 ///
-/// Stored in a contiguous `Vec` inside [`RuleSet`] and accessed by rule index on every
-/// pattern hit. Fields are ordered to keep the most frequently read data together.
+/// Stored in a contiguous `Vec` inside [`RuleSet`] and accessed by rule index
+/// on every pattern hit. Fields are ordered to keep the most frequently read
+/// data together.
 ///
 /// The `segment_counts` layout is:
 /// ```text
 /// [ and_0, and_1, …, and_{and_count-1}, not_0, not_1, … ]
 ///   ╰──── positive (AND) segments ────╯  ╰── negative (NOT) ──╯
 /// ```
-/// Positive counts start at the required number of hits (usually 1); negative counts
-/// start at 0 and veto the rule when they go above 0 (for matrix mode) or on first hit
-/// (for bitmask mode).
+/// Positive counts start at the required number of hits (usually 1); negative
+/// counts start at 0 and veto the rule when they go above 0 (for matrix mode)
+/// or on first hit (for bitmask mode).
 #[derive(Debug, Clone)]
 pub(super) struct RuleHot {
     /// Required counts for every positive and negative segment in rule order.
     ///
     /// AND entries hold the required hit count (decremented toward zero);
-    /// NOT entries hold a starting value of 0 (incremented on hit; any positive value
-    /// means the veto segment was observed). Only read when `RuleShape::use_matrix()` is true.
+    /// NOT entries hold a starting value of 0 (incremented on hit; any positive
+    /// value means the veto segment was observed). Only read when
+    /// `RuleShape::use_matrix()` is true.
     pub(super) segment_counts: Vec<i32>,
 }
 
 /// Cold rule metadata only needed when returning results.
 ///
-/// Separated from [`RuleHot`] so the scan hot path never touches this data. Only
-/// accessed when a rule is confirmed satisfied and a [`SimpleResult`]
+/// Separated from [`RuleHot`] so the scan hot path never touches this data.
+/// Only accessed when a rule is confirmed satisfied and a [`SimpleResult`]
 /// must be produced.
 #[derive(Debug, Clone)]
 pub(super) struct RuleCold {
@@ -152,30 +168,31 @@ pub(super) struct RuleCold {
     pub(super) word_id: u32,
     /// Original rule string stored for borrowed result output.
     ///
-    /// Owned here so that [`SimpleResult::word`](super::SimpleResult::word) can borrow
-    /// it as `Cow::Borrowed`.
+    /// Owned here so that [`SimpleResult::word`](super::SimpleResult::word) can
+    /// borrow it as `Cow::Borrowed`.
     pub(super) word: String,
 }
 
 /// All hot and cold metadata for the compiled rule set.
 ///
-/// `hot` and `cold` are parallel `Vec`s indexed by rule index. [`RuleHot`] is read on
-/// every pattern hit (scan hot path); [`RuleCold`] is read only when producing output
-/// results, keeping the scan loop's working set small.
+/// `hot` and `cold` are parallel `Vec`s indexed by rule index. [`RuleHot`] is
+/// read on every pattern hit (scan hot path); [`RuleCold`] is read only when
+/// producing output results, keeping the scan loop's working set small.
 #[derive(Clone)]
 pub(super) struct RuleSet {
     hot: Vec<RuleHot>,
     cold: Vec<RuleCold>,
     /// `true` when at least one rule contains a NOT (`~`) segment.
     ///
-    /// When false, `positive_generation == generation` permanently resolves a rule,
-    /// enabling variant-level early termination in `walk_and_scan`.
+    /// When false, `positive_generation == generation` permanently resolves a
+    /// rule, enabling variant-level early termination in `walk_and_scan`.
     has_not_rules: bool,
 }
 
 /// Rule-evaluation helpers used by the scan hot path.
 impl RuleSet {
-    /// Creates the compiled rule set from parallel hot and cold metadata vectors.
+    /// Creates the compiled rule set from parallel hot and cold metadata
+    /// vectors.
     ///
     /// # Panics
     ///
@@ -222,9 +239,11 @@ impl RuleSet {
             .any(|&rule_idx| ss.rule_is_satisfied(rule_idx))
     }
 
-    /// Pushes one result when `rule_idx` becomes positive for the first time in this generation.
+    /// Pushes one result when `rule_idx` becomes positive for the first time in
+    /// this generation.
     ///
-    /// Used by the all-simple fast path where every hit is immediately a completed rule.
+    /// Used by the all-simple fast path where every hit is immediately a
+    /// completed rule.
     #[inline(always)]
     pub(super) fn push_result_if_new<'a>(
         &'a self,
@@ -252,23 +271,27 @@ impl RuleSet {
 
     /// Applies one pattern hit to the rule state machine.
     ///
-    /// This is the core state-transition function for the two-pass matcher. Given a
-    /// [`PatternEntry`] produced by automaton dispatch, it updates the corresponding
-    /// rule's [`WordState`](super::state::WordState) and returns `true` only when the
-    /// caller may stop early because a non-vetoed rule is already satisfied.
+    /// This is the core state-transition function for the two-pass matcher.
+    /// Given a [`PatternEntry`] produced by automaton dispatch, it updates
+    /// the corresponding rule's [`WordState`](super::state::WordState) and
+    /// returns `true` only when the caller may stop early because a
+    /// non-vetoed rule is already satisfied.
     ///
     /// # State transitions by [`PatternKind`]
     ///
-    /// - **Simple**: Marks the rule satisfied on first touch. Idempotent on repeat hits.
-    /// - **And**: Decrements the remaining-AND counter (bitmask path) or the matrix
-    ///   counter (matrix path). When the counter reaches zero the rule becomes satisfied.
-    /// - **Not**: Sets `not_generation` to veto the rule. With the matrix path, the
-    ///   per-segment counter is incremented and the veto fires only when the count goes
-    ///   positive.
+    /// - **Simple**: Marks the rule satisfied on first touch. Idempotent on
+    ///   repeat hits.
+    /// - **And**: Decrements the remaining-AND counter (bitmask path) or the
+    ///   matrix counter (matrix path). When the counter reaches zero the rule
+    ///   becomes satisfied.
+    /// - **Not**: Sets `not_generation` to veto the rule. With the matrix path,
+    ///   the per-segment counter is incremented and the veto fires only when
+    ///   the count goes positive.
     ///
-    /// Init logic is inlined rather than calling `ScanState::init_rule` so that the
-    /// `&mut WordState` reference obtained at the start of each arm survives across the
-    /// init — eliminating a second `word_states` lookup per call.
+    /// Init logic is inlined rather than calling `ScanState::init_rule` so that
+    /// the `&mut WordState` reference obtained at the start of each arm
+    /// survives across the init — eliminating a second `word_states` lookup
+    /// per call.
     ///
     /// # Panics
     ///
@@ -345,7 +368,8 @@ impl RuleSet {
                         // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                         let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                         init_matrix(
-                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match
+                            // rules.
                             unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
                             // SAFETY: ditto.
                             unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
@@ -418,7 +442,8 @@ impl RuleSet {
                         // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
                         let rule = unsafe { self.hot.get_unchecked(rule_idx) };
                         init_matrix(
-                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match rules.
+                            // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match
+                            // rules.
                             unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
                             // SAFETY: ditto.
                             unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
@@ -453,8 +478,8 @@ impl RuleSet {
     ///
     /// # Safety
     ///
-    /// Uses `get_unchecked` on `self.cold`. Guarded by a preceding `debug_assert!`
-    /// bounds check.
+    /// Uses `get_unchecked` on `self.cold`. Guarded by a preceding
+    /// `debug_assert!` bounds check.
     ///
     /// # Panics
     ///
@@ -473,8 +498,7 @@ impl RuleSet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::state::SimpleMatchState;
-    use super::*;
+    use super::{super::state::SimpleMatchState, *};
 
     fn make_ctx(exit_early: bool) -> ScanContext {
         ScanContext {

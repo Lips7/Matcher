@@ -1,13 +1,15 @@
-//! Unicode normalization replacement via page-table lookup + fused streaming scan.
+//! Unicode normalization replacement via page-table lookup + fused streaming
+//! scan.
 //!
 //! Data sourced from `unicodedata.normalize("NFKC", ch).casefold()`. All 8,633
 //! keys are single Unicode codepoints (verified at build time). Cannot use
 //! [`skip_ascii_simd`](super::skip_ascii_simd) because A–Z have casefold
 //! mappings; ASCII bytes are checked inline instead.
 //!
-//! Provides two consumption modes: materialized [`replace`](NormalizeMatcher::replace)
-//! (allocates a `String`) and streaming [`filter_bytes`](NormalizeMatcher::filter_bytes)
-//! (yields bytes one at a time for fused normalize-scan without allocation).
+//! Provides two consumption modes: materialized
+//! [`replace`](NormalizeMatcher::replace) (allocates a `String`) and streaming
+//! [`filter_bytes`](NormalizeMatcher::filter_bytes) (yields bytes one at a time
+//! for fused normalize-scan without allocation).
 
 use std::borrow::Cow;
 
@@ -173,8 +175,9 @@ impl NormalizeMatcher {
 
     /// Replaces normalizable codepoints (including ASCII uppercase A–Z).
     ///
-    /// Returns `None` when `text` contains no normalizable characters. The `bool`
-    /// in the return tuple indicates whether the output is entirely ASCII.
+    /// Returns `None` when `text` contains no normalizable characters. The
+    /// `bool` in the return tuple indicates whether the output is entirely
+    /// ASCII.
     ///
     /// ```ignore
     /// let matcher = NormalizeMatcher::new(NORMALIZE_L1_BYTES, NORMALIZE_L2_BYTES, NORMALIZE_STR_BYTES);

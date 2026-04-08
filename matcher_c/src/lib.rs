@@ -6,7 +6,8 @@ use std::{
 
 /// Returns the library version as a static null-terminated string.
 ///
-/// The returned pointer is valid for the lifetime of the process and must NOT be freed.
+/// The returned pointer is valid for the lifetime of the process and must NOT
+/// be freed.
 #[unsafe(no_mangle)]
 pub extern "C" fn matcher_version() -> *const c_char {
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
@@ -20,18 +21,20 @@ use matcher_rs::{
 /// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_table_bytes` points to a valid null-terminated C string. The returned
-/// [`SimpleMatcher`] pointer must be properly managed and eventually deallocated by calling
+/// This function is unsafe because it relies on raw pointers and FFI. The
+/// caller must ensure that `simple_table_bytes` points to a valid
+/// null-terminated C string. The returned [`SimpleMatcher`] pointer must be
+/// properly managed and eventually deallocated by calling
 /// `drop_simple_matcher`.
 ///
 /// # Arguments
-/// - `simple_table_bytes`: A pointer to a C string containing the serialized table bytes.
+/// - `simple_table_bytes`: A pointer to a C string containing the serialized
+///   table bytes.
 ///
 /// # Returns
 /// A pointer to a newly allocated [`SimpleMatcher`] instance, or null on error.
-/// The caller is responsible for managing the lifetime of this pointer and must eventually
-/// call [`drop_simple_matcher`] to free the memory.
+/// The caller is responsible for managing the lifetime of this pointer and must
+/// eventually call [`drop_simple_matcher`] to free the memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
@@ -67,10 +70,11 @@ pub unsafe extern "C" fn init_simple_matcher(
 /// Determines if the input text matches using the [`SimpleMatcher`].
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance and that `text` points to a
-/// valid null-terminated C string. Both the `simple_matcher` and the `text` must remain valid for
-/// the duration of the call.
+/// This function is unsafe because it relies on raw pointers and FFI. The
+/// caller must ensure that `simple_matcher` points to a valid [`SimpleMatcher`]
+/// instance and that `text` points to a valid null-terminated C string. Both
+/// the `simple_matcher` and the `text` must remain valid for the duration of
+/// the call.
 ///
 /// # Arguments
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
@@ -106,21 +110,23 @@ pub unsafe extern "C" fn simple_matcher_is_match(
     })
 }
 
-/// Processes the input text using the [`SimpleMatcher`] and returns the result as a C string.
+/// Processes the input text using the [`SimpleMatcher`] and returns the result
+/// as a C string.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance and that `text` points to a
-/// valid null-terminated C string. Both `simple_matcher` and `text` must remain valid for the
-/// duration of the call.
+/// This function is unsafe because it relies on raw pointers and FFI. The
+/// caller must ensure that `simple_matcher` points to a valid [`SimpleMatcher`]
+/// instance and that `text` points to a valid null-terminated C string. Both
+/// `simple_matcher` and `text` must remain valid for the duration of the call.
 ///
 /// # Arguments
 /// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
 /// - `text`: A pointer to a C string containing the text to be processed.
 ///
 /// # Returns
-/// A pointer to a newly allocated C string containing the JSON result, or null on error.
-/// The caller must eventually call [`drop_string`] to free the memory.
+/// A pointer to a newly allocated C string containing the JSON result, or null
+/// on error. The caller must eventually call [`drop_string`] to free the
+/// memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_process_as_string(
     simple_matcher: *const SimpleMatcher,
@@ -163,13 +169,15 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
 /// Deallocates a [`SimpleMatcher`] instance.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `simple_matcher` points to a valid [`SimpleMatcher`] instance that was previously allocated
-/// by [`init_simple_matcher`]. After calling this function, the `simple_matcher` pointer must not be
-/// used again as it points to deallocated memory.
+/// This function is unsafe because it relies on raw pointers and FFI. The
+/// caller must ensure that `simple_matcher` points to a valid [`SimpleMatcher`]
+/// instance that was previously allocated by [`init_simple_matcher`]. After
+/// calling this function, the `simple_matcher` pointer must not be used again
+/// as it points to deallocated memory.
 ///
 /// # Arguments
-/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be deallocated.
+/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be
+///   deallocated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -179,13 +187,15 @@ pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher)
     }));
 }
 
-/// Deallocates a C string that was previously allocated by the Rust code and passed to C.
+/// Deallocates a C string that was previously allocated by the Rust code and
+/// passed to C.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The caller must ensure
-/// that `ptr` points to a valid C string that was previously allocated by Rust code using
-/// [`CString::into_raw`] or a similar method. After calling this function, the `ptr` pointer must
-/// not be used again as it points to deallocated memory.
+/// This function is unsafe because it relies on raw pointers and FFI. The
+/// caller must ensure that `ptr` points to a valid C string that was previously
+/// allocated by Rust code using [`CString::into_raw`] or a similar method.
+/// After calling this function, the `ptr` pointer must not be used again as it
+/// points to deallocated memory.
 ///
 /// # Arguments
 /// - `ptr`: A pointer to the C string to be deallocated.
@@ -275,18 +285,21 @@ pub unsafe extern "C" fn reduce_text_process(
 ///
 /// # Safety
 /// This function is unsafe because it relies on raw pointers and FFI.
-/// The caller must pass a valid null-terminated array returned by `reduce_text_process`.
+/// The caller must pass a valid null-terminated array returned by
+/// `reduce_text_process`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string_array(array: *mut *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !array.is_null() {
-            // Walk to find length (null terminator not included in count), freeing each string
+            // Walk to find length (null terminator not included in count), freeing each
+            // string
             let mut len = 0;
             while !(*array.add(len)).is_null() {
                 drop(CString::from_raw(*array.add(len)));
                 len += 1;
             }
-            // Reconstruct the boxed slice (len + 1 includes the null terminator) and drop it
+            // Reconstruct the boxed slice (len + 1 includes the null terminator) and drop
+            // it
             drop(Box::from_raw(ptr::slice_from_raw_parts_mut(array, len + 1)));
         }
     }));

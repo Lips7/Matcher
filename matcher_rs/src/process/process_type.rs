@@ -1,11 +1,12 @@
 //! [`ProcessType`] bitflags definition and its serde/display implementations.
 //!
-//! `ProcessType` is the user-facing knob for the transformation pipeline: each bit selects
-//! one transformation step, and bits compose freely with `|`. Named aliases like
-//! [`ProcessType::DeleteNormalize`] are provided for common combinations. The raw `u8`
-//! representation is used for serialization so that the wire format stays compact.
+//! `ProcessType` is the user-facing knob for the transformation pipeline: each
+//! bit selects one transformation step, and bits compose freely with `|`. Named
+//! aliases like [`ProcessType::DeleteNormalize`] are provided for common
+//! combinations. The raw `u8` representation is used for serialization so that
+//! the wire format stays compact.
 
-use std::fmt::Display;
+use std::fmt::{self, Display};
 
 use bitflags::bitflags;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -125,8 +126,8 @@ bitflags! {
 
 /// Compact serde serialization: writes the raw `u8` bitfield.
 ///
-/// This keeps the wire format tiny (one byte) regardless of which flags are set.
-/// Composite flags serialize as the bitwise OR of their components.
+/// This keeps the wire format tiny (one byte) regardless of which flags are
+/// set. Composite flags serialize as the bitwise OR of their components.
 ///
 /// # Examples
 ///
@@ -151,10 +152,11 @@ impl Serialize for ProcessType {
     }
 }
 
-/// Compact serde deserialization: reads a `u8` and validates that only known bits are set.
+/// Compact serde deserialization: reads a `u8` and validates that only known
+/// bits are set.
 ///
-/// Rejects values with undefined bits (bit 7) to prevent out-of-bounds indexing in
-/// downstream lookup tables that are sized for the 7-bit flag space.
+/// Rejects values with undefined bits (bit 7) to prevent out-of-bounds indexing
+/// in downstream lookup tables that are sized for the 7-bit flag space.
 ///
 /// # Examples
 ///
@@ -172,7 +174,8 @@ impl Serialize for ProcessType {
 /// assert!(result.is_err());
 /// ```
 impl<'de> Deserialize<'de> for ProcessType {
-    /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit combinations.
+    /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit
+    /// combinations.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -188,9 +191,9 @@ impl<'de> Deserialize<'de> for ProcessType {
 
 /// Human-readable formatting for [`ProcessType`] combinations.
 ///
-/// Active flag names are lowercased with underscores and joined with underscores.
-/// For example, `ProcessType::VariantNorm | ProcessType::Delete` formats as
-/// `"variant_norm_delete"`.
+/// Active flag names are lowercased with underscores and joined with
+/// underscores. For example, `ProcessType::VariantNorm | ProcessType::Delete`
+/// formats as `"variant_norm_delete"`.
 ///
 /// # Examples
 ///
@@ -212,8 +215,9 @@ impl<'de> Deserialize<'de> for ProcessType {
 impl Display for ProcessType {
     /// Formats active flag names as snake_case strings joined by underscores.
     ///
-    /// Empty flags produce an empty string; single flags produce just the snake_case name.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    /// Empty flags produce an empty string; single flags produce just the
+    /// snake_case name.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn to_snake(name: &str) -> &str {
             match name {
                 "VariantNorm" => "variant_norm",

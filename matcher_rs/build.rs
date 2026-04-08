@@ -1,37 +1,45 @@
-use std::collections::{HashMap, HashSet};
-use std::env;
-use std::fs::File;
-use std::io::{Result, Write};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    fs::File,
+    io::{Result, Write},
+};
 
 /// Build script for `matcher_rs`.
 ///
-/// Transforms raw text-map files in `process_map/` into pre-compiled binary structures
-/// embedded at compile time by `constants.rs`.
+/// Transforms raw text-map files in `process_map/` into pre-compiled binary
+/// structures embedded at compile time by `constants.rs`.
 ///
 /// ### Binary Generation Strategy:
-/// 1. **Normalize (Single-Codepoint Replacements)**:
-///    All entries in `NORM.txt` and `NUM-NORM.txt` are single-codepoint keys mapped to
-///    replacement strings. Compiled into a **2-Stage Page Table** (same layout as Romanize):
-///    - `L1`/`L2`: page-table mapping codepoints to packed `(offset << 8) | length`.
-///    - A **Concatenated String Buffer**: stores all replacement strings as a single UTF-8 block.
+/// 1. **Normalize (Single-Codepoint Replacements)**: All entries in `NORM.txt`
+///    and `NUM-NORM.txt` are single-codepoint keys mapped to replacement
+///    strings. Compiled into a **2-Stage Page Table** (same layout as
+///    Romanize):
+///    - `L1`/`L2`: page-table mapping codepoints to packed `(offset << 8) |
+///      length`.
+///    - A **Concatenated String Buffer**: stores all replacement strings as a
+///      single UTF-8 block.
 ///
-/// 2. **VariantNorm (CJK Variant Normalization)**:
-///    1-to-1 character mappings (Chinese Traditional→Simplified, Japanese Kyūjitai→Shinjitai,
-///    half-width katakana→full-width, Korean Hanja→Hangul). Compiled into a **2-Stage Page Table**.
+/// 2. **VariantNorm (CJK Variant Normalization)**: 1-to-1 character mappings
+///    (Chinese Traditional→Simplified, Japanese Kyūjitai→Shinjitai, half-width
+///    katakana→full-width, Korean Hanja→Hangul). Compiled into a **2-Stage Page
+///    Table**.
 ///    - `L1`: A page directory mapping character blocks to `L2` indices.
 ///    - `L2`: A data array containing the target character code points.
 ///
-/// 3. **Romanize & RomanizeChar**:
-///    Character-to-string mappings (Chinese Pinyin, Japanese kana Romaji, Korean RR) stored using:
-///    - A **Concatenated String Buffer**: Stores all romanization strings as a single UTF-8 block.
-///    - A **2-Stage Page Table**: Maps character code points to a packed `u32` containing
-///      both the `offset` into the string buffer and the `length` of the string.
-///      `RomanizeChar` trims boundary spaces after the table is decoded at runtime.
+/// 3. **Romanize & RomanizeChar**: Character-to-string mappings (Chinese
+///    Pinyin, Japanese kana Romaji, Korean RR) stored using:
+///    - A **Concatenated String Buffer**: Stores all romanization strings as a
+///      single UTF-8 block.
+///    - A **2-Stage Page Table**: Maps character code points to a packed `u32`
+///      containing both the `offset` into the string buffer and the `length` of
+///      the string. `RomanizeChar` trims boundary spaces after the table is
+///      decoded at runtime.
 ///
-/// 4. **Text Delete (BitSet)**:
-///    Delete-table codepoints are compiled into a **Global BitSet** (139 KB) covering the
-///    Unicode range U+0000 to U+10FFFF. Each bit represents whether a character should be
-///    discarded during processing.
+/// 4. **Text Delete (BitSet)**: Delete-table codepoints are compiled into a
+///    **Global BitSet** (139 KB) covering the Unicode range U+0000 to U+10FFFF.
+///    Each bit represents whether a character should be discarded during
+///    processing.
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=process_map");

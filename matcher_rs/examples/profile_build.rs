@@ -1,6 +1,7 @@
 //! Profiling target: SimpleMatcher::new() construction hot loop.
 //!
-//! Attach Instruments / perf to this binary for flame graphs of the build phase.
+//! Attach Instruments / perf to this binary for flame graphs of the build
+//! phase.
 //!
 //! ```sh
 //! # Default: 10K English literal rules, 10s
@@ -11,9 +12,12 @@
 //!     --dict cn --rules 50000 --pt variant_norm --seconds 15
 //! ```
 
-use std::collections::HashMap;
-use std::hint::black_box;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    env,
+    hint::black_box,
+    time::{Duration, Instant},
+};
 
 use matcher_rs::{ProcessType, SimpleMatcher};
 
@@ -56,15 +60,15 @@ fn parse_process_type(s: &str) -> ProcessType {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
 
-    let mut dict = std::env::var("DICT").unwrap_or_else(|_| "en".into());
-    let mut rules: usize = std::env::var("RULES")
+    let mut dict = env::var("DICT").unwrap_or_else(|_| "en".into());
+    let mut rules: usize = env::var("RULES")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(10_000);
-    let mut pt_str = std::env::var("PT").unwrap_or_else(|_| "none".into());
-    let mut seconds: u64 = std::env::var("SECONDS")
+    let mut pt_str = env::var("PT").unwrap_or_else(|_| "none".into());
+    let mut seconds: u64 = env::var("SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(10);

@@ -1,3 +1,5 @@
+use std::ptr;
+
 use jni::{
     Env, EnvUnowned,
     errors::{Error as JniError, Result as JniResult, ThrowRuntimeExAndDefault},
@@ -134,7 +136,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsSt
 ) -> jstring {
     env.with_env(|env| -> JniResult<_> {
         let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
-            return Ok(std::ptr::null_mut());
+            return Ok(ptr::null_mut());
         };
 
         let text = decode_text(env, text_bytes)?;
@@ -155,7 +157,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatc
 ) -> jbooleanArray {
     env.with_env(|env| -> JniResult<_> {
         let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
-            return Ok(std::ptr::null_mut());
+            return Ok(ptr::null_mut());
         };
 
         let texts = decode_texts(env, &texts_bytes)?;
@@ -179,7 +181,7 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProces
 ) -> jstring {
     env.with_env(|env| -> JniResult<_> {
         let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
-            return Ok(std::ptr::null_mut());
+            return Ok(ptr::null_mut());
         };
 
         let texts = decode_texts(env, &texts_bytes)?;

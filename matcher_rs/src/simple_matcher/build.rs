@@ -1,49 +1,55 @@
-//! Construction of [`super::SimpleMatcher`] — rule parsing, emitted-pattern deduplication,
-//! and matcher compilation.
+//! Construction of [`super::SimpleMatcher`] — rule parsing, emitted-pattern
+//! deduplication, and matcher compilation.
 //!
 //! The construction pipeline has three stages:
 //!
-//! 1. **Index table** ([`SimpleMatcher::build_pt_index_table`]) — assigns a compact
-//!    sequential index (0..N) to each distinct [`ProcessType`] present in the input.
+//! 1. **Index table** ([`SimpleMatcher::build_pt_index_table`]) — assigns a
+//!    compact sequential index (0..N) to each distinct [`ProcessType`] present
+//!    in the input.
 //!
-//! 2. **Rule parsing** ([`SimpleMatcher::parse_rules`]) — splits each rule string on
-//!    `&`/`~` operators, then splits each segment on `|` to extract OR alternatives,
-//!    counts repeated sub-patterns, determines bitmask-vs-matrix mode,
-//!    emits transformed sub-patterns via [`reduce_text_process_emit`], and deduplicates
-//!    them into a global pattern table with attached [`PatternEntry`] metadata.
+//! 2. **Rule parsing** ([`SimpleMatcher::parse_rules`]) — splits each rule
+//!    string on `&`/`~` operators, then splits each segment on `|` to extract
+//!    OR alternatives, counts repeated sub-patterns, determines
+//!    bitmask-vs-matrix mode, emits transformed sub-patterns via
+//!    [`reduce_text_process_emit`], and deduplicates them into a global pattern
+//!    table with attached [`PatternEntry`] metadata.
 //!
-//! 3. **Engine compilation** ([`ScanPlan::compile`]) — builds Aho-Corasick automata from
-//!    the deduplicated patterns and wires up the value map that connects automaton hits
-//!    back to rule entries.
+//! 3. **Engine compilation** ([`ScanPlan::compile`]) — builds Aho-Corasick
+//!    automata from the deduplicated patterns and wires up the value map that
+//!    connects automaton hits back to rule entries.
 //!
-//! The final [`SimpleMatcher`] stores three immutable pieces: the process-type tree
-//! for text transformation, the [`ScanPlan`] automata for pattern scanning, and the
-//! [`RuleSet`] for result production.
+//! The final [`SimpleMatcher`] stores three immutable pieces: the process-type
+//! tree for text transformation, the [`ScanPlan`] automata for pattern
+//! scanning, and the [`RuleSet`] for result production.
 
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 use ahash::AHashMap;
 
-use crate::process::graph::build_process_type_tree;
-use crate::process::{ProcessType, reduce_text_process_emit};
-
-use super::encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE};
-use super::engine::ScanPlan;
-use super::pattern::{PatternEntry, PatternKind};
-use super::rule::{RuleCold, RuleHot, RuleSet, RuleShape};
-use super::{SearchMode, SimpleMatcher};
+use super::{
+    SearchMode, SimpleMatcher,
+    encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
+    engine::ScanPlan,
+    pattern::{PatternEntry, PatternKind},
+    rule::{RuleCold, RuleHot, RuleSet, RuleShape},
+};
+use crate::process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit};
 
 /// Fully parsed matcher construction output before scan-engine compilation.
 ///
-/// This is the intermediate representation produced by [`SimpleMatcher::parse_rules`]
-/// and consumed by [`ScanPlan::compile`]. It owns the deduplicated pattern strings,
-/// their attached [`PatternEntry`] metadata, and the compiled [`RuleSet`].
+/// This is the intermediate representation produced by
+/// [`SimpleMatcher::parse_rules`] and consumed by [`ScanPlan::compile`]. It
+/// owns the deduplicated pattern strings, their attached [`PatternEntry`]
+/// metadata, and the compiled [`RuleSet`].
 pub(super) struct ParsedRules<'a> {
     /// Deduplicated emitted patterns in scan order.
     ///
-    /// Index `i` corresponds to `dedup_entries[i]`. Patterns may be borrowed from the
-    /// input table or owned when text transformation produced a new string.
+    /// Index `i` corresponds to `dedup_entries[i]`. Patterns may be borrowed
+    /// from the input table or owned when text transformation produced a
+    /// new string.
     pub(super) dedup_patterns: Vec<Cow<'a, str>>,
     /// Rule entries attached to each deduplicated pattern.
     ///
@@ -58,16 +64,18 @@ pub(super) struct ParsedRules<'a> {
 impl SimpleMatcher {
     /// Compiles the provided process-type rule table into a [`SimpleMatcher`].
     ///
-    /// Prefer [`crate::SimpleMatcherBuilder`] at call sites; this entry point exists mainly
-    /// for direct table construction and serde-driven use cases.
+    /// Prefer [`crate::SimpleMatcherBuilder`] at call sites; this entry point
+    /// exists mainly for direct table construction and serde-driven use
+    /// cases.
     ///
     /// # Construction flow
     ///
     /// 1. Build the compact process-type index table.
     /// 2. Parse all rules into deduplicated patterns and rule metadata.
-    /// 3. Build the process-type transformation tree and recompute masks using compact indices.
-    /// 4. Choose the search mode — `AllSimple` when the tree has no children and every
-    ///    pattern is simple; `General` otherwise.
+    /// 3. Build the process-type transformation tree and recompute masks using
+    ///    compact indices.
+    /// 4. Choose the search mode — `AllSimple` when the tree has no children
+    ///    and every pattern is simple; `General` otherwise.
     /// 5. Compile Aho-Corasick automata via the scan plan.
     /// 6. Assemble and return the immutable [`SimpleMatcher`].
     ///
@@ -75,20 +83,27 @@ impl SimpleMatcher {
     ///
     /// Returns [`MatcherError`](crate::MatcherError) if:
     ///
-    /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits set
-    ///   (bits 6–7 must be zero).
+    /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits
+    ///   set (bits 6–7 must be zero).
     /// - The underlying Aho-Corasick automaton construction (`daachorse` or
     ///   `aho-corasick`) fails internally.
     ///
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcher, SimpleTable, ProcessType};
     /// use std::collections::HashMap;
     ///
+    /// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
+    ///
     /// let mut table: SimpleTable = HashMap::new();
-    /// table.entry(ProcessType::None).or_default().insert(1, "hello");
-    /// table.entry(ProcessType::None).or_default().insert(2, "foo&bar");
+    /// table
+    ///     .entry(ProcessType::None)
+    ///     .or_default()
+    ///     .insert(1, "hello");
+    /// table
+    ///     .entry(ProcessType::None)
+    ///     .or_default()
+    ///     .insert(2, "foo&bar");
     ///
     /// let matcher = SimpleMatcher::new(&table).unwrap();
     /// assert!(matcher.is_match("hello world"));
@@ -133,12 +148,13 @@ impl SimpleMatcher {
 
     /// Assigns each used composite process type a compact sequential index.
     ///
-    /// The returned array is indexed by raw [`ProcessType::bits()`] and maps to a dense
-    /// `u8` index starting at 0. [`ProcessType::None`] always gets index 0. Unused
-    /// entries are set to `u8::MAX`.
+    /// The returned array is indexed by raw [`ProcessType::bits()`] and maps to
+    /// a dense `u8` index starting at 0. [`ProcessType::None`] always gets
+    /// index 0. Unused entries are set to `u8::MAX`.
     ///
-    /// These compact indices are stored in [`PatternEntry::pt_index`] and used to build
-    /// the `process_type_mask` bitmask in [`ScanContext`](super::state::ScanContext).
+    /// These compact indices are stored in [`PatternEntry::pt_index`] and used
+    /// to build the `process_type_mask` bitmask in
+    /// [`ScanContext`](super::state::ScanContext).
     fn build_pt_index_table(
         process_type_keys: impl Iterator<Item = ProcessType>,
     ) -> [u8; PROCESS_TYPE_TABLE_SIZE] {
@@ -159,32 +175,37 @@ impl SimpleMatcher {
         pt_index_table
     }
 
-    /// Parses the raw rule table into deduplicated emitted patterns and rule metadata.
+    /// Parses the raw rule table into deduplicated emitted patterns and rule
+    /// metadata.
     ///
-    /// This stage handles logical operators (`&`/`~`/`|`), repeated sub-pattern counts,
-    /// and the delete-adjusted emit behavior described in the design docs.
+    /// This stage handles logical operators (`&`/`~`/`|`), repeated sub-pattern
+    /// counts, and the delete-adjusted emit behavior described in the
+    /// design docs.
     ///
     /// # OR alternatives
     ///
-    /// Each segment (delimited by `&`/`~`) may contain `|`-separated alternatives.
-    /// All alternatives within a segment share the same offset and kind — any single
-    /// alternative matching satisfies that segment. `|` binds tighter than `&`/`~`,
-    /// so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f).
+    /// Each segment (delimited by `&`/`~`) may contain `|`-separated
+    /// alternatives. All alternatives within a segment share the same
+    /// offset and kind — any single alternative matching satisfies that
+    /// segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a
+    /// OR b) AND (c OR d) AND NOT (e OR f).
     ///
     /// # Delete-adjusted indexing
     ///
-    /// Each rule is indexed under `process_type - ProcessType::Delete` rather than the
-    /// full `ProcessType`. Delete-normalized text is what the automaton scans, so patterns
-    /// must NOT themselves be Delete-transformed before indexing — they are stored verbatim
-    /// and matched against the already-deleted text variants. The sub-patterns are then
-    /// emitted through [`reduce_text_process_emit`] which applies only the non-Delete
-    /// portion of the transformation (VariantNorm, Normalize, Romanize, etc.).
+    /// Each rule is indexed under `process_type - ProcessType::Delete` rather
+    /// than the full `ProcessType`. Delete-normalized text is what the
+    /// automaton scans, so patterns must NOT themselves be
+    /// Delete-transformed before indexing — they are stored verbatim
+    /// and matched against the already-deleted text variants. The sub-patterns
+    /// are then emitted through [`reduce_text_process_emit`] which applies
+    /// only the non-Delete portion of the transformation (VariantNorm,
+    /// Normalize, Romanize, etc.).
     ///
     /// # Deduplication
     ///
-    /// Identical emitted pattern strings (after transformation) are assigned a single
-    /// automaton slot. Multiple [`PatternEntry`] values referencing different rules are
-    /// collected in the same bucket of `dedup_entries`.
+    /// Identical emitted pattern strings (after transformation) are assigned a
+    /// single automaton slot. Multiple [`PatternEntry`] values referencing
+    /// different rules are collected in the same bucket of `dedup_entries`.
     fn parse_rules<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
         pt_index_table: &[u8; PROCESS_TYPE_TABLE_SIZE],
@@ -397,8 +418,7 @@ fn parse_boundary_markers(s: &str) -> (u8, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::pattern::PatternKind;
-    use super::*;
+    use super::{super::pattern::PatternKind, *};
     use crate::process::ProcessType;
 
     fn single_rule_table(
@@ -543,7 +563,8 @@ mod tests {
 
         // 3 dedup patterns: "a", "b", "c"
         assert_eq!(parsed.dedup_patterns.len(), 3);
-        // "a" and "b" share offset 0; "c" has offset 1 (or vice versa depending on HashMap order)
+        // "a" and "b" share offset 0; "c" has offset 1 (or vice versa depending on
+        // HashMap order)
         let all_entries: Vec<_> = parsed
             .dedup_entries
             .iter()

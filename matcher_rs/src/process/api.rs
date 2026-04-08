@@ -1,19 +1,22 @@
 //! Public processing helpers built on top of the step registry.
 //!
-//! These are the standalone entry points for the transformation pipeline. They decompose
-//! a composite [`ProcessType`] into single-bit steps, apply each in order via the global
-//! [`super::step`] registry, and return the results as borrowed or owned [`Cow<str>`] values.
+//! These are the standalone entry points for the transformation pipeline. They
+//! decompose a composite [`ProcessType`] into single-bit steps, apply each in
+//! order via the global [`super::step`] registry, and return the results as
+//! borrowed or owned [`Cow<str>`] values.
 
 use std::borrow::Cow;
 
-use crate::process::process_type::ProcessType;
-use crate::process::step::get_transform_step;
-use crate::process::string_pool::return_string_to_pool;
+use crate::process::{
+    process_type::ProcessType, step::get_transform_step, string_pool::return_string_to_pool,
+};
 
-/// Replaces the current owned value in a [`Cow`] and returns the old allocation to the pool.
+/// Replaces the current owned value in a [`Cow`] and returns the old allocation
+/// to the pool.
 ///
-/// Borrowed values are replaced without any pool interaction. Owned values are swapped out
-/// and recycled so chained transformations do not leak short-lived buffers.
+/// Borrowed values are replaced without any pool interaction. Owned values are
+/// swapped out and recycled so chained transformations do not leak short-lived
+/// buffers.
 #[inline(always)]
 fn replace_cow<'a>(current: &mut Cow<'a, str>, next: String) {
     if let Cow::Owned(old) = std::mem::replace(current, Cow::Owned(next)) {
@@ -23,10 +26,10 @@ fn replace_cow<'a>(current: &mut Cow<'a, str>, next: String) {
 
 /// Shared implementation for the public reduction helpers.
 ///
-/// When `overwrite_replace` is `false`, every changed step appends a new entry. When it is
-/// `true`, replace-style steps overwrite the last entry in place while `Delete` still appends,
-/// preserving the emitted-variant semantics used by matcher construction.
-///
+/// When `overwrite_replace` is `false`, every changed step appends a new entry.
+/// When it is `true`, replace-style steps overwrite the last entry in place
+/// while `Delete` still appends, preserving the emitted-variant semantics used
+/// by matcher construction.
 fn reduce_text_process_inner<'a>(
     process_type: ProcessType,
     text: &'a str,
@@ -54,12 +57,14 @@ fn reduce_text_process_inner<'a>(
     text_list
 }
 
-/// Applies a composite [`ProcessType`] pipeline to `text` and returns the final result.
+/// Applies a composite [`ProcessType`] pipeline to `text` and returns the final
+/// result.
 ///
-/// Steps run in [`ProcessType::iter`] order (ascending bit position). If no step changes
-/// the text, the return value borrows directly from `text` (zero allocation). When one or
-/// more steps produce changes, intermediate allocations are recycled through the
-/// thread-local string pool so only the final result is returned as `Cow::Owned`.
+/// Steps run in [`ProcessType::iter`] order (ascending bit position). If no
+/// step changes the text, the return value borrows directly from `text` (zero
+/// allocation). When one or more steps produce changes, intermediate
+/// allocations are recycled through the thread-local string pool so only the
+/// final result is returned as `Cow::Owned`.
 ///
 /// This function is best for one-shot use.
 ///
@@ -92,15 +97,16 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     result
 }
 
-/// Applies a composite [`ProcessType`] pipeline to `text`, recording every intermediate change.
+/// Applies a composite [`ProcessType`] pipeline to `text`, recording every
+/// intermediate change.
 ///
-/// Returns a `Vec` whose first element is always the original `text` (borrowed). Each
-/// subsequent element is the output of a step that actually changed the text; steps that
-/// leave the text unchanged are skipped. The final element is therefore the fully
-/// transformed result.
+/// Returns a `Vec` whose first element is always the original `text`
+/// (borrowed). Each subsequent element is the output of a step that actually
+/// changed the text; steps that leave the text unchanged are skipped. The final
+/// element is therefore the fully transformed result.
 ///
-/// This is useful for inspecting how each stage transforms the input, or for collecting
-/// all intermediate forms that should be indexed.
+/// This is useful for inspecting how each stage transforms the input, or for
+/// collecting all intermediate forms that should be indexed.
 ///
 /// # Examples
 ///
@@ -121,15 +127,16 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 
 /// Like [`reduce_text_process`], but merges replace-type steps in-place.
 ///
-/// This variant is used during matcher construction to keep only the strings that the
-/// Aho-Corasick automaton will actually scan at match time. Replace-style steps
-/// (VariantNorm, Normalize, Romanize, RomanizeChar) overwrite the last entry rather than
-/// appending, because the pre-replacement form is never scanned separately. Delete steps
-/// still append because deletion changes which character sequences are adjacent, affecting
-/// which patterns can match.
+/// This variant is used during matcher construction to keep only the strings
+/// that the Aho-Corasick automaton will actually scan at match time.
+/// Replace-style steps (VariantNorm, Normalize, Romanize, RomanizeChar)
+/// overwrite the last entry rather than appending, because the pre-replacement
+/// form is never scanned separately. Delete steps still append because deletion
+/// changes which character sequences are adjacent, affecting which patterns can
+/// match.
 ///
-/// The result therefore contains fewer entries than [`reduce_text_process`]: one entry per
-/// "scan boundary" rather than one per transformation step.
+/// The result therefore contains fewer entries than [`reduce_text_process`]:
+/// one entry per "scan boundary" rather than one per transformation step.
 ///
 /// # Examples
 ///
@@ -141,8 +148,8 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// // Only two entries: VariantNorm overwrites the original, then Delete appends.
 /// // The Normalize step overwrites the Delete entry in-place.
 /// assert_eq!(variants.len(), 2);
-/// assert_eq!(variants[0], "~测~Ａ~");  // after VariantNorm (replace, overwrites original)
-/// assert_eq!(variants[1], "测a");       // after Delete+Normalize
+/// assert_eq!(variants[0], "~测~Ａ~"); // after VariantNorm (replace, overwrites original)
+/// assert_eq!(variants[1], "测a"); // after Delete+Normalize
 /// ```
 #[inline(always)]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {

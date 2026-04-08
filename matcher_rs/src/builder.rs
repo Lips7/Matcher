@@ -1,23 +1,24 @@
 //! Fluent builder API for constructing a [`crate::SimpleMatcher`].
 //!
-//! [`SimpleMatcherBuilder`] accumulates patterns grouped by [`crate::ProcessType`] pipeline
-//! and compiles them into an optimized automaton in one shot via [`SimpleMatcherBuilder::build`].
+//! [`SimpleMatcherBuilder`] accumulates patterns grouped by
+//! [`crate::ProcessType`] pipeline and compiles them into an optimized
+//! automaton in one shot via [`SimpleMatcherBuilder::build`].
 
-use std::borrow::Cow;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use crate::{MatcherError, ProcessType, SimpleMatcher};
 
 /// Builder for constructing a [`SimpleMatcher`].
 ///
-/// Accumulates word patterns grouped by their [`ProcessType`] processing pipeline,
-/// then compiles everything into an optimized automaton in a single shot via [`build`](Self::build).
-/// Prefer this over calling [`SimpleMatcher::new`] directly.
+/// Accumulates word patterns grouped by their [`ProcessType`] processing
+/// pipeline, then compiles everything into an optimized automaton in a single
+/// shot via [`build`](Self::build). Prefer this over calling
+/// [`SimpleMatcher::new`] directly.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+/// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 ///
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "hello")
@@ -32,7 +33,7 @@ use crate::{MatcherError, ProcessType, SimpleMatcher};
 /// Owned strings work without keeping the originals alive:
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+/// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 ///
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, String::from("hello"))
@@ -69,18 +70,20 @@ impl<'a> SimpleMatcherBuilder<'a> {
 
     /// Registers a word pattern under the given [`ProcessType`] and ID.
     ///
-    /// `process_type` controls which normalization steps are applied to the input
-    /// text before this pattern is evaluated. `word_id` is the identifier returned
-    /// in [`SimpleResult`](crate::SimpleResult) when the pattern matches. `word`
-    /// supports logical operators:
+    /// `process_type` controls which normalization steps are applied to the
+    /// input text before this pattern is evaluated. `word_id` is the
+    /// identifier returned in [`SimpleResult`](crate::SimpleResult) when
+    /// the pattern matches. `word` supports logical operators:
     ///
     /// - `&` — AND: both adjacent sub-patterns must appear (order-independent).
-    /// - `~` — NOT: the following sub-pattern must be absent for the rule to fire.
+    /// - `~` — NOT: the following sub-pattern must be absent for the rule to
+    ///   fire.
     ///
-    /// `process_type` may be a composite flag. For example, `ProcessType::None |
-    /// ProcessType::Delete` means the rule can match against both the raw input
-    /// and the delete-normalized variant. If the same `(process_type, word_id)` is
-    /// inserted multiple times, the most recent `word` replaces the previous one.
+    /// `process_type` may be a composite flag. For example, `ProcessType::None
+    /// | ProcessType::Delete` means the rule can match against both the raw
+    /// input and the delete-normalized variant. If the same `(process_type,
+    /// word_id)` is inserted multiple times, the most recent `word`
+    /// replaces the previous one.
     ///
     /// Returns `self` for chaining.
     ///
@@ -89,7 +92,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// Logical operators:
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// // AND: both "apple" and "pie" must appear
     /// let matcher = SimpleMatcherBuilder::new()
@@ -122,7 +125,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// Composite [`ProcessType`] for matching across raw and transformed text:
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     // Match against both raw input and VariantNorm-converted text
@@ -152,8 +155,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// Consumes the builder and compiles the [`SimpleMatcher`].
     ///
     /// Parsing logical operators, deduplicating sub-patterns, and building the
-    /// Aho-Corasick automaton all happen here. This is the most expensive call in
-    /// the API — it should be done once at startup, and the resulting
+    /// Aho-Corasick automaton all happen here. This is the most expensive call
+    /// in the API — it should be done once at startup, and the resulting
     /// [`SimpleMatcher`] reused for the lifetime of the application.
     ///
     /// # Errors
@@ -164,7 +167,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")

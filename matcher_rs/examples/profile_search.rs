@@ -1,6 +1,7 @@
 //! Profiling target: SimpleMatcher search hot loop with predefined scenes.
 //!
-//! Attach Instruments / perf to this binary for flame graphs of the search phase.
+//! Attach Instruments / perf to this binary for flame graphs of the search
+//! phase.
 //!
 //! ```sh
 //! # List available scenes:
@@ -20,9 +21,14 @@
 //!     --dict en --rules 10000 --mode process --shape literal --pt none --seconds 30
 //! ```
 
-use std::collections::HashMap;
-use std::hint::black_box;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    env,
+    hint::black_box,
+    process,
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleResult};
 
@@ -31,7 +37,8 @@ const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
 const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
 const EN_HAYSTACK: &str = include_str!("../../data/text/en/sherlock.txt");
 
-// ── Scene registry ─────────────────────────────────────────────────────────────
+// ── Scene registry
+// ─────────────────────────────────────────────────────────────
 
 struct Scene {
     name: &'static str,
@@ -157,7 +164,8 @@ const SCENES: &[Scene] = &[
     },
 ];
 
-// ── Helpers ─────────────────────────────────────────────────────────────────────
+// ── Helpers
+// ─────────────────────────────────────────────────────────────────────
 
 fn parse_process_type(s: &str) -> ProcessType {
     match s {
@@ -250,7 +258,8 @@ fn build_rule_map(lang: &str, size: usize, shape: &str) -> HashMap<u32, String> 
     map
 }
 
-// ── Scene execution ─────────────────────────────────────────────────────────────
+// ── Scene execution
+// ─────────────────────────────────────────────────────────────
 
 fn run_scene(
     name: &str,
@@ -344,18 +353,18 @@ fn print_list() {
 }
 
 fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
+    env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-fn parse_env<T: std::str::FromStr>(key: &str, default: T) -> T {
-    std::env::var(key)
+fn parse_env<T: FromStr>(key: &str, default: T) -> T {
+    env::var(key)
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
     if args.iter().any(|a| a == "--list") {
         print_list();
@@ -386,7 +395,7 @@ fn main() {
                     SCENES.iter().find(|s| s.name == name).unwrap_or_else(|| {
                         eprintln!("Unknown scene: {name}");
                         print_list();
-                        std::process::exit(1);
+                        process::exit(1);
                     })
                 })
                 .collect()
@@ -437,7 +446,7 @@ fn main() {
             .unwrap_or_else(|| env_or(env_key, default))
     };
 
-    if has_custom_flags || std::env::var("DICT").is_ok() || std::env::var("MODE").is_ok() {
+    if has_custom_flags || env::var("DICT").is_ok() || env::var("MODE").is_ok() {
         let dict = get_flag("--dict", "DICT", "en");
         let rules: usize = get_flag("--rules", "RULES", "10000")
             .parse()

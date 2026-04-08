@@ -1,14 +1,14 @@
 #[path = "common/mod.rs"]
 mod common;
 
+use std::hint::black_box;
+
 use common::{
     CN_HAYSTACK, DEFAULT_RULE_COUNT, EN_HAYSTACK, RULE_COUNTS, build_mixed_script_map,
     build_shaped_map, wrap_table,
 };
-use divan::Bencher;
-use divan::counter::BytesCount;
+use divan::{Bencher, counter::BytesCount};
 use matcher_rs::{ProcessType, SimpleMatcher};
-use std::hint::black_box;
 
 // Question: How do rule shape and mixed-script patterns affect throughput?
 

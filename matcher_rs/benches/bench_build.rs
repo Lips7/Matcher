@@ -1,15 +1,17 @@
 #[path = "common/mod.rs"]
 mod common;
 
+use std::hint::black_box;
+
 use common::{
     BUILD_PROCESS_TYPES, DEFAULT_RULE_COUNT, RULE_COUNTS, build_literal_map,
     build_multi_process_table, wrap_table,
 };
 use divan::Bencher;
 use matcher_rs::{ProcessType, SimpleMatcher};
-use std::hint::black_box;
 
-// Question: How fast is SimpleMatcher::new(), and what drives construction cost?
+// Question: How fast is SimpleMatcher::new(), and what drives construction
+// cost?
 
 mod build {
     use super::*;

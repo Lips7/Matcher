@@ -1,15 +1,16 @@
 #[path = "common/mod.rs"]
 mod common;
 
+use std::hint::black_box;
+
 use common::{
     DEFAULT_RULE_COUNT, EN_HAYSTACK, build_literal_map, build_multi_process_table, wrap_table,
 };
-use divan::Bencher;
-use divan::counter::BytesCount;
+use divan::{Bencher, counter::BytesCount};
 use matcher_rs::{ProcessType, SimpleMatcher};
-use std::hint::black_box;
 
-// ── Search Mode ────────────────────────────────────────────────────────────────
+// ── Search Mode
+// ────────────────────────────────────────────────────────────────
 // Question: How do the two SearchMode fast paths compare in throughput?
 //
 // AllSimple: PT=None, all literals  (bypasses state tracking entirely)
@@ -81,8 +82,9 @@ mod search_mode {
     }
 }
 
-// ── Match vs No-Match ──────────────────────────────────────────────────────────
-// Question: What's the throughput difference when patterns match vs. don't match?
+// ── Match vs No-Match
+// ────────────────────────────────────────────────────────── Question: What's
+// the throughput difference when patterns match vs. don't match?
 
 mod match_vs_nomatch {
     use super::*;

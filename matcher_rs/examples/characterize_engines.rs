@@ -1,5 +1,6 @@
-//! Engine dispatch characterization: sweeps the full (engine × size × pat_cjk × text_cjk)
-//! matrix and outputs CSV to stdout. Attach a visualization script for heatmaps.
+//! Engine dispatch characterization: sweeps the full (engine × size × pat_cjk ×
+//! text_cjk) matrix and outputs CSV to stdout. Attach a visualization script
+//! for heatmaps.
 //!
 //! ```sh
 //! cargo run --profile bench --example characterize_engines -p matcher_rs > dispatch.csv
@@ -14,9 +15,7 @@
 //!   ITERS=5
 //!   TEXT_BYTES=200000
 
-use std::collections::HashSet;
-use std::hint::black_box;
-use std::time::Instant;
+use std::{collections::HashSet, env, hint::black_box, str::FromStr, time::Instant};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use daachorse::{
@@ -186,9 +185,9 @@ fn synthetic_text(cjk_pct: u8, target_bytes: usize) -> String {
 
 fn parse_list_env<T>(key: &str, defaults: &[T]) -> Vec<T>
 where
-    T: std::str::FromStr + Clone,
+    T: FromStr + Clone,
 {
-    match std::env::var(key) {
+    match env::var(key) {
         Ok(val) => val
             .split(',')
             .filter_map(|s| s.trim().parse().ok())
@@ -203,7 +202,7 @@ fn parse_engine_env() -> Vec<EngineKind> {
         EngineKind::DaacBytewise,
         EngineKind::DaacCharwise,
     ];
-    match std::env::var("ENGINES") {
+    match env::var("ENGINES") {
         Ok(val) => val
             .split(',')
             .filter_map(|s| EngineKind::from_name(s.trim()))
@@ -213,7 +212,7 @@ fn parse_engine_env() -> Vec<EngineKind> {
 }
 
 fn parse_mode_env() -> Vec<String> {
-    match std::env::var("MODES") {
+    match env::var("MODES") {
         Ok(val) => val.split(',').map(|s| s.trim().to_string()).collect(),
         Err(_) => vec!["search".to_string(), "is_match".to_string()],
     }
@@ -258,11 +257,11 @@ fn main() {
     let text_cjks: Vec<u8> =
         parse_list_env("TEXT_CJK", &[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
     let modes = parse_mode_env();
-    let iters: usize = std::env::var("ITERS")
+    let iters: usize = env::var("ITERS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5);
-    let text_bytes: usize = std::env::var("TEXT_BYTES")
+    let text_bytes: usize = env::var("TEXT_BYTES")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(200_000);

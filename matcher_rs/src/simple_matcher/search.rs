@@ -1,54 +1,58 @@
 //! Hot-path scan and rule evaluation for [`super::SimpleMatcher`].
 //!
-//! This module implements the runtime half of the two-pass matching pipeline. Given a
-//! compiled [`SimpleMatcher`], it:
+//! This module implements the runtime half of the two-pass matching pipeline.
+//! Given a compiled [`SimpleMatcher`], it:
 //!
 //! 1. Obtains a `&mut` reference to the thread-local [`SIMPLE_MATCH_STATE`].
-//! 2. Walks the process-type tree, transforming and scanning each variant immediately.
+//! 2. Walks the process-type tree, transforming and scanning each variant
+//!    immediately.
 //! 3. Dispatches each raw match value into the rule state machine
 //!    ([`RuleSet::process_entry`](super::rule::RuleSet::process_entry)).
-//! 4. Collects or checks results depending on the caller (`is_match` vs `process`).
+//! 4. Collects or checks results depending on the caller (`is_match` vs
+//!    `process`).
 //!
 //! # Fast paths
 //!
-//! - **`is_match_simple`** — all rules are single-literal, no transforms. Delegates
-//!   directly to the automaton's `is_match`.
-//! - **`process_simple`** — all-simple matchers collecting results. Each hit is a
-//!   completed rule; no need for the full state machine.
+//! - **`is_match_simple`** — all rules are single-literal, no transforms.
+//!   Delegates directly to the automaton's `is_match`.
+//! - **`process_simple`** — all-simple matchers collecting results. Each hit is
+//!   a completed rule; no need for the full state machine.
 //!
 //! # Unified tree walk
 //!
-//! The general path uses [`walk_and_scan`](SimpleMatcher::walk_and_scan), which walks the
-//! process-type trie once, scanning each variant as soon as it is produced. Leaf nodes
-//! that are no-ops on ASCII input reuse the parent text; otherwise they materialize via
-//! `TransformStep::apply`. Non-leaf nodes materialize their output for children. An
-//! `exit_early` flag controls whether the walk stops on the first satisfied rule
-//! (`is_match`) or exhausts all variants (`process`).
+//! The general path uses [`walk_and_scan`](SimpleMatcher::walk_and_scan), which
+//! walks the process-type trie once, scanning each variant as soon as it is
+//! produced. Leaf nodes that are no-ops on ASCII input reuse the parent text;
+//! otherwise they materialize via `TransformStep::apply`. Non-leaf nodes
+//! materialize their output for children. An `exit_early` flag controls whether
+//! the walk stops on the first satisfied rule (`is_match`) or exhausts all
+//! variants (`process`).
 //!
 //! # Safety
 //!
 //! All functions in this module obtain `&mut SimpleMatchState` from
-//! [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`. This is safe because the static is
-//! `#[thread_local]` (no cross-thread sharing) and the functions are not re-entrant.
-//! See [`SIMPLE_MATCH_STATE`] for the full safety argument.
+//! [`SIMPLE_MATCH_STATE`] via `UnsafeCell::get()`. This is safe because the
+//! static is `#[thread_local]` (no cross-thread sharing) and the functions are
+//! not re-entrant. See [`SIMPLE_MATCH_STATE`] for the full safety argument.
 
 use std::borrow::Cow;
 
 use tinyvec::TinyVec;
 
-use crate::process::graph::ProcessTypeBitNode;
-use crate::process::step::TransformStep;
-use crate::process::string_pool::return_string_to_pool;
-
-use super::build::{BOUNDARY_LEFT, BOUNDARY_RIGHT};
-use super::encoding::{
-    DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_PT_MASK, DIRECT_PT_SHIFT, DIRECT_RULE_BIT,
-    DIRECT_RULE_MASK,
+use super::{
+    SimpleMatcher, SimpleResult,
+    build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
+    encoding::{
+        DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_PT_MASK, DIRECT_PT_SHIFT,
+        DIRECT_RULE_BIT, DIRECT_RULE_MASK,
+    },
+    engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
+    pattern::PatternDispatch,
+    state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
 };
-use super::engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density};
-use super::pattern::PatternDispatch;
-use super::state::{SIMPLE_MATCH_STATE, ScanContext, ScanState};
-use super::{SimpleMatcher, SimpleResult};
+use crate::process::{
+    graph::ProcessTypeBitNode, step::TransformStep, string_pool::return_string_to_pool,
+};
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -101,16 +105,19 @@ fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool
 
 /// Recursively folds no-op children's `pt_index_mask` into the parent's mask.
 ///
-/// When the parent text is pure ASCII, certain transforms (VariantNorm, Romanize,
-/// RomanizeChar, EmojiNorm) are guaranteed no-ops — the child's text is identical
-/// to the parent's. Scanning that text again with a different mask wastes an entire
-/// DFA traversal. By folding the child's mask into the parent's scan, we eliminate
-/// redundant scans while preserving correctness:
+/// When the parent text is pure ASCII, certain transforms (VariantNorm,
+/// Romanize, RomanizeChar, EmojiNorm) are guaranteed no-ops — the child's text
+/// is identical to the parent's. Scanning that text again with a different mask
+/// wastes an entire DFA traversal. By folding the child's mask into the
+/// parent's scan, we eliminate redundant scans while preserving correctness:
 ///
-/// - Each `PatternEntry` has a fixed `pt_index` → hits pass exactly one mask branch.
+/// - Each `PatternEntry` has a fixed `pt_index` → hits pass exactly one mask
+///   branch.
 /// - `mark_positive` / `satisfied_mask |= bit` are idempotent (bitmask path).
-/// - Matrix path uses the same `text_index` (parent_vi) → same column, same counters.
-/// - The AC engine reports each position exactly once per scan → no double-counting.
+/// - Matrix path uses the same `text_index` (parent_vi) → same column, same
+///   counters.
+/// - The AC engine reports each position exactly once per scan → no
+///   double-counting.
 fn fold_noop_children_masks(
     tree: &[ProcessTypeBitNode],
     node_idx: usize,
@@ -153,7 +160,8 @@ impl SimpleMatcher {
         matched
     }
 
-    /// Collects matches for an all-simple matcher without building transformed variants.
+    /// Collects matches for an all-simple matcher without building transformed
+    /// variants.
     pub(super) fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
@@ -171,7 +179,8 @@ impl SimpleMatcher {
             });
     }
 
-    /// Scans one processed text variant and forwards each raw hit into rule evaluation.
+    /// Scans one processed text variant and forwards each raw hit into rule
+    /// evaluation.
     #[inline(always)]
     fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         let text_bytes = processed_text.as_bytes();
@@ -230,7 +239,8 @@ impl SimpleMatcher {
         }
     }
 
-    /// Unified tree walk that transforms, scans, and evaluates rules in a single pass.
+    /// Unified tree walk that transforms, scans, and evaluates rules in a
+    /// single pass.
     ///
     /// # Panics
     ///
@@ -341,9 +351,9 @@ impl SimpleMatcher {
 
                         // Fused transform-scan dispatch:
                         //
-                        // - DFA available + low density: skip fused, fall through to
-                        //   materialize path — DFA+Teddy is 2–5× faster than DAAC
-                        //   bytewise streaming on ASCII-heavy text.
+                        // - DFA available + low density: skip fused, fall through to materialize
+                        //   path — DFA+Teddy is 2–5× faster than DAAC bytewise streaming on
+                        //   ASCII-heavy text.
                         // - No DFA + low density: stream via DAAC bytewise.
                         // - High density: stream via DAAC charwise.
                         //

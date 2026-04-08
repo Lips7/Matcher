@@ -44,8 +44,9 @@ fn test_search_mode_general() {
 
 #[test]
 fn test_direct_rule_bit_fast_path() {
-    // Mixed: same sub-pattern "hello" used in both a simple rule and a compound rule.
-    // This forces Entries dispatch instead of DirectRule for the shared pattern.
+    // Mixed: same sub-pattern "hello" used in both a simple rule and a compound
+    // rule. This forces Entries dispatch instead of DirectRule for the shared
+    // pattern.
     let mixed = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "hello&world")
@@ -275,7 +276,8 @@ fn test_and_count_one_not_matrix() {
 
 #[test]
 fn test_delete_adjusted_pattern_indexing() {
-    // Pattern "ab" under Delete: stored verbatim in AC, text is delete-stripped before scan.
+    // Pattern "ab" under Delete: stored verbatim in AC, text is delete-stripped
+    // before scan.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Delete, 1, "ab")
         .build()
@@ -290,7 +292,8 @@ fn test_delete_adjusted_pattern_indexing() {
 
 #[test]
 fn test_variant_norm_delete_pattern_indexing() {
-    // VariantNorm|Delete: pattern is VariantNorm-emitted (测试), text gets both VariantNorm + Delete.
+    // VariantNorm|Delete: pattern is VariantNorm-emitted (测试), text gets both
+    // VariantNorm + Delete.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::VariantNorm | ProcessType::Delete, 1, "测试")
         .build()
@@ -353,7 +356,8 @@ fn test_mixed_ascii_and_cjk_rules_on_non_ascii_text() {
 #[test]
 fn test_compile_both_ascii_and_non_ascii_engines() {
     // 150 ASCII + 150 CJK patterns forces the (has_ascii=true, has_non_ascii=true)
-    // branch in compile_automata, which uses thread::scope for parallel construction.
+    // branch in compile_automata, which uses thread::scope for parallel
+    // construction.
     let ascii_words: Vec<String> = (0..150u32).map(|i| format!("ascii{i:03}")).collect();
     let cjk_words: Vec<String> = (0..150u32).map(|i| format!("测试{i:03}")).collect();
     let mut builder = SimpleMatcherBuilder::new();
@@ -382,9 +386,10 @@ fn test_compile_both_ascii_and_non_ascii_engines() {
 
 #[test]
 fn test_dfa_streaming_via_variant_norm() {
-    // ASCII patterns under VariantNorm: on ASCII text the VariantNorm leaf is a no-op,
-    // but the streaming codepath in BytewiseMatcher::for_each_match_value_from_iter
-    // is exercised because the tree walk visits the VariantNorm leaf with an iterator.
+    // ASCII patterns under VariantNorm: on ASCII text the VariantNorm leaf is a
+    // no-op, but the streaming codepath in
+    // BytewiseMatcher::for_each_match_value_from_iter is exercised because the
+    // tree walk visits the VariantNorm leaf with an iterator.
     let words: Vec<String> = (0..100u32).map(|i| format!("word{i:03}")).collect();
     let mut builder = SimpleMatcherBuilder::new();
     for (i, word) in words.iter().enumerate() {
@@ -493,8 +498,8 @@ fn test_density_dispatch_boundary() {
     assert!(ids.contains(&1), "low density: needle found");
     assert!(ids.contains(&2), "low density: 针 found");
 
-    // ~80% non-ASCII density (charwise path): mostly CJK with the ASCII needle embedded
-    // Each CJK char is 3 bytes, so 20 CJK chars = 60 non-ASCII bytes
+    // ~80% non-ASCII density (charwise path): mostly CJK with the ASCII needle
+    // embedded Each CJK char is 3 bytes, so 20 CJK chars = 60 non-ASCII bytes
     // "needle" = 6 ASCII bytes, total ~66 bytes, density = 60/66 ≈ 0.91
     let high_density = format!("{}needle{}", "你好世界测试国语中文", "你好世界测试国语中文");
     assert!(

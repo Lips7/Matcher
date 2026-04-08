@@ -6,21 +6,22 @@
 //!
 //! The [`DeleteMatcher::delete`] method scans the input in two phases:
 //!
-//! 1. **Seek phase** -- Finds the first deletable codepoint in the text,
-//!    using [`skip_ascii_non_delete_simd`] to quickly advance past long runs
-//!    of non-deletable ASCII bytes.
-//! 2. **Copy-skip phase** -- After the first hit, continues scanning and
-//!    copies non-deleted spans into a pooled output `String`, skipping
-//!    deleted codepoints.
+//! 1. **Seek phase** -- Finds the first deletable codepoint in the text, using
+//!    [`skip_ascii_non_delete_simd`] to quickly advance past long runs of
+//!    non-deletable ASCII bytes.
+//! 2. **Copy-skip phase** -- After the first hit, continues scanning and copies
+//!    non-deleted spans into a pooled output `String`, skipping deleted
+//!    codepoints.
 //!
 //! Returns `None` when no codepoint was deleted, allowing callers to keep
 //! borrowing the original `&str` without allocation.
 
 use std::borrow::Cow;
 
-use crate::process::string_pool::get_string_from_pool;
-use crate::process::transform::simd::skip_ascii_non_delete_simd;
-use crate::process::transform::utf8::decode_utf8_raw;
+use crate::process::{
+    string_pool::get_string_from_pool,
+    transform::{simd::skip_ascii_non_delete_simd, utf8::decode_utf8_raw},
+};
 
 /// Bitset-backed matcher for the delete transform.
 ///
@@ -36,8 +37,8 @@ use crate::process::transform::utf8::decode_utf8_raw;
 /// - **O(1) per codepoint** via flat bitset lookup.
 /// - **SIMD ASCII skip**: [`skip_ascii_non_delete_simd`] advances past runs of
 ///   non-deletable ASCII bytes in bulk (16–32 bytes per iteration).
-/// - **Two-phase scan**: first seeks to a deletable byte, then copies non-deleted
-///   spans in bulk — zero allocation when no deletions are found.
+/// - **Two-phase scan**: first seeks to a deletable byte, then copies
+///   non-deleted spans in bulk — zero allocation when no deletions are found.
 #[derive(Clone)]
 pub(crate) struct DeleteMatcher {
     bitset: Cow<'static, [u8]>,
@@ -49,19 +50,20 @@ pub(crate) struct DeleteMatcher {
 impl DeleteMatcher {
     /// Removes every configured codepoint from `text`.
     ///
-    /// Returns `Some((result, is_ascii))` where `result` is the text with all deletable
-    /// codepoints stripped, and `is_ascii` indicates whether the result is pure ASCII,
-    /// tracked incrementally (if no non-ASCII char was kept, `is_ascii` is `true`).
-    /// Returns `None` when nothing was deleted, allowing callers to keep borrowing the
-    /// original `&str`.
+    /// Returns `Some((result, is_ascii))` where `result` is the text with all
+    /// deletable codepoints stripped, and `is_ascii` indicates whether the
+    /// result is pure ASCII, tracked incrementally (if no non-ASCII char
+    /// was kept, `is_ascii` is `true`). Returns `None` when nothing was
+    /// deleted, allowing callers to keep borrowing the original `&str`.
     ///
     /// # Algorithm
     ///
     /// 1. **Seek phase**: Scans forward, using [`skip_ascii_non_delete_simd`]
-    ///    for fast ASCII skipping, until the first deletable codepoint is found.
-    ///    Returns `None` immediately if the entire text is clean.
-    /// 2. **Build phase**: Allocates a pooled `String`, copies the clean prefix,
-    ///    skips the first deleted codepoint, then enters the copy-skip loop.
+    ///    for fast ASCII skipping, until the first deletable codepoint is
+    ///    found. Returns `None` immediately if the entire text is clean.
+    /// 2. **Build phase**: Allocates a pooled `String`, copies the clean
+    ///    prefix, skips the first deleted codepoint, then enters the copy-skip
+    ///    loop.
     /// 3. **Copy-skip loop**: Tracks a `gap_start` cursor. Non-deleted bytes
     ///    advance `offset`; deleted codepoints flush `text[gap_start..offset]`
     ///    to the result, skip the deleted bytes, and reset `gap_start`.
@@ -109,7 +111,8 @@ impl DeleteMatcher {
         let mut result = get_string_from_pool(text.len());
         result.push_str(&text[..offset]);
 
-        // SAFETY: The seek loop above broke on a match at `offset`, so `offset < len` still holds.
+        // SAFETY: The seek loop above broke on a match at `offset`, so `offset < len`
+        // still holds.
         let byte = unsafe { *bytes.get_unchecked(offset) };
         if byte < 0x80 {
             offset += 1;

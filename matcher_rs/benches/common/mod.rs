@@ -1,8 +1,9 @@
 // Shared helpers for all bench binaries. Not every binary uses every item.
 #![allow(dead_code, unused_imports)]
 
-use matcher_rs::{ProcessType, SimpleMatcher};
 use std::collections::HashMap;
+
+use matcher_rs::{ProcessType, SimpleMatcher};
 
 // ── Data ────────────────────────────────────────────────────────────────────────
 
@@ -12,7 +13,8 @@ pub const CN_HAYSTACK: &str = include_str!("../../../data/text/cn/三体.txt");
 pub const EN_WORD_LIST: &str = include_str!("../../../data/word/en/dictionary.txt");
 pub const EN_HAYSTACK: &str = include_str!("../../../data/text/en/sherlock.txt");
 
-// ── Parameters ──────────────────────────────────────────────────────────────────
+// ── Parameters
+// ──────────────────────────────────────────────────────────────────
 
 pub const RULE_COUNTS: &[usize] = &[1_000, 10_000, 50_000, 100_000, 500_000];
 pub const DEFAULT_RULE_COUNT: usize = 10_000;
@@ -25,7 +27,8 @@ pub const BUILD_PROCESS_TYPES: &[ProcessType] = &[
     ProcessType::Romanize,
 ];
 
-// ── Helpers ─────────────────────────────────────────────────────────────────────
+// ── Helpers
+// ─────────────────────────────────────────────────────────────────────
 
 /// Returns a filtered, sorted word list.
 ///

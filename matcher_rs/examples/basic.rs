@@ -2,7 +2,8 @@
 //!
 //! Run: `cargo run --example basic -p matcher_rs`
 //!
-//! Covers: builder API, is_match, process, process_into, logical operators, HashMap construction.
+//! Covers: builder API, is_match, process, process_into, logical operators,
+//! HashMap construction.
 
 use std::collections::HashMap;
 

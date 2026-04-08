@@ -12,20 +12,22 @@ use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan,
 // Streaming byte iterator (for fused variant-norm-scan)
 // ---------------------------------------------------------------------------
 
-/// Streaming byte iterator that yields variant-normalized bytes from a UTF-8 string.
+/// Streaming byte iterator that yields variant-normalized bytes from a UTF-8
+/// string.
 ///
 /// Created by [`VariantNormMatcher::filter_bytes`]. Unmapped codepoints pass
 /// through byte-for-byte; mapped codepoints emit their normalized replacement's
 /// UTF-8 bytes. Output is valid UTF-8, satisfying `daachorse`'s
 /// `find_overlapping_iter_from_iter` safety requirement.
 ///
-/// ASCII bytes always pass through unchanged (VariantNorm only maps non-ASCII CJK
-/// codepoints), so `skip_ascii_simd` is not used here — the iterator yields
+/// ASCII bytes always pass through unchanged (VariantNorm only maps non-ASCII
+/// CJK codepoints), so `skip_ascii_simd` is not used here — the iterator yields
 /// ASCII bytes directly for maximum throughput in the fused scan path.
 pub(crate) struct VariantNormFilterIterator<'a> {
     bytes: &'a [u8],
     offset: usize,
-    /// Remaining bytes to yield from the current kept (unmapped) multi-byte character.
+    /// Remaining bytes to yield from the current kept (unmapped) multi-byte
+    /// character.
     char_remaining: u8,
     /// UTF-8 encoding of the current replacement character.
     replace_buf: [u8; 4],
@@ -78,7 +80,8 @@ impl Iterator for VariantNormFilterIterator<'_> {
         {
             // Mapped: encode replacement char and yield first byte.
             self.offset += char_len;
-            // SAFETY: page table values are valid Unicode codepoints assigned at build time.
+            // SAFETY: page table values are valid Unicode codepoints assigned at build
+            // time.
             let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
             let len = mapped.len_utf8();
             mapped.encode_utf8(&mut self.replace_buf);
@@ -116,7 +119,8 @@ impl<'a> Iterator for VariantNormFindIter<'a> {
             }
 
             let start = self.byte_offset;
-            // SAFETY: SIMD skip positioned `start` at a non-ASCII byte in a valid UTF-8 `&str`.
+            // SAFETY: SIMD skip positioned `start` at a non-ASCII byte in a valid UTF-8
+            // `&str`.
             let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
             self.byte_offset += char_len;
 
@@ -124,7 +128,8 @@ impl<'a> Iterator for VariantNormFindIter<'a> {
                 && mapped_cp != cp
             {
                 debug_assert!(char::from_u32(mapped_cp).is_some());
-                // SAFETY: Page table values are valid Unicode codepoints assigned at build time.
+                // SAFETY: Page table values are valid Unicode codepoints assigned at build
+                // time.
                 let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
                 return Some((start, self.byte_offset, mapped));
             }
@@ -169,10 +174,12 @@ impl VariantNormMatcher {
         replace_scan(text, self.iter(text))
     }
 
-    /// Returns a streaming byte iterator over the variant-normalized form of `text`.
+    /// Returns a streaming byte iterator over the variant-normalized form of
+    /// `text`.
     ///
-    /// Used by the fused variant-norm-scan path to feed transformed bytes directly
-    /// into the Aho-Corasick automaton without materializing the full string.
+    /// Used by the fused variant-norm-scan path to feed transformed bytes
+    /// directly into the Aho-Corasick automaton without materializing the
+    /// full string.
     #[inline(always)]
     pub(crate) fn filter_bytes<'a>(&'a self, text: &'a str) -> VariantNormFilterIterator<'a> {
         VariantNormFilterIterator {

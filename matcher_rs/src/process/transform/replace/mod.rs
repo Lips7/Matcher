@@ -1,19 +1,21 @@
-//! Text-replacement engines for VariantNorm, Romanize, and Normalize transformations.
+//! Text-replacement engines for VariantNorm, Romanize, and Normalize
+//! transformations.
 //!
-//! All three engines share a **two-stage page table** for O(1) codepoint lookup:
+//! All three engines share a **two-stage page table** for O(1) codepoint
+//! lookup:
 //!
-//! - **L1** (`&[u16]`): indexed by `codepoint >> 8` (the "page index"). A non-zero
-//!   value is the 1-based page number in L2; zero means the entire 256-codepoint
-//!   page has no mappings.
+//! - **L1** (`&[u16]`): indexed by `codepoint >> 8` (the "page index"). A
+//!   non-zero value is the 1-based page number in L2; zero means the entire
+//!   256-codepoint page has no mappings.
 //! - **L2** (`&[u32]`): indexed by `page * 256 + (codepoint & 0xFF)`. The
 //!   interpretation of the stored `u32` depends on the engine:
 //!   - **VariantNorm**: the normalized codepoint value. `0` = unmapped.
-//!   - **Romanize / Normalize**: packed `(byte_offset << 8) | byte_length` into a
-//!     shared string buffer, unpacked via [`unpack_str_ref`]. `0` = unmapped.
+//!   - **Romanize / Normalize**: packed `(byte_offset << 8) | byte_length` into
+//!     a shared string buffer, unpacked via [`unpack_str_ref`]. `0` = unmapped.
 //!
-//! Shared helpers ([`page_table_lookup`], [`decode_page_table`], [`unpack_str_ref`],
-//! [`replace_scan`], [`replace_spans`]) live in this module; each
-//! engine has its own sub-module.
+//! Shared helpers ([`page_table_lookup`], [`decode_page_table`],
+//! [`unpack_str_ref`], [`replace_scan`], [`replace_spans`]) live in this
+//! module; each engine has its own sub-module.
 //!
 //! # Performance
 //!
@@ -32,9 +34,10 @@ pub(crate) use normalize::NormalizeMatcher;
 pub(crate) use romanize::RomanizeMatcher;
 pub(crate) use variant_norm::VariantNormMatcher;
 
-use crate::process::string_pool::get_string_from_pool;
-use crate::process::transform::simd::skip_ascii_simd;
-use crate::process::transform::utf8::decode_utf8_raw;
+use crate::process::{
+    string_pool::get_string_from_pool,
+    transform::{simd::skip_ascii_simd, utf8::decode_utf8_raw},
+};
 
 // ---------------------------------------------------------------------------
 // Shared replacement helpers

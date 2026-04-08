@@ -1,12 +1,11 @@
 #[path = "common/mod.rs"]
 mod common;
 
+use std::{collections::HashMap, hint::black_box};
+
 use common::{DEFAULT_RULE_COUNT, EN_HAYSTACK, build_literal_map};
-use divan::Bencher;
-use divan::counter::BytesCount;
+use divan::{Bencher, counter::BytesCount};
 use matcher_rs::{ProcessType, SimpleMatcher};
-use std::collections::HashMap;
-use std::hint::black_box;
 
 // Question: How much throughput is gained by folding no-op transform scans?
 //

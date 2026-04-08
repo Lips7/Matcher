@@ -1,25 +1,31 @@
 //! Compiled single-step transforms for the text-processing pipeline.
 //!
-//! Each [`TransformStep`] variant wraps a low-level matcher (VariantNorm, Delete,
-//! Normalize, Romanize) and provides a uniform [`apply`](TransformStep::apply)
-//! interface. Returns `Option<String>` — `None` when the input is unaffected.
+//! Each [`TransformStep`] variant wraps a low-level matcher (VariantNorm,
+//! Delete, Normalize, Romanize) and provides a uniform
+//! [`apply`](TransformStep::apply) interface. Returns `Option<String>` — `None`
+//! when the input is unaffected.
 //!
-//! The registry is a fixed-size array of [`OnceLock`] slots — one per bit position in
-//! [`ProcessType`]. Each slot is lazily initialized on first access.
+//! The registry is a fixed-size array of [`OnceLock`] slots — one per bit
+//! position in [`ProcessType`]. Each slot is lazily initialized on first
+//! access.
 
 use std::sync::OnceLock;
 
-use crate::process::process_type::ProcessType;
-use crate::process::transform::constants::*;
-use crate::process::transform::delete::DeleteMatcher;
-use crate::process::transform::replace::{NormalizeMatcher, RomanizeMatcher, VariantNormMatcher};
+use crate::process::{
+    process_type::ProcessType,
+    transform::{
+        constants::*,
+        delete::DeleteMatcher,
+        replace::{NormalizeMatcher, RomanizeMatcher, VariantNormMatcher},
+    },
+};
 
 /// Compiled single-bit transformation step.
 ///
-/// Each variant wraps the corresponding low-level matcher from [`super::transform`].
-/// Instances are created by `build_transform_step` and cached in
-/// `TRANSFORM_STEP_CACHE` for the lifetime of the process. The [`apply`](Self::apply)
-/// method provides a uniform dispatch point.
+/// Each variant wraps the corresponding low-level matcher from
+/// [`super::transform`]. Instances are created by `build_transform_step` and
+/// cached in `TRANSFORM_STEP_CACHE` for the lifetime of the process. The
+/// [`apply`](Self::apply) method provides a uniform dispatch point.
 #[derive(Clone)]
 pub(crate) enum TransformStep {
     /// Raw-text path; returns the input unchanged.
@@ -41,8 +47,10 @@ pub(crate) enum TransformStep {
 impl TransformStep {
     /// Returns whether this step is guaranteed to be a no-op on ASCII input.
     ///
-    /// - **VariantNorm / Romanize / RomanizeChar / EmojiNorm**: no-op — all keys are non-ASCII.
-    /// - **Delete / Normalize**: may change ASCII input (punctuation deletion, casefold).
+    /// - **VariantNorm / Romanize / RomanizeChar / EmojiNorm**: no-op — all
+    ///   keys are non-ASCII.
+    /// - **Delete / Normalize**: may change ASCII input (punctuation deletion,
+    ///   casefold).
     #[inline(always)]
     pub(crate) fn is_noop_on_ascii_input(&self) -> bool {
         matches!(
@@ -55,13 +63,15 @@ impl TransformStep {
         )
     }
 
-    /// Applies this step to `text`. Returns `Some((new_string, output_density))`
-    /// if the text was modified, `None` if the step is a no-op for this input.
+    /// Applies this step to `text`. Returns `Some((new_string,
+    /// output_density))` if the text was modified, `None` if the step is a
+    /// no-op for this input.
     ///
-    /// `parent_density` is the non-ASCII byte density of `text` (0.0 = pure ASCII).
-    /// The returned density is an estimate for engine dispatch:
+    /// `parent_density` is the non-ASCII byte density of `text` (0.0 = pure
+    /// ASCII). The returned density is an estimate for engine dispatch:
     /// - **VariantNorm**: CJK→CJK, density unchanged → `parent_density`
-    /// - **Delete / Normalize**: density approximately unchanged → `parent_density`
+    /// - **Delete / Normalize**: density approximately unchanged →
+    ///   `parent_density`
     /// - **Romanize / RomanizeChar**: CJK→ASCII, density drops → `0.0`
     ///
     /// When `parent_density == 0.0` the ASCII fast path fires:

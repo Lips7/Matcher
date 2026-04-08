@@ -38,7 +38,8 @@ impl<'a> Iterator for RomanizeFindIter<'a> {
             }
 
             let start = self.byte_offset;
-            // SAFETY: `skip_ascii_simd` positioned `start` at a non-ASCII byte in a valid UTF-8 `&str`.
+            // SAFETY: `skip_ascii_simd` positioned `start` at a non-ASCII byte in a valid
+            // UTF-8 `&str`.
             let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
             self.byte_offset += char_len;
 
@@ -57,12 +58,14 @@ impl<'a> Iterator for RomanizeFindIter<'a> {
 
 /// Streaming byte iterator that yields romanized bytes from a UTF-8 string.
 ///
-/// Created by [`RomanizeMatcher::filter_bytes`]. ASCII bytes pass through unchanged;
-/// mapped CJK codepoints emit their romanization string's bytes. Output is valid UTF-8,
-/// satisfying `daachorse`'s `find_overlapping_iter_from_iter` safety requirement.
+/// Created by [`RomanizeMatcher::filter_bytes`]. ASCII bytes pass through
+/// unchanged; mapped CJK codepoints emit their romanization string's bytes.
+/// Output is valid UTF-8, satisfying `daachorse`'s
+/// `find_overlapping_iter_from_iter` safety requirement.
 ///
-/// Uses the same unified `remaining` slice pattern as [`super::normalize::NormalizeFilterIterator`]
-/// to handle both replacement-string bytes and multi-byte continuation bytes with a single
+/// Uses the same unified `remaining` slice pattern as
+/// [`super::normalize::NormalizeFilterIterator`] to handle both
+/// replacement-string bytes and multi-byte continuation bytes with a single
 /// fast-path branch.
 pub(crate) struct RomanizeFilterIterator<'a> {
     bytes: &'a [u8],

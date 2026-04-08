@@ -1,9 +1,10 @@
-//! Text transformation pipeline for standardizing input before pattern matching.
+//! Text transformation pipeline for standardizing input before pattern
+//! matching.
 //!
 //! This module converts raw input text through a configurable series of steps —
-//! Traditional-to-Simplified Chinese conversion, codepoint deletion, normalization,
-//! and CJK romanization — so that [`crate::SimpleMatcher`] can match patterns
-//! against both raw and transformed forms of the same text.
+//! Traditional-to-Simplified Chinese conversion, codepoint deletion,
+//! normalization, and CJK romanization — so that [`crate::SimpleMatcher`] can
+//! match patterns against both raw and transformed forms of the same text.
 //!
 //! # Public API
 //!
@@ -16,12 +17,15 @@
 //!
 //! # Internal structure
 //!
-//! - [`step`] — [`TransformStep`](step::TransformStep) enum and the global `OnceLock` cache
-//!   that lazily compiles each single-bit step once.
-//! - [`graph`] — Trie construction (reuses shared prefixes across process types).
+//! - [`step`] — [`TransformStep`](step::TransformStep) enum and the global
+//!   `OnceLock` cache that lazily compiles each single-bit step once.
+//! - [`graph`] — Trie construction (reuses shared prefixes across process
+//!   types).
 //! - [`string_pool`] — Thread-local string pool.
-//! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`], etc.).
-//! - [`transform`] — Low-level engines (charwise page-table, Aho-Corasick normalizer, SIMD delete).
+//! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`],
+//!   etc.).
+//! - [`transform`] — Low-level engines (charwise page-table, Aho-Corasick
+//!   normalizer, SIMD delete).
 pub(crate) mod api;
 pub(crate) mod graph;
 pub(crate) mod process_type;

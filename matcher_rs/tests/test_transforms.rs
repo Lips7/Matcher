@@ -8,9 +8,10 @@ use matcher_rs::{
 
 #[test]
 fn test_delete_simd_skip_ascii_before_non_ascii() {
-    // Regression: SIMD fast-skip in DeleteFindIter incorrectly advanced to the first
-    // non-ASCII byte without checking for deletable ASCII bytes before it. Spaces
-    // between non-deletable ASCII letters and Chinese characters were not deleted.
+    // Regression: SIMD fast-skip in DeleteFindIter incorrectly advanced to the
+    // first non-ASCII byte without checking for deletable ASCII bytes before
+    // it. Spaces between non-deletable ASCII letters and Chinese characters
+    // were not deleted.
     let variants = reduce_text_process(ProcessType::VariantNormDeleteNormalize, "A B 測試 Ａ １");
     assert_eq!(variants[0], "A B 測試 Ａ １");
     assert_eq!(variants[1], "A B 测试 Ａ １");
@@ -266,8 +267,9 @@ fn test_process_map_romanize_char_exhaustive() {
 
 #[test]
 fn test_variant_norm() {
-    use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
+
+    use matcher_rs::SimpleMatcher;
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::VariantNorm,
@@ -292,8 +294,9 @@ fn test_variant_norm() {
 
 #[test]
 fn test_normalize() {
-    use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
+
+    use matcher_rs::SimpleMatcher;
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Normalize,
@@ -362,7 +365,8 @@ fn test_normalize_combining_characters() {
     let precomposed = text_process(ProcessType::Normalize, "caf\u{00E9}");
     assert_eq!(precomposed.as_ref(), "cafe", "precomposed é → e via table");
 
-    // Verify the decomposed combining mark passes through (not composed then stripped)
+    // Verify the decomposed combining mark passes through (not composed then
+    // stripped)
     let decomposed = text_process(ProcessType::Normalize, "\u{0301}");
     assert_eq!(
         decomposed.as_ref(),
@@ -373,8 +377,9 @@ fn test_normalize_combining_characters() {
 
 #[test]
 fn test_romanize() {
-    use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
+
+    use matcher_rs::SimpleMatcher;
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::Romanize,
@@ -393,7 +398,8 @@ fn test_romanize() {
 
 #[test]
 fn test_romanize_skips_ascii_digits() {
-    // Romanize/RomanizeChar should skip ASCII digits (no ASCII keys in generated table)
+    // Romanize/RomanizeChar should skip ASCII digits (no ASCII keys in generated
+    // table)
     for pt in [ProcessType::Romanize, ProcessType::RomanizeChar] {
         let matcher = SimpleMatcherBuilder::new()
             .add_word(pt, 1, "yi")
@@ -405,8 +411,9 @@ fn test_romanize_skips_ascii_digits() {
 
 #[test]
 fn test_romanizechar() {
-    use matcher_rs::SimpleMatcher;
     use std::collections::HashMap;
+
+    use matcher_rs::SimpleMatcher;
 
     let simple_matcher = SimpleMatcher::new(&HashMap::from([(
         ProcessType::RomanizeChar,
@@ -547,7 +554,8 @@ fn test_unicode_combining_marks() {
         .build()
         .unwrap();
 
-    // "cafe\u{0301}" = "café" with combining acute accent (5 codepoints, but "cafe" is a prefix)
+    // "cafe\u{0301}" = "café" with combining acute accent (5 codepoints, but "cafe"
+    // is a prefix)
     assert!(
         matcher.is_match("cafe\u{0301}"),
         "cafe should match as byte-prefix of cafe + combining accent"
@@ -699,7 +707,8 @@ fn test_leaf_ascii_noop_optimization() {
 
 #[test]
 fn test_unicode_private_use_area() {
-    // U+E000..U+F8FF are Private Use Area chars — should pass through transforms unchanged
+    // U+E000..U+F8FF are Private Use Area chars — should pass through transforms
+    // unchanged
     let pua = "\u{E000}\u{E001}\u{F8FF}";
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, pua)
@@ -803,7 +812,8 @@ fn test_matcher_cjk_scripts() {
 
 #[test]
 fn test_romanize_mixed_cjk_matcher() {
-    // Verify matching a romanized pattern against mixed-CJK text through SimpleMatcher.
+    // Verify matching a romanized pattern against mixed-CJK text through
+    // SimpleMatcher.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::Romanize, 1, "zhong")
         .build()
@@ -910,7 +920,8 @@ fn test_emoji_norm_with_normalize() {
 #[test]
 fn test_delete_emoji_norm_composition_gotcha() {
     // Delete strips emoji codepoints BEFORE EmojiNorm can convert them.
-    // This is a documented pitfall: Delete | EmojiNorm won't match emoji→word patterns.
+    // This is a documented pitfall: Delete | EmojiNorm won't match emoji→word
+    // patterns.
     let pt = ProcessType::Delete | ProcessType::EmojiNorm;
     let matcher = SimpleMatcherBuilder::new()
         .add_word(pt, 1, "fire")
@@ -928,7 +939,8 @@ fn test_delete_emoji_norm_composition_gotcha() {
 
 #[test]
 fn test_none_in_composite_preserves_raw_path() {
-    // Including None in a composite type matches against both raw and transformed text.
+    // Including None in a composite type matches against both raw and transformed
+    // text.
     let pt = ProcessType::None | ProcessType::Delete;
     let matcher = SimpleMatcherBuilder::new()
         .add_word(pt, 1, "helloworld")
@@ -937,7 +949,8 @@ fn test_none_in_composite_preserves_raw_path() {
 
     // "helloworld" matches raw text
     assert!(matcher.is_match("helloworld"));
-    // "hello world" doesn't match raw (space), but Delete strips space → "helloworld"
+    // "hello world" doesn't match raw (space), but Delete strips space →
+    // "helloworld"
     assert!(matcher.is_match("hello world"));
     // "hello-world" → Delete strips hyphen → "helloworld"
     assert!(matcher.is_match("hello-world"));

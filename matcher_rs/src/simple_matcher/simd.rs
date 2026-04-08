@@ -14,15 +14,14 @@
 //! | x86_64 + `simd_runtime_dispatch` | AVX2 `_mm256_movemask_epi8` + `count_ones` | Portable `std::simd` (32-lane) |
 //! | Everything else | Portable `std::simd` (32-lane) | — |
 
-#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-use std::simd::Simd;
-#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-use std::simd::cmp::SimdPartialOrd;
-
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 use std::arch::aarch64::*;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::Simd;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::cmp::SimdPartialOrd;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::sync::OnceLock;
 

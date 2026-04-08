@@ -1,23 +1,25 @@
 //! [`SimpleMatcher`] and [`SimpleResult`] — the public matching API.
 //!
 //! Prefer constructing via [`crate::SimpleMatcherBuilder`]. The type aliases
-//! [`SimpleTable`] and [`SimpleTableSerde`] describe the raw rule-map format accepted
-//! by [`SimpleMatcher::new`] for advanced use cases (e.g. deserialization from JSON).
+//! [`SimpleTable`] and [`SimpleTableSerde`] describe the raw rule-map format
+//! accepted by [`SimpleMatcher::new`] for advanced use cases (e.g.
+//! deserialization from JSON).
 //!
 //! # Module Layout
 //!
 //! The implementation is split across private child modules:
 //!
 //! - `build` — [`SimpleMatcher::new`] and rule parsing / deduplication.
-//! - `encoding` — Bit-packing constants for direct-rule encoding and capacity limits.
-//! - `engine` — Aho-Corasick automaton compilation (bytewise and charwise engines).
+//! - `encoding` — Bit-packing constants for direct-rule encoding and capacity
+//!   limits.
+//! - `engine` — Aho-Corasick automaton compilation (bytewise and charwise
+//!   engines).
 //! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
 //! - `rule` — Rule metadata (`RuleHot`/`RuleCold`/`RuleSet`) and state machine.
 //! - `search` — Hot-path scan loops and rule evaluation.
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 
-use std::borrow::Cow;
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use serde::Serialize;
 
@@ -36,16 +38,17 @@ use engine::ScanPlan;
 use rule::RuleSet;
 pub use rule::{SimpleTable, SimpleTableSerde};
 
-/// A single match returned by [`SimpleMatcher::process`] or [`SimpleMatcher::process_into`].
+/// A single match returned by [`SimpleMatcher::process`] or
+/// [`SimpleMatcher::process_into`].
 ///
-/// The lifetime `'a` is tied to the [`SimpleMatcher`] that produced this result.
-/// The `word` field borrows directly from the matcher's internal rule storage, so
-/// no allocation occurs when collecting results.
+/// The lifetime `'a` is tied to the [`SimpleMatcher`] that produced this
+/// result. The `word` field borrows directly from the matcher's internal rule
+/// storage, so no allocation occurs when collecting results.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+/// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 ///
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 42, "hello")
@@ -73,15 +76,16 @@ pub struct SimpleResult<'a> {
     pub word_id: u32,
     /// The original pattern string for the matched rule.
     ///
-    /// This is a [`Cow::Borrowed`] reference into the matcher's internal storage,
-    /// so it is cheap to produce. The lifetime `'a` is the lifetime of the
-    /// [`SimpleMatcher`] that generated this result.
+    /// This is a [`Cow::Borrowed`] reference into the matcher's internal
+    /// storage, so it is cheap to produce. The lifetime `'a` is the
+    /// lifetime of the [`SimpleMatcher`] that generated this result.
     pub word: Cow<'a, str>,
 }
 
 /// Multi-pattern matcher with logical operators and text normalization.
 ///
-/// Prefer constructing via [`crate::SimpleMatcherBuilder`] rather than calling [`new`](Self::new) directly.
+/// Prefer constructing via [`crate::SimpleMatcherBuilder`] rather than calling
+/// [`new`](Self::new) directly.
 ///
 /// # Pattern Syntax
 ///
@@ -101,48 +105,51 @@ pub struct SimpleResult<'a> {
 ///
 /// # Two-Pass Matching
 ///
-/// **Pass 1 — Transform and Scan**: The input text is transformed through the configured
-/// [`ProcessType`](crate::ProcessType) pipelines, producing the distinct text variants
-/// needed for this matcher. Those variants are scanned one by one. Each variant first goes
-/// through the ASCII engine, then through the charwise engine when the variant is not pure
-/// ASCII. Hits update per-rule state; simple rules stay on a bitmask fast path, while more
-/// complex rules fall back to a per-rule counter matrix.
+/// **Pass 1 — Transform and Scan**: The input text is transformed through the
+/// configured [`ProcessType`](crate::ProcessType) pipelines, producing the
+/// distinct text variants needed for this matcher. Those variants are scanned
+/// one by one. Each variant first goes through the ASCII engine, then through
+/// the charwise engine when the variant is not pure ASCII. Hits update per-rule
+/// state; simple rules stay on a bitmask fast path, while more complex rules
+/// fall back to a per-rule counter matrix.
 ///
 /// **Pass 2 — Evaluate**: Touched rules are checked: a rule fires if every AND
-/// sub-pattern was satisfied in at least one text variant and no NOT sub-pattern was
-/// triggered in any variant.
+/// sub-pattern was satisfied in at least one text variant and no NOT
+/// sub-pattern was triggered in any variant.
 ///
 /// Composite process types can match across variants. For example,
-/// `ProcessType::None | ProcessType::Romanize` lets one sub-pattern match the raw text and
-/// another match the Romanize-transformed variant during the same search. NOT segments are
-/// global across those variants: if a veto pattern appears in any variant, the rule fails.
+/// `ProcessType::None | ProcessType::Romanize` lets one sub-pattern match the
+/// raw text and another match the Romanize-transformed variant during the same
+/// search. NOT segments are global across those variants: if a veto pattern
+/// appears in any variant, the rule fails.
 ///
 /// # Thread Safety
 ///
-/// `SimpleMatcher` is [`Send`] + [`Sync`]. All mutable scan state is stored in thread-local
-/// `SimpleMatchState` instances (one per thread), so concurrent calls from different
-/// threads are fully independent with no contention or locking. The matcher itself is
-/// immutable after construction.
+/// `SimpleMatcher` is [`Send`] + [`Sync`]. All mutable scan state is stored in
+/// thread-local `SimpleMatchState` instances (one per thread), so concurrent
+/// calls from different threads are fully independent with no contention or
+/// locking. The matcher itself is immutable after construction.
 ///
 /// # Performance
 ///
-/// - **O(N) text scan**: All unique sub-patterns across all rules are deduplicated into
-///   a single Aho-Corasick automaton, so scan time scales with text length, not rule count.
-/// - **O(1) state reset**: Generation-based sparse-set avoids clearing per-rule state
-///   between calls (only touched rules are cleaned up).
-/// - **Bitmask fast path**: Rules with ≤64 segments use a `u64` bitmask instead of the
-///   full matrix, keeping the inner loop branch-free.
-/// - **`AllSimple` bypass**: When every rule is a pure literal (no `&`/`~` operators and
-///   single segment), the state machinery is bypassed entirely — each automaton hit maps
-///   directly to a result.
-/// - **DAG reuse**: The transformation pipeline is structured as a trie so intermediate
-///   results (e.g., Delete output) are computed once even when multiple composite
-///   `ProcessType`s share a prefix.
+/// - **O(N) text scan**: All unique sub-patterns across all rules are
+///   deduplicated into a single Aho-Corasick automaton, so scan time scales
+///   with text length, not rule count.
+/// - **O(1) state reset**: Generation-based sparse-set avoids clearing per-rule
+///   state between calls (only touched rules are cleaned up).
+/// - **Bitmask fast path**: Rules with ≤64 segments use a `u64` bitmask instead
+///   of the full matrix, keeping the inner loop branch-free.
+/// - **`AllSimple` bypass**: When every rule is a pure literal (no `&`/`~`
+///   operators and single segment), the state machinery is bypassed entirely —
+///   each automaton hit maps directly to a result.
+/// - **DAG reuse**: The transformation pipeline is structured as a trie so
+///   intermediate results (e.g., Delete output) are computed once even when
+///   multiple composite `ProcessType`s share a prefix.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+/// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 ///
 /// let matcher = SimpleMatcherBuilder::new()
 ///     .add_word(ProcessType::None, 1, "apple&pie")
@@ -181,15 +188,17 @@ impl fmt::Debug for SimpleMatcher {
     }
 }
 
-/// Dispatch mode selected at construction time to unlock fast paths during scanning.
+/// Dispatch mode selected at construction time to unlock fast paths during
+/// scanning.
 ///
 /// The mode is determined by analyzing the rule set: if all rules are simple
-/// single-fragment literals under the same [`ProcessType`](crate::ProcessType), the
-/// matcher can skip the full state machine and use direct rule dispatch.
+/// single-fragment literals under the same [`ProcessType`](crate::ProcessType),
+/// the matcher can skip the full state machine and use direct rule dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SearchMode {
     /// Every rule is a simple single-fragment literal with no `&`/`~` operators
-    /// and no text transformation. The matcher bypasses state tracking entirely.
+    /// and no text transformation. The matcher bypasses state tracking
+    /// entirely.
     AllSimple,
     /// Rules require text transformation and/or the full state machine.
     General,
@@ -206,7 +215,7 @@ impl SimpleMatcher {
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
@@ -242,7 +251,7 @@ impl SimpleMatcher {
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
@@ -268,15 +277,15 @@ impl SimpleMatcher {
 
     /// Appends all patterns that match `text` to `results`.
     ///
-    /// This is the allocation-friendly variant of [`process`](Self::process). The caller
-    /// retains ownership of `results` and can reuse it across many searches by calling
-    /// [`Vec::clear`] between batches, avoiding repeated heap allocation for the output
-    /// vector itself.
+    /// This is the allocation-friendly variant of [`process`](Self::process).
+    /// The caller retains ownership of `results` and can reuse it across
+    /// many searches by calling [`Vec::clear`] between batches, avoiding
+    /// repeated heap allocation for the output vector itself.
     ///
     /// # Examples
     ///
     /// ```rust
-    /// use matcher_rs::{SimpleMatcherBuilder, ProcessType, SimpleResult};
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder, SimpleResult};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
     ///     .add_word(ProcessType::None, 1, "hello")
@@ -313,8 +322,8 @@ impl SimpleMatcher {
     /// Returns the estimated heap memory in bytes owned by this matcher.
     ///
     /// Includes the AC automata, rule metadata, and the process-type
-    /// tree. Does **not** include thread-local scan state or global transform caches
-    /// (those are shared infrastructure, not per-matcher).
+    /// tree. Does **not** include thread-local scan state or global transform
+    /// caches (those are shared infrastructure, not per-matcher).
     #[must_use]
     pub fn heap_bytes(&self) -> usize {
         self.tree.capacity() * size_of::<ProcessTypeBitNode>()

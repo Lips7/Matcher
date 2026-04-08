@@ -26,8 +26,8 @@
 //! 1. `byte_idx = byte >> 3` -- selects which of the 16 LUT bytes to read.
 //! 2. `lut_byte = shuffle(ascii_lut, byte_idx)` -- SIMD table lookup.
 //! 3. `bit_pos = byte & 7` -- selects the bit within the LUT byte.
-//! 4. `bit_mask = shuffle(SHIFT_TABLE, bit_pos)` -- converts bit position to
-//!    a single-bit mask (1, 2, 4, ..., 128).
+//! 4. `bit_mask = shuffle(SHIFT_TABLE, bit_pos)` -- converts bit position to a
+//!    single-bit mask (1, 2, 4, ..., 128).
 //! 5. `deleted = lut_byte & bit_mask` -- non-zero means the byte is deletable.
 //!
 //! This is combined (OR) with the non-ASCII mask to produce a stop mask; the
@@ -38,18 +38,17 @@
 //! - **Runtime dispatch cost** (x86-64): one `OnceLock` init on first call;
 //!   subsequent calls are a single indirect function pointer.
 //! - **Chunk sizes**: NEON 16 bytes, AVX2/portable 32 bytes.
-//! - **Scalar tail**: remaining bytes after the last full chunk are scanned
-//!   one at a time (~0–31 bytes).
-
-#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-use std::simd::Simd;
-#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
-use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+//! - **Scalar tail**: remaining bytes after the last full chunk are scanned one
+//!   at a time (~0–31 bytes).
 
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 use std::arch::aarch64::*;
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::Simd;
+#[cfg(not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")))]
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 use std::sync::OnceLock;
 
@@ -109,7 +108,8 @@ impl SimdDispatch {
     }
 }
 
-/// Returns the lazily-initialized `&'static SimdDispatch` for x86-64 runtime dispatch.
+/// Returns the lazily-initialized `&'static SimdDispatch` for x86-64 runtime
+/// dispatch.
 ///
 /// The [`OnceLock`] guarantees thread-safe one-time initialization: the first
 /// caller runs [`SimdDispatch::detect`]; all subsequent callers get the cached
@@ -120,7 +120,8 @@ fn dispatch() -> &'static SimdDispatch {
     DISPATCH.get_or_init(SimdDispatch::detect)
 }
 
-/// Tests whether `byte` is marked for deletion in the 128-bit `ascii_lut` bitset.
+/// Tests whether `byte` is marked for deletion in the 128-bit `ascii_lut`
+/// bitset.
 ///
 /// The LUT packs 128 bits (one per ASCII codepoint 0x00--0x7F) into 16 bytes:
 /// byte index = `byte >> 3`, bit position = `byte & 7`. This is the scalar
@@ -134,7 +135,8 @@ fn ascii_delete_contains(byte: u8, ascii_lut: &[u8; 16]) -> bool {
     (ascii_lut[idx >> 3] & (1 << (idx & 7))) != 0
 }
 
-/// Scalar tail: returns the first offset where `bytes[offset] >= 0x80`, or `bytes.len()`.
+/// Scalar tail: returns the first offset where `bytes[offset] >= 0x80`, or
+/// `bytes.len()`.
 ///
 /// Used after the SIMD loop to handle the remaining bytes that do not fill a
 /// full SIMD lane width.
@@ -162,11 +164,12 @@ fn find_ascii_non_delete_scalar(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16
     offset
 }
 
-/// Generates an AVX2 entry-point function that guards with a scalar check before
-/// delegating to the unsafe `$impl_fn`.
+/// Generates an AVX2 entry-point function that guards with a scalar check
+/// before delegating to the unsafe `$impl_fn`.
 ///
-/// The guard pattern is: return early if out of bounds, load the first byte, return
-/// early if `$early_check` fires, otherwise call `unsafe { $impl_fn(...) }`.
+/// The guard pattern is: return early if out of bounds, load the first byte,
+/// return early if `$early_check` fires, otherwise call `unsafe { $impl_fn(...)
+/// }`.
 macro_rules! define_avx2_entry {
     (
         $(#[$meta:meta])*
@@ -218,7 +221,8 @@ macro_rules! define_skip_dispatch {
     };
 }
 
-/// 16-lane portable SIMD helper: probes the 128-bit delete bitset for each byte in `chunk`.
+/// 16-lane portable SIMD helper: probes the 128-bit delete bitset for each byte
+/// in `chunk`.
 ///
 /// Returns a bitmask where bit `i` is set iff `chunk[i]` is marked deletable
 /// in `ascii_lut`. Implements the shuffle-based delete-mask algorithm described
@@ -241,7 +245,8 @@ fn portable_ascii_delete_mask_16(chunk: Simd<u8, 16>, ascii_lut: Simd<u8, 16>) -
         .to_bitmask()
 }
 
-/// 32-lane version of [`portable_ascii_delete_mask_16`] using [`SHIFT_TABLE_32`].
+/// 32-lane version of [`portable_ascii_delete_mask_16`] using
+/// [`SHIFT_TABLE_32`].
 ///
 /// Same algorithm, wider register. The `ascii_lut` must be a 32-byte vector
 /// with the 16-byte LUT duplicated in both halves (required by `swizzle_dyn`
@@ -360,7 +365,8 @@ fn skip_ascii_non_delete_portable(bytes: &[u8], offset: usize, ascii_lut: &[u8; 
 #[target_feature(enable = "avx2")]
 unsafe fn skip_ascii_avx2_impl(bytes: &[u8], mut offset: usize) -> usize {
     while offset + 32 <= bytes.len() {
-        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within
+        // bounds.
         let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
         let mask = _mm256_movemask_epi8(chunk) as u32;
         if mask != 0 {
@@ -383,8 +389,8 @@ define_avx2_entry! {
 /// Implements the same shuffle-based delete-mask algorithm as the portable
 /// version, but using AVX2 intrinsics:
 ///
-/// - `_mm256_shuffle_epi8` replaces `swizzle_dyn` for both the LUT lookup
-///   and the shift-table lookup.
+/// - `_mm256_shuffle_epi8` replaces `swizzle_dyn` for both the LUT lookup and
+///   the shift-table lookup.
 /// - `_mm256_srli_epi16` with a mask extracts `byte >> 3` (the LUT byte index).
 /// - `_mm256_cmpeq_epi8` + inverted `_mm256_movemask_epi8` produces the delete
 ///   bitmask.
@@ -396,9 +402,10 @@ define_avx2_entry! {
 /// # Safety
 ///
 /// - Requires AVX2 (enforced by `#[target_feature]`).
-/// - All `_mm256_loadu_si256` loads are guarded by `offset + 32 <= bytes.len()`.
-/// - `SHIFT_TABLE_32` and `lut32` are stack-allocated 32-byte arrays loaded
-///   via `_mm256_loadu_si256`; both are always 32 bytes, satisfying the read size.
+/// - All `_mm256_loadu_si256` loads are guarded by `offset + 32 <=
+///   bytes.len()`.
+/// - `SHIFT_TABLE_32` and `lut32` are stack-allocated 32-byte arrays loaded via
+///   `_mm256_loadu_si256`; both are always 32 bytes, satisfying the read size.
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn skip_ascii_non_delete_avx2_impl(
@@ -419,7 +426,8 @@ unsafe fn skip_ascii_non_delete_avx2_impl(
     let zero = _mm256_setzero_si256();
 
     while offset + 32 <= bytes.len() {
-        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within bounds.
+        // SAFETY: `offset + 32 <= bytes.len()` guard ensures the 32-byte read is within
+        // bounds.
         let chunk = unsafe { _mm256_loadu_si256(bytes.as_ptr().add(offset) as *const __m256i) };
         let non_ascii_mask = _mm256_movemask_epi8(chunk) as u32;
 
@@ -464,10 +472,12 @@ define_avx2_entry! {
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 #[inline(always)]
 unsafe fn first_non_ascii_in_neon(bytes: *const u8, offset: usize) -> usize {
-    // SAFETY: caller guarantees `offset + 16 <= bytes.len()`, so `bytes.add(offset)` is valid for a 16-byte read.
+    // SAFETY: caller guarantees `offset + 16 <= bytes.len()`, so
+    // `bytes.add(offset)` is valid for a 16-byte read.
     let chunk = unsafe { vld1q_u8(bytes.add(offset)) };
     let mut scratch = [0u8; 16];
-    // SAFETY: `scratch` is a local [u8; 16] on the stack, so the pointer is valid for a 16-byte store.
+    // SAFETY: `scratch` is a local [u8; 16] on the stack, so the pointer is valid
+    // for a 16-byte store.
     unsafe { vst1q_u8(scratch.as_mut_ptr(), chunk) };
     scratch
         .iter()
@@ -493,7 +503,8 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
     }
 
     let mut offset = offset;
-    // SAFETY: all `vld1q_u8` loads are guarded by `offset + 16 <= bytes.len()`, ensuring valid 16-byte reads.
+    // SAFETY: all `vld1q_u8` loads are guarded by `offset + 16 <= bytes.len()`,
+    // ensuring valid 16-byte reads.
     unsafe {
         while offset + 16 <= bytes.len() {
             let chunk = vld1q_u8(bytes.as_ptr().add(offset));
@@ -518,8 +529,8 @@ fn skip_ascii_neon(bytes: &[u8], offset: usize) -> usize {
 /// # Safety (internal)
 ///
 /// - All NEON loads are guarded by `offset + 16 <= bytes.len()`.
-/// - `ascii_lut` and [`SHIFT_TABLE_16`] are both exactly 16 bytes, matching
-///   the `vld1q_u8` / `vqtbl1q_u8` requirement.
+/// - `ascii_lut` and [`SHIFT_TABLE_16`] are both exactly 16 bytes, matching the
+///   `vld1q_u8` / `vqtbl1q_u8` requirement.
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 #[inline]
 fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16]) -> usize {
@@ -532,7 +543,8 @@ fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
     }
 
     let mut offset = offset;
-    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`; `ascii_lut` and `SHIFT_TABLE_16` are [u8; 16].
+    // SAFETY: all NEON loads are guarded by `offset + 16 <= bytes.len()`;
+    // `ascii_lut` and `SHIFT_TABLE_16` are [u8; 16].
     unsafe {
         let lut = vld1q_u8(ascii_lut.as_ptr());
         let shift = vld1q_u8(SHIFT_TABLE_16.as_ptr());
@@ -613,7 +625,8 @@ mod tests {
         assert_eq!(skip_ascii_simd(mixed, 5), 5);
     }
 
-    /// Confirms the delete-aware ASCII skip helper stops at either deletable ASCII or Unicode.
+    /// Confirms the delete-aware ASCII skip helper stops at either deletable
+    /// ASCII or Unicode.
     #[test]
     fn skip_ascii_non_delete_stops_on_delete_and_unicode() {
         let mut ascii_lut = [0u8; 16];

@@ -1,11 +1,11 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use common::{CN_HAYSTACK, EN_HAYSTACK, RULE_COUNTS, build_literal_map, wrap_table};
-use divan::Bencher;
-use divan::counter::BytesCount;
-use matcher_rs::{ProcessType, SimpleMatcher};
 use std::hint::black_box;
+
+use common::{CN_HAYSTACK, EN_HAYSTACK, RULE_COUNTS, build_literal_map, wrap_table};
+use divan::{Bencher, counter::BytesCount};
+use matcher_rs::{ProcessType, SimpleMatcher};
 
 // Question: How does throughput scale with rule count?
 

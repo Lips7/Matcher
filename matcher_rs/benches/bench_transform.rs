@@ -1,15 +1,15 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use common::{CN_HAYSTACK, DEFAULT_RULE_COUNT, EN_HAYSTACK, build_literal_map, wrap_table};
-use divan::Bencher;
-use divan::counter::BytesCount;
-use matcher_rs::{ProcessType, SimpleMatcher};
-use std::collections::HashMap;
-use std::hint::black_box;
+use std::{collections::HashMap, hint::black_box};
 
-// ── Text Transform ─────────────────────────────────────────────────────────────
-// Question: How does each text transformation step affect end-to-end matcher throughput?
+use common::{CN_HAYSTACK, DEFAULT_RULE_COUNT, EN_HAYSTACK, build_literal_map, wrap_table};
+use divan::{Bencher, counter::BytesCount};
+use matcher_rs::{ProcessType, SimpleMatcher};
+
+// ── Text Transform
+// ───────────────────────────────────────────────────────────── Question: How
+// does each text transformation step affect end-to-end matcher throughput?
 
 mod text_transform {
     use super::*;
@@ -54,8 +54,9 @@ mod text_transform {
     }
 }
 
-// ── Combined Process Types ─────────────────────────────────────────────────────
-// Question: How do multi-transform pipelines compare to single transforms?
+// ── Combined Process Types
+// ───────────────────────────────────────────────────── Question: How do
+// multi-transform pipelines compare to single transforms?
 
 mod combined_process_types {
     use super::*;

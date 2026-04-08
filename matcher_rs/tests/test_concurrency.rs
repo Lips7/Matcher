@@ -1,6 +1,6 @@
+use std::{sync::Arc, thread};
+
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
-use std::sync::Arc;
-use std::thread;
 
 const _: () = {
     #[allow(dead_code)]

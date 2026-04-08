@@ -10,15 +10,16 @@
 //! - [`replace`] -- Text-replacement engines, each in its own sub-module:
 //!   [`replace::VariantNormMatcher`] (Traditional→Simplified, page-table),
 //!   [`replace::RomanizeMatcher`] (CJK romanization, page-table),
-//!   [`replace::NormalizeMatcher`] (Unicode normalization, page-table + fused scan).
+//!   [`replace::NormalizeMatcher`] (Unicode normalization, page-table + fused
+//!   scan).
 //! - [`delete`] -- A flat Unicode bitset engine ([`delete::DeleteMatcher`])
 //!   that strips configured codepoints from text, with a fast ASCII LUT path.
 //! - [`simd`] -- SIMD-accelerated byte-skip helpers that let the replace and
 //!   delete engines jump over long runs of irrelevant ASCII bytes in a single
 //!   instruction (AVX2 / NEON / portable `std::simd` fallback).
 //!
-//! All types in this module are `pub(crate)` -- they are internal implementation
-//! details consumed by the higher-level [`super::step`] and
+//! All types in this module are `pub(crate)` -- they are internal
+//! implementation details consumed by the higher-level [`super::step`] and
 //! [`super::api`] modules.
 pub(crate) mod constants;
 pub(crate) mod delete;

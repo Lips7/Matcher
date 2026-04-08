@@ -1,15 +1,19 @@
 //! Transformation trie construction.
 //!
-//! The trie is a flat array where each node represents one single-bit [`ProcessType`] step.
-//! [`build_process_type_tree`] constructs it from a set of composite bitmasks, merging shared
-//! prefixes so that intermediate results are computed once.
+//! The trie is a flat array where each node represents one single-bit
+//! [`ProcessType`] step. [`build_process_type_tree`] constructs it from a set
+//! of composite bitmasks, merging shared prefixes so that intermediate results
+//! are computed once.
 //!
-//! [`SimpleMatcher`](crate::SimpleMatcher) stores the trie and walks it at match time via
-//! [`walk_and_scan`](crate::simple_matcher::SimpleMatcher::walk_and_scan) in `search.rs`.
+//! [`SimpleMatcher`](crate::SimpleMatcher) stores the trie and walks it at
+//! match time via
+//! [`walk_and_scan`](crate::simple_matcher::SimpleMatcher::walk_and_scan) in
+//! `search.rs`.
 //!
 //! # Example trie
 //!
-//! Given the set `{VariantNorm, VariantNorm|Delete, VariantNorm|Delete|Normalize}`, the trie is:
+//! Given the set `{VariantNorm, VariantNorm|Delete,
+//! VariantNorm|Delete|Normalize}`, the trie is:
 //!
 //! ```text
 //!   [0] root (None)
@@ -22,8 +26,10 @@ use std::collections::HashSet;
 
 use tinyvec::TinyVec;
 
-use crate::process::process_type::ProcessType;
-use crate::process::step::{TransformStep, get_transform_step};
+use crate::process::{
+    process_type::ProcessType,
+    step::{TransformStep, get_transform_step},
+};
 
 /// A node in the flat-array transformation trie.
 ///
@@ -34,8 +40,8 @@ use crate::process::step::{TransformStep, get_transform_step};
 pub(crate) struct ProcessTypeBitNode {
     /// The single-bit [`ProcessType`] transformation step this node represents.
     ///
-    /// The root node always has `ProcessType::None`; all other nodes have exactly
-    /// one bit set (e.g., `VariantNorm`, `Delete`).
+    /// The root node always has `ProcessType::None`; all other nodes have
+    /// exactly one bit set (e.g., `VariantNorm`, `Delete`).
     pub(crate) process_type_bit: ProcessType,
     /// Indices of child nodes in the flat trie array.
     ///
@@ -54,7 +60,8 @@ pub(crate) struct ProcessTypeBitNode {
     /// Bit `i` is set when the composite [`ProcessType`] whose compact index is
     /// `i` terminates at (or passes through) this node. A non-zero mask means
     /// this node's text variant should be scanned by the AC automaton.
-    /// Encoded using sequential indices from `pt_index_table` during construction.
+    /// Encoded using sequential indices from `pt_index_table` during
+    /// construction.
     pub(crate) pt_index_mask: u64,
 }
 
@@ -69,21 +76,22 @@ impl ProcessTypeBitNode {
 
 /// Builds a flat-array trie from a set of composite [`ProcessType`] bitmasks.
 ///
-/// The trie encodes every unique prefix path among the given composite types. A root node
-/// with `process_type_bit = ProcessType::None` is always present at index 0. For each
-/// composite type (e.g. `VariantNorm | Delete`), the constructor walks its constituent bits in
-/// ascending order (determined by [`ProcessType::iter`]), reusing existing child nodes
-/// where the path overlaps with previously inserted types and creating new child nodes
-/// when a path diverges.
+/// The trie encodes every unique prefix path among the given composite types. A
+/// root node with `process_type_bit = ProcessType::None` is always present at
+/// index 0. For each composite type (e.g. `VariantNorm | Delete`), the
+/// constructor walks its constituent bits in ascending order (determined by
+/// [`ProcessType::iter`]), reusing existing child nodes where the path overlaps
+/// with previously inserted types and creating new child nodes when a path
+/// diverges.
 ///
-/// `pt_index_table` maps raw `ProcessType::bits()` to compact sequential indices (0..N).
-/// The `pt_index_mask` on each node is computed directly using these indices, so no
-/// post-construction reindexing is needed.
+/// `pt_index_table` maps raw `ProcessType::bits()` to compact sequential
+/// indices (0..N). The `pt_index_mask` on each node is computed directly using
+/// these indices, so no post-construction reindexing is needed.
 ///
-/// The resulting `Vec<ProcessTypeBitNode>` is indexed by node position in the trie. The
-/// root (index 0) represents the raw input; each subsequent node represents one
-/// transformation step. Node indices are used by `walk_and_scan` to traverse the trie at
-/// match time.
+/// The resulting `Vec<ProcessTypeBitNode>` is indexed by node position in the
+/// trie. The root (index 0) represents the raw input; each subsequent node
+/// represents one transformation step. Node indices are used by `walk_and_scan`
+/// to traverse the trie at match time.
 ///
 /// ```text
 /// // Given process_type_set = {VariantNorm|Delete, VariantNorm|Delete|Normalize}:

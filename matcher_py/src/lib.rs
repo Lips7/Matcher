@@ -1,12 +1,15 @@
-use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::prelude::{
-    Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
-};
-use pyo3::types::{PyAnyMethods, PyDict, PyModuleMethods, PyString, PyType};
-use pyo3::{Bound, pyfunction};
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde, reduce_text_process, text_process};
+use pyo3::{
+    Bound,
+    exceptions::{PyTypeError, PyValueError},
+    prelude::{
+        Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
+    },
+    pyfunction,
+    types::{PyAnyMethods, PyDict, PyModuleMethods, PyString, PyType},
+};
 
 fn extract_process_type(obj: &Bound<'_, PyAny>) -> PyResult<ProcessType> {
     if let Ok(bits) = obj.extract::<u8>() {
@@ -173,7 +176,7 @@ impl PySimpleMatcher {
     fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
 
-        let table: std::collections::HashMap<u8, std::collections::HashMap<u32, String>> =
+        let table: HashMap<u8, HashMap<u32, String>> =
             sonic_rs::from_slice(&self.simple_table_bytes).unwrap_or_default();
 
         let rule_count: usize = table.values().map(|m| m.len()).sum();

@@ -1,26 +1,29 @@
 //! Scan-engine compilation and match iteration for [`super::SimpleMatcher`].
 //!
-//! This module owns the Aho-Corasick automata that power Pass 1 (pattern scan) of the
-//! two-pass matching pipeline. Two independent engines are compiled:
+//! This module owns the Aho-Corasick automata that power Pass 1 (pattern scan)
+//! of the two-pass matching pipeline. Two independent engines are compiled:
 //!
-//! - **Bytewise engine** ([`BytewiseMatcher`]) — scans byte-by-byte over ASCII patterns.
-//!   With the `dfa` feature enabled, this uses the `aho-corasick` crate's DFA for maximum
-//!   throughput. Otherwise it falls back to `daachorse`'s bytewise double-array Aho-Corasick.
+//! - **Bytewise engine** ([`BytewiseMatcher`]) — scans byte-by-byte over ASCII
+//!   patterns. With the `dfa` feature enabled, this uses the `aho-corasick`
+//!   crate's DFA for maximum throughput. Otherwise it falls back to
+//!   `daachorse`'s bytewise double-array Aho-Corasick.
 //!
-//! - **Charwise engine** ([`CharwiseMatcher`]) — scans character-wise using `daachorse`'s
-//!   charwise automaton. Always built over the **full** pattern set so a single charwise
-//!   pass covers everything on non-ASCII input. CJK characters are 3 UTF-8 bytes, so
-//!   charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on CJK text.
+//! - **Charwise engine** ([`CharwiseMatcher`]) — scans character-wise using
+//!   `daachorse`'s charwise automaton. Always built over the **full** pattern
+//!   set so a single charwise pass covers everything on non-ASCII input. CJK
+//!   characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for
+//!   bytewise — ~1.6–1.9× faster on CJK text.
 //!
-//! The [`ScanPlan`] struct bundles both engines together with the [`PatternIndex`] that
-//! maps raw automaton values back to rule metadata.
+//! The [`ScanPlan`] struct bundles both engines together with the
+//! [`PatternIndex`] that maps raw automaton values back to rule metadata.
 //!
 //! # Engine selection
 //!
-//! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] accept an `is_ascii`
-//! flag (computed once per text variant by [`super::search`] via `str::is_ascii()`).
-//! The charwise engine is always built, so `is_ascii` determines which engine is used:
-//! bytewise for ASCII text, charwise for non-ASCII text.
+//! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] accept an
+//! `is_ascii` flag (computed once per text variant by [`super::search`] via
+//! `str::is_ascii()`). The charwise engine is always built, so `is_ascii`
+//! determines which engine is used: bytewise for ASCII text, charwise for
+//! non-ASCII text.
 
 use std::borrow::Cow;
 
@@ -34,17 +37,20 @@ use daachorse::{
     charwise::{CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder},
 };
 
+use super::{
+    encoding::{DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK},
+    pattern::{PatternEntry, PatternIndex},
+};
 use crate::MatcherError;
 
-use super::encoding::{DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK};
-use super::pattern::{PatternEntry, PatternIndex};
-
-/// Non-ASCII byte density threshold for switching from bytewise to charwise engine.
+/// Non-ASCII byte density threshold for switching from bytewise to charwise
+/// engine.
 ///
-/// Calibrated from 8,932-point characterization sweep (4 engines × 12 sizes × 11 CJK
-/// densities). At ~40% CJK characters the non-ASCII byte fraction is
-/// `0.4×3 / (0.4×3 + 0.6×1) ≈ 0.667`. Charwise overtakes DFA+Teddy at this crossover,
-/// consistent across pattern sizes and both `search` and `is_match` modes.
+/// Calibrated from 8,932-point characterization sweep (4 engines × 12 sizes ×
+/// 11 CJK densities). At ~40% CJK characters the non-ASCII byte fraction is
+/// `0.4×3 / (0.4×3 + 0.6×1) ≈ 0.667`. Charwise overtakes DFA+Teddy at this
+/// crossover, consistent across pattern sizes and both `search` and `is_match`
+/// modes.
 pub(super) const CHARWISE_DENSITY_THRESHOLD: f32 = 0.67;
 
 /// Computes the non-ASCII byte fraction of the full text using SIMD.
@@ -64,20 +70,20 @@ pub(super) fn text_non_ascii_density(text: &str) -> f32 {
 
 /// Compiled scan engines together with the pattern metadata they report into.
 ///
-/// Immutable after construction. Shared across all threads via `Arc` or by virtue of
-/// [`SimpleMatcher`](super::SimpleMatcher) being `Send + Sync`.
+/// Immutable after construction. Shared across all threads via `Arc` or by
+/// virtue of [`SimpleMatcher`](super::SimpleMatcher) being `Send + Sync`.
 ///
-/// The charwise engine is always built (even for pure-ASCII pattern sets) so that
-/// non-ASCII haystacks can be scanned at character granularity for ~1.6–1.9× throughput
-/// over bytewise scanning (CJK characters are 3 UTF-8 bytes → 3 bytewise transitions
-/// vs 1 charwise transition).
+/// The charwise engine is always built (even for pure-ASCII pattern sets) so
+/// that non-ASCII haystacks can be scanned at character granularity for
+/// ~1.6–1.9× throughput over bytewise scanning (CJK characters are 3 UTF-8
+/// bytes → 3 bytewise transitions vs 1 charwise transition).
 ///
 /// # Performance
 ///
-/// - **Bytewise DFA** (when `dfa` feature enabled):
-///   ~1.7–1.9× faster than DAAC bytewise on ASCII text, but ~17× more memory.
-/// - **Charwise DAAC**: 1 state transition per character (vs 3 bytewise for CJK),
-///   yielding ~1.6–1.9× throughput on non-ASCII text.
+/// - **Bytewise DFA** (when `dfa` feature enabled): ~1.7–1.9× faster than DAAC
+///   bytewise on ASCII text, but ~17× more memory.
+/// - **Charwise DAAC**: 1 state transition per character (vs 3 bytewise for
+///   CJK), yielding ~1.6–1.9× throughput on non-ASCII text.
 ///
 /// Engine selection is density-based: bytewise for low non-ASCII density
 /// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
@@ -89,8 +95,8 @@ pub(super) struct ScanPlan {
     charwise_matcher: Option<CharwiseMatcher>,
     /// `true` when every compiled pattern is pure ASCII.
     ///
-    /// Used only for the `is_match` fast-return: when all patterns are ASCII and
-    /// the text contains zero ASCII bytes, no match is possible.
+    /// Used only for the `is_match` fast-return: when all patterns are ASCII
+    /// and the text contains zero ASCII bytes, no match is possible.
     all_patterns_ascii: bool,
     /// Flat index mapping automaton raw values back to rule-entry metadata.
     patterns: PatternIndex,
@@ -112,7 +118,8 @@ type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
 
 /// Construction and query helpers for compiled scan engines.
 impl ScanPlan {
-    /// Compiles the bytewise and charwise scan engines for the deduplicated pattern set.
+    /// Compiles the bytewise and charwise scan engines for the deduplicated
+    /// pattern set.
     pub(super) fn compile(
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
@@ -163,18 +170,20 @@ impl ScanPlan {
 
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// Engine selection uses non-ASCII byte density from a 512-byte prefix sample:
+    /// Engine selection uses non-ASCII byte density from a 512-byte prefix
+    /// sample:
     ///
     /// 1. **All-ASCII patterns** — density-based dispatch:
-    ///    - **100% non-ASCII** (verified full text): `return false` — ASCII patterns
-    ///      cannot match text with zero ASCII bytes (UTF-8 guarantees bytes ≥0x80
-    ///      never encode ASCII codepoints).
-    ///    - **High density** (> [`CHARWISE_DENSITY_THRESHOLD`]): charwise engine
-    ///      (1.3–2.5× faster than DFA at ≥40% CJK characters).
-    ///    - **Low density**: bytewise DFA+Teddy (1.7–2.5× faster on ASCII-heavy text).
+    ///    - **100% non-ASCII** (verified full text): `return false` — ASCII
+    ///      patterns cannot match text with zero ASCII bytes (UTF-8 guarantees
+    ///      bytes ≥0x80 never encode ASCII codepoints).
+    ///    - **High density** (> [`CHARWISE_DENSITY_THRESHOLD`]): charwise
+    ///      engine (1.3–2.5× faster than DFA at ≥40% CJK characters).
+    ///    - **Low density**: bytewise DFA+Teddy (1.7–2.5× faster on ASCII-heavy
+    ///      text).
     ///
-    /// 2. **Mixed patterns** — exact `is_ascii()` dispatch (bytewise only has ASCII
-    ///    patterns, so CJK text must use charwise for correctness).
+    /// 2. **Mixed patterns** — exact `is_ascii()` dispatch (bytewise only has
+    ///    ASCII patterns, so CJK text must use charwise for correctness).
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         if self.all_patterns_ascii {
@@ -210,9 +219,10 @@ impl ScanPlan {
     /// Calls `on_value` for each raw match value produced by the chosen engine.
     ///
     /// Returns `true` if the callback requests early exit. Engine selection is
-    /// density-based: bytewise for low non-ASCII density (≤ [`CHARWISE_DENSITY_THRESHOLD`]),
-    /// charwise for high density. When `all_patterns_ascii` and the text is entirely
-    /// non-ASCII, returns `false` without scanning (no ASCII pattern can match).
+    /// density-based: bytewise for low non-ASCII density (≤
+    /// [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density. When
+    /// `all_patterns_ascii` and the text is entirely non-ASCII, returns
+    /// `false` without scanning (no ASCII pattern can match).
     #[inline(always)]
     pub(super) fn for_each_match_value(
         &self,
@@ -233,10 +243,11 @@ impl ScanPlan {
         false
     }
 
-    /// Calls `on_value` for each raw match value from a streaming byte iterator.
+    /// Calls `on_value` for each raw match value from a streaming byte
+    /// iterator.
     ///
-    /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has no
-    /// streaming API). Falls back to charwise for high-density text.
+    /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has
+    /// no streaming API). Falls back to charwise for high-density text.
     #[inline(always)]
     pub(super) fn for_each_match_value_from_iter(
         &self,
@@ -256,8 +267,9 @@ impl ScanPlan {
 
     /// AllSimple-specialized scan: yields rule indices directly.
     ///
-    /// Every raw value is assumed to carry `DIRECT_RULE_BIT`; the callback receives
-    /// the extracted `rule_idx` (no early exit, no indirect dispatch).
+    /// Every raw value is assumed to carry `DIRECT_RULE_BIT`; the callback
+    /// receives the extracted `rule_idx` (no early exit, no indirect
+    /// dispatch).
     #[inline(always)]
     pub(super) fn for_each_rule_idx_simple(
         &self,
@@ -298,7 +310,8 @@ impl BytewiseMatcher {
         #[cfg(feature = "dfa")]
         if let Some((ref matcher, ref to_value)) = self.dfa {
             for m in matcher.find_overlapping_iter(text) {
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
+                // bounds.
                 let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
                 if on_value(value, m.start(), m.end()) {
                     return true;
@@ -323,7 +336,8 @@ impl BytewiseMatcher {
         #[cfg(feature = "dfa")]
         if let Some((ref matcher, ref to_value)) = self.dfa {
             for m in matcher.find_overlapping_iter(text) {
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in bounds.
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
+                // bounds.
                 let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
                 let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
                 on_rule(
@@ -399,9 +413,10 @@ impl CharwiseMatcherStreamExt for CharwiseMatcher {
         iter: impl Iterator<Item = u8>,
         mut on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
-        // SAFETY: The streaming iterators (DeleteFilterIterator, NormalizeFilterIterator)
-        // yield valid UTF-8: delete outputs a subsequence of complete codepoints;
-        // normalize outputs unmapped codepoints verbatim plus valid UTF-8 replacement strings.
+        // SAFETY: The streaming iterators (DeleteFilterIterator,
+        // NormalizeFilterIterator) yield valid UTF-8: delete outputs a
+        // subsequence of complete codepoints; normalize outputs unmapped
+        // codepoints verbatim plus valid UTF-8 replacement strings.
         for hit in unsafe { self.find_overlapping_iter_from_iter(iter) } {
             if on_value(hit.value(), hit.start(), hit.end()) {
                 return true;
@@ -449,12 +464,13 @@ impl CharwiseMatcherExt for CharwiseMatcher {
     }
 }
 
-/// Compiles the bytewise and charwise automata from the deduplicated pattern list.
+/// Compiles the bytewise and charwise automata from the deduplicated pattern
+/// list.
 ///
 /// - **ASCII patterns** → [`BytewiseMatcher`] (DFA or DAAC bytewise).
-/// - **All patterns** → [`CharwiseMatcher`] (DAAC charwise), always built from the
-///   full pattern set so that non-ASCII haystacks benefit from character-granularity
-///   scanning (~1.6–1.9× faster on CJK text vs bytewise).
+/// - **All patterns** → [`CharwiseMatcher`] (DAAC charwise), always built from
+///   the full pattern set so that non-ASCII haystacks benefit from
+///   character-granularity scanning (~1.6–1.9× faster on CJK text vs bytewise).
 ///
 /// # Panics
 ///
@@ -464,8 +480,8 @@ impl CharwiseMatcherExt for CharwiseMatcher {
 ///
 /// # Errors
 ///
-/// Returns [`MatcherError`] if the `daachorse` or `aho-corasick` automaton builders
-/// encounter an internal error during construction.
+/// Returns [`MatcherError`] if the `daachorse` or `aho-corasick` automaton
+/// builders encounter an internal error during construction.
 fn compile_automata(
     dedup_patterns: &[Cow<'_, str>],
     value_map: &[u32],

@@ -1,5 +1,6 @@
+use std::{borrow::Cow, collections::HashMap};
+
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Construction: HashMap API
@@ -162,7 +163,7 @@ fn test_process_into_append_general_mode() {
 
     let sentinel = SimpleResult {
         word_id: 9999,
-        word: std::borrow::Cow::Borrowed("sentinel"),
+        word: Cow::Borrowed("sentinel"),
     };
     let mut results: Vec<SimpleResult<'_>> = vec![sentinel];
     matcher.process_into("hello 測試", &mut results);

@@ -1,6 +1,7 @@
+use std::{borrow::Cow, collections::HashMap};
+
 use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleResult};
 use proptest::prelude::*;
-use std::collections::HashMap;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
@@ -236,7 +237,7 @@ proptest! {
         // Pre-seed with a sentinel result
         let sentinel = SimpleResult {
             word_id: 9999,
-            word: std::borrow::Cow::Borrowed("sentinel"),
+            word: Cow::Borrowed("sentinel"),
         };
         let mut results: Vec<SimpleResult<'_>> = vec![sentinel];
         matcher.process_into(&text, &mut results);
