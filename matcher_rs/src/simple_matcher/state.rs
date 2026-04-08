@@ -251,28 +251,6 @@ impl ScanState<'_> {
         word_state.positive_generation = generation;
         true
     }
-
-    /// Marks a simple rule as positive for the current generation
-    /// (lightweight).
-    ///
-    /// Like [`mark_positive`](Self::mark_positive) but skips the
-    /// `matrix_generation` check and `touched_indices` bookkeeping. Only
-    /// safe to call from code paths that never read `touched_indices`
-    /// afterward (i.e., `process_simple`).
-    #[inline(always)]
-    pub(super) fn mark_positive_simple(&mut self, rule_idx: usize) -> bool {
-        let generation = self.generation;
-        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
-        let word_state = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.word_states.len());
-            self.word_states.get_unchecked_mut(rule_idx)
-        };
-        if word_state.positive_generation == generation {
-            return false;
-        }
-        word_state.positive_generation = generation;
-        true
-    }
 }
 
 /// Test-only convenience methods. The hot path inlines these operations

@@ -27,8 +27,10 @@ def test_init_with_invalid_bytes():
 
 
 def test_init_with_empty_map():
-    SimpleMatcher(json.dumps({}).encode())
-    SimpleMatcher(json.dumps({1: {}}).encode())
+    with pytest.raises(ValueError):
+        SimpleMatcher(json.dumps({}).encode())
+    with pytest.raises(ValueError):
+        SimpleMatcher(json.dumps({1: {}}).encode())
 
 
 def test_init_with_invalid_map():

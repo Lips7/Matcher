@@ -114,6 +114,8 @@ use std::fmt;
 ///
 /// # When does construction fail?
 ///
+/// - **Empty pattern set** — no patterns remain after parsing (all entries were
+///   empty strings or pure-NOT rules).
 /// - **Invalid [`ProcessType`] bits** — the caller passed a bitflag value with
 ///   undefined bits (bits 6–7) set.
 /// - **Automaton build failure** — the underlying Aho-Corasick libraries
@@ -127,12 +129,9 @@ use std::fmt;
 ///
 /// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
 ///
-/// // Construction can be checked with standard Result handling.
+/// // Empty tables are rejected.
 /// let empty: SimpleTable = HashMap::new();
-/// match SimpleMatcher::new(&empty) {
-///     Ok(matcher) => assert!(!matcher.is_match("anything")),
-///     Err(e) => panic!("unexpected error: {e}"),
-/// }
+/// assert!(SimpleMatcher::new(&empty).is_err());
 /// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -149,6 +148,13 @@ pub enum MatcherError {
         /// The raw bitflag value that was rejected.
         bits: u8,
     },
+
+    /// The pattern set is empty — no scannable patterns remain after parsing.
+    ///
+    /// This can happen when the input table is entirely empty, all pattern
+    /// strings are empty, or every rule was a pure-NOT rule (which is
+    /// unsatisfiable and skipped during parsing).
+    EmptyPatterns,
 }
 
 impl fmt::Display for MatcherError {
@@ -159,6 +165,10 @@ impl fmt::Display for MatcherError {
                 f,
                 "invalid ProcessType bits: {bits:#04x} \
                  (only bits 0\u{2013}5 are defined; bits 6\u{2013}7 must be zero)"
+            ),
+            Self::EmptyPatterns => write!(
+                f,
+                "empty pattern set: at least one scannable pattern is required"
             ),
         }
     }

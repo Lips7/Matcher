@@ -32,13 +32,16 @@ use foldhash::HashMapExt;
 type FoldHashMap<K, V> = HashMap<K, V, foldhash::fast::FixedState>;
 
 use super::{
-    SearchMode, SimpleMatcher,
+    SimpleMatcher,
     encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
     engine::ScanPlan,
     pattern::{PatternEntry, PatternKind},
     rule::{RuleCold, RuleHot, RuleSet, RuleShape},
 };
-use crate::process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit};
+use crate::{
+    MatcherError,
+    process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit},
+};
 
 /// Fully parsed matcher construction output before scan-engine compilation.
 ///
@@ -76,15 +79,14 @@ impl SimpleMatcher {
     /// 2. Parse all rules into deduplicated patterns and rule metadata.
     /// 3. Build the process-type transformation tree and recompute masks using
     ///    compact indices.
-    /// 4. Choose the search mode — `AllSimple` when the tree has no children
-    ///    and every pattern is simple; `General` otherwise.
-    /// 5. Compile Aho-Corasick automata via the scan plan.
-    /// 6. Assemble and return the immutable [`SimpleMatcher`].
+    /// 4. Compile Aho-Corasick automata via the scan plan.
+    /// 5. Assemble and return the immutable [`SimpleMatcher`].
     ///
     /// # Errors
     ///
-    /// Returns [`MatcherError`](crate::MatcherError) if:
+    /// Returns [`MatcherError`] if:
     ///
+    /// - The pattern set is empty after parsing (no scannable patterns).
     /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits
     ///   set (bits 6–7 must be zero).
     /// - The underlying Aho-Corasick automaton construction (`daachorse` or
@@ -114,13 +116,13 @@ impl SimpleMatcher {
     /// ```
     pub fn new<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
-    ) -> Result<SimpleMatcher, crate::MatcherError>
+    ) -> Result<SimpleMatcher, MatcherError>
     where
         I: AsRef<str> + 'a,
     {
         for &pt in process_type_word_map.keys() {
             if (pt.bits() as usize) >= PROCESS_TYPE_TABLE_SIZE {
-                return Err(crate::MatcherError::invalid_process_type(pt.bits()));
+                return Err(MatcherError::invalid_process_type(pt.bits()));
             }
         }
 
@@ -131,20 +133,22 @@ impl SimpleMatcher {
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
+        if parsed.dedup_patterns.is_empty() {
+            return Err(MatcherError::EmptyPatterns);
+        }
+
         let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
 
         let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
-        let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
-            SearchMode::AllSimple
-        } else {
-            SearchMode::General
-        };
+        let is_match_fast = process_type_tree[0].children.is_empty()
+            && scan.patterns().all_simple()
+            && !scan.patterns().has_boundary();
 
         Ok(SimpleMatcher {
             tree: process_type_tree,
-            mode,
             scan,
             rules: parsed.rules,
+            is_match_fast,
         })
     }
 

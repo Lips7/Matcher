@@ -162,36 +162,21 @@ impl PatternIndex {
         }
     }
 
-    /// Returns whether any entry requires word boundary checking.
-    pub(super) fn has_boundary(&self) -> bool {
-        self.has_boundary
-    }
-
     /// Returns the estimated heap memory in bytes owned by the pattern index.
     pub(super) fn heap_bytes(&self) -> usize {
         self.entries.capacity() * size_of::<PatternEntry>()
             + self.ranges.capacity() * size_of::<(usize, usize)>()
     }
 
-    /// Returns whether there are no deduplicated patterns to scan.
-    #[inline(always)]
-    pub(super) fn is_empty(&self) -> bool {
-        self.ranges.is_empty()
+    /// Returns whether any entry requires word boundary checking.
+    pub(super) fn has_boundary(&self) -> bool {
+        self.has_boundary
     }
 
-    /// Returns whether every entry across all patterns is a
-    /// [`PatternKind::Simple`] segment and every pattern maps to exactly
-    /// one rule.
+    /// Returns whether every pattern maps to a single simple rule.
     ///
-    /// When true, the matcher can use
-    /// [`AllSimple`](super::SearchMode::AllSimple) which skips the full
-    /// state machine and processes every hit as a completed rule.
-    ///
-    /// The single-entry requirement exists because the AllSimple fast path
-    /// extracts `rule_idx` directly from the raw scan value via
-    /// [`super::encoding::DIRECT_RULE_MASK`]. Patterns shared across
-    /// multiple rules (e.g., via OR alternatives `"cat|dog"` + `"dog|bird"`)
-    /// produce multi-entry buckets that require the General dispatch path.
+    /// When true and the transform tree has no children, `is_match` can
+    /// delegate directly to the AC automaton — each hit is a completed rule.
     #[inline(always)]
     pub(super) fn all_simple(&self) -> bool {
         self.entries

@@ -58,9 +58,8 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// use matcher_rs::SimpleMatcherBuilder;
     ///
     /// let builder = SimpleMatcherBuilder::new();
-    /// // The builder starts with no registered patterns.
-    /// let matcher = builder.build().unwrap();
-    /// assert!(!matcher.is_match("anything"));
+    /// // Building with no patterns returns an error.
+    /// assert!(builder.build().is_err());
     /// ```
     pub fn new() -> Self {
         Self {
