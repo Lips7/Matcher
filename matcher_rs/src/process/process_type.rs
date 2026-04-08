@@ -9,6 +9,7 @@
 use std::fmt::{self, Display};
 
 use bitflags::bitflags;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 bitflags! {
@@ -142,6 +143,7 @@ bitflags! {
 /// // Single flag:
 /// assert_eq!(serde_json::to_string(&ProcessType::None).unwrap(), "1");
 /// ```
+#[cfg(feature = "serde")]
 impl Serialize for ProcessType {
     /// Serializes the bitflags value as its underlying `u8` representation.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -173,6 +175,7 @@ impl Serialize for ProcessType {
 /// let result: Result<ProcessType, _> = serde_json::from_str("128");
 /// assert!(result.is_err());
 /// ```
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for ProcessType {
     /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit
     /// combinations.

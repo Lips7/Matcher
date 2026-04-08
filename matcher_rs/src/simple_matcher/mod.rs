@@ -21,8 +21,6 @@
 
 use std::{borrow::Cow, fmt};
 
-use serde::Serialize;
-
 use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
@@ -68,7 +66,8 @@ pub use rule::{SimpleTable, SimpleTableSerde};
 /// assert!(results.iter().any(|r| r.word == "hello"));
 /// ```
 #[must_use]
-#[derive(Serialize, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SimpleResult<'a> {
     /// The caller-assigned identifier for the matched rule, as passed to
     /// [`SimpleMatcherBuilder::add_word`](crate::SimpleMatcherBuilder::add_word) or

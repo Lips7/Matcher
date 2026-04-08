@@ -84,8 +84,14 @@ pub type SimpleTable<'a> = HashMap<ProcessType, HashMap<u32, &'a str>>;
 ///
 /// let matcher = SimpleMatcher::new(&table).unwrap();
 /// assert!(matcher.is_match("hello world"));
+/// ```
 ///
-/// // Or deserialize from JSON (ProcessType serializes as its raw u8 bits).
+/// With the `serde` feature enabled, the table can be deserialized from JSON
+/// (ProcessType serializes as its raw u8 bits):
+///
+/// ```rust,ignore
+/// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde};
+///
 /// let json = r#"{"1":{"1":"hello","2":"world"}}"#;
 /// let deserialized: SimpleTableSerde = serde_json::from_str(json).unwrap();
 /// let matcher = SimpleMatcher::new(&deserialized).unwrap();

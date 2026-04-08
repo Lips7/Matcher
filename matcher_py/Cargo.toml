@@ -18,7 +18,7 @@ name = "matcher_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-matcher_rs = { path = "../matcher_rs", version = "0.14.2" }
+matcher_rs = { path = "../matcher_rs", version = "0.14.2", features = ["serde"] }
 pyo3 = { version = "0.28.3", features = ["extension-module"] }
 sonic-rs = "0.5.8"
 

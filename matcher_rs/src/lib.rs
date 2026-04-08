@@ -89,6 +89,7 @@
 //! | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch` |
 //! | `dfa` | via `perf` | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
 //! | `simd_runtime_dispatch` | via `perf` | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
+//! | `serde` | off | Enables `Serialize`/`Deserialize` impls for [`ProcessType`] and `Serialize` for [`SimpleResult`] |
 
 /// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
 ///

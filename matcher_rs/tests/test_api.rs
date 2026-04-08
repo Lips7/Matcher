@@ -223,54 +223,59 @@ fn test_same_word_id_different_process_types() {
 }
 
 // ---------------------------------------------------------------------------
-// Serde
+// Serde (requires `serde` feature)
 // ---------------------------------------------------------------------------
 
-#[test]
-fn test_serde_round_trip_process_type() {
-    let types = [
-        ProcessType::None,
-        ProcessType::VariantNorm,
-        ProcessType::Delete,
-        ProcessType::Normalize,
-        ProcessType::Romanize,
-        ProcessType::RomanizeChar,
-        ProcessType::DeleteNormalize,
-        ProcessType::VariantNormDeleteNormalize,
-        ProcessType::VariantNorm | ProcessType::Romanize,
-    ];
+#[cfg(feature = "serde")]
+mod serde_tests {
+    use matcher_rs::ProcessType;
 
-    for pt in types {
-        let json = serde_json::to_string(&pt).unwrap();
-        let deserialized: ProcessType = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            pt, deserialized,
-            "ProcessType {pt:?} did not survive round-trip: json={json}"
-        );
+    #[test]
+    fn test_serde_round_trip_process_type() {
+        let types = [
+            ProcessType::None,
+            ProcessType::VariantNorm,
+            ProcessType::Delete,
+            ProcessType::Normalize,
+            ProcessType::Romanize,
+            ProcessType::RomanizeChar,
+            ProcessType::DeleteNormalize,
+            ProcessType::VariantNormDeleteNormalize,
+            ProcessType::VariantNorm | ProcessType::Romanize,
+        ];
+
+        for pt in types {
+            let json = serde_json::to_string(&pt).unwrap();
+            let deserialized: ProcessType = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                pt, deserialized,
+                "ProcessType {pt:?} did not survive round-trip: json={json}"
+            );
+        }
     }
-}
 
-#[test]
-fn test_serde_rejects_invalid_process_type_bits() {
-    for bits in [128u8, 192, 255] {
-        let json = bits.to_string();
-        let result: Result<ProcessType, _> = serde_json::from_str(&json);
-        assert!(
-            result.is_err(),
-            "ProcessType deserialization should reject bits={bits:#04x}"
-        );
+    #[test]
+    fn test_serde_rejects_invalid_process_type_bits() {
+        for bits in [128u8, 192, 255] {
+            let json = bits.to_string();
+            let result: Result<ProcessType, _> = serde_json::from_str(&json);
+            assert!(
+                result.is_err(),
+                "ProcessType deserialization should reject bits={bits:#04x}"
+            );
+        }
     }
-}
 
-#[test]
-fn test_serde_accepts_all_valid_process_type_bits() {
-    for bits in 0u8..128 {
-        let json = bits.to_string();
-        let result: Result<ProcessType, _> = serde_json::from_str(&json);
-        assert!(
-            result.is_ok(),
-            "ProcessType deserialization should accept bits={bits:#04x}"
-        );
+    #[test]
+    fn test_serde_accepts_all_valid_process_type_bits() {
+        for bits in 0u8..128 {
+            let json = bits.to_string();
+            let result: Result<ProcessType, _> = serde_json::from_str(&json);
+            assert!(
+                result.is_ok(),
+                "ProcessType deserialization should accept bits={bits:#04x}"
+            );
+        }
     }
 }
 
