@@ -138,10 +138,10 @@ The thread-local `SimpleMatchState` bumps its `generation` counter (say, to `gen
 
 ```
 text = "Hello! 你好世界 china is cool"
-is_ascii = false → charwise engine selected
+density = 0.36 (≤ 0.67 threshold) → bytewise engine selected
 ```
 
-The charwise AC automaton scans the full text. It finds no overlapping matches (our patterns are `"hello"` lowercase, `"你好"`, etc. — the raw text has `"Hello"` with capital H). No state updates.
+The bytewise AC automaton scans the full text. It finds no overlapping matches (our patterns are `"hello"` lowercase, `"你好"`, etc. — the raw text has `"Hello"` with capital H). No state updates.
 
 ---
 
@@ -157,12 +157,12 @@ The charwise AC automaton scans the full text. It finds no overlapping matches (
 
 ```
 input:  "Hello! 你好世界 china is cool"
-output: "Hello你好世界chinaisscool"    (is_ascii = false)
+output: "Hello你好世界chinaisscool"    (density = 0.41 → bytewise)
 ```
 
 This node terminates (`pt_index_mask` has bit 1 for `VariantNorm|Delete`). Scan with `pt_index_mask = 0b010`:
 
-The charwise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2. `resolved_count` increments to 1.
+The bytewise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2. `resolved_count` increments to 1.
 
 ---
 
@@ -172,10 +172,10 @@ The charwise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RUL
 
 ```
 input:  "Hello! 你好世界 china is cool"
-output: "Hello!  ni  hao  shi  jie  china is cool"    (is_ascii = true)
+output: "Hello!  ni  hao  shi  jie  china is cool"    (density = 0.0 → bytewise)
 ```
 
-This node terminates (`pt_index_mask` has bit 2 for `Romanize`). Since `is_ascii = true`, the bytewise engine is selected.
+This node terminates (`pt_index_mask` has bit 2 for `Romanize`). Since `density = 0.0` (≤ 0.67 threshold), the bytewise engine is selected.
 
 The bytewise AC finds no match for `"zhongguo"` (the text contains `"ni hao shi jie"`, not `"zhongguo"`). No state update for R3.
 

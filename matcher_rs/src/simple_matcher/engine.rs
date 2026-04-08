@@ -170,42 +170,22 @@ impl ScanPlan {
 
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// Engine selection uses non-ASCII byte density from a 512-byte prefix
-    /// sample:
-    ///
-    /// 1. **All-ASCII patterns** — density-based dispatch:
-    ///    - **100% non-ASCII** (verified full text): `return false` — ASCII
-    ///      patterns cannot match text with zero ASCII bytes (UTF-8 guarantees
-    ///      bytes ≥0x80 never encode ASCII codepoints).
-    ///    - **High density** (> [`CHARWISE_DENSITY_THRESHOLD`]): charwise
-    ///      engine (1.3–2.5× faster than DFA at ≥40% CJK characters).
-    ///    - **Low density**: bytewise DFA+Teddy (1.7–2.5× faster on ASCII-heavy
-    ///      text).
-    ///
-    /// 2. **Mixed patterns** — exact `is_ascii()` dispatch (bytewise only has
-    ///    ASCII patterns, so CJK text must use charwise for correctness).
+    /// Density-based engine dispatch (same logic as
+    /// [`Self::for_each_match_value`]):
+    /// - **All-ASCII patterns + 100% non-ASCII text**: `return false` — ASCII
+    ///   patterns cannot match text with zero ASCII bytes (UTF-8 guarantees
+    ///   bytes ≥0x80 never encode ASCII codepoints).
+    /// - **Low density** (≤ [`CHARWISE_DENSITY_THRESHOLD`]): bytewise DFA+Teddy
+    ///   (1.7–2.5× faster on ASCII-heavy text).
+    /// - **High density** (> [`CHARWISE_DENSITY_THRESHOLD`]): charwise engine
+    ///   (1.3–2.5× faster at ≥40% CJK characters).
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
-        if self.all_patterns_ascii {
-            let density = text_non_ascii_density(text);
-            // ASCII patterns can never match text with zero ASCII bytes.
-            if density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
-                return false;
-            }
-            if density > CHARWISE_DENSITY_THRESHOLD {
-                return self
-                    .charwise_matcher
-                    .as_ref()
-                    .is_some_and(|m| m.is_match_text(text));
-            }
-            return self
-                .bytewise_matcher
-                .as_ref()
-                .is_some_and(|m| m.is_match(text));
+        let density = text_non_ascii_density(text);
+        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
+            return false;
         }
-
-        // Mixed patterns — exact is_ascii dispatch (bytewise only has ASCII patterns).
-        if text.is_ascii() {
+        if density <= CHARWISE_DENSITY_THRESHOLD {
             self.bytewise_matcher
                 .as_ref()
                 .is_some_and(|m| m.is_match(text))

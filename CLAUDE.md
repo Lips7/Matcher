@@ -77,7 +77,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 ### How a Query Works
 
 1. **Transform** — Walk a shared-prefix trie of `ProcessType` steps, producing text variants (VariantNorm, Delete, Normalize, Romanize). Intermediate results are reused across combinations.
-2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise for ASCII, charwise for CJK). Hits update per-rule state.
+2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise or charwise, selected by SIMD density scan at threshold 0.67). Hits update per-rule state.
 3. **Evaluate** — Touched rules are checked: all AND segments satisfied + no NOT veto → match.
 4. **AllSimple bypass** — When all rules are pure literals under one `ProcessType`, the trie + state machinery is skipped entirely — each automaton hit maps directly to a result.
 
