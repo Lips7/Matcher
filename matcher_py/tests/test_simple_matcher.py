@@ -15,6 +15,7 @@ def test_init_with_non_bytes():
     with pytest.raises(TypeError):
         SimpleMatcher({})  # ty: ignore[invalid-argument-type]
 
+
 def test_init_with_invalid_bytes():
     with pytest.raises(ValueError):
         SimpleMatcher(b"")
@@ -168,6 +169,7 @@ def test_from_dict_empty():
 def test_from_dict_invalid():
     with pytest.raises((ValueError, TypeError)):
         SimpleMatcher.from_dict("not a dict")  # ty: ignore[invalid-argument-type]
+
 
 def test_stats():
     matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
