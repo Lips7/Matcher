@@ -66,6 +66,9 @@ pub(crate) struct ProcessTypeBitNode {
 }
 
 impl ProcessTypeBitNode {
+    /// Returns the estimated heap memory in bytes used by the `children` vec.
+    ///
+    /// Returns 0 when `children` fits in the inline `TinyVec` storage.
     pub(crate) fn heap_bytes(&self) -> usize {
         match &self.children {
             TinyVec::Heap(v) => v.capacity() * size_of::<usize>(),

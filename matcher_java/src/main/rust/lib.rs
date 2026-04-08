@@ -1,3 +1,16 @@
+//! Java JNI bindings for the [`matcher_rs`] pattern-matching engine.
+//!
+//! # Lifecycle
+//!
+//! 1. Call [`Java_com_matcherjava_MatcherJava_initSimpleMatcher`] with JSON
+//!    `byte[]` to get a raw pointer (`jlong`).
+//! 2. Pass the pointer to query functions (`simpleMatcherIsMatch`,
+//!    `simpleMatcherProcess`, etc.).
+//! 3. Call [`Java_com_matcherjava_MatcherJava_dropSimpleMatcher`] to free.
+//!
+//! All text crosses the JNI boundary as `byte[]` (UTF-8). Errors are thrown as
+//! Java `RuntimeException` via `ThrowRuntimeExAndDefault`.
+
 use std::ptr;
 
 use jni::{
@@ -11,36 +24,48 @@ use matcher_rs::{
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
 };
 
+/// JNI class path for `com.matcherjava.extensiontypes.SimpleResult`.
 macro_rules! simple_result_class {
     () => {
         jni::jni_str!("com/matcherjava/extensiontypes/SimpleResult")
     };
 }
+/// JNI constructor signature `(int, String)` for `SimpleResult`.
 macro_rules! simple_result_init_sig {
     () => {
         jni::jni_sig!("(ILjava/lang/String;)V")
     };
 }
+/// JNI array class path for `SimpleResult[]`.
 macro_rules! simple_result_array_class {
     () => {
         jni::jni_str!("[Lcom/matcherjava/extensiontypes/SimpleResult;")
     };
 }
 
+/// Decodes a JNI `byte[]` into a Rust [`String`], failing on invalid UTF-8.
 fn decode_text(env: &Env<'_>, text_bytes: JByteArray<'_>) -> JniResult<String> {
     String::from_utf8(env.convert_byte_array(text_bytes)?)
         .map_err(|error| JniError::ParseFailed(error.to_string()))
 }
 
+/// Deserializes JSON bytes into a [`SimpleTable`] for matcher construction.
 fn parse_simple_table(simple_table_bytes: &[u8]) -> JniResult<SimpleTable<'_>> {
     sonic_rs::from_slice(simple_table_bytes)
         .map_err(|error| JniError::ParseFailed(error.to_string()))
 }
 
+/// Converts a Java `int` to [`ProcessType`], retaining all bits.
 fn process_type_from_jint(process_type: jint) -> ProcessType {
     ProcessType::from_bits_retain(process_type as u8)
 }
 
+/// Decodes a JNI `byte[][]` into `Vec<String>`.
+///
+/// # Safety (internal)
+///
+/// Uses `JByteArray::from_raw` — each element of the Java array must be a valid
+/// `byte[]`.
 fn decode_texts(env: &mut Env<'_>, texts_array: &JObjectArray<'_>) -> JniResult<Vec<String>> {
     let len = texts_array.len(env)?;
     let mut texts = Vec::with_capacity(len);
@@ -53,6 +78,13 @@ fn decode_texts(env: &mut Env<'_>, texts_array: &JObjectArray<'_>) -> JniResult<
     Ok(texts)
 }
 
+/// Reconstructs `&SimpleMatcher` from a raw `jlong` pointer. Returns `None` for
+/// null (0).
+///
+/// # Safety (internal)
+///
+/// The pointer must have been returned by `initSimpleMatcher` and not yet
+/// freed.
 fn matcher_from_ptr(matcher_ptr: jlong) -> Option<&'static SimpleMatcher> {
     if matcher_ptr == 0 {
         return None;
@@ -61,6 +93,12 @@ fn matcher_from_ptr(matcher_ptr: jlong) -> Option<&'static SimpleMatcher> {
     Some(unsafe { &*(matcher_ptr as *const SimpleMatcher) })
 }
 
+/// Constructs a JNI `SimpleResult` object from a Rust match result.
+///
+/// # Safety (internal)
+///
+/// `init` must be the resolved `(int, String)` constructor for the
+/// `SimpleResult` class.
 fn build_result_object<'a>(
     env: &mut Env<'a>,
     class: &JClass<'a>,
@@ -83,6 +121,7 @@ fn build_result_object<'a>(
     }
 }
 
+/// Constructs a JNI `SimpleResult[]` array from a slice of Rust match results.
 fn build_result_array<'a>(
     env: &mut Env<'a>,
     class: &JClass<'a>,
@@ -97,6 +136,11 @@ fn build_result_array<'a>(
     Ok(array)
 }
 
+/// Applies the text transformation pipeline.
+///
+/// # Safety
+///
+/// `text_bytes` must be a valid JNI `byte[]` containing UTF-8.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
     mut env: EnvUnowned<'local>,
@@ -113,6 +157,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_textProcess<'local>(
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Applies the transformation pipeline, returning all intermediate variants as
+/// `String[]`.
+///
+/// # Safety
+///
+/// `text_bytes` must be a valid JNI `byte[]` containing UTF-8.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local>(
     mut env: EnvUnowned<'local>,
@@ -139,6 +189,16 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Constructs a [`SimpleMatcher`] from JSON `byte[]` and returns a raw heap
+/// pointer as `jlong`.
+///
+/// The caller owns the pointer and must eventually pass it to
+/// [`dropSimpleMatcher`](Java_com_matcherjava_MatcherJava_dropSimpleMatcher) to
+/// free.
+///
+/// # Safety
+///
+/// `simple_table_bytes` must be a valid JNI `byte[]` containing UTF-8 JSON.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher<'local>(
     mut env: EnvUnowned<'local>,
@@ -157,6 +217,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_initSimpleMatcher<'local
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Returns whether any rule matches `text_bytes`.
+///
+/// # Safety
+///
+/// `matcher_ptr` must have been returned by `initSimpleMatcher` and not yet
+/// freed. `text_bytes` must be a valid JNI `byte[]` containing UTF-8.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch<'local>(
     mut env: EnvUnowned<'local>,
@@ -175,6 +241,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch<'lo
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Returns all matching rules as a `SimpleResult[]` array, or null if
+/// `matcher_ptr` is 0.
+///
+/// # Safety
+///
+/// Same as [`simpleMatcherIsMatch`](Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcess<'local>(
     mut env: EnvUnowned<'local>,
@@ -197,6 +269,11 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcess<'lo
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Returns the first matching rule as a `SimpleResult` object, or null.
+///
+/// # Safety
+///
+/// Same as [`simpleMatcherIsMatch`](Java_com_matcherjava_MatcherJava_simpleMatcherIsMatch).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherFindMatch<'local>(
     mut env: EnvUnowned<'local>,
@@ -223,6 +300,11 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherFindMatch<'
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Batch `isMatch`: `byte[][] -> boolean[]`.
+///
+/// # Safety
+///
+/// `matcher_ptr` must be valid. `texts_bytes` must be a JNI `byte[][]`.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatch<'local>(
     mut env: EnvUnowned<'local>,
@@ -245,6 +327,11 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatc
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Batch `process`: `byte[][] -> SimpleResult[][]`.
+///
+/// # Safety
+///
+/// Same as [`simpleMatcherBatchIsMatch`](Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatch).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProcess<'local>(
     mut env: EnvUnowned<'local>,
@@ -274,6 +361,12 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProces
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Batch `findMatch`: `byte[][] -> SimpleResult[]` (null elements for
+/// non-matches).
+///
+/// # Safety
+///
+/// Same as [`simpleMatcherBatchIsMatch`](Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatch).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchFindMatch<'local>(
     mut env: EnvUnowned<'local>,
@@ -303,6 +396,13 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchFindMa
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// Frees the [`SimpleMatcher`] allocated by `initSimpleMatcher`. No-op when
+/// `matcher_ptr` is 0.
+///
+/// # Safety
+///
+/// `matcher_ptr` must have been returned by `initSimpleMatcher`. Double-free is
+/// undefined behavior.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_dropSimpleMatcher<'local>(
     _env: EnvUnowned<'local>,

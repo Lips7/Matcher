@@ -134,7 +134,10 @@ fn fold_noop_children_masks(
 /// Hot-path search helpers layered on top of the compiled scan engines.
 impl SimpleMatcher {
     /// Scans one processed text variant and forwards each raw hit into rule
-    /// evaluation.
+    /// evaluation via [`process_match`](Self::process_match).
+    ///
+    /// Returns `true` when the caller should stop scanning (i.e., `exit_early`
+    /// is set and at least one rule was satisfied).
     #[inline(always)]
     fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         let text_bytes = processed_text.as_bytes();
@@ -146,6 +149,19 @@ impl SimpleMatcher {
     }
 
     /// Processes one raw match value reported by the scan engine.
+    ///
+    /// Two dispatch paths:
+    /// - **Direct**: when `DIRECT_RULE_BIT` is set, extracts `rule_idx`,
+    ///   `pt_index`, and `boundary` inline from the bit-packed value and marks
+    ///   the rule as positive — no entry table indirection.
+    /// - **Indirect**: delegates to
+    ///   [`PatternIndex::dispatch_indirect`](super::pattern::PatternIndex::dispatch_indirect)
+    ///   for multi-entry or non-simple patterns, then forwards each entry to
+    ///   [`RuleSet::process_entry`](super::rule::RuleSet::process_entry).
+    ///
+    /// Boundary checks via [`check_word_boundary`] filter out hits whose match
+    /// position does not satisfy the `\b` flags. Returns `true` when the caller
+    /// should stop scanning.
     #[inline(always)]
     fn process_match(
         &self,

@@ -1,3 +1,31 @@
+//! C FFI bindings for the [`matcher_rs`] pattern-matching engine.
+//!
+//! # Lifecycle
+//!
+//! 1. Call [`init_simple_matcher`] with JSON bytes to get a `*mut
+//!    SimpleMatcher`.
+//! 2. Pass the pointer to query functions ([`simple_matcher_is_match`],
+//!    [`simple_matcher_process`], [`simple_matcher_find_match`]).
+//! 3. Free results with the corresponding `drop_*` function
+//!    ([`drop_simple_result`], [`drop_simple_result_list`], [`drop_string`],
+//!    [`drop_string_array`]).
+//! 4. Call [`drop_simple_matcher`] when done.
+//!
+//! # Memory ownership
+//!
+//! Every pointer returned by this library has a corresponding `drop_*`
+//! function. The caller is responsible for calling it exactly once.
+//!
+//! # String encoding
+//!
+//! All strings are null-terminated UTF-8 (`*const c_char`).
+//!
+//! # Panic safety
+//!
+//! All public functions wrap their body in
+//! [`catch_unwind`](std::panic::catch_unwind) and return null / `false` on
+//! panic.
+
 use std::{
     ffi::{CStr, CString, c_char},
     panic::{self, AssertUnwindSafe},

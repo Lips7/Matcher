@@ -43,6 +43,11 @@ use crate::process::{
 // Shared replacement helpers
 // ---------------------------------------------------------------------------
 
+/// Builds a `String` by applying `(start, end, char)` replacements from an
+/// iterator over a source `text`.
+///
+/// Returns `None` if the iterator is empty (nothing to replace). Used by
+/// [`VariantNormMatcher::replace`] for single-codepoint replacements.
 #[inline(always)]
 fn replace_scan<I>(text: &str, mut iter: I) -> Option<String>
 where
@@ -65,6 +70,12 @@ where
     }
 }
 
+/// Builds a `String` by applying `(start, end, &str)` replacements from an
+/// iterator over a source `text`.
+///
+/// Returns `None` if the iterator is empty. Used by
+/// [`RomanizeMatcher::replace`] and [`NormalizeMatcher::replace`] for
+/// multi-byte string replacements.
 #[inline(always)]
 fn replace_spans<'a, I>(text: &str, mut iter: I) -> Option<String>
 where
@@ -117,6 +128,7 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     (value != 0).then_some(value)
 }
 
+/// Decodes a little-endian `&[u8]` into `Box<[u16]>` (L1 page table).
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
     bytes
@@ -126,6 +138,7 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
         .into_boxed_slice()
 }
 
+/// Decodes a little-endian `&[u8]` into `Box<[u32]>` (L2 page table).
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
     bytes
@@ -135,6 +148,7 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
         .into_boxed_slice()
 }
 
+/// Convenience wrapper: decodes both L1 and L2 page tables from raw bytes.
 fn decode_page_table(l1: &[u8], l2: &[u8]) -> (Box<[u16]>, Box<[u32]>) {
     (decode_u16_table(l1), decode_u32_table(l2))
 }
@@ -151,6 +165,10 @@ fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
     }
 }
 
+/// Trims leading and trailing ASCII spaces from a packed L2 entry.
+///
+/// Used by [`RomanizeMatcher::new`] when `trim_space` is `true`
+/// (`RomanizeChar` variant) to produce space-free per-character romanization.
 fn trim_romanize_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
         return 0;

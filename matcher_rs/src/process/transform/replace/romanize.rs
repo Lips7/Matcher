@@ -16,6 +16,11 @@ use super::{
 };
 use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIterator};
 
+/// Materialized find iterator for CJK romanization.
+///
+/// Yields `(byte_start, byte_end, &str)` tuples for each CJK codepoint that
+/// has a romanization mapping. Uses [`skip_ascii_simd`] to jump over ASCII
+/// runs.
 struct RomanizeFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -57,6 +62,10 @@ impl<'a> Iterator for RomanizeFindIter<'a> {
 // Streaming filter (for fused romanize-scan)
 // ---------------------------------------------------------------------------
 
+/// [`CodepointFilter`] for CJK romanization.
+///
+/// Keeps ASCII bytes unchanged; replaces mapped CJK codepoints with their
+/// romanized `&str` form via page-table lookup.
 pub(crate) struct RomanizeFilter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -100,6 +109,7 @@ pub(crate) struct RomanizeMatcher {
 }
 
 impl RomanizeMatcher {
+    /// Returns a find iterator over romanizable codepoints in `text`.
     #[inline(always)]
     fn iter<'a>(&'a self, text: &'a str) -> RomanizeFindIter<'a> {
         RomanizeFindIter {

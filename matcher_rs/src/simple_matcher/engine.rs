@@ -72,20 +72,27 @@ pub(super) fn text_non_ascii_density(text: &str) -> f32 {
 
 /// Common query interface implemented by both bytewise and charwise engines.
 trait ScanEngine {
+    /// Returns whether any compiled pattern matches `text`.
     fn is_match(&self, text: &str) -> bool;
 
+    /// Calls `on_value(raw_value, start, end)` for each overlapping match in
+    /// `text`. Returns `true` on early exit.
     fn for_each_match_value(
         &self,
         text: &str,
         on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool;
 
+    /// Streaming variant of
+    /// [`for_each_match_value`](Self::for_each_match_value) from a byte
+    /// iterator. Always uses DAAC (no DFA streaming API).
     fn for_each_match_value_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
         on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool;
 
+    /// Returns the estimated heap memory in bytes owned by this engine.
     fn heap_bytes(&self) -> usize;
 }
 
@@ -96,9 +103,13 @@ trait ScanEngine {
 /// for non-streaming scan).
 #[derive(Clone)]
 struct BytewiseMatcher {
+    /// DAAC bytewise automaton. Always built — needed for streaming iteration.
     daac: BytewiseDAACEngine<u32>,
+    /// Aho-Corasick DFA. 1.7–3.3× faster than DAAC for non-streaming scan.
     #[cfg(feature = "dfa")]
     dfa: AcEngine,
+    /// Maps DFA pattern index → raw match value (bridges `aho-corasick` pattern
+    /// ids to our encoding).
     #[cfg(feature = "dfa")]
     dfa_to_value: Vec<u32>,
 }

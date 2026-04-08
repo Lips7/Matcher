@@ -177,6 +177,10 @@ impl DeleteMatcher {
         )
     }
 
+    /// Constructs a [`DeleteMatcher`] from a static bitset.
+    ///
+    /// Copies the first 16 bytes of `bitset` into the `ascii_lut` for fast
+    /// SIMD-accelerated ASCII probing.
     pub(crate) fn new(bitset: &'static [u8]) -> Self {
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
@@ -188,6 +192,11 @@ impl DeleteMatcher {
     }
 }
 
+/// [`CodepointFilter`] implementation for the delete transform.
+///
+/// Checks `ascii_lut` for ASCII bytes and the full `bitset` for non-ASCII
+/// codepoints. Used by [`DeleteMatcher::filter_bytes`] to produce a
+/// streaming byte iterator.
 pub(crate) struct DeleteFilter<'a> {
     ascii_lut: &'a [u8; 16],
     bitset: &'a [u8],

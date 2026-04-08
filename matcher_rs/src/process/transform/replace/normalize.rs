@@ -20,6 +20,11 @@ use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIte
 // Find iterator (for materialized replace)
 // ---------------------------------------------------------------------------
 
+/// Materialized find iterator for Unicode normalization.
+///
+/// Yields `(byte_start, byte_end, &str)` tuples. Unlike the other find
+/// iterators, this one checks ASCII bytes too (uppercase A–Z have casefold
+/// mappings), so it cannot use `skip_ascii_simd`.
 struct NormalizeFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -72,6 +77,10 @@ impl<'a> Iterator for NormalizeFindIter<'a> {
 // Streaming filter (for fused normalize-scan)
 // ---------------------------------------------------------------------------
 
+/// [`CodepointFilter`] for Unicode normalization.
+///
+/// Replaces uppercase ASCII letters and mapped non-ASCII codepoints with
+/// their NFKC-casefolded forms via page-table lookup.
 pub(crate) struct NormalizeFilter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -119,6 +128,7 @@ pub(crate) struct NormalizeMatcher {
 }
 
 impl NormalizeMatcher {
+    /// Returns a find iterator over normalizable codepoints in `text`.
     #[inline(always)]
     fn iter<'a>(&'a self, text: &'a str) -> NormalizeFindIter<'a> {
         NormalizeFindIter {

@@ -13,6 +13,10 @@ use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIte
 // Streaming filter (for fused variant-norm-scan)
 // ---------------------------------------------------------------------------
 
+/// [`CodepointFilter`] for CJK variant normalization.
+///
+/// Keeps ASCII bytes unchanged; replaces mapped non-ASCII CJK codepoints with
+/// their normalized equivalents via page-table lookup.
 pub(crate) struct VariantNormFilter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -36,6 +40,11 @@ impl<'a> CodepointFilter<'a> for VariantNormFilter<'a> {
     }
 }
 
+/// Materialized find iterator for variant normalization.
+///
+/// Yields `(byte_start, byte_end, replacement_char)` tuples for each CJK
+/// codepoint that has a variant mapping. Uses [`skip_ascii_simd`] to jump
+/// over ASCII runs.
 struct VariantNormFindIter<'a> {
     l1: &'a [u16],
     l2: &'a [u32],
@@ -91,6 +100,7 @@ pub(crate) struct VariantNormMatcher {
 }
 
 impl VariantNormMatcher {
+    /// Returns a find iterator over variant-normalizable codepoints in `text`.
     #[inline(always)]
     fn iter<'a>(&'a self, text: &'a str) -> VariantNormFindIter<'a> {
         VariantNormFindIter {
