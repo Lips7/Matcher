@@ -153,7 +153,7 @@ assert!(!matcher.is_match("bright dark color"));   // vetoed by whole-word "dark
 assert!(matcher.is_match("bright darken color"));  // "darken" ≠ "\bdark\b"
 ```
 
-For more examples, run `cargo run --example basic -p matcher_rs` or see [test_simple_matcher.rs](./tests/test_simple_matcher.rs).
+For more examples, run `cargo run --example basic -p matcher_rs` or see [test_operators.rs](./tests/test_operators.rs).
 
 ## Feature Flags
 
@@ -180,7 +180,7 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_si
 
 ## Benchmarks
 
-Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST_100000](../data/word_list/cn/cn_words_100000.txt) against [CN_HAYSTACK](../data/text/cn/西游记.txt) and [EN_WORD_LIST_100000](../data/word_list/en/en_words_100000.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
+Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST](../data/word/cn/jieba.txt) against [CN_HAYSTACK](../data/text/cn/三体.txt) and [EN_WORD_LIST](../data/word/en/dictionary.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
 Full records: [bench_records/](./bench_records/). Latest: [latest.txt](./bench_records/latest.txt).
 

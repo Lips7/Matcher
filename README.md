@@ -50,7 +50,7 @@ For the full narrative walkthrough, see the [Design Document](./DESIGN.md).
   - **Normalize**: Normalize special characters to identifiable characters.
     Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
   - **Romanize**: Convert CJK characters to space-separated romanized form (Pinyin, Romaji, RR) for fuzzy matching.
-    Example: `西安` -> ` xi  an `, matches `洗按` -> ` xi  an `, but not `先` -> ` xian `
+    Example: `西安` -> ` xi an`, matches `洗按` -> ` xi an`, but not `先` -> ` xian`
   - **RomanizeChar**: Convert CJK characters to romanized form without boundary spaces.
     Example: `西安` -> `xian`, matches `洗按` and `先` -> `xian`
   - **EmojiNorm**: Convert emoji to English words (CLDR short names) and strip modifiers.
@@ -177,7 +177,7 @@ This builds all packages and copies the dynamic libraries to the right locations
 ## Common Pitfalls
 
 - **`EmojiNorm` + `Delete` don't compose**: `Delete` strips emoji codepoints before `EmojiNorm` can convert them to words. Use `EmojiNorm | Normalize` instead.
-- **`Romanize` vs `RomanizeChar`**: `Romanize` adds boundary spaces (`西安` → ` xi  an `) so homophones like `洗按` match but `先` doesn't. `RomanizeChar` omits spaces (`xian`) for fuzzier matching.
+- **`Romanize` vs `RomanizeChar`**: `Romanize` adds boundary spaces (`西安` → ` xi an`) so homophones like `洗按` match but `先` doesn't. `RomanizeChar` omits spaces (`xian`) for fuzzier matching.
 - **Including `None` in a composite ProcessType**: `None | Delete` matches against *both* the original text and the delete-transformed text. Useful when some sub-patterns should match raw input.
 - **Repeated AND segments count repetitions**: `无&法&无&天` requires `无` to appear at least twice in the text.
 - **`\b` is per-sub-pattern, not per-rule**: `\bcat\b&dog` requires "cat" as a whole word but "dog" as a substring.

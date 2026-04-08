@@ -287,7 +287,7 @@ Both engines are built from the **full** pattern set (not split by ASCII/CJK), s
 
 The threshold (0.67) was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
 
-In `walk_and_scan`, density propagates through the transform tree via `TransformStep::output_density()` (conservative: returns parent density). The materialized path can refine this when the transform produces confirmed-ASCII output. `density == 0.0` replaces the old `is_ascii` boolean for transform no-op detection.
+In `walk_and_scan`, density propagates through the transform tree via the `(String, f32)` tuple returned by `TransformStep::apply()`. The returned density is conservative (typically `parent_density`, or `0.0` for Romanize which converts CJK→ASCII). `density == 0.0` replaces the old `is_ascii` boolean for transform no-op detection.
 
 #### No-op Scan Folding
 

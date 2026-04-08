@@ -3,27 +3,26 @@
 //! This module owns the Aho-Corasick automata that power Pass 1 (pattern scan)
 //! of the two-pass matching pipeline. Two independent engines are compiled:
 //!
-//! - **Bytewise engine** ([`BytewiseMatcher`]) — scans byte-by-byte over ASCII
-//!   patterns. With the `dfa` feature enabled, this uses the `aho-corasick`
-//!   crate's DFA for maximum throughput. Otherwise it falls back to
-//!   `daachorse`'s bytewise double-array Aho-Corasick.
+//! - **Bytewise engine** ([`BytewiseMatcher`]) — scans byte-by-byte over the
+//!   full pattern set. With the `dfa` feature enabled, this uses the
+//!   `aho-corasick` crate's DFA for maximum throughput. Otherwise it falls back
+//!   to `daachorse`'s bytewise double-array Aho-Corasick.
 //!
 //! - **Charwise engine** ([`CharwiseMatcher`]) — scans character-wise using
-//!   `daachorse`'s charwise automaton. Always built over the **full** pattern
-//!   set so a single charwise pass covers everything on non-ASCII input. CJK
-//!   characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for
-//!   bytewise — ~1.6–1.9× faster on CJK text.
+//!   `daachorse`'s charwise automaton. Also built over the **full** pattern
+//!   set. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition
+//!   vs 3 for bytewise — ~1.6–1.9× faster on CJK-heavy text.
 //!
 //! The [`ScanPlan`] struct bundles both engines together with the
 //! [`PatternIndex`] that maps raw automaton values back to rule metadata.
 //!
 //! # Engine selection
 //!
-//! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] accept an
-//! `is_ascii` flag (computed once per text variant by [`super::search`] via
-//! `str::is_ascii()`). The charwise engine is always built, so `is_ascii`
-//! determines which engine is used: bytewise for ASCII text, charwise for
-//! non-ASCII text.
+//! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] use a SIMD
+//! density scan ([`text_non_ascii_density`]) to select the engine. When the
+//! non-ASCII byte fraction is ≤ [`CHARWISE_DENSITY_THRESHOLD`] (0.67, ~40%
+//! CJK characters) the bytewise engine is used; above the threshold the
+//! charwise engine is selected.
 
 use std::borrow::Cow;
 
