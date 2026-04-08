@@ -27,8 +27,6 @@
 
 use std::cell::UnsafeCell;
 
-use tinyvec::TinyVec;
-
 /// Per-rule mutable state reused across scans.
 ///
 /// Each rule has one `WordState` slot in [`SimpleMatchState::word_states`],
@@ -96,19 +94,19 @@ pub(super) struct WordState {
 pub(super) struct SimpleMatchState {
     /// Per-rule state slots indexed by rule id.
     pub(super) word_states: Vec<WordState>,
-    /// Per-variant counter matrix for complex rules (one `TinyVec` per rule
+    /// Per-variant counter matrix for complex rules (one `Vec` per rule
     /// index).
     ///
     /// `matrix[rule_idx][segment * num_variants + variant_idx]` holds the
     /// remaining count for that segment in that variant. Initialized lazily
     /// on first touch.
-    pub(super) matrix: Vec<TinyVec<[i32; 16]>>,
-    /// Per-segment completion flags for complex rules (one `TinyVec` per rule
+    pub(super) matrix: Vec<Vec<i32>>,
+    /// Per-segment completion flags for complex rules (one `Vec` per rule
     /// index).
     ///
     /// `matrix_status[rule_idx][segment]` is 0 if the segment is still pending,
     /// 1 if it has been satisfied (AND) or triggered (NOT).
-    pub(super) matrix_status: Vec<TinyVec<[u8; 16]>>,
+    pub(super) matrix_status: Vec<Vec<u8>>,
     /// Rule indices touched during the current scan generation.
     ///
     /// Cleared at the start of each scan in [`prepare`](Self::prepare). Used by
@@ -163,8 +161,8 @@ pub(super) struct ScanState<'a> {
     pub(super) word_states: &'a mut [WordState],
     pub(super) touched_indices: &'a mut Vec<usize>,
     pub(super) resolved_count: usize,
-    pub(super) matrix: &'a mut [TinyVec<[i32; 16]>],
-    pub(super) matrix_status: &'a mut [TinyVec<[u8; 16]>],
+    pub(super) matrix: &'a mut [Vec<i32>],
+    pub(super) matrix_status: &'a mut [Vec<u8>],
     pub(super) generation: u32,
 }
 
@@ -333,8 +331,8 @@ impl SimpleMatchState {
 
         if self.word_states.len() < size {
             self.word_states.resize(size, WordState::default());
-            self.matrix.resize(size, TinyVec::new());
-            self.matrix_status.resize(size, TinyVec::new());
+            self.matrix.resize(size, Vec::new());
+            self.matrix_status.resize(size, Vec::new());
         }
 
         self.touched_indices.clear();
@@ -371,8 +369,8 @@ impl SimpleMatchState {
 #[cold]
 #[inline(never)]
 pub(super) fn init_matrix(
-    flat_matrix: &mut TinyVec<[i32; 16]>,
-    flat_status: &mut TinyVec<[u8; 16]>,
+    flat_matrix: &mut Vec<i32>,
+    flat_status: &mut Vec<u8>,
     segment_counts: &[i32],
     num_variants: usize,
 ) {

@@ -28,9 +28,7 @@
 //! static is `#[thread_local]` (no cross-thread sharing) and the functions are
 //! not re-entrant. See [`SIMPLE_MATCH_STATE`] for the full safety argument.
 
-use std::borrow::Cow;
-
-use tinyvec::TinyVec;
+use std::{borrow::Cow, vec};
 
 use super::{
     SimpleMatcher, SimpleResult,
@@ -301,15 +299,13 @@ impl SimpleMatcher {
         // density_flags[i] — non-ASCII byte density for arena index i.
         // density == 0.0 means pure ASCII (used for both engine dispatch and
         // transform correctness: is_noop_on_ascii_input, step.apply).
-        let mut density_flags: TinyVec<[f32; 16]> = TinyVec::new();
+        let mut density_flags: Vec<f32> = Vec::new();
         density_flags.push(root_density);
 
         // Maps tree node index -> arena index for its text.
-        let mut node_arena: TinyVec<[usize; 16]> = TinyVec::new();
-        node_arena.resize(num_variants, 0);
+        let mut node_arena: Vec<usize> = vec![0; num_variants];
         // Maps tree node index -> variant index used in ScanContext::text_index.
-        let mut node_variant: TinyVec<[usize; 16]> = TinyVec::new();
-        node_variant.resize(num_variants, 0);
+        let mut node_variant: Vec<usize> = vec![0; num_variants];
         let mut variant_counter = 1usize;
         let mut stopped = false;
 

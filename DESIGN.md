@@ -331,7 +331,7 @@ For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 
 #### Bitmask vs Matrix
 
 - **Bitmask** (≤64 segments, no repeated counts): each AND hit sets bit `offset` in `satisfied_mask` and decrements `remaining_and`. Reaching 0 → satisfied. NOT hits set `not_generation` immediately.
-- **Matrix** (>64 segments or repeated counts): a `TinyVec<[i32; 16]>` counter grid sized `[segments × variants]`. AND cells decrement; NOT cells increment. Threshold crossings tracked per-segment via `matrix_status`.
+- **Matrix** (>64 segments or repeated counts): a `Vec<i32>` counter grid sized `[segments × variants]`. AND cells decrement; NOT cells increment. Threshold crossings tracked per-segment via `matrix_status`.
 
 ```
 Rule parsed from pattern string
@@ -343,7 +343,7 @@ Rule parsed from pattern string
   ≤64 segs, no repeats?  ──► Bitmask (u64 + remaining_and)
         │ NO
         ▼
-                              Matrix (TinyVec counter grid)
+                              Matrix (Vec counter grid)
 ```
 
 ---

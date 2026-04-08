@@ -24,8 +24,6 @@
 
 use std::collections::HashSet;
 
-use tinyvec::TinyVec;
-
 use crate::process::{
     process_type::ProcessType,
     step::{TransformStep, get_transform_step},
@@ -47,7 +45,7 @@ pub(crate) struct ProcessTypeBitNode {
     ///
     /// Children represent the next transformation step that follows this one.
     /// Empty for leaf nodes.
-    pub(crate) children: TinyVec<[usize; 4]>,
+    pub(crate) children: Vec<usize>,
     /// Cached reference to the compiled [`TransformStep`] for this node's bit.
     ///
     /// [`None`] only for the root node (which represents the raw input text and
@@ -67,13 +65,8 @@ pub(crate) struct ProcessTypeBitNode {
 
 impl ProcessTypeBitNode {
     /// Returns the estimated heap memory in bytes used by the `children` vec.
-    ///
-    /// Returns 0 when `children` fits in the inline `TinyVec` storage.
     pub(crate) fn heap_bytes(&self) -> usize {
-        match &self.children {
-            TinyVec::Heap(v) => v.capacity() * size_of::<usize>(),
-            _ => 0,
-        }
+        self.children.capacity() * size_of::<usize>()
     }
 }
 
@@ -115,7 +108,7 @@ pub(crate) fn build_process_type_tree(
     let mut process_type_tree = Vec::with_capacity(max_nodes);
     let mut root = ProcessTypeBitNode {
         process_type_bit: ProcessType::None,
-        children: TinyVec::new(),
+        children: Vec::new(),
         step: None,
         pt_index_mask: 0,
     };
@@ -144,7 +137,7 @@ pub(crate) fn build_process_type_tree(
             } else {
                 let child = ProcessTypeBitNode {
                     process_type_bit,
-                    children: TinyVec::new(),
+                    children: Vec::new(),
                     step: Some(get_transform_step(process_type_bit)),
                     pt_index_mask: pt_mask_bit,
                 };

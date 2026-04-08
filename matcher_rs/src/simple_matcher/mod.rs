@@ -21,8 +21,6 @@
 
 use std::{borrow::Cow, fmt, iter::FusedIterator};
 
-use tinyvec::TinyVec;
-
 use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
@@ -405,7 +403,7 @@ impl SimpleMatcher {
         if text.is_empty() {
             return SimpleMatchIter {
                 rules: &self.rules,
-                indices: TinyVec::new(),
+                indices: Vec::new(),
                 front: 0,
                 back: 0,
             };
@@ -446,7 +444,7 @@ impl SimpleMatcher {
 #[must_use]
 pub struct SimpleMatchIter<'a> {
     rules: &'a RuleSet,
-    indices: TinyVec<[usize; 16]>,
+    indices: Vec<usize>,
     front: usize,
     back: usize,
 }
