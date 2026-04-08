@@ -102,22 +102,18 @@ else
     fi
 fi
 
-# 5. cargo-tarpaulin (Linux only)
+# 5. cargo-tarpaulin
 echo "Coverage:"
-if [[ "$OS" == "Linux" ]]; then
-    if cargo tarpaulin --version &>/dev/null; then
-        ok "cargo-tarpaulin"
-    else
-        fail "cargo-tarpaulin not found"
-        if ask_install "cargo-tarpaulin"; then
-            cargo install cargo-tarpaulin
-        else
-            echo "    Install: cargo install cargo-tarpaulin"
-            ((MISSING++))
-        fi
-    fi
+if cargo tarpaulin --version &>/dev/null; then
+    ok "cargo-tarpaulin"
 else
-    warn "cargo-tarpaulin skipped (Linux only, you're on $OS)"
+    fail "cargo-tarpaulin not found"
+    if ask_install "cargo-tarpaulin"; then
+        cargo install cargo-tarpaulin
+    else
+        echo "    Install: cargo install cargo-tarpaulin"
+        ((MISSING++))
+    fi
 fi
 
 # 6. uv
@@ -151,7 +147,7 @@ fi
 # 8. Java 21+
 echo "Java:"
 if command -v java &>/dev/null; then
-    JAVA_VERSION=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
+    JAVA_VERSION=$(java -version 2>&1 | head -1 | sed 's/[^"]*"\([0-9]*\).*/\1/')
     if [[ "$JAVA_VERSION" -ge 21 ]]; then
         ok "Java $JAVA_VERSION"
     else
@@ -186,6 +182,39 @@ else
         echo "    Install: sudo apt install build-essential  (or equivalent)"
     fi
     ((MISSING++))
+fi
+
+# 11. prek (pre-commit runner)
+echo "Pre-commit:"
+if command -v prek &>/dev/null; then
+    ok "prek $(prek --version 2>/dev/null | head -1)"
+else
+    fail "prek not found"
+    if ask_install "prek (via cargo)"; then
+        cargo install prek
+    else
+        echo "    Install: cargo install prek"
+        ((MISSING++))
+    fi
+fi
+
+# 12. lld (macOS ARM linker — required by .cargo/config.toml)
+echo "Linker:"
+ARCH="$(uname -m)"
+if [[ "$OS" == "Darwin" ]] && [[ "$ARCH" == "arm64" ]]; then
+    if [[ -x /opt/homebrew/bin/ld64.lld ]]; then
+        ok "ld64.lld (/opt/homebrew/bin/ld64.lld)"
+    else
+        fail "ld64.lld not found (required for aarch64-apple-darwin builds)"
+        if ask_install "lld (via Homebrew)"; then
+            brew install lld
+        else
+            echo "    Install: brew install lld"
+            ((MISSING++))
+        fi
+    fi
+else
+    ok "lld not required on $OS/$ARCH"
 fi
 
 echo ""
