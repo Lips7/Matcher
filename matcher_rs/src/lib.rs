@@ -132,27 +132,37 @@ use std::fmt;
 ///     Err(e) => panic!("unexpected error: {e}"),
 /// }
 /// ```
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum MatcherError {
     /// The underlying Aho-Corasick library (`daachorse` or `aho-corasick`)
     /// failed to compile the pattern set.
-    #[error("automaton build failed: {reason}")]
     AutomatonBuild {
         /// Human-readable description from the third-party builder.
         reason: String,
     },
 
     /// A [`ProcessType`] value contained undefined bits (bits 6–7 set).
-    #[error(
-        "invalid ProcessType bits: {bits:#04x} \
-         (only bits 0\u{2013}5 are defined; bits 6\u{2013}7 must be zero)"
-    )]
     InvalidProcessType {
         /// The raw bitflag value that was rejected.
         bits: u8,
     },
 }
+
+impl fmt::Display for MatcherError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AutomatonBuild { reason } => write!(f, "automaton build failed: {reason}"),
+            Self::InvalidProcessType { bits } => write!(
+                f,
+                "invalid ProcessType bits: {bits:#04x} \
+                 (only bits 0\u{2013}5 are defined; bits 6\u{2013}7 must be zero)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MatcherError {}
 
 impl MatcherError {
     /// Wraps a third-party automaton build error (from `daachorse` or

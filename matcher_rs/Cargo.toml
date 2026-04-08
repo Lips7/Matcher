@@ -30,7 +30,6 @@ daachorse = "1.0.1"
 mimalloc = { version = "0.1.48", features = ["v3"] }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
-thiserror = "2"
 tinyvec = { version = "1.11.0", features = ["alloc"] }
 
 [dev-dependencies]
