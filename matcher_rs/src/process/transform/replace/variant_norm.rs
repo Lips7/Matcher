@@ -127,10 +127,12 @@ impl<'a> Iterator for VariantNormFindIter<'a> {
             if let Some(mapped_cp) = page_table_lookup(cp, self.l1, self.l2)
                 && mapped_cp != cp
             {
-                debug_assert!(char::from_u32(mapped_cp).is_some());
                 // SAFETY: Page table values are valid Unicode codepoints assigned at build
                 // time.
-                let mapped = unsafe { char::from_u32_unchecked(mapped_cp) };
+                let mapped = unsafe {
+                    core::hint::assert_unchecked(mapped_cp <= 0x10FFFF);
+                    char::from_u32_unchecked(mapped_cp)
+                };
                 return Some((start, self.byte_offset, mapped));
             }
         }

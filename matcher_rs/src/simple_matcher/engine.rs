@@ -461,6 +461,7 @@ impl CharwiseMatcherExt for CharwiseMatcher {
 ///
 /// Returns [`MatcherError`] if the `daachorse` or `aho-corasick` automaton
 /// builders encounter an internal error during construction.
+#[optimize(speed)]
 fn compile_automata(
     dedup_patterns: &[Cow<'_, str>],
     value_map: &[u32],

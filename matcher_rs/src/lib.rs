@@ -1,4 +1,6 @@
 #![feature(thread_local)]
+#![cfg_attr(doc, feature(doc_cfg))]
+#![feature(optimize_attribute)]
 #![cfg_attr(
     not(all(feature = "simd_runtime_dispatch", target_arch = "aarch64")),
     feature(portable_simd)
@@ -79,8 +81,8 @@
 //!
 //! Hot loops use `get_unchecked` / `get_unchecked_mut` to avoid repeated bounds
 //! checks on indices that are structurally guaranteed in-bounds by construction
-//! (e.g. automaton values, rule indices). Every such site is guarded by a
-//! `debug_assert!` that validates the index in debug builds.
+//! (e.g. automaton values, rule indices). Every such site communicates the
+//! invariant to the optimizer via [`core::hint::assert_unchecked`].
 //!
 //! # Feature Flags
 //!

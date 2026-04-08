@@ -1,3 +1,6 @@
 [build]
 rustflags = ["-C", "target-cpu=native", "-Z", "threads=0"]
 rustdocflags = ["-C", "target-cpu=native", "--document-private-items"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=native", "-Z", "threads=0", "-C", "link-arg=-fuse-ld=/opt/homebrew/bin/ld64.lld"]

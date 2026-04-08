@@ -328,12 +328,16 @@ impl RuleSet {
             return false;
         }
 
-        debug_assert!(rule_idx < ss.word_states.len());
-        debug_assert!(rule_idx < self.hot.len());
+        // SAFETY: `rule_idx` originates from pattern entries built during
+        // construction with validated indices — always in bounds.
+        unsafe {
+            core::hint::assert_unchecked(rule_idx < ss.word_states.len());
+            core::hint::assert_unchecked(rule_idx < self.hot.len());
+        }
 
         match kind {
             PatternKind::Simple => {
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_assert above.
+                // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
                 let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
                 if word_state.positive_generation == generation {
                     return ctx.exit_early;
@@ -484,17 +488,16 @@ impl RuleSet {
     ///
     /// # Safety
     ///
-    /// Uses `get_unchecked` on `self.cold`. Guarded by a preceding
-    /// `debug_assert!` bounds check.
-    ///
-    /// # Panics
-    ///
-    /// Debug-asserts that `rule_idx < self.cold.len()`.
+    /// Uses `get_unchecked` on `self.cold`. Bounds communicated to the
+    /// optimizer via [`core::hint::assert_unchecked`].
     #[inline(always)]
     fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
-        debug_assert!(rule_idx < self.cold.len());
-        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_assert above.
-        let cold = unsafe { self.cold.get_unchecked(rule_idx) };
+        // SAFETY: `rule_idx` originates from `touched_indices` which only
+        // contains valid rule indices populated during construction.
+        let cold = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.cold.len());
+            self.cold.get_unchecked(rule_idx)
+        };
         results.push(SimpleResult {
             word_id: cold.word_id,
             word: Cow::Borrowed(&cold.word),

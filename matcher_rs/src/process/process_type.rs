@@ -144,6 +144,7 @@ bitflags! {
 /// assert_eq!(serde_json::to_string(&ProcessType::None).unwrap(), "1");
 /// ```
 #[cfg(feature = "serde")]
+#[cfg_attr(doc, doc(cfg(feature = "serde")))]
 impl Serialize for ProcessType {
     /// Serializes the bitflags value as its underlying `u8` representation.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -176,6 +177,7 @@ impl Serialize for ProcessType {
 /// assert!(result.is_err());
 /// ```
 #[cfg(feature = "serde")]
+#[cfg_attr(doc, doc(cfg(feature = "serde")))]
 impl<'de> Deserialize<'de> for ProcessType {
     /// Deserializes a `u8` into [`ProcessType`], rejecting unknown bit
     /// combinations.

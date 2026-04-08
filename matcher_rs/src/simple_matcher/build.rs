@@ -208,6 +208,7 @@ impl SimpleMatcher {
     /// Identical emitted pattern strings (after transformation) are assigned a
     /// single automaton slot. Multiple [`PatternEntry`] values referencing
     /// different rules are collected in the same bucket of `dedup_entries`.
+    #[optimize(speed)]
     fn parse_rules<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
         pt_index_table: &[u8; PROCESS_TYPE_TABLE_SIZE],

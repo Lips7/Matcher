@@ -115,6 +115,11 @@ bench-all *args:
 bench-compare baseline candidate *args:
     uv run matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
+# Rebuild std with target-cpu=native for authoritative benchmarks.
+# Slower to compile (~30s extra) but std's memcpy/memcmp use native SIMD.
+bench-buildstd *args:
+    RUSTFLAGS="-C target-cpu=native" cargo +nightly -Z build-std=std,core bench --profile bench -p matcher_rs {{args}}
+
 bench-viz *args:
     uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
 

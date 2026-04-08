@@ -219,9 +219,11 @@ impl ScanState<'_> {
     /// Returns whether `rule_idx` is satisfied in the current generation.
     #[inline(always)]
     pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked(rule_idx) };
+        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
+        let word_state = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.word_states.len());
+            self.word_states.get_unchecked(rule_idx)
+        };
         word_state.positive_generation == self.generation
             && word_state.not_generation != self.generation
     }
@@ -234,9 +236,11 @@ impl ScanState<'_> {
     #[inline(always)]
     pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
         let generation = self.generation;
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
+        let word_state = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.word_states.len());
+            self.word_states.get_unchecked_mut(rule_idx)
+        };
         if word_state.positive_generation == generation {
             return false;
         }
@@ -258,9 +262,11 @@ impl ScanState<'_> {
     #[inline(always)]
     pub(super) fn mark_positive_simple(&mut self, rule_idx: usize) -> bool {
         let generation = self.generation;
-        debug_assert!(rule_idx < self.word_states.len());
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
+        let word_state = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.word_states.len());
+            self.word_states.get_unchecked_mut(rule_idx)
+        };
         if word_state.positive_generation == generation {
             return false;
         }

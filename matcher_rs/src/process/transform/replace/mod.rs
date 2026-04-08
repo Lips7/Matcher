@@ -109,9 +109,11 @@ fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     if page == 0 {
         return None;
     }
-    debug_assert!(page * 256 + char_idx < l2.len());
     // SAFETY: `page` is a non-zero index assigned during table construction.
-    let value = unsafe { *l2.get_unchecked(page * 256 + char_idx) };
+    let value = unsafe {
+        core::hint::assert_unchecked(page * 256 + char_idx < l2.len());
+        *l2.get_unchecked(page * 256 + char_idx)
+    };
     (value != 0).then_some(value)
 }
 

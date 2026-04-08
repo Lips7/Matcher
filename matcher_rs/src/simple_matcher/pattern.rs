@@ -249,23 +249,23 @@ impl PatternIndex {
     /// a deduplicated pattern index into the entry table.
     #[inline(always)]
     pub(super) fn dispatch_indirect(&self, raw_value: u32) -> PatternDispatch<'_> {
-        debug_assert!(
-            raw_value & DIRECT_RULE_BIT == 0,
-            "dispatch_indirect called with DIRECT_RULE_BIT set"
-        );
-
         let pattern_idx = raw_value as usize;
-        debug_assert!(pattern_idx < self.ranges.len());
-        // SAFETY: `pattern_idx` is in bounds — guaranteed by debug_assert above.
-        let &(start, len) = unsafe { self.ranges.get_unchecked(pattern_idx) };
-        debug_assert!(start + len <= self.entries.len());
+        // SAFETY: caller guarantees DIRECT_RULE_BIT is not set; pattern_idx
+        // and range bounds originate from construction with validated indices.
+        let (start, len) = unsafe {
+            core::hint::assert_unchecked(raw_value & DIRECT_RULE_BIT == 0);
+            core::hint::assert_unchecked(pattern_idx < self.ranges.len());
+            *self.ranges.get_unchecked(pattern_idx)
+        };
+        // SAFETY: range bounds validated during construction.
+        unsafe { core::hint::assert_unchecked(start + len <= self.entries.len()) };
 
         if len == 1 {
-            // SAFETY: `start` and `start + len` are in bounds — guaranteed by debug_assert
-            // above.
+            // SAFETY: `start` is in bounds — guaranteed by assert_unchecked above.
             PatternDispatch::SingleEntry(unsafe { self.entries.get_unchecked(start) })
         } else {
-            // SAFETY: `start..start + len` is in bounds — guaranteed by debug_assert above.
+            // SAFETY: `start..start + len` is in bounds — guaranteed by assert_unchecked
+            // above.
             PatternDispatch::Entries(unsafe { self.entries.get_unchecked(start..start + len) })
         }
     }
