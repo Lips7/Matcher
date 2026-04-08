@@ -1,6 +1,23 @@
 # Changelog
 
 
+## 0.14.3 - 2026-04-08
+
+### Refactor
+- Merge AllSimple fast path into General — all query methods (`process`, `for_each_match`, `process_iter`) now use the unified `walk_and_scan` path. `is_match` retains a minimal AC-direct bypass for simple literal matchers.
+- Reject empty pattern sets at construction with `MatcherError::EmptyPatterns`.
+- Bundle bytewise and charwise engines in a non-optional `Engines` struct behind a unified `ScanEngine` trait with `dispatch!` macro.
+- Remove `Option` from DFA field — always present under `cfg(feature = "dfa")`. `has_dfa()` is now `cfg!(feature = "dfa")`.
+- Unify 4 streaming filter iterators (`DeleteFilterIterator`, `NormalizeFilterIterator`, `RomanizeFilterIterator`, `VariantNormFilterIterator`) into a generic `FilterIterator<F>` backed by a `CodepointFilter` trait.
+
+### Breaking Changes
+- `SimpleMatcher::new` and `SimpleMatcherBuilder::build` now return `Err(MatcherError::EmptyPatterns)` when no scannable patterns remain after parsing. Previously, empty matchers silently returned no matches.
+- `SimpleMatcher` Debug output no longer includes `search_mode`.
+- Python `SimpleMatcher.stats()` no longer includes `search_mode` key.
+
+### Documentation
+- Update CLAUDE.md, DESIGN.md, README.md, and matcher_rs/README.md for engine architecture changes.
+
 ## 0.14.2 - 2026-04-07
 
 ### Documentation
