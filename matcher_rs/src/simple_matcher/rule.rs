@@ -383,7 +383,9 @@ impl RuleSet {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = if and_count == 0 { generation } else { 0 };
                     word_state.remaining_and = and_count as u16;
-                    word_state.satisfied_mask = 0;
+                    // SAFETY: `rule_idx` is in bounds — satisfied_masks is
+                    // sized to match word_states.
+                    unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
                     ss.touched_indices.push(rule_idx);
                     if shape.use_matrix() {
                         // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
@@ -423,8 +425,11 @@ impl RuleSet {
                     true
                 } else {
                     let bit = 1u64 << offset;
-                    if word_state.satisfied_mask & bit == 0 {
-                        word_state.satisfied_mask |= bit;
+                    // SAFETY: `rule_idx` is in bounds — satisfied_masks is
+                    // sized to match word_states.
+                    let mask = unsafe { ss.satisfied_masks.get_unchecked_mut(rule_idx) };
+                    if *mask & bit == 0 {
+                        *mask |= bit;
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
@@ -457,7 +462,9 @@ impl RuleSet {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = if and_count == 0 { generation } else { 0 };
                     word_state.remaining_and = and_count as u16;
-                    word_state.satisfied_mask = 0;
+                    // SAFETY: `rule_idx` is in bounds — satisfied_masks is
+                    // sized to match word_states.
+                    unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
                     ss.touched_indices.push(rule_idx);
                     if shape.use_matrix() {
                         // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.

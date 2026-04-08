@@ -302,11 +302,11 @@ For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this
 
 Each rule is stored as a single `Rule` struct containing `segment_counts: Vec<i32>`, `word_id: u32`, and `word: String`. `segment_counts` is only read on the `#[cold]` matrix-init path (first-touch of matrix-mode rules); `word_id` and `word` are only read when producing output results. The hot path avoids loading `Rule` entirely — `and_count` and `RuleShape` are pre-computed into `PatternEntry`, and per-call mutable state lives in `WordState`.
 
-- **`WordState`** (per-rule mutable state): three generation stamps (`matrix_generation`, `positive_generation`, `not_generation`), a `satisfied_mask: u64`, and `remaining_and: u16`.
+- **`WordState`** (per-rule mutable state, 8 bytes): three `u16` generation stamps (`matrix_generation`, `positive_generation`, `not_generation`) and `remaining_and: u16`. The `satisfied_mask: u64` for bitmask-path rules lives in a parallel `satisfied_masks: Vec<u64>`, split out to keep the hot struct small (10K rules × 8B = 80KB, fits L1d).
 
 #### Generation-Based Reuse
 
-Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u32` counter is bumped. A field is "live" only when its stamp matches the current generation. Cost: O(1) amortized reset. Wraps at `u32::MAX` (once per ~4 billion calls).
+Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u16` counter is bumped. A field is "live" only when its stamp matches the current generation. Cost: O(1) amortized reset. Wraps at `u16::MAX` (once per ~65K calls; bulk-reset cost ~20µs, amortized to <1ns per scan).
 
 #### ScanState Split-Borrow
 
@@ -330,7 +330,7 @@ For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 
 
 #### Bitmask vs Matrix
 
-- **Bitmask** (≤64 segments, no repeated counts): each AND hit sets bit `offset` in `satisfied_mask` and decrements `remaining_and`. Reaching 0 → satisfied. NOT hits set `not_generation` immediately.
+- **Bitmask** (≤64 segments, no repeated counts): each AND hit sets bit `offset` in the parallel `satisfied_masks[rule_idx]` and decrements `remaining_and`. Reaching 0 → satisfied. NOT hits set `not_generation` immediately.
 - **Matrix** (>64 segments or repeated counts): a `Vec<i32>` counter grid sized `[segments × variants]`. AND cells decrement; NOT cells increment. Threshold crossings tracked per-segment via `matrix_status`.
 
 ```
