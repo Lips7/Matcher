@@ -11,10 +11,11 @@ use matcher_rs::{ProcessType, SimpleMatcher};
 
 // ── Search Mode
 // ────────────────────────────────────────────────────────────────
-// Question: How do the two SearchMode fast paths compare in throughput?
+// Question: How does simple-literal throughput compare to multi-transform?
 //
-// AllSimple: PT=None, all literals  (bypasses state tracking entirely)
-// General:   4 PTs via build_multi_process_table (full state machine)
+// all_simple: PT=None, all literals  (is_match uses AC-direct fast path)
+// general:    4 PTs via build_multi_process_table (full trie walk + state
+// machine)
 
 mod search_mode {
     use super::*;

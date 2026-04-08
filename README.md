@@ -36,7 +36,7 @@ It's helpful for
 └─────────────────────────────────────────────────────────────┘
 ```
 
-All sub-patterns are deduplicated into a single Aho-Corasick automaton for O(N) text scanning. Text transformations share a prefix trie so `VariantNorm|Delete` reuses the VariantNorm result. When every rule is a plain literal under one ProcessType, an **AllSimple** fast path skips the trie and state machinery entirely — each automaton hit maps directly to a result.
+All sub-patterns are deduplicated into a single Aho-Corasick automaton for O(N) text scanning. Text transformations share a prefix trie so `VariantNorm|Delete` reuses the VariantNorm result. For simple literal matchers without transforms, `is_match` delegates directly to the AC automaton — skipping TLS state setup entirely.
 
 For the full narrative walkthrough, see the [Design Document](./DESIGN.md).
 

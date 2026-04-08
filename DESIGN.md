@@ -14,7 +14,6 @@ This document explains how `matcher_rs` works by walking through a concrete exam
   - [2.1 Prepare State](#21-prepare-state)
   - [2.2 Walk the Trie](#22-walk-the-trie)
   - [2.3 Evaluate](#23-evaluate-pass-2)
-- [3. Fast Path: AllSimple](#3-fast-path-allsimple)
 - [Deep Dives](#deep-dives)
   - [Text Transformation Engines](#text-transformation-engines)
   - [Density-Based Engine Dispatch](#density-based-engine-dispatch)
@@ -65,9 +64,9 @@ Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delet
 
 **Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Double-deleting would break matches.
 
-**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (Simple, And, or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the AllSimple fast path.
+**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (Simple, And, or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the `is_match` AC-direct fast path.
 
-**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries cannot use `DIRECT_RULE_BIT` and disable `AllSimple` mode, falling back to the General path.
+**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries cannot use `DIRECT_RULE_BIT` and disable the `is_match` AC-direct fast path.
 
 After deduplication, we have a flat pattern table:
 
@@ -112,13 +111,13 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 ```rust
 SimpleMatcher {
     tree: Vec<ProcessTypeBitNode>,  // the 4-node trie above
-    mode: SearchMode::General,      // R1 has &-operator → not AllSimple
-    scan: ScanPlan { bytewise, charwise, pattern_index },
+    scan: ScanPlan { engines: Engines { bytewise, charwise }, pattern_index },
     rules: RuleSet { hot: [RuleHot; 3], cold: [RuleCold; 3] },  // RuleHot only stores segment_counts
+    is_match_fast: false,           // R1 has &-operator → can't bypass state machine for is_match
 }
 ```
 
-`SearchMode::General` because R1 uses `&` (not a simple literal). If all rules were pure literals under a single `ProcessType`, mode would be `AllSimple` — enabling a fast path that bypasses the trie and state machinery entirely.
+`is_match_fast` is `false` because R1 uses `&` (not a simple literal). When all rules are pure literals under a single `ProcessType` with no boundaries, `is_match_fast` is `true` — enabling `is_match` to delegate directly to the AC automaton without TLS state setup.
 
 ---
 
@@ -194,19 +193,11 @@ R3 was never touched (no hit). Final output: `[SimpleResult { word_id: 2, word: 
 
 ---
 
-## 3. Fast Path: AllSimple
+## 3. `is_match` Fast Path
 
-When every rule is a pure literal (no `&`/`~` operators) under a single `ProcessType` (typically `None`), `SearchMode::AllSimple` activates:
+When no text transforms are needed (tree has no children), all rules are simple single-segment literals, and no patterns use word boundaries, `is_match_fast` is set at construction. `is_match` then delegates directly to `ScanPlan::is_match` — a SIMD density scan selects the bytewise or charwise AC engine, which returns a boolean without TLS state setup, generation counters, or trie walking.
 
-- **`is_match`** → delegates directly to `ScanPlan::is_match`, which uses a SIMD density scan to dispatch to bytewise (DFA or DAAC) or charwise. No TLS state, no generation counters, no trie walk.
-- **`process`** → uses `process_simple`, which scans via `for_each_rule_idx_simple`. Each hit maps directly to a rule result via `DIRECT_RULE_BIT`. Deduplication uses only `positive_generation` — no `touched_indices` bookkeeping.
-- **`for_each_match`** → uses `for_each_match_simple` with `for_each_rule_idx_simple_early`. Truly lazy: each AC hit fires the callback immediately. Returning `true` aborts the scan (early exit). Zero allocation.
-- **`find_match`** → wraps `for_each_match` to return the first hit. Exits after one AC hit on AllSimple matchers.
-- **`process_iter`** → uses `collect_indices_simple` to pre-collect satisfied rule indices into a `TinyVec<[usize; 16]>`, then yields `SimpleResult` lazily from those indices. Implements `ExactSizeIterator + DoubleEndedIterator + FusedIterator`.
-
-For General matchers, `for_each_match` and `process_iter` use `walk_and_scan_with` — the same scan loop as `process`, but with a generic collection closure. After scanning all variants, `for_each_match` calls the callback per satisfied rule (zero allocation), while `process_iter` collects indices into a `TinyVec`.
-
-This path handles the common case of "check if any of these N keywords appear" with minimal overhead.
+All other query methods (`process`, `process_into`, `for_each_match`, `find_match`, `process_iter`) always use `walk_and_scan` / `walk_and_scan_with` — the unified tree walk that transforms, scans, and evaluates rules in a single pass. For simple-literal matchers without transforms, this naturally short-circuits: the tree has no children, so only the root text is scanned once before collecting results.
 
 ---
 

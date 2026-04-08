@@ -1,12 +1,12 @@
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
 
 // ---------------------------------------------------------------------------
-// SearchMode paths
+// Simple vs multi-transform paths
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_search_mode_all_simple() {
-    // Only single-literal patterns under ProcessType::None -> AllSimple
+fn test_simple_literals() {
+    // Only single-literal patterns under ProcessType::None
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "alpha")
         .add_word(ProcessType::None, 2, "beta")
@@ -23,8 +23,8 @@ fn test_search_mode_all_simple() {
 }
 
 #[test]
-fn test_search_mode_general() {
-    // Rules across multiple PTs -> General
+fn test_multi_transform() {
+    // Rules across multiple ProcessTypes
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::VariantNorm, 2, "测试")

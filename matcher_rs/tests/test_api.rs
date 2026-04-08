@@ -99,20 +99,20 @@ fn test_duplicate_word_id_overwrite() {
 
 #[test]
 fn test_empty_text_matching() {
-    // AllSimple
-    let all_simple = SimpleMatcherBuilder::new()
+    // Simple (no transforms)
+    let simple = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .build()
         .unwrap();
 
-    // General
+    // Multi-transform
     let general = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::VariantNorm, 2, "你好")
         .build()
         .unwrap();
 
-    for (name, m) in [("AllSimple", &all_simple), ("General", &general)] {
+    for (name, m) in [("Simple", &simple), ("General", &general)] {
         assert!(!m.is_match(""), "{name}: is_match('') should be false");
         assert!(
             m.process("").is_empty(),

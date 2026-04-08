@@ -3,7 +3,6 @@ import typing
 class Stats(typing.TypedDict):
     rule_count: int
     process_types: list[int]
-    search_mode: str
 
 class ProcessType:
     """
@@ -108,7 +107,7 @@ class SimpleMatcher:
         """Restore matcher state from pickle data."""
 
     def __repr__(self) -> str:
-        """Return a summary string showing search mode and rule count."""
+        """Return a summary string showing rule count."""
 
     def stats(self) -> Stats:
         """
@@ -118,7 +117,6 @@ class SimpleMatcher:
 
         - ``rule_count`` (int): Total number of rules across all process types.
         - ``process_types`` (list[int]): Sorted list of ProcessType bit values.
-        - ``search_mode`` (str): ``"AllSimple"`` or ``"General"``.
         """
 
     def is_match(self, text: str) -> bool:

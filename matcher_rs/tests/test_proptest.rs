@@ -144,13 +144,13 @@ proptest! {
         word in "[a-z]{1,30}",
         text in "[a-z ]{0,100}"
     ) {
-        // AllSimple path: single ProcessType::None, pure literal
+        // Single ProcessType (no transforms)
         let simple = SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
             .build()
             .unwrap();
 
-        // General path: add a second ProcessType to force General mode
+        // Multi-ProcessType (with transforms)
         let general = SimpleMatcherBuilder::new()
             .add_word(ProcessType::None, 1, &word)
             .add_word(ProcessType::VariantNorm, 2, &word)
@@ -160,7 +160,7 @@ proptest! {
         prop_assert_eq!(
             simple.is_match(&text),
             general.is_match(&text),
-            "AllSimple vs General is_match disagree"
+            "simple vs multi-transform is_match disagree"
         );
 
         // Both should find word_id=1 if the word appears
@@ -169,7 +169,7 @@ proptest! {
         if simple_ids.contains(&1) {
             prop_assert!(
                 general_ids.contains(&1),
-                "General path missed word_id=1 that AllSimple found"
+                "multi-transform path missed word_id=1 that simple found"
             );
         }
     }

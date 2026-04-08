@@ -186,14 +186,6 @@ impl PySimpleMatcher {
         process_types.sort_unstable();
         dict.set_item("process_types", process_types)?;
 
-        let repr = format!("{:?}", self.simple_matcher);
-        let search_mode = repr
-            .split("search_mode: ")
-            .nth(1)
-            .and_then(|s| s.split(',').next())
-            .unwrap_or("Unknown");
-        dict.set_item("search_mode", search_mode)?;
-
         Ok(dict)
     }
 

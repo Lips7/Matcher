@@ -174,7 +174,6 @@ def test_stats():
     s = matcher.stats()
     assert s["rule_count"] == 2
     assert ProcessType.NONE in s["process_types"]
-    assert s["search_mode"] == "AllSimple"
 
 
 def test_stats_general():
@@ -186,7 +185,6 @@ def test_stats_general():
     )
     s = matcher.stats()
     assert s["rule_count"] == 2
-    assert s["search_mode"] == "General"
 
 
 def test_pickle_roundtrip():

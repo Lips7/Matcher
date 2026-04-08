@@ -60,7 +60,7 @@ const SCENES: &[Scene] = &[
         mode: "process",
         shape: "literal",
         seconds: 20,
-        description: "Baseline English, AllSimple fast path",
+        description: "Baseline English, simple literals",
     },
     Scene {
         name: "en-is-match",

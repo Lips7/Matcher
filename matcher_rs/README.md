@@ -175,7 +175,7 @@ matcher.for_each_match("hello world", |r| {
 });
 assert_eq!(ids.len(), 2);
 
-// find_match — first matching rule (exits early on AllSimple matchers)
+// find_match — first matching rule
 let first = matcher.find_match("hello world").unwrap();
 assert!(first.word_id == 1 || first.word_id == 2);
 
