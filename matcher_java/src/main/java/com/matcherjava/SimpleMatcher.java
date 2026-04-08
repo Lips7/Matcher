@@ -48,6 +48,16 @@ public final class SimpleMatcher implements AutoCloseable {
     return JSON.parseArray(json, SimpleResult.class);
   }
 
+  /** Returns the first match for the input text, or null if nothing matches. */
+  public SimpleResult findMatch(String text) {
+    checkClosed();
+    String json = MatcherJava.simpleMatcherFindMatchAsString(matcherPtr, utf8Bytes(text));
+    if (json == null) {
+      return null;
+    }
+    return JSON.parseObject(json, SimpleResult.class);
+  }
+
   /** Check multiple texts in a single native call. */
   public List<Boolean> batchIsMatch(List<String> texts) {
     checkClosed();
@@ -75,6 +85,20 @@ public final class SimpleMatcher implements AutoCloseable {
       return null;
     }
     return JSON.parseObject(json, new TypeReference<List<List<SimpleResult>>>() {});
+  }
+
+  /** Find the first match for each text. Elements may be null when no match is found. */
+  public List<SimpleResult> batchFindMatch(List<String> texts) {
+    checkClosed();
+    byte[][] bytesArray = new byte[texts.size()][];
+    for (int i = 0; i < texts.size(); i++) {
+      bytesArray[i] = utf8Bytes(texts.get(i));
+    }
+    String json = MatcherJava.simpleMatcherBatchFindMatchAsString(matcherPtr, bytesArray);
+    if (json == null) {
+      return null;
+    }
+    return JSON.parseArray(json, SimpleResult.class);
   }
 
   @Override

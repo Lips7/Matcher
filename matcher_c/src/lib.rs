@@ -166,6 +166,60 @@ pub unsafe extern "C" fn simple_matcher_process_as_string(
     })
 }
 
+/// Finds the first match in the input text and returns it as a JSON C string.
+///
+/// # Safety
+/// The caller must ensure that `simple_matcher` points to a valid
+/// [`SimpleMatcher`] instance and that `text` points to a valid
+/// null-terminated C string.
+///
+/// # Returns
+/// A pointer to a newly allocated C string containing the JSON result
+/// (e.g. `{"word_id":1,"word":"hello"}`), or null if no match is found
+/// or an error occurs. The caller must call [`drop_string`] to free
+/// a non-null return value.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_find_match_as_string(
+    simple_matcher: *const SimpleMatcher,
+    text: *const c_char,
+) -> *mut c_char {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if text.is_null() {
+            return ptr::null_mut();
+        }
+        let text_bytes = CStr::from_ptr(text).to_bytes();
+        let text_str = match str::from_utf8(text_bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!("Input is not a valid utf-8 string");
+                return ptr::null_mut();
+            }
+        };
+        let m = match simple_matcher.as_ref() {
+            Some(m) => m,
+            None => return ptr::null_mut(),
+        };
+        let res = match m.find_match(text_str) {
+            Some(r) => r,
+            None => return ptr::null_mut(),
+        };
+        let res_json = match sonic_rs::to_vec(&res) {
+            Ok(json) => json,
+            Err(_) => return ptr::null_mut(),
+        };
+        let res_cstring = match CString::new(res_json) {
+            Ok(cs) => cs,
+            Err(_) => return ptr::null_mut(),
+        };
+        res_cstring.into_raw()
+    }));
+
+    result.unwrap_or_else(|_| {
+        eprintln!("simple_matcher_find_match_as_string panicked");
+        ptr::null_mut()
+    })
+}
+
 /// Deallocates a [`SimpleMatcher`] instance.
 ///
 /// # Safety

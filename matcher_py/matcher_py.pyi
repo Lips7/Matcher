@@ -136,6 +136,14 @@ class SimpleMatcher:
         of a matched pattern. Results are deduplicated but unordered.
         """
 
+    def find_match(self, text: str) -> SimpleResult | None:
+        """
+        Return the first pattern that matches *text*, or ``None``.
+
+        Faster than :meth:`process` when you only need one result —
+        exits early on simple literal matchers.
+        """
+
     def batch_is_match(self, texts: list[str]) -> list[bool]:
         """
         Check multiple texts in one call. Releases the GIL internally.
@@ -148,4 +156,12 @@ class SimpleMatcher:
         Process multiple texts in one call. Releases the GIL internally.
 
         Returns a list of result lists, one per input text.
+        """
+
+    def batch_find_match(self, texts: list[str]) -> list[SimpleResult | None]:
+        """
+        Find the first match for each text in one call. Releases the GIL internally.
+
+        Returns a list with one element per input text — each is either
+        a :class:`SimpleResult` or ``None``.
         """

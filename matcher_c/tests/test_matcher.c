@@ -65,6 +65,33 @@ int main() {
             return 1;
         }
 
+        // Test find_match
+        char* find_result = simple_matcher_find_match_as_string(matcher, "這是一個測試句子");
+        if (find_result) {
+            printf("simple_matcher_find_match_as_string result: %s\n", find_result);
+            drop_string(find_result);
+        } else {
+            fprintf(stderr, "Error: expected find_match to return a result for '測試'.\n");
+            return 1;
+        }
+
+        // Test find_match with no match
+        char* no_match = simple_matcher_find_match_as_string(matcher, "nothing here");
+        if (no_match != NULL) {
+            fprintf(stderr, "Error: expected find_match to return NULL for no match.\n");
+            drop_string(no_match);
+            return 1;
+        }
+        printf("simple_matcher_find_match_as_string (no match): NULL (correct)\n");
+
+        // Test find_match with empty text
+        char* empty_match = simple_matcher_find_match_as_string(matcher, "");
+        if (empty_match != NULL) {
+            fprintf(stderr, "Error: expected find_match to return NULL for empty text.\n");
+            drop_string(empty_match);
+            return 1;
+        }
+
         drop_simple_matcher(matcher);
     } else {
         fprintf(stderr, "init_simple_matcher failed.\n");

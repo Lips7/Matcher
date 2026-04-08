@@ -21,6 +21,10 @@ bool simple_matcher_is_match(const void* simple_matcher, const char* text);
 // Caller must free the returned string with drop_string.
 char* simple_matcher_process_as_string(const void* simple_matcher, const char* text);
 
+// Returns JSON string of the first match, or NULL if no match.
+// Caller must free a non-NULL return with drop_string.
+char* simple_matcher_find_match_as_string(const void* simple_matcher, const char* text);
+
 // Frees a SimpleMatcher created by init_simple_matcher.
 void drop_simple_matcher(void* simple_matcher);
 

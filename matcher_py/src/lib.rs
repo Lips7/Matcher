@@ -222,6 +222,20 @@ impl PySimpleMatcher {
             .collect()
     }
 
+    #[pyo3(signature=(text))]
+    fn find_match(&self, py: Python<'_>, text: &str) -> Option<PySimpleResult> {
+        let matcher = &self.simple_matcher;
+        let owned: Option<(u32, String)> = py.detach(|| {
+            matcher
+                .find_match(text)
+                .map(|r| (r.word_id, r.word.into_owned()))
+        });
+        owned.map(|(word_id, word)| PySimpleResult {
+            word_id,
+            word: PyString::new(py, &word).into(),
+        })
+    }
+
     #[pyo3(signature=(texts))]
     fn batch_is_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<bool> {
         let matcher = &self.simple_matcher;
@@ -253,6 +267,28 @@ impl PySimpleMatcher {
                         word: PyString::new(py, &word).into(),
                     })
                     .collect()
+            })
+            .collect()
+    }
+    #[pyo3(signature=(texts))]
+    fn batch_find_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Option<PySimpleResult>> {
+        let matcher = &self.simple_matcher;
+        let all: Vec<Option<(u32, String)>> = py.detach(|| {
+            texts
+                .iter()
+                .map(|t| {
+                    matcher
+                        .find_match(t)
+                        .map(|r| (r.word_id, r.word.into_owned()))
+                })
+                .collect()
+        });
+        all.into_iter()
+            .map(|opt| {
+                opt.map(|(word_id, word)| PySimpleResult {
+                    word_id,
+                    word: PyString::new(py, &word).into(),
+                })
             })
             .collect()
     }

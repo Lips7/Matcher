@@ -160,6 +160,63 @@ public class TestSimpleMatcher {
   }
 
   @Test
+  public void testFindMatch() {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    try (SimpleMatcher matcher = new SimpleMatcher(table)) {
+      SimpleResult result = matcher.findMatch("hello world");
+      assertNotNull(result);
+      assertTrue(result.getWordId() == 1 || result.getWordId() == 2);
+    }
+  }
+
+  @Test
+  public void testFindMatchNone() {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "hello"));
+    try (SimpleMatcher matcher = new SimpleMatcher(table)) {
+      assertNull(matcher.findMatch("goodbye"));
+      assertNull(matcher.findMatch(""));
+    }
+  }
+
+  @Test
+  public void testFindMatchGeneral() {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "a&b"));
+    try (SimpleMatcher matcher = new SimpleMatcher(table)) {
+      SimpleResult result = matcher.findMatch("a and b");
+      assertNotNull(result);
+      assertEquals(1, result.getWordId());
+      assertEquals("a&b", result.getWord());
+      assertNull(matcher.findMatch("a only"));
+    }
+  }
+
+  @Test
+  public void testBatchFindMatch() {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    try (SimpleMatcher matcher = new SimpleMatcher(table)) {
+      List<SimpleResult> results =
+          matcher.batchFindMatch(Arrays.asList("hello", "miss", "world", ""));
+      assertEquals(4, results.size());
+      assertNotNull(results.get(0));
+      assertEquals(1, results.get(0).getWordId());
+      assertNull(results.get(1));
+      assertNotNull(results.get(2));
+      assertEquals(2, results.get(2).getWordId());
+      assertNull(results.get(3));
+    }
+  }
+
+  @Test
+  public void testBatchFindMatchEmpty() {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "hello"));
+    try (SimpleMatcher matcher = new SimpleMatcher(table)) {
+      List<SimpleResult> results = matcher.batchFindMatch(Arrays.asList());
+      assertNotNull(results);
+      assertTrue(results.isEmpty());
+    }
+  }
+
+  @Test
   public void testConcurrentAccess() throws Exception {
     byte[] table = buildTable(ProcessType.VARIANT_NORM, words("1", "测试"));
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {

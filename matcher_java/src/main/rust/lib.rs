@@ -149,6 +149,31 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherProcessAsSt
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherFindMatchAsString<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    matcher_ptr: jlong,
+    text_bytes: JByteArray<'local>,
+) -> jstring {
+    env.with_env(|env| -> JniResult<_> {
+        let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
+            return Ok(ptr::null_mut());
+        };
+
+        let text = decode_text(env, text_bytes)?;
+        match matcher.find_match(&text) {
+            Some(result) => {
+                let json = sonic_rs::to_string(&result)
+                    .map_err(|e| JniError::ParseFailed(e.to_string()))?;
+                Ok(env.new_string(json)?.into_raw())
+            }
+            None => Ok(ptr::null_mut()),
+        }
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatch<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
@@ -187,6 +212,31 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProces
         let texts = decode_texts(env, &texts_bytes)?;
         let all_results: Vec<Vec<matcher_rs::SimpleResult>> =
             texts.iter().map(|t| matcher.process(t)).collect();
+        let json =
+            sonic_rs::to_string(&all_results).map_err(|e| JniError::ParseFailed(e.to_string()))?;
+
+        Ok(env.new_string(json)?.into_raw())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchFindMatchAsString<
+    'local,
+>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    matcher_ptr: jlong,
+    texts_bytes: JObjectArray<'local>,
+) -> jstring {
+    env.with_env(|env| -> JniResult<_> {
+        let Some(matcher) = matcher_from_ptr(matcher_ptr) else {
+            return Ok(ptr::null_mut());
+        };
+
+        let texts = decode_texts(env, &texts_bytes)?;
+        let all_results: Vec<Option<matcher_rs::SimpleResult>> =
+            texts.iter().map(|t| matcher.find_match(t)).collect();
         let json =
             sonic_rs::to_string(&all_results).map_err(|e| JniError::ParseFailed(e.to_string()))?;
 
