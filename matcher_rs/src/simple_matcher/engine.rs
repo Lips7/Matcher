@@ -28,12 +28,16 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    AhoCorasick as AcEngine, AhoCorasickBuilder, AhoCorasickKind, MatchKind as AhoCorasickMatchKind,
+    AhoCorasick as AcEngine, AhoCorasickBuilder as AcBuilder, AhoCorasickKind as AcKind,
+    MatchKind as AcMatchKind,
 };
 use daachorse::{
-    DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder,
-    MatchKind as DoubleArrayAhoCorasickMatchKind,
-    charwise::{CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder},
+    DoubleArrayAhoCorasick as BytewiseDAACEngine,
+    DoubleArrayAhoCorasickBuilder as BytewiseDAACBuilder, MatchKind as DAACMatchKind,
+    charwise::{
+        CharwiseDoubleArrayAhoCorasick as CharwiseDAACEngine,
+        CharwiseDoubleArrayAhoCorasickBuilder as CharwiseDAACBuilder,
+    },
 };
 
 use super::pattern::{PatternEntry, PatternIndex};
@@ -92,19 +96,24 @@ trait ScanEngine {
 /// for non-streaming scan).
 #[derive(Clone)]
 struct BytewiseMatcher {
-    daac: DoubleArrayAhoCorasick<u32>,
+    daac: BytewiseDAACEngine<u32>,
     #[cfg(feature = "dfa")]
-    dfa: Option<(AcEngine, Vec<u32>)>,
+    dfa: AcEngine,
+    #[cfg(feature = "dfa")]
+    dfa_to_value: Vec<u32>,
 }
 
 impl ScanEngine for BytewiseMatcher {
     #[inline(always)]
     fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "dfa")]
-        if let Some((ref matcher, _)) = self.dfa {
-            return matcher.is_match(text);
+        {
+            self.dfa.is_match(text)
         }
-        self.daac.find_iter(text).next().is_some()
+        #[cfg(not(feature = "dfa"))]
+        {
+            self.daac.find_iter(text).next().is_some()
+        }
     }
 
     #[inline(always)]
@@ -114,23 +123,26 @@ impl ScanEngine for BytewiseMatcher {
         mut on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         #[cfg(feature = "dfa")]
-        if let Some((ref matcher, ref to_value)) = self.dfa {
-            for m in matcher.find_overlapping_iter(text) {
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
-                // bounds.
-                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+        {
+            for m in self.dfa.find_overlapping_iter(text) {
+                // SAFETY: `dfa_to_value` has one entry per pattern; pattern index is always
+                // in bounds.
+                let value = unsafe { *self.dfa_to_value.get_unchecked(m.pattern().as_usize()) };
                 if on_value(value, m.start(), m.end()) {
                     return true;
                 }
             }
-            return false;
+            false
         }
-        for hit in self.daac.find_overlapping_iter(text) {
-            if on_value(hit.value(), hit.start(), hit.end()) {
-                return true;
+        #[cfg(not(feature = "dfa"))]
+        {
+            for hit in self.daac.find_overlapping_iter(text) {
+                if on_value(hit.value(), hit.start(), hit.end()) {
+                    return true;
+                }
             }
+            false
         }
-        false
     }
 
     #[inline(always)]
@@ -148,18 +160,19 @@ impl ScanEngine for BytewiseMatcher {
     }
 
     fn heap_bytes(&self) -> usize {
-        let total = self.daac.heap_bytes();
+        let daac = self.daac.heap_bytes();
         #[cfg(feature = "dfa")]
-        if let Some((ref matcher, ref to_value)) = self.dfa {
-            return total + matcher.memory_usage() + to_value.capacity() * size_of::<u32>();
+        {
+            daac + self.dfa.memory_usage() + self.dfa_to_value.capacity() * size_of::<u32>()
         }
-        total
+        #[cfg(not(feature = "dfa"))]
+        daac
     }
 }
 
 // ── Charwise engine ─────────────────────────────────────────────────────
 
-type CharwiseMatcher = CharwiseDoubleArrayAhoCorasick<u32>;
+type CharwiseMatcher = CharwiseDAACEngine<u32>;
 
 impl ScanEngine for CharwiseMatcher {
     fn is_match(&self, text: &str) -> bool {
@@ -199,7 +212,7 @@ impl ScanEngine for CharwiseMatcher {
     }
 
     fn heap_bytes(&self) -> usize {
-        CharwiseDoubleArrayAhoCorasick::heap_bytes(self)
+        CharwiseDAACEngine::heap_bytes(self)
     }
 }
 
@@ -291,14 +304,7 @@ impl ScanPlan {
     /// streaming on ASCII-heavy text, outweighing the allocation cost.
     #[inline(always)]
     pub(super) fn has_dfa(&self) -> bool {
-        #[cfg(feature = "dfa")]
-        {
-            self.engines.bytewise.dfa.is_some()
-        }
-        #[cfg(not(feature = "dfa"))]
-        {
-            false
-        }
+        cfg!(feature = "dfa")
     }
 
     /// Returns the estimated heap memory in bytes owned by all scan engines.
@@ -399,8 +405,8 @@ fn compile_automata(
     };
 
     let build_charwise = |source: Vec<(&str, u32)>| -> Result<CharwiseMatcher, MatcherError> {
-        CharwiseDoubleArrayAhoCorasickBuilder::new()
-            .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+        CharwiseDAACBuilder::new()
+            .match_kind(DAACMatchKind::Standard)
             .build_with_values(source)
             .map_err(MatcherError::automaton_build)
     };
@@ -420,27 +426,25 @@ fn compile_automata(
 /// Always builds DAAC bytewise (needed for streaming). With the `dfa` feature,
 /// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan).
 fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatcher, MatcherError> {
-    let daac = DoubleArrayAhoCorasickBuilder::new()
-        .match_kind(DoubleArrayAhoCorasickMatchKind::Standard)
+    let daac = BytewiseDAACBuilder::new()
+        .match_kind(DAACMatchKind::Standard)
         .build_with_values(all_patvals.clone())
         .map_err(MatcherError::automaton_build)?;
 
     #[cfg(feature = "dfa")]
-    let dfa = {
-        let to_value: Vec<u32> = all_patvals.iter().map(|&(_, v)| v).collect();
-        Some((
-            AhoCorasickBuilder::new()
-                .kind(Some(AhoCorasickKind::DFA))
-                .match_kind(AhoCorasickMatchKind::Standard)
-                .build(all_patvals.iter().map(|(p, _)| p))
-                .map_err(MatcherError::automaton_build)?,
-            to_value,
-        ))
-    };
+    let dfa_to_value: Vec<u32> = all_patvals.iter().map(|&(_, v)| v).collect();
+    #[cfg(feature = "dfa")]
+    let dfa = AcBuilder::new()
+        .kind(Some(AcKind::DFA))
+        .match_kind(AcMatchKind::Standard)
+        .build(all_patvals.iter().map(|(p, _)| p))
+        .map_err(MatcherError::automaton_build)?;
 
     Ok(BytewiseMatcher {
         daac,
         #[cfg(feature = "dfa")]
         dfa,
+        #[cfg(feature = "dfa")]
+        dfa_to_value,
     })
 }
