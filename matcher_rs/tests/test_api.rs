@@ -307,7 +307,6 @@ fn test_debug_format() {
 
     let debug = format!("{matcher:?}");
     assert!(debug.contains("SimpleMatcher"), "debug output: {debug}");
-    assert!(debug.contains("search_mode"), "debug output: {debug}");
     assert!(debug.contains("rule_count"), "debug output: {debug}");
 }
 

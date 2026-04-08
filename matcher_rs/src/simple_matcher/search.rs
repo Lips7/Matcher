@@ -11,13 +11,6 @@
 //! 4. Collects or checks results depending on the caller (`is_match` vs
 //!    `process`).
 //!
-//! # Fast paths
-//!
-//! - **`is_match_simple`** — all rules are single-literal, no transforms.
-//!   Delegates directly to the automaton's `is_match`.
-//! - **`process_simple`** — all-simple matchers collecting results. Each hit is
-//!   a completed rule; no need for the full state machine.
-//!
 //! # Unified tree walk
 //!
 //! The general path uses [`walk_and_scan`](SimpleMatcher::walk_and_scan), which
@@ -140,45 +133,6 @@ fn fold_noop_children_masks(
 
 /// Hot-path search helpers layered on top of the compiled scan engines.
 impl SimpleMatcher {
-    /// Fast path for matchers that contain only direct simple literal rules.
-    pub(super) fn is_match_simple(&self, text: &str) -> bool {
-        if !self.scan.patterns().has_boundary() {
-            return self.scan.is_match(text);
-        }
-        // Boundary patterns need position-aware scanning.
-        let text_bytes = text.as_bytes();
-        let density = text_non_ascii_density(text);
-        let mut matched = false;
-        self.scan
-            .for_each_rule_idx_simple(text, density, |_rule_idx, boundary, start, end| {
-                if !matched
-                    && (boundary == 0 || check_word_boundary(text_bytes, start, end, boundary))
-                {
-                    matched = true;
-                }
-            });
-        matched
-    }
-
-    /// Collects matches for an all-simple matcher without building transformed
-    /// variants.
-    pub(super) fn process_simple<'a>(&'a self, text: &'a str, results: &mut Vec<SimpleResult<'a>>) {
-        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
-        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
-        state.prepare(self.rules.len());
-        let mut ss = state.as_scan_state();
-
-        let text_bytes = text.as_bytes();
-        let density = text_non_ascii_density(text);
-        self.scan
-            .for_each_rule_idx_simple(text, density, |rule_idx, boundary, start, end| {
-                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
-                    return;
-                }
-                self.rules.push_result_if_new(rule_idx, &mut ss, results);
-            });
-    }
-
     /// Scans one processed text variant and forwards each raw hit into rule
     /// evaluation.
     #[inline(always)]
@@ -536,55 +490,5 @@ impl SimpleMatcher {
 
         let r = collect.take().map(|f| f(&self.rules, &ss));
         (self.rules.has_match(&ss), r)
-    }
-
-    /// AllSimple callback path: calls `on_match` per hit with early-exit
-    /// support. Uses TLS for dedup (same pattern as `process_simple`).
-    pub(super) fn for_each_match_simple<'a>(
-        &'a self,
-        text: &'a str,
-        mut on_match: impl FnMut(SimpleResult<'a>) -> bool,
-    ) -> bool {
-        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
-        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
-        state.prepare(self.rules.len());
-        let mut ss = state.as_scan_state();
-
-        let text_bytes = text.as_bytes();
-        let density = text_non_ascii_density(text);
-        self.scan
-            .for_each_rule_idx_simple_early(text, density, |rule_idx, boundary, start, end| {
-                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
-                    return false;
-                }
-                if ss.mark_positive_simple(rule_idx) {
-                    on_match(self.rules.result_at(rule_idx))
-                } else {
-                    false
-                }
-            })
-    }
-
-    /// AllSimple index collection: collects satisfied rule indices into a
-    /// `TinyVec` for iterator construction.
-    pub(super) fn collect_indices_simple(&self, text: &str) -> TinyVec<[usize; 16]> {
-        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
-        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
-        state.prepare(self.rules.len());
-        let mut ss = state.as_scan_state();
-
-        let mut indices = TinyVec::new();
-        let text_bytes = text.as_bytes();
-        let density = text_non_ascii_density(text);
-        self.scan
-            .for_each_rule_idx_simple(text, density, |rule_idx, boundary, start, end| {
-                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
-                    return;
-                }
-                if ss.mark_positive_simple(rule_idx) {
-                    indices.push(rule_idx);
-                }
-            });
-        indices
     }
 }

@@ -32,7 +32,7 @@ use foldhash::HashMapExt;
 type FoldHashMap<K, V> = HashMap<K, V, foldhash::fast::FixedState>;
 
 use super::{
-    SearchMode, SimpleMatcher,
+    SimpleMatcher,
     encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
     engine::ScanPlan,
     pattern::{PatternEntry, PatternKind},
@@ -76,10 +76,8 @@ impl SimpleMatcher {
     /// 2. Parse all rules into deduplicated patterns and rule metadata.
     /// 3. Build the process-type transformation tree and recompute masks using
     ///    compact indices.
-    /// 4. Choose the search mode — `AllSimple` when the tree has no children
-    ///    and every pattern is simple; `General` otherwise.
-    /// 5. Compile Aho-Corasick automata via the scan plan.
-    /// 6. Assemble and return the immutable [`SimpleMatcher`].
+    /// 4. Compile Aho-Corasick automata via the scan plan.
+    /// 5. Assemble and return the immutable [`SimpleMatcher`].
     ///
     /// # Errors
     ///
@@ -134,17 +132,15 @@ impl SimpleMatcher {
         let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
 
         let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
-        let mode = if process_type_tree[0].children.is_empty() && scan.patterns().all_simple() {
-            SearchMode::AllSimple
-        } else {
-            SearchMode::General
-        };
+        let is_match_fast = process_type_tree[0].children.is_empty()
+            && scan.patterns().all_simple()
+            && !scan.patterns().has_boundary();
 
         Ok(SimpleMatcher {
             tree: process_type_tree,
-            mode,
             scan,
             rules: parsed.rules,
+            is_match_fast,
         })
     }
 

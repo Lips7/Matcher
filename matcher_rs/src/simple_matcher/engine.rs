@@ -36,10 +36,7 @@ use daachorse::{
     charwise::{CharwiseDoubleArrayAhoCorasick, CharwiseDoubleArrayAhoCorasickBuilder},
 };
 
-use super::{
-    encoding::{DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_RULE_MASK},
-    pattern::{PatternEntry, PatternIndex},
-};
+use super::pattern::{PatternEntry, PatternIndex};
 use crate::MatcherError;
 
 /// Non-ASCII byte density threshold for switching from bytewise to charwise
@@ -169,15 +166,10 @@ impl ScanPlan {
 
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// Density-based engine dispatch (same logic as
-    /// [`Self::for_each_match_value`]):
-    /// - **All-ASCII patterns + 100% non-ASCII text**: `return false` — ASCII
-    ///   patterns cannot match text with zero ASCII bytes (UTF-8 guarantees
-    ///   bytes ≥0x80 never encode ASCII codepoints).
-    /// - **Low density** (≤ [`CHARWISE_DENSITY_THRESHOLD`]): bytewise DFA+Teddy
-    ///   (1.7–2.5× faster on ASCII-heavy text).
-    /// - **High density** (> [`CHARWISE_DENSITY_THRESHOLD`]): charwise engine
-    ///   (1.3–2.5× faster at ≥40% CJK characters).
+    /// Density-based engine dispatch: bytewise for low non-ASCII density
+    /// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
+    /// Skips TLS state entirely — used as a fast path for
+    /// `SimpleMatcher::is_match` when no text transforms are needed.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         let density = text_non_ascii_density(text);
@@ -243,46 +235,6 @@ impl ScanPlan {
         }
         false
     }
-
-    /// AllSimple-specialized scan: yields rule indices directly.
-    ///
-    /// Every raw value is assumed to carry `DIRECT_RULE_BIT`; the callback
-    /// receives the extracted `rule_idx` (no early exit, no indirect
-    /// dispatch).
-    #[inline(always)]
-    pub(super) fn for_each_rule_idx_simple(
-        &self,
-        text: &str,
-        density: f32,
-        on_rule: impl FnMut(usize, u8, usize, usize),
-    ) {
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            if let Some(ref matcher) = self.bytewise_matcher {
-                matcher.for_each_rule_idx_simple(text, on_rule);
-            }
-        } else if let Some(ref matcher) = self.charwise_matcher {
-            matcher.for_each_rule_idx_simple(text, on_rule);
-        }
-    }
-
-    /// Like [`Self::for_each_rule_idx_simple`] but the callback returns `bool`
-    /// to request early exit.
-    #[inline(always)]
-    pub(super) fn for_each_rule_idx_simple_early(
-        &self,
-        text: &str,
-        density: f32,
-        on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
-    ) -> bool {
-        if density <= CHARWISE_DENSITY_THRESHOLD {
-            if let Some(ref matcher) = self.bytewise_matcher {
-                return matcher.for_each_rule_idx_simple_early(text, on_rule);
-            }
-        } else if let Some(ref matcher) = self.charwise_matcher {
-            return matcher.for_each_rule_idx_simple_early(text, on_rule);
-        }
-        false
-    }
 }
 
 /// Query helpers for the bytewise scan engine.
@@ -325,79 +277,6 @@ impl BytewiseMatcher {
         false
     }
 
-    #[inline(always)]
-    fn for_each_rule_idx_simple(
-        &self,
-        text: &str,
-        mut on_rule: impl FnMut(usize, u8, usize, usize),
-    ) {
-        #[cfg(feature = "dfa")]
-        if let Some((ref matcher, ref to_value)) = self.dfa {
-            for m in matcher.find_overlapping_iter(text) {
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
-                // bounds.
-                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-                on_rule(
-                    (value & DIRECT_RULE_MASK) as usize,
-                    boundary,
-                    m.start(),
-                    m.end(),
-                );
-            }
-            return;
-        }
-        for hit in self.daac.find_overlapping_iter(text) {
-            let value = hit.value();
-            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-            on_rule(
-                (value & DIRECT_RULE_MASK) as usize,
-                boundary,
-                hit.start(),
-                hit.end(),
-            );
-        }
-    }
-
-    #[inline(always)]
-    fn for_each_rule_idx_simple_early(
-        &self,
-        text: &str,
-        mut on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
-    ) -> bool {
-        #[cfg(feature = "dfa")]
-        if let Some((ref matcher, ref to_value)) = self.dfa {
-            for m in matcher.find_overlapping_iter(text) {
-                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
-                // bounds.
-                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
-                let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-                if on_rule(
-                    (value & DIRECT_RULE_MASK) as usize,
-                    boundary,
-                    m.start(),
-                    m.end(),
-                ) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        for hit in self.daac.find_overlapping_iter(text) {
-            let value = hit.value();
-            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-            if on_rule(
-                (value & DIRECT_RULE_MASK) as usize,
-                boundary,
-                hit.start(),
-                hit.end(),
-            ) {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Streaming: always uses DAAC bytewise (DFA has no streaming API).
     #[inline(always)]
     fn for_each_match_value_from_iter(
@@ -430,12 +309,6 @@ trait CharwiseMatcherExt {
         &self,
         text: &str,
         on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool;
-    fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize, u8, usize, usize));
-    fn for_each_rule_idx_simple_early(
-        &self,
-        text: &str,
-        on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
     ) -> bool;
 }
 
@@ -481,45 +354,6 @@ impl CharwiseMatcherExt for CharwiseMatcher {
     ) -> bool {
         for hit in self.find_overlapping_iter(text) {
             if on_value(hit.value(), hit.start(), hit.end()) {
-                return true;
-            }
-        }
-        false
-    }
-
-    #[inline(always)]
-    fn for_each_rule_idx_simple(
-        &self,
-        text: &str,
-        mut on_rule: impl FnMut(usize, u8, usize, usize),
-    ) {
-        for hit in self.find_overlapping_iter(text) {
-            let value = hit.value();
-            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-            on_rule(
-                (value & DIRECT_RULE_MASK) as usize,
-                boundary,
-                hit.start(),
-                hit.end(),
-            );
-        }
-    }
-
-    #[inline(always)]
-    fn for_each_rule_idx_simple_early(
-        &self,
-        text: &str,
-        mut on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
-    ) -> bool {
-        for hit in self.find_overlapping_iter(text) {
-            let value = hit.value();
-            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
-            if on_rule(
-                (value & DIRECT_RULE_MASK) as usize,
-                boundary,
-                hit.start(),
-                hit.end(),
-            ) {
                 return true;
             }
         }

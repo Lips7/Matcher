@@ -140,9 +140,6 @@ pub struct SimpleResult<'a> {
 ///   state between calls (only touched rules are cleaned up).
 /// - **Bitmask fast path**: Rules with ≤64 segments use a `u64` bitmask instead
 ///   of the full matrix, keeping the inner loop branch-free.
-/// - **`AllSimple` bypass**: When every rule is a pure literal (no `&`/`~`
-///   operators and single segment), the state machinery is bypassed entirely —
-///   each automaton hit maps directly to a result.
 /// - **DAG reuse**: The transformation pipeline is structured as a trie so
 ///   intermediate results (e.g., Delete output) are computed once even when
 ///   multiple composite `ProcessType`s share a prefix.
@@ -170,39 +167,24 @@ pub struct SimpleResult<'a> {
 #[derive(Clone)]
 pub struct SimpleMatcher {
     tree: Vec<ProcessTypeBitNode>,
-    mode: SearchMode,
     scan: ScanPlan,
     rules: RuleSet,
+    /// `true` when no text transforms are needed and every pattern is a
+    /// simple single-segment literal. Enables `is_match` to delegate
+    /// directly to the AC automaton without TLS state setup.
+    is_match_fast: bool,
 }
 
-/// Formats as `SimpleMatcher { search_mode: …, rule_count: …, .. }`.
+/// Formats as `SimpleMatcher { rule_count: …, .. }`.
 ///
 /// Internal engine details (automaton sizes, pattern indices) are omitted to
-/// keep the output concise and stable across versions. The two fields shown
-/// give a quick summary of the matcher's dispatch mode and rule count.
+/// keep the output concise and stable across versions.
 impl fmt::Debug for SimpleMatcher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SimpleMatcher")
-            .field("search_mode", &self.mode)
             .field("rule_count", &self.rules.len())
             .finish_non_exhaustive()
     }
-}
-
-/// Dispatch mode selected at construction time to unlock fast paths during
-/// scanning.
-///
-/// The mode is determined by analyzing the rule set: if all rules are simple
-/// single-fragment literals under the same [`ProcessType`](crate::ProcessType),
-/// the matcher can skip the full state machine and use direct rule dispatch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SearchMode {
-    /// Every rule is a simple single-fragment literal with no `&`/`~` operators
-    /// and no text transformation. The matcher bypasses state tracking
-    /// entirely.
-    AllSimple,
-    /// Rules require text transformation and/or the full state machine.
-    General,
 }
 
 /// Public query and result APIs for the compiled matcher.
@@ -234,8 +216,10 @@ impl SimpleMatcher {
         if text.is_empty() {
             return false;
         }
-        if matches!(self.mode, SearchMode::AllSimple) {
-            return self.is_match_simple(text);
+        // Fast path: no text transforms and all rules are simple literals —
+        // delegate directly to the AC automaton without TLS state setup.
+        if self.is_match_fast {
+            return self.scan.is_match(text);
         }
         self.walk_and_scan(text, true, None)
     }
@@ -314,9 +298,6 @@ impl SimpleMatcher {
         if text.is_empty() {
             return;
         }
-        if matches!(self.mode, SearchMode::AllSimple) {
-            return self.process_simple(text, results);
-        }
         self.walk_and_scan(text, false, Some(results));
     }
 
@@ -326,11 +307,9 @@ impl SimpleMatcher {
     /// Returns `true` if the callback requested early exit.
     ///
     /// This is the zero-allocation alternative to [`process`](Self::process):
-    /// no `Vec` is allocated for the results. For `AllSimple` matchers, the
-    /// callback fires lazily during scanning — each automaton hit is
-    /// dispatched immediately, and returning `true` aborts the scan. For
-    /// `General` matchers, all variants are scanned first (to resolve AND/NOT
-    /// logic), then the callback fires for each satisfied rule.
+    /// no `Vec` is allocated for the results. All variants are scanned first
+    /// (to resolve AND/NOT logic), then the callback fires for each satisfied
+    /// rule.
     ///
     /// # Examples
     ///
@@ -359,9 +338,6 @@ impl SimpleMatcher {
         if text.is_empty() {
             return false;
         }
-        if matches!(self.mode, SearchMode::AllSimple) {
-            return self.for_each_match_simple(text, on_match);
-        }
         self.walk_and_scan_with(text, false, |rules, ss| {
             rules.for_each_satisfied(ss, on_match)
         })
@@ -370,8 +346,6 @@ impl SimpleMatcher {
     }
 
     /// Returns the first matching rule, or `None` if no rule matches.
-    ///
-    /// For `AllSimple` matchers this exits on the first automaton hit.
     ///
     /// # Examples
     ///
@@ -399,9 +373,8 @@ impl SimpleMatcher {
     /// Returns an iterator over all matched rules.
     ///
     /// Internally pre-scans the text on construction (the full scan must
-    /// complete before results can be determined for General matchers), then
-    /// yields [`SimpleResult`] values lazily from the pre-collected rule
-    /// indices.
+    /// complete before results can be determined), then yields
+    /// [`SimpleResult`] values lazily from the pre-collected rule indices.
     ///
     /// The iterator implements [`ExactSizeIterator`], [`DoubleEndedIterator`],
     /// and [`FusedIterator`].
@@ -437,13 +410,10 @@ impl SimpleMatcher {
                 back: 0,
             };
         }
-        let indices = if matches!(self.mode, SearchMode::AllSimple) {
-            self.collect_indices_simple(text)
-        } else {
-            self.walk_and_scan_with(text, false, |rules, ss| rules.collect_satisfied_indices(ss))
-                .1
-                .unwrap_or_default()
-        };
+        let indices = self
+            .walk_and_scan_with(text, false, |rules, ss| rules.collect_satisfied_indices(ss))
+            .1
+            .unwrap_or_default();
         let back = indices.len();
         SimpleMatchIter {
             rules: &self.rules,

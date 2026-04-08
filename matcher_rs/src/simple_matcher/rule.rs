@@ -247,23 +247,6 @@ impl RuleSet {
             .any(|&rule_idx| ss.rule_is_satisfied(rule_idx))
     }
 
-    /// Pushes one result when `rule_idx` becomes positive for the first time in
-    /// this generation.
-    ///
-    /// Used by the all-simple fast path where every hit is immediately a
-    /// completed rule.
-    #[inline(always)]
-    pub(super) fn push_result_if_new<'a>(
-        &'a self,
-        rule_idx: usize,
-        ss: &mut ScanState<'_>,
-        results: &mut Vec<SimpleResult<'a>>,
-    ) {
-        if ss.mark_positive_simple(rule_idx) {
-            self.push_result(rule_idx, results);
-        }
-    }
-
     /// Appends every satisfied touched rule to `results`.
     pub(super) fn collect_matches<'a>(
         &'a self,
