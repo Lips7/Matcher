@@ -27,7 +27,9 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use ahash::AHashMap;
+use foldhash::HashMapExt;
+
+type FoldHashMap<K, V> = HashMap<K, V, foldhash::fast::FixedState>;
 
 use super::{
     SearchMode, SimpleMatcher,
@@ -218,16 +220,17 @@ impl SimpleMatcher {
         let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
         let mut rule_hot: Vec<RuleHot> = Vec::with_capacity(word_size);
         let mut rule_cold: Vec<RuleCold> = Vec::with_capacity(word_size);
-        let mut word_id_to_idx: AHashMap<(ProcessType, u32), usize> =
-            AHashMap::with_capacity(word_size);
+        let mut word_id_to_idx: FoldHashMap<(ProcessType, u32), usize> =
+            FoldHashMap::with_capacity(word_size);
 
         let mut next_pattern_id: usize = 0;
         let mut dedup_patterns = Vec::with_capacity(word_size);
         let mut any_has_not = false;
-        let mut pattern_id_map: AHashMap<Cow<'_, str>, usize> = AHashMap::with_capacity(word_size);
+        let mut pattern_id_map: FoldHashMap<Cow<'_, str>, usize> =
+            FoldHashMap::with_capacity(word_size);
 
-        let mut and_splits: AHashMap<&str, i32> = AHashMap::new();
-        let mut not_splits: AHashMap<&str, i32> = AHashMap::new();
+        let mut and_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
+        let mut not_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
 
         for (&process_type, simple_word_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
