@@ -240,7 +240,8 @@ impl SimpleMatcher {
     /// # Panics
     ///
     /// Panics if a non-root node in the transform trie lacks a cached
-    /// [`TransformStep`]. This is a construction invariant maintained by
+    /// [`TransformStep`](crate::process::step::TransformStep). This is a
+    /// construction invariant maintained by
     /// [`build_process_type_tree`](crate::process::graph::build_process_type_tree).
     #[inline]
     pub(super) fn walk_and_scan_with<'a, F, R>(
