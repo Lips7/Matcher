@@ -202,6 +202,43 @@ def test_repr():
     assert "SimpleMatcher" in r
 
 
+def test_find_match_found():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
+    result = matcher.find_match("hello world")
+    assert result is not None
+    assert result.word_id in (1, 2)
+
+
+def test_find_match_none():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello"}})
+    assert matcher.find_match("goodbye") is None
+    assert matcher.find_match("") is None
+
+
+def test_find_match_general():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "a&b"}})
+    result = matcher.find_match("a and b")
+    assert result is not None
+    assert result.word_id == 1
+    assert result.word == "a&b"
+    assert matcher.find_match("a only") is None
+
+
+def test_batch_find_match():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
+    results = matcher.batch_find_match(["hello", "miss", "world", ""])
+    assert len(results) == 4
+    assert results[0] is not None and results[0].word_id == 1
+    assert results[1] is None
+    assert results[2] is not None and results[2].word_id == 2
+    assert results[3] is None
+
+
+def test_batch_find_match_empty():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello"}})
+    assert matcher.batch_find_match([]) == []
+
+
 def test_threading():
     import concurrent.futures
 

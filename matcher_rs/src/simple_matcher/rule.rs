@@ -12,6 +12,8 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
+use tinyvec::TinyVec;
+
 use super::{
     SimpleResult,
     pattern::{PatternEntry, PatternKind},
@@ -272,6 +274,53 @@ impl RuleSet {
             if ss.rule_is_satisfied(rule_idx) {
                 self.push_result(rule_idx, results);
             }
+        }
+    }
+
+    /// Calls `on_match` for each satisfied touched rule.
+    ///
+    /// Returns `true` if the callback requested early exit.
+    pub(super) fn for_each_satisfied<'a>(
+        &'a self,
+        ss: &ScanState<'_>,
+        mut on_match: impl FnMut(SimpleResult<'a>) -> bool,
+    ) -> bool {
+        for &rule_idx in ss.touched_indices() {
+            if ss.rule_is_satisfied(rule_idx) && on_match(self.result_at(rule_idx)) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Collects indices of satisfied touched rules for iterator construction.
+    pub(super) fn collect_satisfied_indices(&self, ss: &ScanState<'_>) -> TinyVec<[usize; 16]> {
+        let mut indices = TinyVec::new();
+        for &rule_idx in ss.touched_indices() {
+            if ss.rule_is_satisfied(rule_idx) {
+                indices.push(rule_idx);
+            }
+        }
+        indices
+    }
+
+    /// Produces a [`SimpleResult`] for a given rule index.
+    ///
+    /// # Safety (internal)
+    ///
+    /// Uses `get_unchecked` on `self.cold`. The caller must ensure `rule_idx`
+    /// originated from a valid scan (e.g. `touched_indices`).
+    #[inline(always)]
+    pub(super) fn result_at<'a>(&'a self, rule_idx: usize) -> SimpleResult<'a> {
+        // SAFETY: `rule_idx` originates from `touched_indices` which only
+        // contains valid rule indices populated during construction.
+        let cold = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.cold.len());
+            self.cold.get_unchecked(rule_idx)
+        };
+        SimpleResult {
+            word_id: cold.word_id,
+            word: Cow::Borrowed(&cold.word),
         }
     }
 

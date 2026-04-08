@@ -7,7 +7,7 @@ Java JNI bindings for the [Matcher](https://github.com/Lips7/Matcher) library â€
 
 For detailed implementation, see the [Design Document](../DESIGN.md).
 
-**Requirements:** Java 21+, Maven. Uses [fastjson](https://github.com/alibaba/fastjson) for JSON serialization.
+**Requirements:** Java 21+, Maven. Match results are returned as typed Java objects directly via JNI (no JSON serialization on the hot path).
 
 ## Installation
 
@@ -85,6 +85,8 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
     boolean matched = matcher.isMatch(text);
 
     List<SimpleResult> results = matcher.process(text);
+
+    SimpleResult first = matcher.findMatch(text); // first match, or null
 }
 // matcher.close() is called automatically here
 ```
@@ -102,6 +104,9 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 
     List<List<SimpleResult>> results = matcher.batchProcess(texts);
     // [[SimpleResult(1, "hello"), ...], [], [SimpleResult(1, "hello")]]
+
+    List<SimpleResult> firstMatches = matcher.batchFindMatch(texts);
+    // [SimpleResult(1, "hello"), null, SimpleResult(1, "hello")]
 }
 ```
 
@@ -169,14 +174,15 @@ For direct pointer access, use the static methods on `MatcherJava`. You **must**
 ```java
 long ptr = MatcherJava.initSimpleMatcher(bytes);
 boolean matched = MatcherJava.simpleMatcherIsMatch(ptr, text.getBytes(StandardCharsets.UTF_8));
-String json = MatcherJava.simpleMatcherProcessAsString(ptr, text.getBytes(StandardCharsets.UTF_8));
+SimpleResult[] results = MatcherJava.simpleMatcherProcess(ptr, text.getBytes(StandardCharsets.UTF_8));
+SimpleResult first = MatcherJava.simpleMatcherFindMatch(ptr, text.getBytes(StandardCharsets.UTF_8));
 MatcherJava.dropSimpleMatcher(ptr);
 ```
 
 ## Error Handling
 
 - **Construction** (`new SimpleMatcher(bytes)`): throws a `RuntimeException` if the JSON config is malformed or contains invalid `ProcessType` values. This is the only operation that can fail.
-- **Matching** (`isMatch`, `process`, `batchIsMatch`, `batchProcess`): infallible once the matcher is built. These methods never throw.
+- **Matching** (`isMatch`, `process`, `findMatch`, `batchIsMatch`, `batchProcess`, `batchFindMatch`): infallible once the matcher is built. These methods never throw.
 
 ## Contributing
 

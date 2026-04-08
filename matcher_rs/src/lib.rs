@@ -188,4 +188,6 @@ mod process;
 pub use process::{ProcessType, reduce_text_process, reduce_text_process_emit, text_process};
 
 mod simple_matcher;
-pub use simple_matcher::{SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde};
+pub use simple_matcher::{
+    SimpleMatchIter, SimpleMatcher, SimpleResult, SimpleTable, SimpleTableSerde,
+};

@@ -200,6 +200,11 @@ When every rule is a pure literal (no `&`/`~` operators) under a single `Process
 
 - **`is_match`** → delegates directly to `ScanPlan::is_match`, which uses a SIMD density scan to dispatch to bytewise (DFA or DAAC) or charwise. No TLS state, no generation counters, no trie walk.
 - **`process`** → uses `process_simple`, which scans via `for_each_rule_idx_simple`. Each hit maps directly to a rule result via `DIRECT_RULE_BIT`. Deduplication uses only `positive_generation` — no `touched_indices` bookkeeping.
+- **`for_each_match`** → uses `for_each_match_simple` with `for_each_rule_idx_simple_early`. Truly lazy: each AC hit fires the callback immediately. Returning `true` aborts the scan (early exit). Zero allocation.
+- **`find_match`** → wraps `for_each_match` to return the first hit. Exits after one AC hit on AllSimple matchers.
+- **`process_iter`** → uses `collect_indices_simple` to pre-collect satisfied rule indices into a `TinyVec<[usize; 16]>`, then yields `SimpleResult` lazily from those indices. Implements `ExactSizeIterator + DoubleEndedIterator + FusedIterator`.
+
+For General matchers, `for_each_match` and `process_iter` use `walk_and_scan_with` — the same scan loop as `process`, but with a generic collection closure. After scanning all variants, `for_each_match` calls the callback per satisfied rule (zero allocation), while `process_iter` collects indices into a `TinyVec`.
 
 This path handles the common case of "check if any of these N keywords appear" with minimal overhead.
 

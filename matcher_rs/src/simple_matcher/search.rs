@@ -240,13 +240,9 @@ impl SimpleMatcher {
     }
 
     /// Unified tree walk that transforms, scans, and evaluates rules in a
-    /// single pass.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a non-root node in the transform trie lacks a cached
-    /// [`TransformStep`]. This is a construction invariant maintained by
-    /// [`build_process_type_tree`](crate::process::graph::build_process_type_tree).
+    /// single pass. Delegates to
+    /// [`walk_and_scan_with`](Self::walk_and_scan_with) with a Vec-based
+    /// collector.
     #[inline]
     pub(super) fn walk_and_scan<'a>(
         &'a self,
@@ -254,6 +250,40 @@ impl SimpleMatcher {
         exit_early: bool,
         results: Option<&mut Vec<SimpleResult<'a>>>,
     ) -> bool {
+        self.walk_and_scan_with(text, exit_early, |rules, ss| {
+            if let Some(results) = results {
+                rules.collect_matches(ss, results);
+            }
+        })
+        .0
+    }
+
+    /// Generalized tree walk: scans all variants, then calls `collect` inside
+    /// the TLS scope to harvest results.
+    ///
+    /// Returns `(has_match, collect_result)`. The `collect` closure receives
+    /// the `RuleSet` and `ScanState` while TLS is still held, so it can
+    /// read touched indices and rule satisfaction without copying state out.
+    ///
+    /// `collect` is wrapped in `Option` internally because `FnOnce` can only
+    /// fire once yet there are three potential collection sites (two early-out
+    /// + one post-scan).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a non-root node in the transform trie lacks a cached
+    /// [`TransformStep`]. This is a construction invariant maintained by
+    /// [`build_process_type_tree`](crate::process::graph::build_process_type_tree).
+    #[inline]
+    pub(super) fn walk_and_scan_with<'a, F, R>(
+        &'a self,
+        text: &'a str,
+        exit_early: bool,
+        collect: F,
+    ) -> (bool, Option<R>)
+    where
+        F: FnOnce(&'a super::rule::RuleSet, &ScanState<'_>) -> R,
+    {
         let tree = &self.tree;
         let num_variants = tree.len();
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
@@ -262,8 +292,10 @@ impl SimpleMatcher {
         let mut ss = state.as_scan_state();
 
         if self.scan.patterns().is_empty() {
-            return false;
+            return (false, None);
         }
+
+        let mut collect = Some(collect);
 
         // One SIMD pass: exact non-ASCII byte density for engine dispatch.
         // density == 0.0 ↔ text is pure ASCII (replaces text.is_ascii()).
@@ -285,21 +317,17 @@ impl SimpleMatcher {
                 non_ascii_density: root_density,
             };
             if self.scan_variant(text, ctx, &mut ss) {
-                return true;
+                return (true, None);
             }
             if !exit_early && !self.rules.has_not_rules() && ss.resolved_count >= self.rules.len() {
-                if let Some(results) = results {
-                    self.rules.collect_matches(&ss, results);
-                }
-                return self.rules.has_match(&ss);
+                let r = collect.take().map(|f| f(&self.rules, &ss));
+                return (self.rules.has_match(&ss), r);
             }
         }
 
         if tree[0].children.is_empty() {
-            if let Some(results) = results {
-                self.rules.collect_matches(&ss, results);
-            }
-            return self.rules.has_match(&ss);
+            let r = collect.take().map(|f| f(&self.rules, &ss));
+            return (self.rules.has_match(&ss), r);
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
@@ -503,12 +531,60 @@ impl SimpleMatcher {
         }
 
         if stopped {
-            return true;
+            return (true, None);
         }
 
-        if let Some(results) = results {
-            self.rules.collect_matches(&ss, results);
-        }
-        self.rules.has_match(&ss)
+        let r = collect.take().map(|f| f(&self.rules, &ss));
+        (self.rules.has_match(&ss), r)
+    }
+
+    /// AllSimple callback path: calls `on_match` per hit with early-exit
+    /// support. Uses TLS for dedup (same pattern as `process_simple`).
+    pub(super) fn for_each_match_simple<'a>(
+        &'a self,
+        text: &'a str,
+        mut on_match: impl FnMut(SimpleResult<'a>) -> bool,
+    ) -> bool {
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
+        state.prepare(self.rules.len());
+        let mut ss = state.as_scan_state();
+
+        let text_bytes = text.as_bytes();
+        let density = text_non_ascii_density(text);
+        self.scan
+            .for_each_rule_idx_simple_early(text, density, |rule_idx, boundary, start, end| {
+                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
+                    return false;
+                }
+                if ss.mark_positive_simple(rule_idx) {
+                    on_match(self.rules.result_at(rule_idx))
+                } else {
+                    false
+                }
+            })
+    }
+
+    /// AllSimple index collection: collects satisfied rule indices into a
+    /// `TinyVec` for iterator construction.
+    pub(super) fn collect_indices_simple(&self, text: &str) -> TinyVec<[usize; 16]> {
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
+        let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
+        state.prepare(self.rules.len());
+        let mut ss = state.as_scan_state();
+
+        let mut indices = TinyVec::new();
+        let text_bytes = text.as_bytes();
+        let density = text_non_ascii_density(text);
+        self.scan
+            .for_each_rule_idx_simple(text, density, |rule_idx, boundary, start, end| {
+                if boundary != 0 && !check_word_boundary(text_bytes, start, end, boundary) {
+                    return;
+                }
+                if ss.mark_positive_simple(rule_idx) {
+                    indices.push(rule_idx);
+                }
+            });
+        indices
     }
 }

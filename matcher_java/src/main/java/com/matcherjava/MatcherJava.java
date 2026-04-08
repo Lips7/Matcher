@@ -1,5 +1,7 @@
 package com.matcherjava;
 
+import com.matcherjava.extensiontypes.SimpleResult;
+
 /** Native entry points backed by the Rust matcher library. */
 public final class MatcherJava {
 
@@ -21,12 +23,17 @@ public final class MatcherJava {
 
   public static native boolean simpleMatcherIsMatch(long matcherPtr, byte[] textBytes);
 
-  public static native String simpleMatcherProcessAsString(long matcherPtr, byte[] textBytes);
+  public static native SimpleResult[] simpleMatcherProcess(long matcherPtr, byte[] textBytes);
+
+  public static native SimpleResult simpleMatcherFindMatch(long matcherPtr, byte[] textBytes);
 
   public static native boolean[] simpleMatcherBatchIsMatch(
       long matcherPtr, byte[][] textsBytes);
 
-  public static native String simpleMatcherBatchProcessAsString(
+  public static native SimpleResult[][] simpleMatcherBatchProcess(
+      long matcherPtr, byte[][] textsBytes);
+
+  public static native SimpleResult[] simpleMatcherBatchFindMatch(
       long matcherPtr, byte[][] textsBytes);
 
   public static native void dropSimpleMatcher(long matcherPtr);

@@ -365,3 +365,279 @@ fn test_very_long_pattern() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 1);
 }
+
+// ---------------------------------------------------------------------------
+// for_each_match
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_for_each_match_empty_text() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .build()
+        .unwrap();
+    let mut count = 0;
+    let stopped = m.for_each_match("", |_| {
+        count += 1;
+        false
+    });
+    assert!(!stopped);
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_for_each_match_all_simple() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "world")
+        .add_word(ProcessType::None, 3, "missing")
+        .build()
+        .unwrap();
+
+    let mut ids = Vec::new();
+    m.for_each_match("hello world", |r| {
+        ids.push(r.word_id);
+        false
+    });
+    ids.sort();
+    assert_eq!(ids, vec![1, 2]);
+}
+
+#[test]
+fn test_for_each_match_early_exit() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a")
+        .add_word(ProcessType::None, 2, "b")
+        .add_word(ProcessType::None, 3, "c")
+        .build()
+        .unwrap();
+
+    let mut count = 0;
+    let stopped = m.for_each_match("a b c", |_| {
+        count += 1;
+        true // stop after first
+    });
+    assert!(stopped);
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn test_for_each_match_general_mode() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello&world")
+        .add_word(ProcessType::None, 2, "foo~bar")
+        .build()
+        .unwrap();
+
+    let mut ids = Vec::new();
+    m.for_each_match("hello world foo", |r| {
+        ids.push(r.word_id);
+        false
+    });
+    ids.sort();
+    assert_eq!(ids, vec![1, 2]);
+}
+
+#[test]
+fn test_for_each_match_general_not_veto() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello~world")
+        .build()
+        .unwrap();
+
+    let mut ids = Vec::new();
+    m.for_each_match("hello world", |r| {
+        ids.push(r.word_id);
+        false
+    });
+    assert!(ids.is_empty(), "NOT veto should prevent match");
+}
+
+// ---------------------------------------------------------------------------
+// find_match
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_find_match_found() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 42, "needle")
+        .build()
+        .unwrap();
+
+    let r = m.find_match("find the needle");
+    assert_eq!(r.unwrap().word_id, 42);
+}
+
+#[test]
+fn test_find_match_none() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "needle")
+        .build()
+        .unwrap();
+
+    assert!(m.find_match("no match here").is_none());
+    assert!(m.find_match("").is_none());
+}
+
+#[test]
+fn test_find_match_general() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a&b")
+        .build()
+        .unwrap();
+
+    assert!(m.find_match("a b").is_some());
+    assert!(m.find_match("a only").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// process_iter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_process_iter_empty_text() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .build()
+        .unwrap();
+
+    let iter = m.process_iter("");
+    assert_eq!(iter.len(), 0);
+    assert_eq!(iter.collect::<Vec<_>>(), Vec::<SimpleResult>::new());
+}
+
+#[test]
+fn test_process_iter_equivalence_with_process() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "world")
+        .add_word(ProcessType::None, 3, "missing")
+        .build()
+        .unwrap();
+
+    let text = "hello world";
+    let from_process = m.process(text);
+    let from_iter: Vec<_> = m.process_iter(text).collect();
+
+    let mut ids_process: Vec<u32> = from_process.iter().map(|r| r.word_id).collect();
+    let mut ids_iter: Vec<u32> = from_iter.iter().map(|r| r.word_id).collect();
+    ids_process.sort();
+    ids_iter.sort();
+    assert_eq!(ids_process, ids_iter);
+}
+
+#[test]
+fn test_process_iter_general_equivalence() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a&b")
+        .add_word(ProcessType::None, 2, "c~d")
+        .add_word(ProcessType::None, 3, "e")
+        .build()
+        .unwrap();
+
+    let text = "a b c e";
+    let mut ids_process: Vec<u32> = m.process(text).iter().map(|r| r.word_id).collect();
+    let mut ids_iter: Vec<u32> = m.process_iter(text).map(|r| r.word_id).collect();
+    ids_process.sort();
+    ids_iter.sort();
+    assert_eq!(ids_process, ids_iter);
+}
+
+#[test]
+fn test_process_iter_exact_size() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a")
+        .add_word(ProcessType::None, 2, "b")
+        .add_word(ProcessType::None, 3, "c")
+        .build()
+        .unwrap();
+
+    let mut iter = m.process_iter("a b c");
+    assert_eq!(iter.len(), 3);
+    iter.next();
+    assert_eq!(iter.len(), 2);
+    iter.next();
+    assert_eq!(iter.len(), 1);
+    iter.next();
+    assert_eq!(iter.len(), 0);
+    assert!(iter.next().is_none());
+    assert_eq!(iter.len(), 0);
+}
+
+#[test]
+fn test_process_iter_double_ended() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a")
+        .add_word(ProcessType::None, 2, "b")
+        .add_word(ProcessType::None, 3, "c")
+        .build()
+        .unwrap();
+
+    let mut iter = m.process_iter("a b c");
+    let first = iter.next().unwrap();
+    let last = iter.next_back().unwrap();
+    assert_ne!(first.word_id, last.word_id);
+    assert_eq!(iter.len(), 1);
+}
+
+#[test]
+fn test_process_iter_take() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a")
+        .add_word(ProcessType::None, 2, "b")
+        .add_word(ProcessType::None, 3, "c")
+        .build()
+        .unwrap();
+
+    let first_two: Vec<_> = m.process_iter("a b c").take(2).collect();
+    assert_eq!(first_two.len(), 2);
+}
+
+#[test]
+fn test_process_iter_no_match() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .build()
+        .unwrap();
+
+    let iter = m.process_iter("goodbye");
+    assert_eq!(iter.len(), 0);
+    assert_eq!(iter.collect::<Vec<_>>().len(), 0);
+}
+
+#[test]
+fn test_process_iter_debug() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .build()
+        .unwrap();
+
+    let iter = m.process_iter("hello");
+    let debug = format!("{iter:?}");
+    assert!(debug.contains("SimpleMatchIter"));
+    assert!(debug.contains("remaining"));
+}
+
+#[test]
+fn test_process_iter_with_transforms() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::VariantNorm, 2, "你好")
+        .build()
+        .unwrap();
+
+    let mut ids: Vec<u32> = m
+        .process_iter("hello 測試 你好")
+        .map(|r| r.word_id)
+        .collect();
+    ids.sort();
+
+    let mut expected: Vec<u32> = m
+        .process("hello 測試 你好")
+        .iter()
+        .map(|r| r.word_id)
+        .collect();
+    expected.sort();
+
+    assert_eq!(ids, expected);
+}

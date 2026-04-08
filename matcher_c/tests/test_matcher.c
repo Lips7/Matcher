@@ -47,7 +47,8 @@ int main() {
     void* matcher = init_simple_matcher(simple_table_json);
     if (matcher) {
         printf("simple_matcher initialized successfully.\n");
-        // Test match
+
+        // Test is_match
         bool is_match = simple_matcher_is_match(matcher, "這是一個測試句子");
         printf("simple_matcher is_match (測試): %s\n", is_match ? "true" : "false");
         if (!is_match) {
@@ -55,13 +56,63 @@ int main() {
             return 1;
         }
 
-        // Test process as string
-        char* process_result = simple_matcher_process_as_string(matcher, "妳好，這是一個測試句子");
-        if (process_result) {
-            printf("simple_matcher_process_as_string result: %s\n", process_result);
-            drop_string(process_result);
+        // Test process (struct-based)
+        SimpleResultList* results = simple_matcher_process(matcher, "妳好，這是一個測試句子");
+        if (results) {
+            printf("simple_matcher_process: %zu match(es)\n", results->len);
+            for (size_t i = 0; i < results->len; i++) {
+                printf("  [%zu] word_id=%u, word=%s\n", i,
+                       results->items[i].word_id, results->items[i].word);
+            }
+            if (results->len == 0) {
+                fprintf(stderr, "Error: expected at least one match.\n");
+                return 1;
+            }
+            drop_simple_result_list(results);
         } else {
-            fprintf(stderr, "simple_matcher_process_as_string returned null.\n");
+            fprintf(stderr, "simple_matcher_process returned null.\n");
+            return 1;
+        }
+
+        // Test process with no matches
+        SimpleResultList* no_results = simple_matcher_process(matcher, "nothing here");
+        if (no_results) {
+            printf("simple_matcher_process (no match): %zu match(es) (correct)\n", no_results->len);
+            if (no_results->len != 0) {
+                fprintf(stderr, "Error: expected 0 matches.\n");
+                return 1;
+            }
+            drop_simple_result_list(no_results);
+        } else {
+            fprintf(stderr, "simple_matcher_process returned null unexpectedly.\n");
+            return 1;
+        }
+
+        // Test find_match (struct-based)
+        SimpleResult* found = simple_matcher_find_match(matcher, "這是一個測試句子");
+        if (found) {
+            printf("simple_matcher_find_match: word_id=%u, word=%s\n",
+                   found->word_id, found->word);
+            drop_simple_result(found);
+        } else {
+            fprintf(stderr, "Error: expected find_match to return a result.\n");
+            return 1;
+        }
+
+        // Test find_match with no match
+        SimpleResult* not_found = simple_matcher_find_match(matcher, "nothing here");
+        if (not_found != NULL) {
+            fprintf(stderr, "Error: expected find_match to return NULL for no match.\n");
+            drop_simple_result(not_found);
+            return 1;
+        }
+        printf("simple_matcher_find_match (no match): NULL (correct)\n");
+
+        // Test find_match with empty text
+        SimpleResult* empty = simple_matcher_find_match(matcher, "");
+        if (empty != NULL) {
+            fprintf(stderr, "Error: expected find_match to return NULL for empty text.\n");
+            drop_simple_result(empty);
             return 1;
         }
 

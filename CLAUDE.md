@@ -113,13 +113,13 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 ### Key Source Files
 
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores four fields: `tree` (transform trie), `mode` (`SearchMode`), `scan` (`ScanPlan`), `rules` (`RuleSet`).
-- `mod.rs` — `SimpleMatcher`, `SimpleResult`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`)
+- `mod.rs` — `SimpleMatcher`, `SimpleResult`, `SimpleMatchIter`, `SearchMode` enum (`AllSimple`/`General`), public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`, `process_iter`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `encoding.rs` — Bit-packing constants (`DIRECT_RULE_BIT`, `DIRECT_PT_SHIFT`, etc.), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `engine.rs` — `ScanPlan`, `BytewiseMatcher` (AC DFA or DAAC bytewise), `CharwiseMatcher` (DAAC charwise) — AC automaton compilation, density-based dispatch, scan iteration
 - `pattern.rs` — `PatternEntry` (includes `and_count` for cache locality), `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch
 - `rule.rs` — `RuleSet`, `RuleHot` (matrix-only: `segment_counts`), `RuleCold`, `RuleShape`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
-- `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan` (unified tree walk with materialize+scan), `process_simple`, `scan_variant`, `process_match`
+- `search.rs` — Hot-path: `is_match_simple`, `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `process_simple`, `for_each_match_simple`, `collect_indices_simple`, `scan_variant`, `process_match`
 - `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 
