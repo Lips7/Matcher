@@ -162,8 +162,8 @@ def test_from_dict():
 
 
 def test_from_dict_empty():
-    matcher = SimpleMatcher.from_dict({})
-    assert not matcher.is_match("anything")
+    with pytest.raises(ValueError):
+        SimpleMatcher.from_dict({})
 
 
 def test_from_dict_invalid():
