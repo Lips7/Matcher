@@ -264,6 +264,25 @@ impl ScanPlan {
             matcher.for_each_rule_idx_simple(text, on_rule);
         }
     }
+
+    /// Like [`Self::for_each_rule_idx_simple`] but the callback returns `bool`
+    /// to request early exit.
+    #[inline(always)]
+    pub(super) fn for_each_rule_idx_simple_early(
+        &self,
+        text: &str,
+        density: f32,
+        on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
+    ) -> bool {
+        if density <= CHARWISE_DENSITY_THRESHOLD {
+            if let Some(ref matcher) = self.bytewise_matcher {
+                return matcher.for_each_rule_idx_simple_early(text, on_rule);
+            }
+        } else if let Some(ref matcher) = self.charwise_matcher {
+            return matcher.for_each_rule_idx_simple_early(text, on_rule);
+        }
+        false
+    }
 }
 
 /// Query helpers for the bytewise scan engine.
@@ -340,6 +359,45 @@ impl BytewiseMatcher {
         }
     }
 
+    #[inline(always)]
+    fn for_each_rule_idx_simple_early(
+        &self,
+        text: &str,
+        mut on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
+    ) -> bool {
+        #[cfg(feature = "dfa")]
+        if let Some((ref matcher, ref to_value)) = self.dfa {
+            for m in matcher.find_overlapping_iter(text) {
+                // SAFETY: `to_value` has one entry per pattern; pattern index is always in
+                // bounds.
+                let value = unsafe { *to_value.get_unchecked(m.pattern().as_usize()) };
+                let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+                if on_rule(
+                    (value & DIRECT_RULE_MASK) as usize,
+                    boundary,
+                    m.start(),
+                    m.end(),
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        for hit in self.daac.find_overlapping_iter(text) {
+            let value = hit.value();
+            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+            if on_rule(
+                (value & DIRECT_RULE_MASK) as usize,
+                boundary,
+                hit.start(),
+                hit.end(),
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Streaming: always uses DAAC bytewise (DFA has no streaming API).
     #[inline(always)]
     fn for_each_match_value_from_iter(
@@ -374,6 +432,11 @@ trait CharwiseMatcherExt {
         on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool;
     fn for_each_rule_idx_simple(&self, text: &str, on_rule: impl FnMut(usize, u8, usize, usize));
+    fn for_each_rule_idx_simple_early(
+        &self,
+        text: &str,
+        on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
+    ) -> bool;
 }
 
 /// Streaming query helpers for the charwise scan engine.
@@ -440,6 +503,27 @@ impl CharwiseMatcherExt for CharwiseMatcher {
                 hit.end(),
             );
         }
+    }
+
+    #[inline(always)]
+    fn for_each_rule_idx_simple_early(
+        &self,
+        text: &str,
+        mut on_rule: impl FnMut(usize, u8, usize, usize) -> bool,
+    ) -> bool {
+        for hit in self.find_overlapping_iter(text) {
+            let value = hit.value();
+            let boundary = ((value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
+            if on_rule(
+                (value & DIRECT_RULE_MASK) as usize,
+                boundary,
+                hit.start(),
+                hit.end(),
+            ) {
+                return true;
+            }
+        }
+        false
     }
 }
 

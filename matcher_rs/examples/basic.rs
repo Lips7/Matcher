@@ -2,8 +2,8 @@
 //!
 //! Run: `cargo run --example basic -p matcher_rs`
 //!
-//! Covers: builder API, is_match, process, process_into, logical operators,
-//! HashMap construction.
+//! Covers: builder API, is_match, process, process_into, for_each_match,
+//! find_match, process_iter, logical operators, HashMap construction.
 
 use std::collections::HashMap;
 
@@ -54,8 +54,50 @@ fn main() {
         }
     }
 
-    // ── 5. Logical operators ────────────────────────────────────────────────────
-    println!("\n=== 5. Logical Operators ===\n");
+    // ── 5. for_each_match — zero-allocation callback ─────────────────────────
+    println!("\n=== 5. for_each_match ===\n");
+
+    let mut ids = Vec::new();
+    matcher.for_each_match("hello world, welcome to rust", |r| {
+        ids.push(r.word_id);
+        false // continue scanning
+    });
+    println!("  Matched word_ids: {ids:?}");
+
+    // Early exit: stop after first match
+    let mut first_only = Vec::new();
+    let stopped = matcher.for_each_match("hello world", |r| {
+        first_only.push(r.word_id);
+        true // stop after first
+    });
+    println!("  Early exit (stopped={stopped}): {first_only:?}");
+
+    // ── 6. find_match — first matching rule ────────────────────────────────────
+    println!("\n=== 6. find_match ===\n");
+
+    if let Some(r) = matcher.find_match("hello world") {
+        println!("  First match: word_id={}, word=\"{}\"", r.word_id, r.word);
+    }
+    println!("  No match: {:?}", matcher.find_match("no keywords here"));
+
+    // ── 7. process_iter — composable iterator ──────────────────────────────────
+    println!("\n=== 7. process_iter ===\n");
+
+    let iter = matcher.process_iter("hello world, welcome to rust");
+    println!("  Iterator length: {}", iter.len());
+    for r in iter {
+        println!("    word_id={}, word=\"{}\"", r.word_id, r.word);
+    }
+
+    // Iterator combinators
+    let first_two: Vec<_> = matcher
+        .process_iter("hello world, welcome to rust")
+        .take(2)
+        .collect();
+    println!("  First 2 via .take(2): {:?}", first_two.len());
+
+    // ── 8. Logical operators ────────────────────────────────────────────────────
+    println!("\n=== 8. Logical Operators ===\n");
 
     // AND: both sub-patterns must appear (order-independent)
     let and_matcher = SimpleMatcherBuilder::new()
@@ -183,8 +225,8 @@ fn main() {
         full.is_match("bright darken color")
     );
 
-    // ── 6. HashMap construction (for serde / dynamic scenarios) ─────────────────
-    println!("\n=== 6. HashMap Construction ===\n");
+    // ── 9. HashMap construction (for serde / dynamic scenarios) ─────────────────
+    println!("\n=== 9. HashMap Construction ===\n");
 
     let table: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::from([(
         ProcessType::None,

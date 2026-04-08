@@ -19,7 +19,9 @@
 //! - `search` — Hot-path scan loops and rule evaluation.
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 
-use std::{borrow::Cow, fmt};
+use std::{borrow::Cow, fmt, iter::FusedIterator};
+
+use tinyvec::TinyVec;
 
 use crate::process::graph::ProcessTypeBitNode;
 
@@ -318,6 +320,139 @@ impl SimpleMatcher {
         self.walk_and_scan(text, false, Some(results));
     }
 
+    /// Calls `on_match` for each matched rule, stopping early if the callback
+    /// returns `true`.
+    ///
+    /// Returns `true` if the callback requested early exit.
+    ///
+    /// This is the zero-allocation alternative to [`process`](Self::process):
+    /// no `Vec` is allocated for the results. For `AllSimple` matchers, the
+    /// callback fires lazily during scanning — each automaton hit is
+    /// dispatched immediately, and returning `true` aborts the scan. For
+    /// `General` matchers, all variants are scanned first (to resolve AND/NOT
+    /// logic), then the callback fires for each satisfied rule.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "hello")
+    ///     .add_word(ProcessType::None, 2, "world")
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Collect the first match only.
+    /// let mut first = None;
+    /// matcher.for_each_match("hello world", |r| {
+    ///     first = Some(r.word_id);
+    ///     true // stop after first
+    /// });
+    /// assert!(first.is_some());
+    /// ```
+    pub fn for_each_match<'a>(
+        &'a self,
+        text: &'a str,
+        on_match: impl FnMut(SimpleResult<'a>) -> bool,
+    ) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        if matches!(self.mode, SearchMode::AllSimple) {
+            return self.for_each_match_simple(text, on_match);
+        }
+        self.walk_and_scan_with(text, false, |rules, ss| {
+            rules.for_each_satisfied(ss, on_match)
+        })
+        .1
+        .unwrap_or(false)
+    }
+
+    /// Returns the first matching rule, or `None` if no rule matches.
+    ///
+    /// For `AllSimple` matchers this exits on the first automaton hit.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "hello")
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// assert_eq!(matcher.find_match("hello world").unwrap().word_id, 1);
+    /// assert!(matcher.find_match("goodbye").is_none());
+    /// ```
+    #[must_use]
+    pub fn find_match<'a>(&'a self, text: &'a str) -> Option<SimpleResult<'a>> {
+        let mut found = None;
+        self.for_each_match(text, |r| {
+            found = Some(r);
+            true
+        });
+        found
+    }
+
+    /// Returns an iterator over all matched rules.
+    ///
+    /// Internally pre-scans the text on construction (the full scan must
+    /// complete before results can be determined for General matchers), then
+    /// yields [`SimpleResult`] values lazily from the pre-collected rule
+    /// indices.
+    ///
+    /// The iterator implements [`ExactSizeIterator`], [`DoubleEndedIterator`],
+    /// and [`FusedIterator`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
+    ///
+    /// let matcher = SimpleMatcherBuilder::new()
+    ///     .add_word(ProcessType::None, 1, "hello")
+    ///     .add_word(ProcessType::None, 2, "world")
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let ids: Vec<u32> = matcher
+    ///     .process_iter("hello world")
+    ///     .map(|r| r.word_id)
+    ///     .collect();
+    /// assert!(ids.contains(&1));
+    /// assert!(ids.contains(&2));
+    ///
+    /// // Iterator combinators work naturally.
+    /// let first_two = matcher.process_iter("hello world").take(2).count();
+    /// assert_eq!(first_two, 2);
+    /// ```
+    pub fn process_iter<'a>(&'a self, text: &'a str) -> SimpleMatchIter<'a> {
+        if text.is_empty() {
+            return SimpleMatchIter {
+                rules: &self.rules,
+                indices: TinyVec::new(),
+                front: 0,
+                back: 0,
+            };
+        }
+        let indices = if matches!(self.mode, SearchMode::AllSimple) {
+            self.collect_indices_simple(text)
+        } else {
+            self.walk_and_scan_with(text, false, |rules, ss| rules.collect_satisfied_indices(ss))
+                .1
+                .unwrap_or_default()
+        };
+        let back = indices.len();
+        SimpleMatchIter {
+            rules: &self.rules,
+            indices,
+            front: 0,
+            back,
+        }
+    }
+
     /// Returns the estimated heap memory in bytes owned by this matcher.
     ///
     /// Includes the AC automata, rule metadata, and the process-type
@@ -331,3 +466,63 @@ impl SimpleMatcher {
             + self.rules.heap_bytes()
     }
 }
+
+/// Iterator over matched rules, returned by
+/// [`SimpleMatcher::process_iter`].
+///
+/// Pre-collects satisfied rule indices on construction, then yields
+/// [`SimpleResult`] lazily. The lifetime `'a` is tied to the
+/// [`SimpleMatcher`] that created this iterator.
+#[must_use]
+pub struct SimpleMatchIter<'a> {
+    rules: &'a RuleSet,
+    indices: TinyVec<[usize; 16]>,
+    front: usize,
+    back: usize,
+}
+
+impl fmt::Debug for SimpleMatchIter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimpleMatchIter")
+            .field("remaining", &self.len())
+            .finish()
+    }
+}
+
+impl<'a> Iterator for SimpleMatchIter<'a> {
+    type Item = SimpleResult<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.front < self.back {
+            let rule_idx = self.indices[self.front];
+            self.front += 1;
+            Some(self.rules.result_at(rule_idx))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.back - self.front;
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for SimpleMatchIter<'_> {}
+
+impl<'a> DoubleEndedIterator for SimpleMatchIter<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.front < self.back {
+            self.back -= 1;
+            let rule_idx = self.indices[self.back];
+            Some(self.rules.result_at(rule_idx))
+        } else {
+            None
+        }
+    }
+}
+
+impl FusedIterator for SimpleMatchIter<'_> {}
