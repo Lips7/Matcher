@@ -15,7 +15,7 @@
 //! - `engine` — Aho-Corasick automaton compilation (bytewise and charwise
 //!   engines).
 //! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
-//! - `rule` — Rule metadata (`RuleHot`/`RuleCold`/`RuleSet`) and state machine.
+//! - `rule` — Rule metadata (`Rule`/`RuleSet`) and state machine.
 //! - `search` — Hot-path scan loops and rule evaluation.
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
 

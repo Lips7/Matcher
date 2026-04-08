@@ -36,7 +36,7 @@ use super::{
     encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
     engine::ScanPlan,
     pattern::{PatternEntry, PatternKind},
-    rule::{RuleCold, RuleHot, RuleSet, RuleShape},
+    rule::{Rule, RuleSet, RuleShape},
 };
 use crate::{
     MatcherError,
@@ -223,8 +223,7 @@ impl SimpleMatcher {
         let word_size: usize = process_type_word_map.values().map(|map| map.len()).sum();
 
         let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
-        let mut rule_hot: Vec<RuleHot> = Vec::with_capacity(word_size);
-        let mut rule_cold: Vec<RuleCold> = Vec::with_capacity(word_size);
+        let mut rules: Vec<Rule> = Vec::with_capacity(word_size);
         let mut word_id_to_idx: FoldHashMap<(ProcessType, u32), usize> =
             FoldHashMap::with_capacity(word_size);
 
@@ -302,17 +301,17 @@ impl SimpleMatcher {
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
                 {
-                    rule_hot[existing_idx] = RuleHot { segment_counts };
-                    rule_cold[existing_idx] = RuleCold {
+                    rules[existing_idx] = Rule {
+                        segment_counts,
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
                     };
                     existing_idx
                 } else {
-                    let idx = rule_hot.len();
+                    let idx = rules.len();
                     word_id_to_idx.insert((process_type, simple_word_id), idx);
-                    rule_hot.push(RuleHot { segment_counts });
-                    rule_cold.push(RuleCold {
+                    rules.push(Rule {
+                        segment_counts,
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
                     });
@@ -396,7 +395,7 @@ impl SimpleMatcher {
         ParsedRules {
             dedup_patterns,
             dedup_entries,
-            rules: RuleSet::new(rule_hot, rule_cold, any_has_not),
+            rules: RuleSet::new(rules, any_has_not),
         }
     }
 }

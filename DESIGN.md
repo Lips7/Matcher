@@ -112,7 +112,7 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 SimpleMatcher {
     tree: Vec<ProcessTypeBitNode>,  // the 4-node trie above
     scan: ScanPlan { engines: Engines { bytewise, charwise }, pattern_index },
-    rules: RuleSet { hot: [RuleHot; 3], cold: [RuleCold; 3] },  // RuleHot only stores segment_counts
+    rules: RuleSet { rules: [Rule; 3] },  // segment_counts + word_id + word
     is_match_fast: false,           // R1 has &-operator → can't bypass state machine for is_match
 }
 ```
@@ -304,10 +304,8 @@ For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this
 
 #### Per-Rule State
 
-Rules are split into hot and cold structs for cache efficiency:
+Each rule is stored as a single `Rule` struct containing `segment_counts: Vec<i32>`, `word_id: u32`, and `word: String`. `segment_counts` is only read on the `#[cold]` matrix-init path (first-touch of matrix-mode rules); `word_id` and `word` are only read when producing output results. The hot path avoids loading `Rule` entirely — `and_count` and `RuleShape` are pre-computed into `PatternEntry`, and per-call mutable state lives in `WordState`.
 
-- **`RuleHot`** (accessed only for matrix-mode rules on first touch): `segment_counts: Vec<i32>`. The `and_count` field lives in `PatternEntry` for cache locality (avoids loading `RuleHot` on the hot path). `use_matrix` is derived from `RuleShape`.
-- **`RuleCold`** (accessed only when producing output): `word_id: u32`, `word: String`.
 - **`WordState`** (per-rule mutable state): three generation stamps (`matrix_generation`, `positive_generation`, `not_generation`), a `satisfied_mask: u64`, and `remaining_and: u16`.
 
 #### Generation-Based Reuse
@@ -328,7 +326,7 @@ Each `PatternEntry` carries a pre-computed `PatternKind`, `RuleShape`, and `and_
 | `And` | `offset < and_count` | Decrements counter or sets bitmask bit. |
 | `Not` | `offset >= and_count` | Sets `not_generation` to veto the rule. |
 
-`and_count` is duplicated from build-time rule metadata into `PatternEntry` so the init block in `process_entry` can initialize `WordState` without loading `RuleHot` (which is only needed for the cold matrix-init path). This fits in the existing struct padding (9→10 bytes, still padded to 12).
+`and_count` is duplicated from build-time rule metadata into `PatternEntry` so the init block in `process_entry` can initialize `WordState` without loading `Rule` (which is only needed for the cold matrix-init path). This fits in the existing struct padding (9→10 bytes, still padded to 12).
 
 #### DIRECT_RULE_BIT
 

@@ -1,7 +1,7 @@
 //! Rule metadata and rule-state transition logic.
 //!
 //! This module contains the types that bind rule metadata to the scan state
-//! machine. [`RuleSet`] owns parallel hot/cold metadata vectors and exposes
+//! machine. [`RuleSet`] owns the rule metadata vector and exposes
 //! [`process_entry`](RuleSet::process_entry) — the core state-transition
 //! function that tracks bitmasks, matrix counters, and generation stamps in the
 //! thread-local [`super::state::SimpleMatchState`].
@@ -106,7 +106,7 @@ pub type SimpleTableSerde<'a> = HashMap<ProcessType, HashMap<u32, Cow<'a, str>>>
 ///
 /// Stored in [`PatternEntry::shape`] so the hot path in
 /// [`RuleSet::process_entry`] can branch on rule properties without loading
-/// [`RuleHot`].
+/// [`Rule`].
 ///
 /// `repr(u8)` values are chosen so that:
 /// - `has_not` = `self as u8 & 1 != 0` (odd values)
@@ -140,11 +140,8 @@ impl RuleShape {
     }
 }
 
-/// Hot-path per-rule metadata used during scanning.
-///
-/// Stored in a contiguous `Vec` inside [`RuleSet`] and accessed by rule index
-/// on every pattern hit. Fields are ordered to keep the most frequently read
-/// data together.
+/// Per-rule metadata: segment counts for matrix initialization and result
+/// fields for output production.
 ///
 /// The `segment_counts` layout is:
 /// ```text
@@ -154,8 +151,12 @@ impl RuleShape {
 /// Positive counts start at the required number of hits (usually 1); negative
 /// counts start at 0 and veto the rule when they go above 0 (for matrix mode)
 /// or on first hit (for bitmask mode).
+///
+/// `segment_counts` is only read on first-touch of a matrix-mode rule (the
+/// `#[cold]` `init_matrix` path). `word_id` and `word` are only read when
+/// producing result output after scanning completes.
 #[derive(Debug, Clone)]
-pub(super) struct RuleHot {
+pub(super) struct Rule {
     /// Required counts for every positive and negative segment in rule order.
     ///
     /// AND entries hold the required hit count (decremented toward zero);
@@ -163,15 +164,6 @@ pub(super) struct RuleHot {
     /// value means the veto segment was observed). Only read when
     /// `RuleShape::use_matrix()` is true.
     pub(super) segment_counts: Vec<i32>,
-}
-
-/// Cold rule metadata only needed when returning results.
-///
-/// Separated from [`RuleHot`] so the scan hot path never touches this data.
-/// Only accessed when a rule is confirmed satisfied and a [`SimpleResult`]
-/// must be produced.
-#[derive(Debug, Clone)]
-pub(super) struct RuleCold {
     /// Caller-supplied rule identifier returned in match results.
     pub(super) word_id: u32,
     /// Original rule string stored for borrowed result output.
@@ -181,15 +173,14 @@ pub(super) struct RuleCold {
     pub(super) word: String,
 }
 
-/// All hot and cold metadata for the compiled rule set.
+/// All metadata for the compiled rule set.
 ///
-/// `hot` and `cold` are parallel `Vec`s indexed by rule index. [`RuleHot`] is
-/// read on every pattern hit (scan hot path); [`RuleCold`] is read only when
-/// producing output results, keeping the scan loop's working set small.
+/// `rules` is a `Vec` indexed by rule index. `segment_counts` is read on the
+/// `#[cold]` matrix-init path; `word_id` and `word` are read only when
+/// producing output results.
 #[derive(Clone)]
 pub(super) struct RuleSet {
-    hot: Vec<RuleHot>,
-    cold: Vec<RuleCold>,
+    rules: Vec<Rule>,
     /// `true` when at least one rule contains a NOT (`~`) segment.
     ///
     /// When false, `positive_generation == generation` permanently resolves a
@@ -199,16 +190,10 @@ pub(super) struct RuleSet {
 
 /// Rule-evaluation helpers used by the scan hot path.
 impl RuleSet {
-    /// Creates the compiled rule set from parallel hot and cold metadata
-    /// vectors.
-    ///
-    /// # Panics
-    ///
-    /// Debug-asserts that `hot.len() == cold.len()`.
-    pub(super) fn new(hot: Vec<RuleHot>, cold: Vec<RuleCold>, has_not_rules: bool) -> Self {
+    /// Creates the compiled rule set from the rule metadata vector.
+    pub(super) fn new(rules: Vec<Rule>, has_not_rules: bool) -> Self {
         Self {
-            hot,
-            cold,
+            rules,
             has_not_rules,
         }
     }
@@ -221,22 +206,18 @@ impl RuleSet {
 
     /// Returns the estimated heap memory in bytes owned by this rule set.
     pub(super) fn heap_bytes(&self) -> usize {
-        let hot_inner: usize = self
-            .hot
+        let inner: usize = self
+            .rules
             .iter()
-            .map(|r| r.segment_counts.capacity() * size_of::<i32>())
+            .map(|r| r.segment_counts.capacity() * size_of::<i32>() + r.word.capacity())
             .sum();
-        let cold_inner: usize = self.cold.iter().map(|r| r.word.capacity()).sum();
-        self.hot.capacity() * size_of::<RuleHot>()
-            + hot_inner
-            + self.cold.capacity() * size_of::<RuleCold>()
-            + cold_inner
+        self.rules.capacity() * size_of::<Rule>() + inner
     }
 
     /// Returns the number of compiled rules.
     #[inline(always)]
     pub(super) fn len(&self) -> usize {
-        self.hot.len()
+        self.rules.len()
     }
 
     /// Returns whether any touched rule is satisfied in the current generation.
@@ -291,19 +272,19 @@ impl RuleSet {
     ///
     /// # Safety (internal)
     ///
-    /// Uses `get_unchecked` on `self.cold`. The caller must ensure `rule_idx`
+    /// Uses `get_unchecked` on `self.rules`. The caller must ensure `rule_idx`
     /// originated from a valid scan (e.g. `touched_indices`).
     #[inline(always)]
     pub(super) fn result_at<'a>(&'a self, rule_idx: usize) -> SimpleResult<'a> {
         // SAFETY: `rule_idx` originates from `touched_indices` which only
         // contains valid rule indices populated during construction.
-        let cold = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.cold.len());
-            self.cold.get_unchecked(rule_idx)
+        let rule = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.rules.len());
+            self.rules.get_unchecked(rule_idx)
         };
         SimpleResult {
-            word_id: cold.word_id,
-            word: Cow::Borrowed(&cold.word),
+            word_id: rule.word_id,
+            word: Cow::Borrowed(&rule.word),
         }
     }
 
@@ -364,7 +345,7 @@ impl RuleSet {
         // construction with validated indices — always in bounds.
         unsafe {
             core::hint::assert_unchecked(rule_idx < ss.word_states.len());
-            core::hint::assert_unchecked(rule_idx < self.hot.len());
+            core::hint::assert_unchecked(rule_idx < self.rules.len());
         }
 
         match kind {
@@ -384,7 +365,7 @@ impl RuleSet {
             }
             PatternKind::And => {
                 let offset = offset as usize;
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
                 let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
 
                 if shape.has_not() && word_state.not_generation == generation {
@@ -407,8 +388,8 @@ impl RuleSet {
                     word_state.satisfied_mask = 0;
                     ss.touched_indices.push(rule_idx);
                     if shape.use_matrix() {
-                        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                        let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                        // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
+                        let rule = unsafe { self.rules.get_unchecked(rule_idx) };
                         init_matrix(
                             // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match
                             // rules.
@@ -465,7 +446,7 @@ impl RuleSet {
             }
             PatternKind::Not => {
                 let offset = offset as usize;
-                // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
+                // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
                 let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
 
                 if word_state.not_generation == generation {
@@ -481,8 +462,8 @@ impl RuleSet {
                     word_state.satisfied_mask = 0;
                     ss.touched_indices.push(rule_idx);
                     if shape.use_matrix() {
-                        // SAFETY: `rule_idx` is in bounds — guaranteed by debug_asserts above.
-                        let rule = unsafe { self.hot.get_unchecked(rule_idx) };
+                        // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
+                        let rule = unsafe { self.rules.get_unchecked(rule_idx) };
                         init_matrix(
                             // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match
                             // rules.
@@ -520,19 +501,19 @@ impl RuleSet {
     ///
     /// # Safety
     ///
-    /// Uses `get_unchecked` on `self.cold`. Bounds communicated to the
+    /// Uses `get_unchecked` on `self.rules`. Bounds communicated to the
     /// optimizer via [`core::hint::assert_unchecked`].
     #[inline(always)]
     fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
         // SAFETY: `rule_idx` originates from `touched_indices` which only
         // contains valid rule indices populated during construction.
-        let cold = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.cold.len());
-            self.cold.get_unchecked(rule_idx)
+        let rule = unsafe {
+            core::hint::assert_unchecked(rule_idx < self.rules.len());
+            self.rules.get_unchecked(rule_idx)
         };
         results.push(SimpleResult {
-            word_id: cold.word_id,
-            word: Cow::Borrowed(&cold.word),
+            word_id: rule.word_id,
+            word: Cow::Borrowed(&rule.word),
         });
     }
 }
@@ -553,10 +534,8 @@ mod tests {
 
     fn make_simple_ruleset(word_id: u32, word: &str) -> RuleSet {
         RuleSet::new(
-            vec![RuleHot {
+            vec![Rule {
                 segment_counts: vec![1],
-            }],
-            vec![RuleCold {
                 word_id,
                 word: word.to_owned(),
             }],
@@ -616,10 +595,8 @@ mod tests {
     #[test]
     fn test_process_entry_and_bitmask() {
         let rules = RuleSet::new(
-            vec![RuleHot {
+            vec![Rule {
                 segment_counts: vec![1, 1, 1],
-            }],
-            vec![RuleCold {
                 word_id: 1,
                 word: "a&b&c".to_owned(),
             }],
@@ -654,10 +631,8 @@ mod tests {
     #[test]
     fn test_process_entry_not_veto() {
         let rules = RuleSet::new(
-            vec![RuleHot {
+            vec![Rule {
                 segment_counts: vec![1, 0],
-            }],
-            vec![RuleCold {
                 word_id: 1,
                 word: "a~b".to_owned(),
             }],
@@ -696,10 +671,8 @@ mod tests {
     #[test]
     fn test_process_entry_matrix_counters() {
         let rules = RuleSet::new(
-            vec![RuleHot {
+            vec![Rule {
                 segment_counts: vec![2, 1],
-            }],
-            vec![RuleCold {
                 word_id: 1,
                 word: "a&a&b".to_owned(),
             }],

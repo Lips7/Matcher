@@ -264,7 +264,7 @@ impl ScanState<'_> {
 
     pub(super) fn init_rule(
         &mut self,
-        rule: &super::rule::RuleHot,
+        rule: &super::rule::Rule,
         and_count: usize,
         rule_idx: usize,
         ctx: ScanContext,
@@ -486,8 +486,10 @@ mod tests {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
 
-        let rule = super::super::rule::RuleHot {
+        let rule = super::super::rule::Rule {
             segment_counts: vec![2, 1, 0],
+            word_id: 1,
+            word: "a&a&b~c".to_owned(),
         };
         let ctx = make_ctx(2, false);
         let mut ss = state.as_scan_state();

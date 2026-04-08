@@ -457,7 +457,7 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
                            "is_match_simple", "process_simple"]),
     ("State machine",     ["state::", "WordState", "SimpleMatchState", "ScanContext",
                            "generation", "mark_positive"]),
-    ("Rule evaluation",   ["rule::", "process_entry", "RuleSet", "RuleHot", "RuleShape",
+    ("Rule evaluation",   ["rule::", "process_entry", "RuleSet", "Rule", "RuleShape",
                            "PatternEntry", "PatternKind"]),
     ("Text transform",    ["process::", "transform::", "DeleteMatcher", "VariantNormMatcher",
                            "RomanizeMatcher", "NormalizeMatcher", "NormalizeFilter",

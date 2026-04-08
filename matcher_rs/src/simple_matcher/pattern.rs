@@ -54,11 +54,10 @@ pub(super) enum PatternKind {
 /// Size: 12 bytes (u32 + 5×u8 + padding).
 #[derive(Debug, Clone)]
 pub(super) struct PatternEntry {
-    /// Rule index inside [`RuleSet`](super::rule::RuleSet) (indexes into the
-    /// hot/cold `Vec`s).
+    /// Rule index inside [`RuleSet`](super::rule::RuleSet).
     pub(super) rule_idx: u32,
     /// Segment offset within the rule's
-    /// [`RuleHot::segment_counts`](super::rule::RuleHot::segment_counts) array.
+    /// [`Rule::segment_counts`](super::rule::Rule::segment_counts) array.
     ///
     /// For AND segments this is `0..and_count`; for NOT segments it is
     /// `and_count..`. Maximum 255 segments per rule (far exceeds
@@ -76,7 +75,7 @@ pub(super) struct PatternEntry {
     /// `has_not`.
     ///
     /// Lets [`RuleSet::process_entry`](super::rule::RuleSet::process_entry)
-    /// branch on rule properties without touching the `hot` array (only
+    /// branch on rule properties without loading the `Rule` struct (only
     /// needed on first-touch in `ScanState::init_rule`).
     pub(super) shape: RuleShape,
     /// Word boundary flags (bit 0 = left `\b`, bit 1 = right `\b`).
@@ -89,8 +88,8 @@ pub(super) struct PatternEntry {
     ///
     /// Duplicated from the rule's AND-segment count so that
     /// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) can
-    /// initialize per-rule state without loading the `RuleHot` struct
-    /// (avoiding a cache miss on the 400KB+ hot array). Fits in the
+    /// initialize per-rule state without loading the `Rule` struct
+    /// (avoiding a cache miss on the rules array). Fits in the
     /// existing struct padding (9→10 bytes, still padded to 12).
     pub(super) and_count: u8,
 }

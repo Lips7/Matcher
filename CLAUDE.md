@@ -86,7 +86,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 - **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
 - **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
 - **ScanPlan**: `Engines` struct bundling bytewise AC (DFA under `cfg(feature = "dfa")` + DAAC) and charwise AC (DAAC, CJK-optimized). Engine selection via SIMD density scan (≤0.67 non-ASCII → bytewise, >0.67 → charwise). Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
-- **RuleSet**: hot/cold split for cache efficiency. Generation-stamped sparse set for O(1) state reset.
+- **RuleSet**: `Rule` stores `segment_counts` + `word_id` + `word`; hot path avoids loading it via `PatternEntry`. Generation-stamped sparse set for O(1) state reset.
 - **DIRECT_RULE_BIT**: single-entry simple patterns encode `rule_idx | (1 << 31)` directly in the automaton value, skipping the entry table on the hot path.
 
 ### Construction subtlety: Delete and AC pattern indexing
@@ -118,7 +118,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `encoding.rs` — Bit-packing constants (`DIRECT_RULE_BIT`, `DIRECT_PT_SHIFT`, etc.), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `engine.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration
 - `pattern.rs` — `PatternEntry` (includes `and_count` for cache locality), `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch
-- `rule.rs` — `RuleSet`, `RuleHot` (matrix-only: `segment_counts`), `RuleCold`, `RuleShape`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
+- `rule.rs` — `RuleSet`, `Rule` (`segment_counts` + `word_id` + `word`), `RuleShape`, `SimpleTable`/`SimpleTableSerde` type aliases, state transition logic (`process_entry`)
 - `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `process_match`
 - `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
