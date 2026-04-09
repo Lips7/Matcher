@@ -21,8 +21,8 @@
 //!
 //! - **O(1) per codepoint**: two `get_unchecked` lookups (L1 page, L2 value) on
 //!   the hot path — branchless modulo the page-zero check.
-//! - **String pool reuse**: output buffers are recycled via the thread-local
-//!   [`string_pool`](crate::process::string_pool) to reduce allocator pressure.
+//! - **Minimal allocation**: output buffers are pre-allocated to the input
+//!   length, avoiding mid-write reallocations.
 //! - **Span-copy output**: unchanged byte ranges are bulk-copied; only mapped
 //!   codepoints incur per-replacement overhead.
 
@@ -34,10 +34,7 @@ pub(crate) use normalize::{NormalizeFilter, NormalizeMatcher};
 pub(crate) use romanize::{RomanizeFilter, RomanizeMatcher};
 pub(crate) use variant_norm::{VariantNormFilter, VariantNormMatcher};
 
-use crate::process::{
-    string_pool::get_string_from_pool,
-    transform::{simd::skip_ascii_simd, utf8::decode_utf8_raw},
-};
+use crate::process::transform::{simd::skip_ascii_simd, utf8::decode_utf8_raw};
 
 // ---------------------------------------------------------------------------
 // Shared replacement helpers
@@ -54,7 +51,7 @@ where
     I: Iterator<Item = (usize, usize, char)>,
 {
     if let Some((start, end, ch)) = iter.next() {
-        let mut result = get_string_from_pool(text.len());
+        let mut result = String::with_capacity(text.len());
         result.push_str(&text[..start]);
         result.push(ch);
         let mut last_end = end;
@@ -82,7 +79,7 @@ where
     I: Iterator<Item = (usize, usize, &'a str)>,
 {
     if let Some((start, end, replacement)) = iter.next() {
-        let mut result = get_string_from_pool(text.len());
+        let mut result = String::with_capacity(text.len());
         result.push_str(&text[..start]);
         result.push_str(replacement);
         let mut last_end = end;

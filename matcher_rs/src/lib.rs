@@ -69,13 +69,12 @@
 //! | Static | Location |
 //! |--------|----------|
 //! | `SIMPLE_MATCH_STATE` | `simple_matcher/state.rs` |
-//! | `STRING_POOL` | `process/string_pool.rs` |
 //!
-//! These use `#[thread_local]` + `UnsafeCell` instead of the `thread_local!`
+//! This uses `#[thread_local]` + `UnsafeCell` instead of the `thread_local!`
 //! macro to avoid per-access closure overhead. Safety relies on two invariants:
 //! (1) `#[thread_local]` guarantees single-threaded access — no data races.
 //! (2) No public function is re-entrant: the borrow from `UnsafeCell::get()` is
-//! always dropped before any call that could re-enter the same pool.
+//! always dropped before any call that could re-enter the same state.
 //!
 //! ## Bounds-elided indexing
 //!

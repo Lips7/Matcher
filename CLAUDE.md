@@ -125,7 +125,6 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:
 - `process_type.rs` — `ProcessType` bitflags + serde/display
-- `string_pool.rs` — Thread-local `STRING_POOL` (string buffer recycling)
 - `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
 - `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`

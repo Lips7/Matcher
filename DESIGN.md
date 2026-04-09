@@ -355,13 +355,8 @@ Rule parsed from pattern string
 | Slot | Type | Purpose |
 |------|------|---------|
 | `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | Per-rule word states, counter matrices, touched-index list. Reused across calls. |
-| `STRING_POOL` | `UnsafeCell<Vec<String>>` | Recycled `String` buffers (bounded at 128). |
 
-Both use `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminates `thread_local!` macro's `.with()` closure). Sound because single-threaded access is guaranteed and no function is re-entrant.
-
-#### String Pool
-
-`get_string_from_pool(capacity)` pops and clears a buffer (or allocates new). `return_string_to_pool(s)` pushes back, bounded at 128. Used throughout the transform pipeline and in `walk_and_scan` for arena management.
+Uses `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminates `thread_local!` macro's `.with()` closure). Sound because single-threaded access is guaranteed and no function is re-entrant.
 
 #### Static Step Cache
 

@@ -41,7 +41,7 @@ use super::{
     pattern::PatternDispatch,
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
 };
-use crate::process::{graph::ProcessTypeBitNode, string_pool::return_string_to_pool};
+use crate::process::graph::ProcessTypeBitNode;
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -395,9 +395,7 @@ impl SimpleMatcher {
                                     exit_early,
                                     non_ascii_density: child_density,
                                 };
-                                let result = self.scan_variant(&s, ctx, &mut ss);
-                                return_string_to_pool(s);
-                                result
+                                self.scan_variant(&s, ctx, &mut ss)
                             } else {
                                 let ctx = ScanContext {
                                     text_index: parent_vi,
@@ -450,13 +448,6 @@ impl SimpleMatcher {
                         }
                     }
                 }
-            }
-        }
-
-        // Return owned strings to pool.
-        for cow in texts {
-            if let Cow::Owned(s) = cow {
-                return_string_to_pool(s);
             }
         }
 

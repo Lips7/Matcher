@@ -7,21 +7,12 @@
 
 use std::borrow::Cow;
 
-use crate::process::{
-    process_type::ProcessType, step::get_transform_step, string_pool::return_string_to_pool,
-};
+use crate::process::{process_type::ProcessType, step::get_transform_step};
 
-/// Replaces the current owned value in a [`Cow`] and returns the old allocation
-/// to the pool.
-///
-/// Borrowed values are replaced without any pool interaction. Owned values are
-/// swapped out and recycled so chained transformations do not leak short-lived
-/// buffers.
+/// Replaces the current value in a [`Cow`] with an owned `String`.
 #[inline(always)]
 fn replace_cow<'a>(current: &mut Cow<'a, str>, next: String) {
-    if let Cow::Owned(old) = std::mem::replace(current, Cow::Owned(next)) {
-        return_string_to_pool(old);
-    }
+    *current = Cow::Owned(next);
 }
 
 /// Shared implementation for the public reduction helpers.

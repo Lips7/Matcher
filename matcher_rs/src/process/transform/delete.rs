@@ -18,13 +18,10 @@
 
 use std::borrow::Cow;
 
-use crate::process::{
-    string_pool::get_string_from_pool,
-    transform::{
-        filter::{CodepointFilter, FilterAction, FilterIterator},
-        simd::skip_ascii_non_delete_simd,
-        utf8::decode_utf8_raw,
-    },
+use crate::process::transform::{
+    filter::{CodepointFilter, FilterAction, FilterIterator},
+    simd::skip_ascii_non_delete_simd,
+    utf8::decode_utf8_raw,
 };
 
 /// Bitset-backed matcher for the delete transform.
@@ -112,7 +109,7 @@ impl DeleteMatcher {
             }
         }
 
-        let mut result = get_string_from_pool(text.len());
+        let mut result = String::with_capacity(text.len());
         result.push_str(&text[..offset]);
 
         // SAFETY: The seek loop above broke on a match at `offset`, so `offset < len`
