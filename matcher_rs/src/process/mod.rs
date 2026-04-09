@@ -19,14 +19,11 @@
 //!
 //! - [`step`] — [`TransformStep`](step::TransformStep) enum and the global
 //!   `OnceLock` cache that lazily compiles each single-bit step once.
-//! - [`graph`] — Trie construction (reuses shared prefixes across process
-//!   types).
 //! - [`api`] — Standalone helpers ([`text_process`], [`reduce_text_process`],
 //!   etc.).
 //! - [`transform`] — Low-level engines (charwise page-table, Aho-Corasick
 //!   normalizer, SIMD delete).
 pub(crate) mod api;
-pub(crate) mod graph;
 pub(crate) mod process_type;
 pub(crate) mod step;
 pub(crate) mod transform;

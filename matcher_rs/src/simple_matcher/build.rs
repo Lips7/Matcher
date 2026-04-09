@@ -37,10 +37,11 @@ use super::{
     engine::ScanPlan,
     pattern::{PatternEntry, PatternKind},
     rule::{Rule, RuleInfo, RuleSet, SatisfactionMethod},
+    tree::build_process_type_tree,
 };
 use crate::{
     MatcherError,
-    process::{ProcessType, graph::build_process_type_tree, reduce_text_process_emit},
+    process::{ProcessType, reduce_text_process_emit},
 };
 
 /// Fully parsed matcher construction output before scan-engine compilation.

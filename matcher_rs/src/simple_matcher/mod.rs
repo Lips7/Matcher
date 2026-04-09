@@ -18,10 +18,9 @@
 //! - `rule` — Rule metadata (`Rule`/`RuleSet`) and state machine.
 //! - `search` — Hot-path scan loops and rule evaluation.
 //! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
+//! - `tree` — Process-type trie construction for transform prefix sharing.
 
 use std::{borrow::Cow, fmt};
-
-use crate::process::graph::ProcessTypeBitNode;
 
 mod build;
 mod encoding;
@@ -31,10 +30,12 @@ mod rule;
 mod search;
 mod simd;
 mod state;
+pub(crate) mod tree;
 
 use engine::ScanPlan;
 use rule::RuleSet;
 pub use rule::{SimpleTable, SimpleTableSerde};
+use tree::ProcessTypeBitNode;
 
 /// A single match returned by [`SimpleMatcher::process`] or
 /// [`SimpleMatcher::process_into`].

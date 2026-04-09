@@ -37,8 +37,8 @@ use super::{
     engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
     pattern::PatternDispatch,
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
+    tree::ProcessTypeBitNode,
 };
-use crate::process::graph::ProcessTypeBitNode;
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -247,7 +247,7 @@ impl SimpleMatcher {
     /// Panics if a non-root node in the transform trie lacks a cached
     /// [`TransformStep`](crate::process::step::TransformStep). This is a
     /// construction invariant maintained by
-    /// [`build_process_type_tree`](crate::process::graph::build_process_type_tree).
+    /// [`build_process_type_tree`](super::tree::build_process_type_tree).
     #[inline]
     pub(super) fn walk_and_scan_with<'a, F, R>(
         &'a self,
