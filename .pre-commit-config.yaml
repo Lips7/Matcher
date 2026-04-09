@@ -9,29 +9,23 @@ repos:
         files: \.rs$
         pass_filenames: false
 
-      # matcher_rs: all-features clippy + doc
-      - id: clippy-matcher-rs
-        name: clippy matcher_rs
-        entry: bash -c 'cd matcher_rs && cargo all-features clippy -- -- -D warnings'
+      # Workspace-wide clippy: all crates, all targets (tests, benches, examples)
+      - id: clippy
+        name: clippy
+        entry: cargo all-features clippy --workspace --all-targets -- -D warnings
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      # Workspace-wide doc build
+      - id: doc
+        name: doc
+        entry: cargo doc --workspace --all-features --no-deps
         language: system
         files: ^matcher_rs/
         pass_filenames: false
 
-      - id: doc-matcher-rs
-        name: doc matcher_rs
-        entry: cargo doc -p matcher_rs --all-features --no-deps
-        language: system
-        files: ^matcher_rs/
-        pass_filenames: false
-
-      # matcher_py: clippy + ruff (auto-fix) + ty
-      - id: clippy-matcher-py
-        name: clippy matcher_py
-        entry: bash -c 'cd matcher_py && cargo clippy -- -D warnings'
-        language: system
-        files: ^matcher_py/.*\.rs$
-        pass_filenames: false
-
+      # Python: ruff + ty
       - id: ruff-check
         name: ruff check
         entry: bash -c 'cd matcher_py && uv run ruff check --fix'
@@ -53,25 +47,10 @@ repos:
         files: ^matcher_rs/scripts/.*\.py$
         pass_filenames: false
 
-      # matcher_java: clippy + checkstyle
-      - id: clippy-matcher-java
-        name: clippy matcher_java
-        entry: bash -c 'cd matcher_java && cargo clippy -- -D warnings'
-        language: system
-        files: ^matcher_java/.*\.rs$
-        pass_filenames: false
-
+      # Java: checkstyle
       - id: checkstyle-matcher-java
         name: java checkstyle
         entry: bash -c 'cd matcher_java && mvn checkstyle:check'
         language: system
         files: ^matcher_java/.*\.java$
-        pass_filenames: false
-
-      # matcher_c: clippy only
-      - id: clippy-matcher-c
-        name: clippy matcher_c
-        entry: bash -c 'cd matcher_c && cargo clippy -- -D warnings'
-        language: system
-        files: ^matcher_c/.*\.rs$
         pass_filenames: false
