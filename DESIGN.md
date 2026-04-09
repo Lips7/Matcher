@@ -161,7 +161,7 @@ output: "Hello你好世界chinaisscool"    (density = 0.41 → bytewise)
 
 This node terminates (`pt_index_mask` has bit 1 for `VariantNorm|Delete`). Scan with `pt_index_mask = 0b010`:
 
-The bytewise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2. `resolved_count` increments to 1.
+The bytewise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2.
 
 ---
 

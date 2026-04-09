@@ -178,9 +178,7 @@ impl SimpleMatcher {
                 return false;
             }
             let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
-            if ss.mark_positive(rule_idx) {
-                ss.resolved_count += 1;
-            }
+            ss.mark_positive(rule_idx);
             return ctx.exit_early;
         }
         match self.scan.patterns().dispatch_indirect(raw_value) {
@@ -281,10 +279,6 @@ impl SimpleMatcher {
             };
             if self.scan_variant(text, ctx, &mut ss) {
                 return (true, None);
-            }
-            if !exit_early && !self.rules.has_not_rules() && ss.resolved_count >= self.rules.len() {
-                let r = collect.take().map(|f| f(&self.rules, &ss));
-                return (self.rules.has_match(&ss), r);
             }
         }
 
@@ -419,12 +413,6 @@ impl SimpleMatcher {
                         if stopped {
                             break 'walk;
                         }
-                        if !exit_early
-                            && !self.rules.has_not_rules()
-                            && ss.resolved_count >= self.rules.len()
-                        {
-                            break 'walk;
-                        }
                     }
                 } else {
                     // Non-leaf: materialize for children.
@@ -458,12 +446,6 @@ impl SimpleMatcher {
                         };
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
                         if stopped {
-                            break 'walk;
-                        }
-                        if !exit_early
-                            && !self.rules.has_not_rules()
-                            && ss.resolved_count >= self.rules.len()
-                        {
                             break 'walk;
                         }
                     }

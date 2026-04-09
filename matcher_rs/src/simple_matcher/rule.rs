@@ -179,27 +179,13 @@ pub(super) struct Rule {
 #[derive(Clone)]
 pub(super) struct RuleSet {
     rules: Vec<Rule>,
-    /// `true` when at least one rule contains a NOT (`~`) segment.
-    ///
-    /// When false, `positive_generation == generation` permanently resolves a
-    /// rule, enabling variant-level early termination in `walk_and_scan`.
-    has_not_rules: bool,
 }
 
 /// Rule-evaluation helpers used by the scan hot path.
 impl RuleSet {
     /// Creates the compiled rule set from the rule metadata vector.
-    pub(super) fn new(rules: Vec<Rule>, has_not_rules: bool) -> Self {
-        Self {
-            rules,
-            has_not_rules,
-        }
-    }
-
-    /// Returns `true` when at least one rule contains a NOT segment.
-    #[inline(always)]
-    pub(super) fn has_not_rules(&self) -> bool {
-        self.has_not_rules
+    pub(super) fn new(rules: Vec<Rule>) -> Self {
+        Self { rules }
     }
 
     /// Returns the estimated heap memory in bytes owned by this rule set.
@@ -357,7 +343,7 @@ impl RuleSet {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = generation;
                     ss.touched_indices.push(rule_idx);
-                    ss.resolved_count += 1;
+
                     return ctx.exit_early;
                 }
             }
@@ -415,13 +401,12 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
-                            ss.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
                 } else if matches!(shape, RuleShape::SingleAnd | RuleShape::SingleAndNot) {
                     word_state.positive_generation = generation;
-                    ss.resolved_count += 1;
+
                     true
                 } else {
                     let bit = 1u64 << offset;
@@ -433,7 +418,6 @@ impl RuleSet {
                         word_state.remaining_and -= 1;
                         if word_state.remaining_and == 0 {
                             word_state.positive_generation = generation;
-                            ss.resolved_count += 1;
                         }
                     }
                     word_state.positive_generation == generation
@@ -538,14 +522,11 @@ mod tests {
     }
 
     fn make_simple_ruleset(word_id: u32, word: &str) -> RuleSet {
-        RuleSet::new(
-            vec![Rule {
-                segment_counts: vec![1],
-                word_id,
-                word: word.to_owned(),
-            }],
-            false,
-        )
+        RuleSet::new(vec![Rule {
+            segment_counts: vec![1],
+            word_id,
+            word: word.to_owned(),
+        }])
     }
 
     // --- RuleShape predicate tests ---
@@ -599,14 +580,11 @@ mod tests {
 
     #[test]
     fn test_process_entry_and_bitmask() {
-        let rules = RuleSet::new(
-            vec![Rule {
-                segment_counts: vec![1, 1, 1],
-                word_id: 1,
-                word: "a&b&c".to_owned(),
-            }],
-            false,
-        );
+        let rules = RuleSet::new(vec![Rule {
+            segment_counts: vec![1, 1, 1],
+            word_id: 1,
+            word: "a&b&c".to_owned(),
+        }]);
         let mut state = SimpleMatchState::new();
         state.prepare(1);
         let mut ss = state.as_scan_state();
@@ -635,14 +613,11 @@ mod tests {
 
     #[test]
     fn test_process_entry_not_veto() {
-        let rules = RuleSet::new(
-            vec![Rule {
-                segment_counts: vec![1, 0],
-                word_id: 1,
-                word: "a~b".to_owned(),
-            }],
-            true,
-        );
+        let rules = RuleSet::new(vec![Rule {
+            segment_counts: vec![1, 0],
+            word_id: 1,
+            word: "a~b".to_owned(),
+        }]);
         let mut state = SimpleMatchState::new();
         state.prepare(1);
         let mut ss = state.as_scan_state();
@@ -675,14 +650,11 @@ mod tests {
 
     #[test]
     fn test_process_entry_matrix_counters() {
-        let rules = RuleSet::new(
-            vec![Rule {
-                segment_counts: vec![2, 1],
-                word_id: 1,
-                word: "a&a&b".to_owned(),
-            }],
-            false,
-        );
+        let rules = RuleSet::new(vec![Rule {
+            segment_counts: vec![2, 1],
+            word_id: 1,
+            word: "a&a&b".to_owned(),
+        }]);
         let mut state = SimpleMatchState::new();
         state.prepare(1);
         let mut ss = state.as_scan_state();

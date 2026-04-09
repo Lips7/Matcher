@@ -114,14 +114,6 @@ pub(super) struct SimpleMatchState {
     /// [`RuleSet::has_match`](super::rule::RuleSet::has_match) to iterate only
     /// over rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
-    /// Number of rules whose outcome is permanently decided in the current
-    /// generation.
-    ///
-    /// Incremented when a rule first reaches `positive_generation ==
-    /// generation` (for matchers without NOT rules, this is final). Used by
-    /// `walk_and_scan` to skip remaining tree variants when all rules are
-    /// resolved.
-    pub(super) resolved_count: usize,
     /// Monotonic generation id used to avoid clearing full state between calls.
     generation: u16,
 }
@@ -161,7 +153,6 @@ pub(super) struct ScanState<'a> {
     pub(super) word_states: &'a mut [WordState],
     pub(super) satisfied_masks: &'a mut [u64],
     pub(super) touched_indices: &'a mut Vec<usize>,
-    pub(super) resolved_count: usize,
     pub(super) matrix: &'a mut [Vec<i32>],
     pub(super) matrix_status: &'a mut [Vec<u8>],
     pub(super) generation: u16,
@@ -308,7 +299,6 @@ impl SimpleMatchState {
             matrix: Vec::new(),
             matrix_status: Vec::new(),
             touched_indices: Vec::new(),
-            resolved_count: 0,
             generation: 0,
         }
     }
@@ -340,7 +330,6 @@ impl SimpleMatchState {
         }
 
         self.touched_indices.clear();
-        self.resolved_count = 0;
     }
 
     /// Creates a [`ScanState`] split-borrow view for the scan hot path.
@@ -355,7 +344,6 @@ impl SimpleMatchState {
             word_states: &mut self.word_states,
             satisfied_masks: &mut self.satisfied_masks,
             touched_indices: &mut self.touched_indices,
-            resolved_count: self.resolved_count,
             matrix: &mut self.matrix,
             matrix_status: &mut self.matrix_status,
             generation: self.generation,

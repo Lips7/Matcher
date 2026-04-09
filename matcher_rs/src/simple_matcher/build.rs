@@ -229,7 +229,6 @@ impl SimpleMatcher {
 
         let mut next_pattern_id: usize = 0;
         let mut dedup_patterns = Vec::with_capacity(word_size);
-        let mut any_has_not = false;
         let mut pattern_id_map: FoldHashMap<Cow<'_, str>, usize> =
             FoldHashMap::with_capacity(word_size);
 
@@ -296,7 +295,6 @@ impl SimpleMatcher {
                     || segment_counts[..and_count].iter().any(|&value| value != 1)
                     || segment_counts[and_count..].iter().any(|&value| value != 0);
                 let has_not = and_count != segment_counts.len();
-                any_has_not |= has_not;
 
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
@@ -395,7 +393,7 @@ impl SimpleMatcher {
         ParsedRules {
             dedup_patterns,
             dedup_entries,
-            rules: RuleSet::new(rules, any_has_not),
+            rules: RuleSet::new(rules),
         }
     }
 }
