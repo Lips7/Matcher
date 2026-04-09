@@ -34,8 +34,8 @@ use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
     encoding::{DIRECT_RULE_BIT, decode_direct},
-    engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
     pattern::PatternDispatch,
+    scan::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,
 };
