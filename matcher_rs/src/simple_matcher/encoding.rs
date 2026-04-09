@@ -2,7 +2,7 @@
 //!
 //! The Aho-Corasick automaton stores a `u32` value for each deduplicated
 //! pattern. When a pattern is attached to exactly one
-//! [`PatternKind::Simple`](super::pattern::PatternKind::Simple) rule, the value
+//! [`RuleShape::SingleAnd`](super::rule::RuleShape::SingleAnd) rule, the value
 //! is bit-packed to encode the rule index, process-type index, and
 //! word-boundary flags directly — avoiding indirection through the entry table
 //! on the hot path.
@@ -17,7 +17,7 @@
 /// High bit used to encode the direct-rule fast path in raw scan values.
 ///
 /// When a deduplicated pattern is attached to exactly one
-/// [`PatternKind::Simple`](super::pattern::PatternKind::Simple)
+/// [`RuleShape::SingleAnd`](super::rule::RuleShape::SingleAnd)
 /// rule, the automaton stores an encoded value with this bit set so that
 /// callers can extract `rule_idx`, `pt_index`, and `boundary` inline without
 /// the entry table indirection.

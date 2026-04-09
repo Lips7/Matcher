@@ -19,30 +19,28 @@ use super::{
 /// Determined at construction time by the operator that precedes the
 /// sub-pattern in the original rule string:
 ///
-/// - No operator or the first segment of a single-segment rule →
-///   [`Simple`](Self::Simple)
-/// - `&` operator → [`And`](Self::And)
-/// - `~` operator → [`Not`](Self::Not)
+/// - No operator, or `&` → [`And`](Self::And)
+/// - `~` → [`Not`](Self::Not)
+///
+/// Single-segment rules without NOT use [`RuleShape::SingleAnd`] for the
+/// simplified satisfaction path. The DIRECT bit-packing in `process_match`
+/// handles these inline without consulting `PatternKind`.
 ///
 /// `repr(u8)` keeps this type small for dense storage in [`PatternEntry`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub(super) enum PatternKind {
-    /// Single-fragment rule that can complete on one hit.
-    ///
-    /// Only used when the rule has exactly one positive segment, no NOT
-    /// segments, and does not need the matrix fallback.
-    Simple = 0,
     /// Positive segment that must be observed.
     ///
     /// All AND segments in a rule must be satisfied (across any text variant)
-    /// before the rule can fire.
-    And = 1,
+    /// before the rule can fire. Single-segment rules also use this variant
+    /// (with [`RuleShape::SingleAnd`]).
+    And = 0,
     /// Negative segment that vetoes the rule when observed.
     ///
     /// If any NOT segment is matched in any variant, the rule is permanently
     /// vetoed for the current scan generation.
-    Not = 2,
+    Not = 1,
 }
 
 /// One deduplicated pattern's attachment to a concrete rule segment.
@@ -172,23 +170,24 @@ impl PatternIndex {
         self.has_boundary
     }
 
-    /// Returns whether every pattern maps to a single simple rule.
+    /// Returns whether every pattern maps to a single-entry SingleAnd rule.
     ///
     /// When true and the transform tree has no children, `is_match` can
     /// delegate directly to the AC automaton — each hit is a completed rule.
     #[inline(always)]
-    pub(super) fn all_simple(&self) -> bool {
-        self.entries
-            .iter()
-            .all(|entry| entry.kind == PatternKind::Simple)
-            && self.ranges.iter().all(|&(_, len)| len == 1)
+    pub(super) fn all_single_and(&self) -> bool {
+        self.ranges.iter().all(|&(_, len)| len == 1)
+            && self
+                .entries
+                .iter()
+                .all(|e| matches!(e.shape, RuleShape::SingleAnd))
     }
 
     /// Builds the raw scan-value mapping used by the automata.
     ///
     /// For each deduplicated pattern, produces the `u32` value that the
     /// automaton will report on a hit. A pattern with exactly one
-    /// [`PatternKind::Simple`] entry is encoded as `rule_idx |
+    /// [`RuleShape::SingleAnd`] entry is encoded as `rule_idx |
     /// DIRECT_RULE_BIT` so the hot path can skip the indirection through the
     /// entry table. All other patterns store the deduplicated index directly.
     ///
@@ -205,7 +204,7 @@ impl PatternIndex {
                 // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by
                 // `Self::new`.
                 let entry = unsafe { self.entries.get_unchecked(start) };
-                if entry.kind == PatternKind::Simple
+                if matches!(entry.shape, RuleShape::SingleAnd)
                     && (entry.pt_index as u32) < 8
                     && entry.rule_idx < (1 << DIRECT_BOUNDARY_SHIFT)
                 {
@@ -268,7 +267,7 @@ mod tests {
             rule_idx: 5,
             offset: 0,
             pt_index: 2,
-            kind: PatternKind::Simple,
+            kind: PatternKind::And,
             shape: RuleShape::SingleAnd,
             boundary: 0,
             and_count: 1,
@@ -322,7 +321,7 @@ mod tests {
                 rule_idx: 0,
                 offset: 0,
                 pt_index: 0,
-                kind: PatternKind::Simple,
+                kind: PatternKind::And,
                 shape: RuleShape::SingleAnd,
                 boundary: 0,
                 and_count: 1,
@@ -331,7 +330,7 @@ mod tests {
                 rule_idx: 1,
                 offset: 0,
                 pt_index: 0,
-                kind: PatternKind::Simple,
+                kind: PatternKind::And,
                 shape: RuleShape::SingleAnd,
                 boundary: 0,
                 and_count: 1,

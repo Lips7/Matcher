@@ -64,7 +64,7 @@ Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delet
 
 **Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Double-deleting would break matches.
 
-**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (Simple, And, or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the `is_match` AC-direct fast path.
+**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (And or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the `is_match` AC-direct fast path.
 
 **Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries cannot use `DIRECT_RULE_BIT` and disable the `is_match` AC-direct fast path.
 
@@ -75,8 +75,8 @@ dedup_patterns: ["hello", "world", "你好", "zhongguo"]
 dedup_entries:
   [0] → PatternEntry { rule_idx: 0, offset: 0, pt_index: 0, kind: And }   # "hello" → R1
   [1] → PatternEntry { rule_idx: 0, offset: 1, pt_index: 0, kind: And }   # "world" → R1
-  [2] → PatternEntry { rule_idx: 1, offset: 0, pt_index: 1, kind: Simple }# "你好"  → R2
-  [3] → PatternEntry { rule_idx: 2, offset: 0, pt_index: 2, kind: Simple }# "zhongguo" → R3
+  [2] → PatternEntry { rule_idx: 1, offset: 0, pt_index: 1, kind: And }# "你好"  → R2
+  [3] → PatternEntry { rule_idx: 2, offset: 0, pt_index: 2, kind: And }# "zhongguo" → R3
 ```
 
 ### 1.2 Build Transform Trie
@@ -337,7 +337,7 @@ For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 
 Rule parsed from pattern string
         │
         ▼
-  shape == SingleAnd, no NOT? ──► Simple (no counters)
+  shape == SingleAnd, no NOT? ──► SingleAnd (no counters)
         │ NO
         ▼
   ≤64 segs, no repeats?  ──► Bitmask (u64 + remaining_and)

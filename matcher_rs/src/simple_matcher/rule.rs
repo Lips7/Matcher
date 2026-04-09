@@ -333,16 +333,6 @@ impl RuleSet {
         }
 
         match kind {
-            PatternKind::Simple => {
-                // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
-                let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
-                if word_state.positive_generation != generation {
-                    word_state.matrix_generation = generation;
-                    word_state.positive_generation = generation;
-                    ss.touched_indices.push(rule_idx);
-                }
-                return ctx.exit_early;
-            }
             PatternKind::And => {
                 let offset = offset as usize;
                 // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
@@ -557,7 +547,7 @@ mod tests {
             rule_idx: 0,
             offset: 0,
             pt_index: 0,
-            kind: PatternKind::Simple,
+            kind: PatternKind::And,
             shape: RuleShape::SingleAnd,
             boundary: 0,
             and_count: 1,
@@ -696,7 +686,7 @@ mod tests {
             rule_idx: 0,
             offset: 0,
             pt_index: 3,
-            kind: PatternKind::Simple,
+            kind: PatternKind::And,
             shape: RuleShape::SingleAnd,
             boundary: 0,
             and_count: 1,

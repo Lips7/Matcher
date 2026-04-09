@@ -51,7 +51,7 @@ pub(super) struct WordState {
     /// Generation in which all positive (AND) requirements became satisfied.
     ///
     /// Set to the current generation when `remaining_and` reaches zero or on a
-    /// [`PatternKind::Simple`](super::pattern::PatternKind::Simple) hit. A rule
+    /// [`PatternKind::And`](super::pattern::PatternKind::And) hit. A rule
     /// is considered "satisfied" when `positive_generation ==
     /// current_generation` and `not_generation != current_generation`.
     pub(super) positive_generation: u16,

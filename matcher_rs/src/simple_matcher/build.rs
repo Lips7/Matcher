@@ -141,7 +141,7 @@ impl SimpleMatcher {
 
         let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
         let is_match_fast = process_type_tree[0].children.is_empty()
-            && scan.patterns().all_simple()
+            && scan.patterns().all_single_and()
             && !scan.patterns().has_boundary();
 
         Ok(SimpleMatcher {
@@ -316,7 +316,6 @@ impl SimpleMatcher {
                     idx
                 };
 
-                let is_simple = and_count == 1 && !has_not && !use_matrix;
                 let shape = match (use_matrix, and_count == 1, has_not) {
                     (true, _, true) => RuleShape::MatrixNot,
                     (true, _, false) => RuleShape::Matrix,
@@ -337,9 +336,7 @@ impl SimpleMatcher {
                         "rule has {and_count} AND segments; PatternEntry::and_count is u8 (max 255)"
                     );
 
-                    let kind = if is_simple {
-                        PatternKind::Simple
-                    } else if offset < and_count {
+                    let kind = if offset < and_count {
                         PatternKind::And
                     } else {
                         PatternKind::Not
@@ -497,7 +494,7 @@ mod tests {
         assert_eq!(parsed.dedup_patterns[0].as_ref(), "hello");
         assert_eq!(parsed.dedup_entries.len(), 1);
         assert_eq!(parsed.dedup_entries[0].len(), 1);
-        assert_eq!(parsed.dedup_entries[0][0].kind, PatternKind::Simple);
+        assert_eq!(parsed.dedup_entries[0][0].kind, PatternKind::And);
     }
 
     #[test]
@@ -555,7 +552,7 @@ mod tests {
             assert_eq!(bucket.len(), 1);
             assert_eq!(bucket[0].rule_idx, 0);
             assert_eq!(bucket[0].offset, 0);
-            assert_eq!(bucket[0].kind, PatternKind::Simple);
+            assert_eq!(bucket[0].kind, PatternKind::And);
         }
         assert_eq!(parsed.rules.len(), 1);
     }
