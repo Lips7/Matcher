@@ -102,48 +102,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip_and() {
-        let raw = encode_direct(3, 1, PatternKind::And, 0, 12345).unwrap();
-        assert!(raw & DIRECT_RULE_BIT != 0);
-        let (pt, bd, kind, off, idx) = decode_direct(raw);
-        assert_eq!(pt, 3);
-        assert_eq!(bd, 1);
-        assert_eq!(kind, PatternKind::And);
-        assert_eq!(off, 0);
-        assert_eq!(idx, 12345);
-    }
-
-    #[test]
-    fn roundtrip_not() {
-        let raw = encode_direct(1, 0, PatternKind::Not, 5, 500).unwrap();
-        let (pt, bd, kind, off, idx) = decode_direct(raw);
-        assert_eq!(pt, 1);
-        assert_eq!(bd, 0);
-        assert_eq!(kind, PatternKind::Not);
-        assert_eq!(off, 5);
-        assert_eq!(idx, 500);
-    }
-
-    #[test]
-    fn roundtrip_bitmask_and_with_offset() {
-        let raw = encode_direct(2, 0, PatternKind::And, 31, 42).unwrap();
-        let (pt, bd, kind, off, idx) = decode_direct(raw);
-        assert_eq!(pt, 2);
-        assert_eq!(bd, 0);
-        assert_eq!(kind, PatternKind::And);
-        assert_eq!(off, 31);
-        assert_eq!(idx, 42);
-    }
-
-    #[test]
-    fn roundtrip_max_values() {
-        let raw = encode_direct(7, 3, PatternKind::Not, 63, RULE_IDX_MASK).unwrap();
-        let (pt, bd, kind, off, idx) = decode_direct(raw);
-        assert_eq!(pt, 7);
-        assert_eq!(bd, 3);
-        assert_eq!(kind, PatternKind::Not);
-        assert_eq!(off, 63);
-        assert_eq!(idx, RULE_IDX_MASK as usize);
+    fn roundtrip() {
+        // (pt_index, boundary, kind, offset, rule_idx)
+        let cases: &[(u8, u8, PatternKind, u8, u32)] = &[
+            (3, 1, PatternKind::And, 0, 12345),
+            (1, 0, PatternKind::Not, 5, 500),
+            (2, 0, PatternKind::And, 31, 42),
+            // Max values
+            (7, 3, PatternKind::Not, 63, RULE_IDX_MASK),
+        ];
+        for &(pt, bd, kind, off, idx) in cases {
+            let raw = encode_direct(pt, bd, kind, off, idx).unwrap();
+            assert!(raw & DIRECT_RULE_BIT != 0);
+            let (dpt, dbd, dkind, doff, didx) = decode_direct(raw);
+            assert_eq!(
+                (dpt, dbd, dkind, doff, didx),
+                (pt, bd, kind, off as usize, idx as usize)
+            );
+        }
     }
 
     #[test]
@@ -151,15 +127,5 @@ mod tests {
         assert!(encode_direct(8, 0, PatternKind::And, 0, 0).is_none());
         assert!(encode_direct(0, 0, PatternKind::And, 64, 0).is_none());
         assert!(encode_direct(0, 0, PatternKind::And, 0, RULE_IDX_MASK + 1).is_none());
-    }
-
-    #[test]
-    fn larger_rule_idx_than_old_bitmask() {
-        // Old BitmaskAnd was limited to 14 bits (16K). New format supports 19 bits
-        // (512K).
-        let raw = encode_direct(0, 0, PatternKind::And, 3, 40000).unwrap();
-        let (_, _, _, off, idx) = decode_direct(raw);
-        assert_eq!(off, 3);
-        assert_eq!(idx, 40000);
     }
 }

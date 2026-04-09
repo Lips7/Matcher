@@ -162,32 +162,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pure_ascii() {
-        assert_eq!(count_non_ascii_simd(b"hello world 123"), 0);
-    }
-
-    #[test]
-    fn pure_non_ascii() {
-        let text = "你好世界".as_bytes(); // 12 bytes, all ≥ 0x80
-        assert_eq!(count_non_ascii_simd(text), text.len());
-    }
-
-    #[test]
-    fn mixed() {
-        let text = "hello世界".as_bytes(); // 5 ASCII + 6 non-ASCII
-        assert_eq!(count_non_ascii_simd(text), 6);
-    }
-
-    #[test]
-    fn empty() {
-        assert_eq!(count_non_ascii_simd(b""), 0);
-    }
-
-    #[test]
-    fn single_byte() {
-        assert_eq!(count_non_ascii_simd(b"a"), 0);
-        assert_eq!(count_non_ascii_simd(&[0x80]), 1);
-        assert_eq!(count_non_ascii_simd(&[0xFF]), 1);
+    fn test_count_non_ascii() {
+        let cjk = "你好世界".as_bytes();
+        let cases: &[(&[u8], usize)] = &[
+            (b"hello world 123", 0),     // pure ASCII
+            (cjk, cjk.len()),            // pure non-ASCII
+            ("hello世界".as_bytes(), 6), // mixed
+            (b"", 0),                    // empty
+            (b"a", 0),                   // single ASCII byte
+            (&[0x80], 1),                // single non-ASCII byte
+            (&[0xFF], 1),                // max byte
+        ];
+        for &(input, expected) in cases {
+            assert_eq!(count_non_ascii_simd(input), expected, "input: {input:?}");
+        }
     }
 
     #[test]

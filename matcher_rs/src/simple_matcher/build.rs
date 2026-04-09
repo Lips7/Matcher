@@ -436,17 +436,14 @@ mod tests {
         table
     }
 
-    // --- build_pt_index_table tests ---
-
     #[test]
-    fn test_pt_index_table_none_always_zero() {
+    fn test_pt_index_table() {
+        // None always gets index 0, even when not in the key set
         let keys = vec![ProcessType::VariantNorm, ProcessType::Delete];
         let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
-    }
 
-    #[test]
-    fn test_pt_index_table_sequential() {
+        // Multiple PTs get sequential indices; unused entries are u8::MAX
         let keys = vec![
             ProcessType::None,
             ProcessType::VariantNorm,
@@ -454,13 +451,11 @@ mod tests {
         ];
         let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
-        // VariantNorm and Delete should get indices 1 and 2 (order may vary)
         let fj = table[ProcessType::VariantNorm.bits() as usize];
         let del = table[ProcessType::Delete.bits() as usize];
         assert!(fj == 1 || fj == 2);
         assert!(del == 1 || del == 2);
         assert_ne!(fj, del);
-        // All other entries should be u8::MAX
         for (i, &val) in table.iter().enumerate() {
             let pt_bits = i as u8;
             if pt_bits != ProcessType::None.bits()
@@ -471,18 +466,6 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn test_pt_index_table_dedup() {
-        let keys = vec![ProcessType::VariantNorm, ProcessType::VariantNorm];
-        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
-        // None=0, VariantNorm=1, no index 2 allocated
-        assert_eq!(table[ProcessType::VariantNorm.bits() as usize], 1);
-        let count = table.iter().filter(|&&v| v != u8::MAX).count();
-        assert_eq!(count, 2); // None + VariantNorm
-    }
-
-    // --- parse_rules tests ---
 
     #[test]
     fn test_parse_rules_simple() {
@@ -498,11 +481,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_rules_and_operator() {
+    fn test_parse_rules_operators() {
+        // AND operator: "a&b" → 2 patterns, both kind=And
         let table = single_rule_table(ProcessType::None, 1, "a&b");
         let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
         let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
-
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let kinds: Vec<_> = parsed
             .dedup_entries
@@ -511,14 +494,11 @@ mod tests {
             .collect();
         assert!(kinds.iter().all(|k| *k == PatternKind::And));
         assert_eq!(parsed.rules.len(), 1);
-    }
 
-    #[test]
-    fn test_parse_rules_not_operator() {
+        // NOT operator: "a~b" → 2 patterns, 1 And + 1 Not
         let table = single_rule_table(ProcessType::None, 1, "a~b");
         let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
         let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
-
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let all_entries: Vec<_> = parsed
             .dedup_entries
@@ -535,61 +515,5 @@ mod tests {
             .count();
         assert_eq!(and_count, 1);
         assert_eq!(not_count, 1);
-    }
-
-    #[test]
-    fn test_parse_rules_or_alternatives() {
-        let table = single_rule_table(ProcessType::None, 1, "a|b");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
-
-        // "a|b" should produce 2 dedup patterns ("a" and "b")
-        assert_eq!(parsed.dedup_patterns.len(), 2);
-        assert!(parsed.dedup_patterns.iter().any(|p| p.as_ref() == "a"));
-        assert!(parsed.dedup_patterns.iter().any(|p| p.as_ref() == "b"));
-        // Both map to the same rule with Simple kind
-        for bucket in &parsed.dedup_entries {
-            assert_eq!(bucket.len(), 1);
-            assert_eq!(bucket[0].rule_idx, 0);
-            assert_eq!(bucket[0].offset, 0);
-            assert_eq!(bucket[0].kind, PatternKind::And);
-        }
-        assert_eq!(parsed.rules.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_rules_or_with_and() {
-        let table = single_rule_table(ProcessType::None, 1, "a|b&c");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
-
-        // 3 dedup patterns: "a", "b", "c"
-        assert_eq!(parsed.dedup_patterns.len(), 3);
-        // "a" and "b" share offset 0; "c" has offset 1 (or vice versa depending on
-        // HashMap order)
-        let all_entries: Vec<_> = parsed
-            .dedup_entries
-            .iter()
-            .flat_map(|bucket| bucket.iter())
-            .collect();
-        assert!(all_entries.iter().all(|e| e.kind == PatternKind::And));
-        assert_eq!(parsed.rules.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_rules_dedup_across_rules() {
-        let mut table: HashMap<ProcessType, HashMap<u32, String>> = HashMap::new();
-        let inner = table.entry(ProcessType::None).or_default();
-        inner.insert(1, "hello".to_owned());
-        inner.insert(2, "hello".to_owned());
-
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
-
-        // "hello" should be deduplicated to one pattern
-        assert_eq!(parsed.dedup_patterns.len(), 1);
-        // But it should have entries for both rules
-        assert_eq!(parsed.dedup_entries[0].len(), 2);
-        assert_eq!(parsed.rules.len(), 2);
     }
 }

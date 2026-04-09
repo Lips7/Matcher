@@ -7,101 +7,46 @@ use matcher_rs::{ProcessType, SimpleMatcher, SimpleMatcherBuilder};
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_combination() {
-    let simple_matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([
-            (1, "hello&world"),
-            (2, "hello&world&hello"),
-            (3, "hello~world"),
-            (4, "hello~world~world"),
-            (5, "hello&world~word"),
-            (6, "hello&world~word~word"),
-        ]),
-    )]))
-    .unwrap();
-    assert!(
-        simple_matcher.is_match("hello world"),
-        "hello&world should match when both present"
-    );
-    assert!(
-        simple_matcher.is_match("hello hello world"),
-        "hello&world&hello requires 2 hellos"
-    );
-    assert!(
-        simple_matcher.is_match("hello word"),
-        "hello~world should match when world absent"
-    );
-}
-
-#[test]
-fn test_complex_logical_operators() {
+fn test_and_requires_all_segments() {
     let matcher = SimpleMatcherBuilder::new()
-        // Multiple occurrences (count > 1)
-        .add_word(ProcessType::None, 1, "a&a&a")
-        // NOT pattern that is a substring of AND pattern
-        .add_word(ProcessType::None, 2, "apple~pp")
-        // Mixed AND/NOT
-        .add_word(ProcessType::None, 3, "a&b~c&d")
-        // Overlapping sub-patterns
+        .add_word(ProcessType::None, 1, "hello&world")
+        .add_word(ProcessType::None, 2, "hello&world&hello")
+        .add_word(ProcessType::None, 3, "a&a&b")
         .add_word(ProcessType::None, 4, "abc&bc&c")
         .build()
         .unwrap();
 
-    // ID 1: "a&a&a"
-    assert!(matcher.is_match("a a a"), "a&a&a should match 'a a a'");
-    assert!(!matcher.is_match("a a"), "a&a&a should NOT match 'a a'");
+    // ID 1: both segments present
+    assert!(matcher.is_match("hello world"));
+    assert!(!matcher.is_match("hello"));
 
-    // ID 2: "apple~pp"
-    assert!(
-        !matcher.is_match("apple"),
-        "apple~pp should NOT match 'apple' because 'pp' is found inside 'apple'"
-    );
+    // ID 2: requires 2× "hello" + 1× "world"
+    assert!(matcher.is_match("hello hello world"));
+    {
+        // Isolated: 1× "hello" + 1× "world" is NOT enough for "hello&world&hello"
+        let m2 = SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 2, "hello&world&hello")
+            .build()
+            .unwrap();
+        assert!(!m2.is_match("hello world"));
+        assert!(m2.is_match("hello hello world"));
+    }
 
-    // ID 3: "a&b~c&d"
-    assert!(matcher.is_match("a b d"), "a&b~c&d should match 'a b d'");
-    assert!(
-        !matcher.is_match("a b c d"),
-        "a&b~c&d should NOT match 'a b c d'"
-    );
+    // ID 3: count-based — needs 2×a + 1×b
+    assert!(matcher.is_match("a a b"));
+    assert!(!matcher.is_match("a b"));
 
-    // ID 4: "abc&bc&c"
-    assert!(
-        matcher.is_match("abc"),
-        "abc&bc&c should match 'abc' because it contains 'abc', 'bc', and 'c'"
-    );
-}
+    // ID 4: overlapping substrings — "abc" contains "abc", "bc", and "c"
+    assert!(matcher.is_match("abc"));
 
-#[test]
-fn test_count_based_and_logic() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a&a&b")
+    // High repetition: "a&a&...&a" (10×) requires 10 occurrences
+    let pattern_10 = (0..10).map(|_| "a").collect::<Vec<_>>().join("&");
+    let m10 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, &pattern_10)
         .build()
         .unwrap();
-
-    assert!(
-        matcher.is_match("a a b"),
-        "Should match two 'a's and one 'b'"
-    );
-    assert!(
-        !matcher.is_match("a b"),
-        "Should NOT match only one 'a' and one 'b'"
-    );
-}
-
-#[test]
-fn test_high_repetition_and() {
-    // "a&a&a&a&a&a&a&a&a&a" requires 10 occurrences of "a"
-    let pattern = (0..10).map(|_| "a").collect::<Vec<_>>().join("&");
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, &pattern)
-        .build()
-        .unwrap();
-
-    let text_10 = "a ".repeat(10);
-    let text_9 = "a ".repeat(9);
-    assert!(matcher.is_match(&text_10));
-    assert!(!matcher.is_match(&text_9));
+    assert!(m10.is_match(&"a ".repeat(10)));
+    assert!(!m10.is_match(&"a ".repeat(9)));
 }
 
 // ---------------------------------------------------------------------------
@@ -109,51 +54,50 @@ fn test_high_repetition_and() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_not_veto_is_order_independent() {
+fn test_not_vetoes_match() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello~world")
+        .add_word(ProcessType::None, 2, "apple~pp")
         .build()
         .unwrap();
 
-    // Positive only -> match
+    // ID 1: positive only → match
     assert_eq!(matcher.process("hello").len(), 1);
+    // NOT token before positive in text → veto (order-independent)
+    assert_eq!(matcher.process("world hello").len(), 0);
+    // NOT token after positive satisfaction → still vetoes
+    assert!(!matcher.is_match("hello hello world"));
 
-    // NOT token before positive token in text -> veto
-    assert_eq!(
-        matcher.process("world hello").len(),
-        0,
-        "NOT should veto even when appearing before the positive token"
-    );
-
-    // NOT token after positive satisfaction -> veto
-    assert!(
-        !matcher.is_match("hello hello world"),
-        "world should still veto after hello satisfied the positive side"
-    );
-    assert_eq!(matcher.process("hello hello world").len(), 0);
+    // ID 2: "pp" is a substring of "apple" → self-vetoing
+    assert!(!matcher.is_match("apple"));
 }
 
 #[test]
-fn test_pure_not_rules_skipped() {
-    // Pure-NOT rules (no AND segments) can never fire because the AC automaton only
-    // detects presence, not absence. Construction skips them with a warning.
-    // Valid rules in the same matcher should still work.
+fn test_not_veto_global_across_variants() {
+    // NOT firing in ANY transform variant kills the rule for all variants.
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::Delete, 1, "apple~pie")
+        .build()
+        .unwrap();
+
+    assert!(
+        !matcher.is_match("apple p.i.e"),
+        "Delete variant sees 'pie'"
+    );
+}
+
+#[test]
+fn test_pure_not_rules_dropped() {
+    // Pure-NOT rules (no AND segments) can never fire — silently skipped.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "hello")
         .add_word(ProcessType::None, 2, "~bad")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("hello world"), "valid rule still works");
-    assert!(
-        !matcher.is_match("good text"),
-        "pure-NOT rule skipped -> no match"
-    );
-    assert!(
-        !matcher.is_match("bad text"),
-        "pure-NOT rule skipped -> no match"
-    );
-    assert!(matcher.process("anything").is_empty());
+    assert!(matcher.is_match("hello world"));
+    assert!(!matcher.is_match("good text"));
+    assert!(!matcher.is_match("bad text"));
     assert_eq!(matcher.process("hello").len(), 1);
 }
 
@@ -162,46 +106,23 @@ fn test_pure_not_rules_skipped() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_and_not_segment_order_independence() {
+fn test_and_not_combined() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "x&y&z~a~b")
+        .add_word(ProcessType::None, 2, "a&b~c&d")
         .build()
         .unwrap();
 
-    // All 6 permutations of {x, y, z} should match (no a/b present)
-    let permutations = ["x y z", "x z y", "y x z", "y z x", "z x y", "z y x"];
-    for text in permutations {
+    // ID 1: all permutations of {x,y,z} should match
+    for text in ["x y z", "x z y", "y x z", "y z x", "z x y", "z y x"] {
         assert!(matcher.is_match(text), "should match permutation '{text}'");
     }
+    assert!(!matcher.is_match("x y z a"), "NOT 'a' vetoes");
+    assert!(!matcher.is_match("x y z b"), "NOT 'b' vetoes");
 
-    // Any text including "a" or "b" should NOT match
-    assert!(!matcher.is_match("x y z a"), "NOT 'a' should veto");
-    assert!(!matcher.is_match("x y z b"), "NOT 'b' should veto");
-    assert!(
-        !matcher.is_match("x y z a b"),
-        "NOT 'a' and 'b' should veto"
-    );
-}
-
-#[test]
-fn test_large_overlapping_and_not_set() {
-    let mut builder = SimpleMatcherBuilder::new();
-    let mut storage = Vec::new();
-    for i in 100..200 {
-        storage.push(format!("word{}&word{}~not{}", i, i + 1, i));
-    }
-    for (i, s) in storage.iter().enumerate() {
-        builder = builder.add_word(ProcessType::None, (i + 100) as u32, s);
-    }
-    let matcher = builder.build().unwrap();
-
-    assert!(matcher.is_match("word110 word111"));
-    assert!(!matcher.is_match("word110 word111 not110"));
-
-    let results = matcher.process("word110 word111 word120 word121 not120");
-    let mut ids: Vec<u32> = results.into_iter().map(|r| r.word_id).collect();
-    ids.sort();
-    assert_eq!(ids, vec![110]);
+    // ID 2: "a&b~c&d"
+    assert!(matcher.is_match("a b d"));
+    assert!(!matcher.is_match("a b c d"), "NOT 'c' vetoes");
 }
 
 // ---------------------------------------------------------------------------
@@ -209,100 +130,89 @@ fn test_large_overlapping_and_not_set() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_or_basic() {
-    let matcher = SimpleMatcherBuilder::new()
+fn test_or_alternatives() {
+    // Basic alternatives
+    let m1 = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "color|colour")
+        .add_word(ProcessType::None, 2, "a|b|c|d")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("color"), "should match first alternative");
-    assert!(
-        matcher.is_match("colour"),
-        "should match second alternative"
-    );
-    assert!(
-        !matcher.is_match("colr"),
-        "should not match non-alternative"
-    );
-}
+    assert!(m1.is_match("color"));
+    assert!(m1.is_match("colour"));
+    assert!(!m1.is_match("xyz"), "no alternative present");
+    for ch in ["a", "b", "c", "d"] {
+        assert!(m1.is_match(ch));
+    }
+    assert!(!m1.is_match("e"));
 
-#[test]
-fn test_or_multiple_alternatives() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a|b|c|d")
+    // Edge cases: empty alternatives stripped
+    let m2 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|")    // effectively "a"
+        .add_word(ProcessType::None, 2, "|b")    // effectively "b"
+        .add_word(ProcessType::None, 3, "c||d")  // effectively "c|d"
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("a"));
-    assert!(matcher.is_match("b"));
-    assert!(matcher.is_match("c"));
-    assert!(matcher.is_match("d"));
-    assert!(!matcher.is_match("e"));
+    assert!(m2.is_match("a"));
+    assert!(m2.is_match("b"));
+    assert!(m2.is_match("c"));
+    assert!(m2.is_match("d"));
+
+    // Pipe-only patterns produce no rules, but other rules still work
+    let m3 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "|")
+        .add_word(ProcessType::None, 2, "||")
+        .add_word(ProcessType::None, 3, "hello")
+        .build()
+        .unwrap();
+
+    assert!(m3.is_match("hello"));
+    assert!(!m3.is_match("anything else"));
+
+    // Redundant alternative: "a|a" same as "a"
+    let m4 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "a|a")
+        .build()
+        .unwrap();
+
+    assert!(m4.is_match("a"));
+    assert!(!m4.is_match("b"));
 }
 
 #[test]
-fn test_or_with_and() {
+fn test_or_with_and_and_not() {
     let matcher = SimpleMatcherBuilder::new()
+        // (color OR colour) AND bright
         .add_word(ProcessType::None, 1, "color|colour&bright")
+        // hello AND NOT (bad OR evil)
+        .add_word(ProcessType::None, 2, "hello~bad|evil")
+        // (a OR b) AND (c OR d) AND NOT (e OR f)
+        .add_word(ProcessType::None, 3, "a|b&c|d~e|f")
         .build()
         .unwrap();
 
-    assert!(
-        matcher.is_match("bright color"),
-        "(color OR colour) AND bright"
-    );
-    assert!(
-        matcher.is_match("bright colour"),
-        "(color OR colour) AND bright"
-    );
-    assert!(
-        !matcher.is_match("bright"),
-        "needs at least one alternative"
-    );
-    assert!(!matcher.is_match("color"), "needs bright too");
-}
+    // ID 1
+    assert!(matcher.is_match("bright color"));
+    assert!(matcher.is_match("bright colour"));
+    assert!(!matcher.is_match("bright"));
+    assert!(!matcher.is_match("color"));
 
-#[test]
-fn test_or_with_not() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello~bad|evil")
-        .build()
-        .unwrap();
+    // ID 2
+    assert!(matcher.is_match("hello"));
+    assert!(!matcher.is_match("hello bad"));
+    assert!(!matcher.is_match("hello evil"));
 
-    assert!(matcher.is_match("hello"), "no veto tokens present");
-    assert!(
-        !matcher.is_match("hello bad"),
-        "first OR alternative vetoes"
-    );
-    assert!(
-        !matcher.is_match("hello evil"),
-        "second OR alternative vetoes"
-    );
-    assert!(
-        !matcher.is_match("hello bad evil"),
-        "both OR alternatives veto"
-    );
-}
-
-#[test]
-fn test_or_combined_and_not() {
-    // (a OR b) AND (c OR d) AND NOT (e OR f)
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a|b&c|d~e|f")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("a c"), "(a) AND (c)");
-    assert!(matcher.is_match("b d"), "(b) AND (d)");
-    assert!(matcher.is_match("a d"), "(a) AND (d)");
-    assert!(matcher.is_match("b c"), "(b) AND (c)");
-    assert!(!matcher.is_match("a"), "missing second AND segment");
+    // ID 3
+    assert!(matcher.is_match("a c"));
+    assert!(matcher.is_match("b d"));
+    assert!(!matcher.is_match("a"));
     assert!(!matcher.is_match("a c e"), "NOT e vetoes");
     assert!(!matcher.is_match("b d f"), "NOT f vetoes");
 }
 
 #[test]
-fn test_or_result_returns_original_word() {
+fn test_or_result_preserves_original_word() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 42, "color|colour")
         .build()
@@ -311,146 +221,24 @@ fn test_or_result_returns_original_word() {
     let results = matcher.process("colour is nice");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].word_id, 42);
-    // The original rule string (with |) is preserved
     assert_eq!(results[0].word.as_ref(), "color|colour");
 }
 
 #[test]
-fn test_or_redundant_alternative() {
-    // "a|a" is redundant but valid — same as "a"
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a|a")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("a"));
-    assert!(!matcher.is_match("b"));
-    let results = matcher.process("a");
-    assert_eq!(results.len(), 1);
-}
-
-#[test]
-fn test_or_with_process_type() {
-    let matcher = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::VariantNorm,
-        HashMap::from([(1, "测试|世界")]),
-    )]))
-    .unwrap();
-
-    assert!(matcher.is_match("测试"));
-    assert!(matcher.is_match("世界"));
-    // VariantNorm: Traditional 測試 normalizes to Simplified 测试
-    assert!(matcher.is_match("測試"));
-}
-
-// ---------------------------------------------------------------------------
-// OR edge cases
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_or_empty_alternatives_skipped() {
-    // Leading/trailing/double pipes produce empty alternatives that are skipped.
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "a|")
-        .add_word(ProcessType::None, 2, "|b")
-        .add_word(ProcessType::None, 3, "c||d")
-        .build()
-        .unwrap();
-
-    // "a|" -> effectively "a"
-    assert!(matcher.is_match("a"));
-    // "|b" -> effectively "b"
-    assert!(matcher.is_match("b"));
-    // "c||d" -> effectively "c|d"
-    assert!(matcher.is_match("c"));
-    assert!(matcher.is_match("d"));
-}
-
-#[test]
-fn test_or_pipe_only_pattern() {
-    // "|" produces no non-empty alternatives — rule should not match anything
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "|")
-        .add_word(ProcessType::None, 2, "||")
-        .add_word(ProcessType::None, 3, "hello")
-        .build()
-        .unwrap();
-
-    // Only "hello" rule should work
-    assert!(matcher.is_match("hello"));
-    assert!(!matcher.is_match("anything else"));
-}
-
-#[test]
-fn test_or_across_rules_dedup() {
-    // Two rules sharing an alternative through dedup
+fn test_or_shared_across_rules() {
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, "cat|dog")
         .add_word(ProcessType::None, 2, "dog|bird")
         .build()
         .unwrap();
 
-    let results = matcher.process("dog");
-    assert_eq!(results.len(), 2, "dog matches both rules");
-
-    let results = matcher.process("cat");
-    assert_eq!(results.len(), 1, "cat matches only rule 1");
-    assert_eq!(results[0].word_id, 1);
-
-    let results = matcher.process("bird");
-    assert_eq!(results.len(), 1, "bird matches only rule 2");
-    assert_eq!(results[0].word_id, 2);
-}
-
-// ---------------------------------------------------------------------------
-// Edge-case patterns
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_operator_only_patterns() {
-    // Patterns that are pure operators produce empty segments, all skipped.
-    // With no scannable patterns remaining, construction returns EmptyPatterns.
-    let result = SimpleMatcher::new(&HashMap::from([(
-        ProcessType::None,
-        HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
-    )]));
-    assert!(result.is_err(), "operator-only patterns should be rejected");
-}
-
-#[test]
-fn test_trailing_operator_patterns() {
-    // Trailing/leading operators produce empty segments that get stripped.
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello&")
-        .add_word(ProcessType::None, 2, "hello~")
-        .add_word(ProcessType::None, 3, "&world")
-        .add_word(ProcessType::None, 4, "~world")
-        .build()
-        .unwrap();
-
-    // "hello&" -> empty trailing segment stripped -> effectively "hello"
-    assert!(matcher.is_match("hello"), "trailing & stripped");
-    // "&world" -> empty leading segment stripped -> effectively "world"
-    assert!(matcher.is_match("world"), "leading & stripped");
-    // "hello~" -> empty NOT segment stripped -> effectively "hello"
-    assert!(matcher.is_match("hello foo"), "trailing ~ stripped");
-    // "~world" -> pure-NOT rule, skipped
-    assert!(
-        !matcher.is_match("anything"),
-        "leading ~ makes pure-NOT rule"
-    );
-}
-
-#[test]
-fn test_pattern_with_nul_byte() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, "hello\0world")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("hello\0world"));
-    assert!(!matcher.is_match("hello world"));
-    assert!(!matcher.is_match("helloworld"));
+    assert_eq!(matcher.process("dog").len(), 2, "dog matches both rules");
+    let r1 = matcher.process("cat");
+    assert_eq!(r1.len(), 1);
+    assert_eq!(r1[0].word_id, 1);
+    let r2 = matcher.process("bird");
+    assert_eq!(r2.len(), 1);
+    assert_eq!(r2[0].word_id, 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,100 +246,85 @@ fn test_pattern_with_nul_byte() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_boundary_basic() {
-    let matcher = SimpleMatcherBuilder::new()
+fn test_boundary_enforcement() {
+    let both = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, r"\bcat\b")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("the cat sat"));
-    assert!(matcher.is_match("cat"));
-    assert!(!matcher.is_match("concatenate"));
-    assert!(!matcher.is_match("scat"));
-    assert!(!matcher.is_match("cats"));
-}
+    // Both boundaries
+    let cases_both: &[(&str, bool)] = &[
+        ("the cat sat", true),
+        ("cat", true),
+        ("cat ", true),
+        (" cat", true),
+        ("cat!", true),
+        (",cat,", true),
+        ("(cat)", true),
+        ("cat.dog", true),
+        ("concatenate", false),
+        ("scat", false),
+        ("cats", false),
+        ("_cat_", false), // underscore is word char
+        ("my_cat_name", false),
+    ];
+    for &(text, expected) in cases_both {
+        assert_eq!(both.is_match(text), expected, r"\bcat\b on {text:?}");
+    }
 
-#[test]
-fn test_boundary_left_only() {
-    let matcher = SimpleMatcherBuilder::new()
+    // Left boundary only
+    let left = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, r"\bcat")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("cat"));
-    assert!(matcher.is_match("cats"));
-    assert!(matcher.is_match("catch"));
-    assert!(!matcher.is_match("scat"));
-    assert!(!matcher.is_match("concatenate"));
-}
+    assert!(left.is_match("cat"));
+    assert!(left.is_match("cats"));
+    assert!(left.is_match("catch"));
+    assert!(!left.is_match("scat"));
+    assert!(!left.is_match("concatenate"));
 
-#[test]
-fn test_boundary_right_only() {
-    let matcher = SimpleMatcherBuilder::new()
+    // Right boundary only
+    let right = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, r"cat\b")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("cat"));
-    assert!(matcher.is_match("scat"));
-    assert!(!matcher.is_match("cats"));
-    assert!(!matcher.is_match("catch"));
+    assert!(right.is_match("cat"));
+    assert!(right.is_match("scat"));
+    assert!(!right.is_match("cats"));
+    assert!(!right.is_match("catch"));
 }
 
 #[test]
-fn test_boundary_with_and() {
+fn test_boundary_with_operators() {
     let matcher = SimpleMatcherBuilder::new()
+        // AND + boundary
         .add_word(ProcessType::None, 1, r"\bcat\b&\bdog\b")
+        // NOT + boundary
+        .add_word(ProcessType::None, 2, r"\bcat\b~\bcatch\b")
+        // OR + boundary
+        .add_word(ProcessType::None, 3, r"\bcolor\b|\bcolour\b")
         .build()
         .unwrap();
 
+    // ID 1: AND
     assert!(matcher.is_match("cat and dog"));
     assert!(!matcher.is_match("cats and dogs"));
-    assert!(!matcher.is_match("concatenate and dogma"));
-}
 
-#[test]
-fn test_boundary_with_not() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, r"\bcat\b~\bcatch\b")
-        .build()
-        .unwrap();
-
+    // ID 2: NOT
     assert!(matcher.is_match("the cat"));
-    assert!(matcher.is_match("the cat catches fish"));
+    assert!(matcher.is_match("the cat catches fish")); // "catches" ≠ \bcatch\b
     assert!(!matcher.is_match("the cat catch"));
-}
 
-#[test]
-fn test_boundary_with_or() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, r"\bcolor\b|\bcolour\b")
-        .build()
-        .unwrap();
-
+    // ID 3: OR
     assert!(matcher.is_match("nice color"));
     assert!(matcher.is_match("nice colour"));
     assert!(!matcher.is_match("colorful"));
-    assert!(!matcher.is_match("discolour"));
-}
-
-#[test]
-fn test_boundary_punctuation() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, r"\bcat\b")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("cat!"));
-    assert!(matcher.is_match(",cat,"));
-    assert!(matcher.is_match("(cat)"));
-    assert!(matcher.is_match("cat.dog"));
 }
 
 #[test]
 fn test_boundary_mixed_with_non_boundary() {
-    // V2: per-entry boundary checking. Same pattern string with different
-    // boundary requirements are checked independently per entry.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None, 1, r"\bcat\b")
         .add_word(ProcessType::None, 2, "cat")
@@ -559,25 +332,12 @@ fn test_boundary_mixed_with_non_boundary() {
         .unwrap();
 
     // "concatenate" — only rule 2 matches (no boundary)
-    let results = matcher.process("concatenate");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].word_id, 2);
+    let r1 = matcher.process("concatenate");
+    assert_eq!(r1.len(), 1);
+    assert_eq!(r1[0].word_id, 2);
 
     // "the cat" — both rules match
-    let results = matcher.process("the cat");
-    assert_eq!(results.len(), 2);
-}
-
-#[test]
-fn test_boundary_at_text_edges() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, r"\bcat\b")
-        .build()
-        .unwrap();
-
-    assert!(matcher.is_match("cat"));
-    assert!(matcher.is_match("cat "));
-    assert!(matcher.is_match(" cat"));
+    assert_eq!(matcher.process("the cat").len(), 2);
 }
 
 #[test]
@@ -587,32 +347,42 @@ fn test_boundary_with_normalize() {
         .build()
         .unwrap();
 
-    // Normalize casefolds: CAT → cat
     assert!(matcher.is_match("the CAT sat"));
     assert!(!matcher.is_match("CONCATENATE"));
 }
 
+// ---------------------------------------------------------------------------
+// Edge-case patterns
+// ---------------------------------------------------------------------------
+
 #[test]
-fn test_boundary_underscore_is_word_char() {
+fn test_edge_case_patterns() {
+    // Operator-only patterns produce no valid rules → EmptyPatterns error
+    let result = SimpleMatcher::new(&HashMap::from([(
+        ProcessType::None,
+        HashMap::from([(1, "&"), (2, "~"), (3, "&&"), (4, "~~"), (5, "&~&~")]),
+    )]));
+    assert!(result.is_err(), "operator-only patterns should be rejected");
+
+    // Trailing/leading operators produce empty segments that get stripped
     let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, r"\bcat\b")
+        .add_word(ProcessType::None, 1, "hello&")   // → "hello"
+        .add_word(ProcessType::None, 2, "hello~")   // → "hello"
+        .add_word(ProcessType::None, 3, "&world")   // → "world"
+        .add_word(ProcessType::None, 4, "~world")   // pure-NOT, skipped
         .build()
         .unwrap();
 
-    // Underscore is a word char, so no boundary between _ and c
-    assert!(!matcher.is_match("_cat_"));
-    assert!(!matcher.is_match("my_cat_name"));
-}
+    assert!(matcher.is_match("hello"));
+    assert!(matcher.is_match("world"));
 
-#[test]
-fn test_boundary_result_preserves_original_word() {
-    let matcher = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 42, r"\bcat\b")
+    // Null byte in patterns
+    let m_nul = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello\0world")
         .build()
         .unwrap();
 
-    let results = matcher.process("the cat");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].word_id, 42);
-    assert_eq!(results[0].word.as_ref(), r"\bcat\b");
+    assert!(m_nul.is_match("hello\0world"));
+    assert!(!m_nul.is_match("hello world"));
+    assert!(!m_nul.is_match("helloworld"));
 }

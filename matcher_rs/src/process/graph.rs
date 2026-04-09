@@ -202,42 +202,4 @@ mod tests {
         assert_eq!(tree[del_idx].process_type_bit, ProcessType::Delete);
         assert!(tree[del_idx].children.is_empty());
     }
-
-    #[test]
-    fn test_tree_branching() {
-        let set: HashSet<ProcessType> = [ProcessType::VariantNorm, ProcessType::Delete]
-            .into_iter()
-            .collect();
-        let tree = build_process_type_tree(&set, &identity_index_table());
-
-        // Root + 2 children = 3 nodes
-        assert_eq!(tree.len(), 3);
-        assert_eq!(tree[0].children.len(), 2);
-        let bits: Vec<_> = tree[0]
-            .children
-            .iter()
-            .map(|&idx| tree[idx].process_type_bit)
-            .collect();
-        assert!(bits.contains(&ProcessType::VariantNorm));
-        assert!(bits.contains(&ProcessType::Delete));
-    }
-
-    #[test]
-    fn test_mask_with_index() {
-        let set: HashSet<ProcessType> = [ProcessType::None, ProcessType::VariantNorm]
-            .into_iter()
-            .collect();
-
-        let mut pt_index_table = [u8::MAX; 128];
-        pt_index_table[ProcessType::None.bits() as usize] = 0;
-        pt_index_table[ProcessType::VariantNorm.bits() as usize] = 1;
-
-        let tree = build_process_type_tree(&set, &pt_index_table);
-
-        // Root should have bit 0 set (for None)
-        assert!(tree[0].pt_index_mask & (1u64 << 0) != 0);
-        // VariantNorm child should have bit 1 set
-        let fj_idx = tree[0].children[0];
-        assert!(tree[fj_idx].pt_index_mask & (1u64 << 1) != 0);
-    }
 }

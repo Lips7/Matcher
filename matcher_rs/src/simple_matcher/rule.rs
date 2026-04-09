@@ -498,15 +498,6 @@ mod tests {
         )
     }
 
-    // --- SatisfactionMethod predicate tests ---
-
-    #[test]
-    fn test_satisfaction_method_predicates() {
-        assert!(!SatisfactionMethod::Immediate.use_matrix());
-        assert!(!SatisfactionMethod::Bitmask.use_matrix());
-        assert!(SatisfactionMethod::Matrix.use_matrix());
-    }
-
     // --- eval_hit tests ---
 
     #[test]

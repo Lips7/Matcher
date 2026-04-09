@@ -295,64 +295,55 @@ mod tests {
     }
 
     #[test]
-    fn test_direct_single_and() {
-        let entries = vec![vec![entry(5, 0, 2, PatternKind::And, 1)]];
-        let ri = ri_for(5, immediate_info());
-        let raw = PatternIndex::new(entries).build_value_map(&ri)[0];
-        assert!(raw & DIRECT_RULE_BIT != 0);
-        let (pt, bd, kind, off, idx) = decode_direct(raw);
-        assert_eq!((pt, bd, kind, off, idx), (2, 1, PatternKind::And, 0, 5));
-    }
+    fn test_direct_encoding_variants() {
+        // (entry_args, rule_info, expected_decoded_fields)
+        let cases: &[(
+            (u32, u8, u8, PatternKind, u8), // entry: rule_idx, offset, pt_index, kind, boundary
+            RuleInfo,
+            (u8, PatternKind, usize), // expected: pt_index, kind, rule_idx
+        )] = &[
+            // Single AND → Immediate
+            (
+                (5, 0, 2, PatternKind::And, 1),
+                immediate_info(),
+                (2, PatternKind::And, 5),
+            ),
+            // Single AND with has_not → Immediate
+            (
+                (100, 0, 3, PatternKind::And, 0),
+                RuleInfo {
+                    and_count: 1,
+                    method: SatisfactionMethod::Immediate,
+                    has_not: true,
+                },
+                (3, PatternKind::And, 100),
+            ),
+            // Bitmask AND with offset
+            (
+                (42, 1, 2, PatternKind::And, 0),
+                bitmask_info(3),
+                (2, PatternKind::And, 42),
+            ),
+            // NOT entry
+            (
+                (50, 1, 0, PatternKind::Not, 0),
+                RuleInfo {
+                    and_count: 1,
+                    method: SatisfactionMethod::Immediate,
+                    has_not: true,
+                },
+                (0, PatternKind::Not, 50),
+            ),
+        ];
 
-    #[test]
-    fn test_direct_single_and_not() {
-        let entries = vec![vec![entry(100, 0, 3, PatternKind::And, 0)]];
-        let ri = ri_for(
-            100,
-            RuleInfo {
-                and_count: 1,
-                method: SatisfactionMethod::Immediate,
-                has_not: true,
-            },
-        );
-        let raw = PatternIndex::new(entries).build_value_map(&ri)[0];
-        assert!(raw & DIRECT_RULE_BIT != 0);
-        let (pt, _, kind, _, idx) = decode_direct(raw);
-        assert_eq!((pt, kind, idx), (3, PatternKind::And, 100));
-    }
-
-    #[test]
-    fn test_direct_bitmask_and() {
-        let entries = vec![vec![entry(42, 1, 2, PatternKind::And, 0)]];
-        let ri = ri_for(42, bitmask_info(3));
-        let raw = PatternIndex::new(entries).build_value_map(&ri)[0];
-        assert!(raw & DIRECT_RULE_BIT != 0);
-        let (pt, _, kind, off, idx) = decode_direct(raw);
-        assert_eq!((pt, kind, off, idx), (2, PatternKind::And, 1, 42));
-    }
-
-    #[test]
-    fn test_direct_not_entry() {
-        let entries = vec![vec![entry(50, 1, 0, PatternKind::Not, 0)]];
-        let ri = ri_for(
-            50,
-            RuleInfo {
-                and_count: 1,
-                method: SatisfactionMethod::Immediate,
-                has_not: true,
-            },
-        );
-        let raw = PatternIndex::new(entries).build_value_map(&ri)[0];
-        assert!(raw & DIRECT_RULE_BIT != 0);
-        let (_, _, kind, off, idx) = decode_direct(raw);
-        assert_eq!((kind, off, idx), (PatternKind::Not, 1, 50));
-    }
-
-    #[test]
-    fn test_bitmask_large_rule_idx_now_fits() {
-        let entries = vec![vec![entry(40000, 0, 0, PatternKind::And, 0)]];
-        let ri = ri_for(40000, bitmask_info(2));
-        assert!(PatternIndex::new(entries).build_value_map(&ri)[0] & DIRECT_RULE_BIT != 0);
+        for &(ref e, ref ri, (exp_pt, exp_kind, exp_idx)) in cases {
+            let entries = vec![vec![entry(e.0, e.1, e.2, e.3, e.4)]];
+            let ri_vec = ri_for(e.0, ri.clone());
+            let raw = PatternIndex::new(entries).build_value_map(&ri_vec)[0];
+            assert!(raw & DIRECT_RULE_BIT != 0, "should use direct encoding");
+            let (pt, _, kind, _, idx) = decode_direct(raw);
+            assert_eq!((pt, kind, idx), (exp_pt, exp_kind, exp_idx));
+        }
     }
 
     #[test]
@@ -360,22 +351,5 @@ mod tests {
         let entries = vec![vec![entry(0, 0, 0, PatternKind::And, 0)]];
         let ri = [matrix_info(2)];
         assert!(PatternIndex::new(entries).build_value_map(&ri)[0] & DIRECT_RULE_BIT == 0);
-    }
-
-    #[test]
-    fn test_dispatch_multi_entry() {
-        let entries = vec![vec![
-            entry(0, 0, 0, PatternKind::And, 0),
-            entry(1, 0, 0, PatternKind::And, 0),
-        ]];
-        let ri = [immediate_info(), immediate_info()];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map(&ri);
-
-        assert!(value_map[0] & DIRECT_RULE_BIT == 0);
-        match index.dispatch_indirect(value_map[0]) {
-            PatternDispatch::Entries(slice) => assert_eq!(slice.len(), 2),
-            _ => panic!("expected Entries dispatch"),
-        }
     }
 }

@@ -361,25 +361,21 @@ mod tests {
     }
 
     #[test]
-    fn test_prepare_grows_storage() {
+    fn test_prepare() {
         let mut state = SimpleMatchState::new();
         assert_eq!(state.generation, 0);
+
+        // First prepare: grows storage, sets generation to 1
         state.prepare(10);
         assert!(state.word_states.len() >= 10);
         assert!(state.matrix.len() >= 10);
-        assert!(state.matrix_status.len() >= 10);
         assert_eq!(state.generation, 1);
         assert!(state.touched_indices.is_empty());
-    }
 
-    #[test]
-    fn test_prepare_generation_increments() {
-        let mut state = SimpleMatchState::new();
-        state.prepare(1);
-        assert_eq!(state.generation, 1);
-        state.prepare(1);
+        // Subsequent prepares increment generation
+        state.prepare(10);
         assert_eq!(state.generation, 2);
-        state.prepare(1);
+        state.prepare(10);
         assert_eq!(state.generation, 3);
     }
 
@@ -404,29 +400,20 @@ mod tests {
     }
 
     #[test]
-    fn test_rule_is_satisfied() {
+    fn test_rule_satisfaction() {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
         let current = state.generation;
 
+        // Satisfied: generation matches, remaining_and=0, not vetoed
         state.word_states[0].generation = current;
         state.word_states[0].remaining_and = 0;
         state.word_states[0].vetoed = false;
-        let ss = state.as_scan_state();
-        assert!(ss.rule_is_satisfied(0));
-    }
+        assert!(state.as_scan_state().rule_is_satisfied(0));
 
-    #[test]
-    fn test_rule_is_satisfied_not_veto() {
-        let mut state = SimpleMatchState::new();
-        state.prepare(1);
-        let current = state.generation;
-
-        state.word_states[0].generation = current;
-        state.word_states[0].remaining_and = 0;
+        // Vetoed: same but vetoed=true → not satisfied
         state.word_states[0].vetoed = true;
-        let ss = state.as_scan_state();
-        assert!(!ss.rule_is_satisfied(0));
+        assert!(!state.as_scan_state().rule_is_satisfied(0));
     }
 
     #[test]

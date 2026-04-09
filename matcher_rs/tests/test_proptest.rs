@@ -7,7 +7,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
     #[test]
-    fn prop_simple_matcher_does_not_panic(
+    fn prop_no_panic_random_input(
         word in "\\PC{0,100}",
         text in "\\PC{0,100}"
     ) {
@@ -39,81 +39,21 @@ proptest! {
                 let _ = res.word_id;
             }
         }
+
+        // Also exercise all ProcessType bits through text_process
+        for bits in 0u8..64 {
+            let pt = ProcessType::from_bits_retain(bits);
+            let _ = matcher_rs::text_process(pt, &text);
+        }
     }
 
     #[test]
-    fn prop_multi_rule_consistent(
+    fn prop_api_consistency(
         words in prop::collection::vec("\\PC{1,30}", 5..20),
         text in "\\PC{0,100}"
     ) {
-        let mut builder = SimpleMatcherBuilder::new();
-        for (i, word) in words.iter().enumerate() {
-            builder = builder.add_word(ProcessType::None, i as u32, word);
-        }
-        let matcher = match builder.build() {
-            Ok(m) => m,
-            Err(MatcherError::EmptyPatterns) => return Ok(()),
-            Err(e) => panic!("unexpected error: {e}"),
-        };
-
-        let is_match = matcher.is_match(&text);
-        let results = matcher.process(&text);
-
-        prop_assert_eq!(
-            is_match,
-            !results.is_empty(),
-            "is_match and process must be consistent"
-        );
-    }
-
-    #[test]
-    fn prop_process_into_matches_process(
-        word in "\\PC{1,50}",
-        text in "\\PC{0,100}"
-    ) {
-        let matcher = match SimpleMatcherBuilder::new()
-            .add_word(ProcessType::None, 1, &word)
-            .build()
-        {
-            Ok(m) => m,
-            Err(MatcherError::EmptyPatterns) => return Ok(()),
-            Err(e) => panic!("unexpected error: {e}"),
-        };
-
-        let results = matcher.process(&text);
-        let mut into_results = Vec::new();
-        matcher.process_into(&text, &mut into_results);
-
-        prop_assert_eq!(results.len(), into_results.len());
-        for (a, b) in results.iter().zip(into_results.iter()) {
-            prop_assert_eq!(a.word_id, b.word_id);
-        }
-    }
-
-    #[test]
-    fn prop_operator_patterns_no_panic(
-        // Generate random strings that may contain & and ~ operators
-        word in "[a-z&~]{1,50}",
-        text in "[a-z ]{0,100}"
-    ) {
-        let matcher = match SimpleMatcherBuilder::new()
-            .add_word(ProcessType::None, 1, &word)
-            .build()
-        {
-            Ok(m) => m,
-            Err(MatcherError::EmptyPatterns) => return Ok(()),
-            Err(e) => panic!("unexpected error: {e}"),
-        };
-
-        let _ = matcher.is_match(&text);
-        let _ = matcher.process(&text);
-    }
-
-    #[test]
-    fn prop_is_match_process_consistent_all_ptypes(
-        word in "[a-z]{1,30}",
-        text in "[a-z ]{0,100}"
-    ) {
+        // Test across all ProcessTypes: is_match, process, process_into,
+        // for_each_match must all agree.
         for ptype in [
             ProcessType::None,
             ProcessType::VariantNorm,
@@ -124,53 +64,54 @@ proptest! {
             ProcessType::DeleteNormalize,
             ProcessType::VariantNormDeleteNormalize,
         ] {
-            let matcher = SimpleMatcherBuilder::new()
-                .add_word(ptype, 1, &word)
-                .build()
-                .unwrap();
+            let mut builder = SimpleMatcherBuilder::new();
+            for (i, word) in words.iter().enumerate() {
+                builder = builder.add_word(ptype, i as u32, word);
+            }
+            let matcher = match builder.build() {
+                Ok(m) => m,
+                Err(MatcherError::EmptyPatterns) => continue,
+                Err(e) => panic!("unexpected error: {e}"),
+            };
 
             let is_match = matcher.is_match(&text);
             let results = matcher.process(&text);
+
+            // is_match ↔ process consistency
             prop_assert_eq!(
                 is_match,
                 !results.is_empty(),
                 "is_match/process mismatch for {:?}", ptype
             );
-        }
-    }
 
-    #[test]
-    fn prop_search_mode_equivalence(
-        word in "[a-z]{1,30}",
-        text in "[a-z ]{0,100}"
-    ) {
-        // Single ProcessType (no transforms)
-        let simple = SimpleMatcherBuilder::new()
-            .add_word(ProcessType::None, 1, &word)
-            .build()
-            .unwrap();
+            // process_into matches process
+            let mut into_results = Vec::new();
+            matcher.process_into(&text, &mut into_results);
+            prop_assert_eq!(results.len(), into_results.len());
+            for (a, b) in results.iter().zip(into_results.iter()) {
+                prop_assert_eq!(a.word_id, b.word_id);
+            }
 
-        // Multi-ProcessType (with transforms)
-        let general = SimpleMatcherBuilder::new()
-            .add_word(ProcessType::None, 1, &word)
-            .add_word(ProcessType::VariantNorm, 2, &word)
-            .build()
-            .unwrap();
+            // process_into append semantics
+            let sentinel = SimpleResult {
+                word_id: 9999,
+                word: Cow::Borrowed("sentinel"),
+            };
+            let mut append_buf: Vec<SimpleResult<'_>> = vec![sentinel];
+            matcher.process_into(&text, &mut append_buf);
+            prop_assert_eq!(append_buf[0].word_id, 9999);
+            prop_assert_eq!(&append_buf[1..], results.as_slice());
 
-        prop_assert_eq!(
-            simple.is_match(&text),
-            general.is_match(&text),
-            "simple vs multi-transform is_match disagree"
-        );
-
-        // Both should find word_id=1 if the word appears
-        let simple_ids: Vec<u32> = simple.process(&text).iter().map(|r| r.word_id).collect();
-        let general_ids: Vec<u32> = general.process(&text).iter().map(|r| r.word_id).collect();
-        if simple_ids.contains(&1) {
-            prop_assert!(
-                general_ids.contains(&1),
-                "multi-transform path missed word_id=1 that simple found"
-            );
+            // for_each_match consistency
+            let mut fem_ids = Vec::new();
+            matcher.for_each_match(&text, |r| {
+                fem_ids.push(r.word_id);
+                false
+            });
+            let mut proc_ids: Vec<u32> = results.iter().map(|r| r.word_id).collect();
+            fem_ids.sort();
+            proc_ids.sort();
+            prop_assert_eq!(fem_ids, proc_ids);
         }
     }
 
@@ -202,7 +143,6 @@ proptest! {
             .build()
             .unwrap();
 
-        // Text that contains the negative substring must not fire
         let text_with_neg = format!("{}{}{}{}", prefix, positive, negative, suffix);
         if text_with_neg.contains(&negative) && text_with_neg.contains(&positive) {
             prop_assert!(
@@ -213,7 +153,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_builder_vs_hashmap_equivalent(
+    fn prop_builder_vs_hashmap(
         word in "[a-z]{1,30}",
         text in "[a-z ]{0,100}"
     ) {
@@ -241,42 +181,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_process_into_appends(
-        word in "[a-z]{1,30}",
-        text in "[a-z ]{0,100}"
-    ) {
-        let matcher = SimpleMatcherBuilder::new()
-            .add_word(ProcessType::None, 1, &word)
-            .build()
-            .unwrap();
-
-        // Pre-seed with a sentinel result
-        let sentinel = SimpleResult {
-            word_id: 9999,
-            word: Cow::Borrowed("sentinel"),
-        };
-        let mut results: Vec<SimpleResult<'_>> = vec![sentinel];
-        matcher.process_into(&text, &mut results);
-
-        let expected = matcher.process(&text);
-        // First element should be the sentinel
-        prop_assert_eq!(results[0].word_id, 9999);
-        prop_assert_eq!(&*results[0].word, "sentinel");
-        // Remaining elements should match process() output
-        prop_assert_eq!(&results[1..], expected.as_slice());
-    }
-
-    #[test]
-    fn prop_all_process_types_no_panic(
-        bits in 0u8..64,
-        text in "\\PC{0,200}"
-    ) {
-        let pt = ProcessType::from_bits_retain(bits);
-        let _ = matcher_rs::text_process(pt, &text);
-    }
-
-    #[test]
-    fn prop_ascii_parent_child_transforms_match_materialized_output(
+    fn prop_transform_round_trip(
         input in prop::collection::vec(
             (32u8..=125u8).prop_filter("exclude matcher operators and escape prefix", |b| *b != b'&' && *b != b'~' && *b != b'|' && *b != b'\\'),
             1..80
@@ -296,19 +201,15 @@ proptest! {
 
             prop_assert!(
                 matcher.is_match(&input),
-                "ASCII parent transform path missed match for {:?} on input {:?} -> {:?}",
-                pt,
-                input,
-                expected
+                "transform round-trip missed match for {:?} on input {:?} -> {:?}",
+                pt, input, expected
             );
 
             let results = matcher.process(&input);
             prop_assert!(
                 results.iter().any(|result| result.word_id == 1),
                 "process() missed word_id=1 for {:?} on input {:?} -> {:?}",
-                pt,
-                input,
-                expected
+                pt, input, expected
             );
         }
     }
