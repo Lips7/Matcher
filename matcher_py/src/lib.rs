@@ -20,7 +20,10 @@
 //! assert matcher.is_match("hello beautiful world")
 //! ```
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 use matcher_rs::{
     ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleTableSerde, reduce_text_process,
@@ -350,7 +353,7 @@ impl PySimpleMatcher {
             .words
             .iter()
             .map(|(pt, _, _)| *pt)
-            .collect::<std::collections::HashSet<_>>()
+            .collect::<HashSet<_>>()
             .into_iter()
             .collect();
         pts.sort_unstable();
