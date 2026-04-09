@@ -60,6 +60,41 @@ def reduce_text_process(process_type: int | ProcessType, text: str) -> list[str]
         A list of strings, one for each intermediate transformation stage.
     """
 
+class SimpleMatcherBuilder:
+    """
+    Fluent builder for constructing a :class:`SimpleMatcher` without
+    serialization overhead.
+
+    Example::
+
+        builder = SimpleMatcherBuilder()
+        builder.add_word(ProcessType.NONE, 1, "hello")
+        builder.add_word(ProcessType.NONE, 2, "world")
+        matcher = builder.build()
+    """
+
+    def __init__(self) -> None: ...
+
+    def add_word(self, process_type: int | ProcessType, word_id: int, word: str) -> None:
+        """
+        Register a pattern under the given process type and word ID.
+
+        Parameters:
+            process_type: Which transformations to apply before matching.
+            word_id: Caller-assigned identifier returned in match results.
+            word: Pattern string (supports ``&``, ``~``, ``|``, ``\\b``).
+        """
+
+    def build(self) -> SimpleMatcher:
+        """
+        Compile accumulated patterns into a :class:`SimpleMatcher`.
+
+        Drains the builder — a second ``build()`` raises ``ValueError``.
+
+        Raises:
+            ValueError: If no patterns were added or compilation fails.
+        """
+
 class SimpleMatcher:
     """
     High-performance multi-pattern matcher with logical operators and text
@@ -88,23 +123,18 @@ class SimpleMatcher:
         """
         Build a matcher from a Python dict.
 
-        Equivalent to ``SimpleMatcher(json.dumps(table).encode())``.
+        Iterates the dict directly — no JSON serialization overhead.
 
         Parameters:
             table: Mapping of ``{ProcessType_int: {word_id: pattern}}``.
 
         Raises:
-            ValueError: If the table structure is invalid.
+            TypeError: If the table structure has wrong types.
+            ValueError: If compilation fails.
         """
 
     def __getnewargs__(self) -> tuple[bytes]:
         """Return constructor args for pickle support."""
-
-    def __getstate__(self) -> bytes:
-        """Serialize matcher state for pickling."""
-
-    def __setstate__(self, simple_table_bytes: bytes) -> None:
-        """Restore matcher state from pickle data."""
 
     def __repr__(self) -> str:
         """Return a summary string showing rule count."""
@@ -118,6 +148,9 @@ class SimpleMatcher:
         - ``rule_count`` (int): Total number of rules across all process types.
         - ``process_types`` (list[int]): Sorted list of ProcessType bit values.
         """
+
+    def heap_bytes(self) -> int:
+        """Return estimated heap memory in bytes used by the compiled matcher."""
 
     def is_match(self, text: str) -> bool:
         """

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from matcher_py import ProcessType, SimpleMatcher
+from matcher_py import ProcessType, SimpleMatcher, SimpleMatcherBuilder
 
 
 def test_init_with_non_bytes():
@@ -167,7 +167,7 @@ def test_from_dict_empty():
 
 
 def test_from_dict_invalid():
-    with pytest.raises((ValueError, TypeError)):
+    with pytest.raises(TypeError):
         SimpleMatcher.from_dict("not a dict")  # ty: ignore[invalid-argument-type]
 
 
@@ -261,3 +261,58 @@ def test_threading():
 
     assert serial == threaded
     assert all(serial)
+
+
+# --- Builder tests ---
+
+
+def test_builder_basic():
+    builder = SimpleMatcherBuilder()
+    builder.add_word(ProcessType.NONE, 1, "hello")
+    builder.add_word(ProcessType.NONE, 2, "world")
+    matcher = builder.build()
+    assert matcher.is_match("hello")
+    assert matcher.is_match("world")
+    assert not matcher.is_match("miss")
+    results = matcher.process("hello world")
+    ids = sorted(r.word_id for r in results)
+    assert ids == [1, 2]
+
+
+def test_builder_empty():
+    builder = SimpleMatcherBuilder()
+    with pytest.raises(ValueError):
+        builder.build()
+
+
+def test_builder_second_build_empty():
+    builder = SimpleMatcherBuilder()
+    builder.add_word(ProcessType.NONE, 1, "hello")
+    matcher = builder.build()
+    assert matcher.is_match("hello")
+    with pytest.raises(ValueError):
+        builder.build()
+
+
+def test_builder_with_process_types():
+    builder = SimpleMatcherBuilder()
+    builder.add_word(ProcessType.VARIANT_NORM, 1, "测试")
+    matcher = builder.build()
+    assert matcher.is_match("測試")
+
+
+def test_builder_pickle_roundtrip():
+    import pickle
+
+    builder = SimpleMatcherBuilder()
+    builder.add_word(ProcessType.NONE, 1, "hello")
+    builder.add_word(ProcessType.DELETE, 2, "你好")
+    original = builder.build()
+    restored = pickle.loads(pickle.dumps(original))
+    assert restored.is_match("hello")
+    assert restored.is_match("你！好")
+
+
+def test_heap_bytes():
+    matcher = SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello", 2: "world"}})
+    assert matcher.heap_bytes() > 0

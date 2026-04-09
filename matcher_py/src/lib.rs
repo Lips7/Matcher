@@ -1,7 +1,9 @@
 //! Python bindings for the [`matcher_rs`] pattern-matching engine via PyO3.
 //!
-//! Exports three classes ([`ProcessType`](PyProcessType),
-//! [`SimpleMatcher`](PySimpleMatcher), [`SimpleResult`](PySimpleResult))
+//! Exports four classes ([`ProcessType`](PyProcessType),
+//! [`SimpleMatcher`](PySimpleMatcher),
+//! [`SimpleMatcherBuilder`](PySimpleMatcherBuilder),
+//! [`SimpleResult`](PySimpleResult))
 //! and two standalone functions ([`text_process`], [`reduce_text_process`]).
 //!
 //! All matcher operations release the GIL, so multiple Python threads can call
@@ -11,7 +13,6 @@
 //! # Quick start
 //!
 //! ```python
-//! import json
 //! from matcher_py import SimpleMatcher, ProcessType
 //!
 //! table = {ProcessType.NONE: {1: "hello&world"}}
@@ -21,7 +22,10 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleTableSerde, reduce_text_process, text_process};
+use matcher_rs::{
+    ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleTableSerde, reduce_text_process,
+    text_process,
+};
 use pyo3::{
     Bound,
     exceptions::{PyTypeError, PyValueError},
@@ -29,7 +33,7 @@ use pyo3::{
         Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
     },
     pyfunction,
-    types::{PyAnyMethods, PyDict, PyModuleMethods, PyString, PyType},
+    types::{PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyModuleMethods, PyString, PyType},
 };
 
 /// Extracts a [`ProcessType`] from a Python `ProcessType` instance or raw
@@ -51,6 +55,20 @@ fn extract_process_type(obj: &Bound<'_, PyAny>) -> PyResult<ProcessType> {
 fn deserialize_table(bytes: &[u8]) -> PyResult<SimpleTableSerde<'_>> {
     sonic_rs::from_slice(bytes)
         .map_err(|e| PyValueError::new_err(format!("Deserialize simple_table_bytes failed: {e}")))
+}
+
+/// Collects `(process_type_bits, word_id, pattern)` triples from a deserialized
+/// table, for storage in [`PySimpleMatcher::words`].
+fn collect_words(table: &SimpleTableSerde<'_>) -> Vec<(u8, u32, String)> {
+    table
+        .iter()
+        .flat_map(|(pt, inner)| {
+            let bits = pt.bits();
+            inner
+                .iter()
+                .map(move |(&id, word)| (bits, id, word.to_string()))
+        })
+        .collect()
 }
 
 /// Bitflag enum controlling which text normalizations to apply before matching.
@@ -176,6 +194,66 @@ fn py_reduce_text_process<'a>(
     ))
 }
 
+/// Fluent builder for constructing a [`SimpleMatcher`] without serialization.
+///
+/// ```python
+/// from matcher_py import SimpleMatcherBuilder, ProcessType
+///
+/// builder = SimpleMatcherBuilder()
+/// builder.add_word(ProcessType.NONE, 1, "hello")
+/// builder.add_word(ProcessType.NONE, 2, "world")
+/// matcher = builder.build()
+/// assert matcher.is_match("hello world")
+/// ```
+#[pyclass(name = "SimpleMatcherBuilder", module = "matcher_py")]
+pub struct PySimpleMatcherBuilder {
+    words: Vec<(u8, u32, String)>,
+}
+
+#[pymethods]
+impl PySimpleMatcherBuilder {
+    #[new]
+    fn new() -> Self {
+        PySimpleMatcherBuilder { words: Vec::new() }
+    }
+
+    /// Register a pattern under the given process type and word ID.
+    #[pyo3(signature=(process_type, word_id, word))]
+    fn add_word(
+        &mut self,
+        process_type: &Bound<'_, PyAny>,
+        word_id: u32,
+        word: &str,
+    ) -> PyResult<()> {
+        let pt = extract_process_type(process_type)?;
+        self.words.push((pt.bits(), word_id, word.to_owned()));
+        Ok(())
+    }
+
+    /// Compile accumulated patterns into a [`SimpleMatcher`].
+    ///
+    /// Drains the builder — a second `build()` raises `ValueError`.
+    fn build(&mut self) -> PyResult<PySimpleMatcher> {
+        let words = std::mem::take(&mut self.words);
+        build_from_words(words)
+    }
+}
+
+/// Shared construction logic: builds a [`PySimpleMatcher`] from word triples.
+fn build_from_words(words: Vec<(u8, u32, String)>) -> PyResult<PySimpleMatcher> {
+    let mut builder = SimpleMatcherBuilder::new();
+    for &(bits, id, ref word) in &words {
+        builder = builder.add_word(ProcessType::from_bits_retain(bits), id, word.as_str());
+    }
+    let simple_matcher = builder
+        .build()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(PySimpleMatcher {
+        simple_matcher,
+        words,
+    })
+}
+
 /// Immutable compiled pattern matcher. Thread-safe — all query methods release
 /// the GIL.
 ///
@@ -187,14 +265,14 @@ fn py_reduce_text_process<'a>(
 /// import json
 /// from matcher_py import SimpleMatcher, ProcessType
 ///
-/// table = {ProcessType.NONE: {1: "�ello&world"}}
+/// table = {ProcessType.NONE: {1: "hello&world"}}
 /// matcher = SimpleMatcher(json.dumps(table).encode())
 /// assert matcher.is_match("hello beautiful world")
 /// ```
 #[pyclass(name = "SimpleMatcher", module = "matcher_py")]
 pub struct PySimpleMatcher {
     simple_matcher: SimpleMatcher,
-    simple_table_bytes: Vec<u8>,
+    words: Vec<(u8, u32, String)>,
 }
 
 #[pymethods]
@@ -209,51 +287,53 @@ impl PySimpleMatcher {
     #[pyo3(signature=(simple_table_bytes))]
     fn new(_py: Python, simple_table_bytes: &[u8]) -> PyResult<PySimpleMatcher> {
         let simple_table = deserialize_table(simple_table_bytes)?;
+        let words = collect_words(&simple_table);
         Ok(PySimpleMatcher {
             simple_matcher: SimpleMatcher::new(&simple_table)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
-            simple_table_bytes: simple_table_bytes.to_vec(),
+            words,
         })
     }
 
     /// Construct a matcher from a Python dict.
     ///
-    /// Equivalent to `SimpleMatcher(json.dumps(table).encode())` but avoids
-    /// manual serialization: `SimpleMatcher.from_dict({0: {1: "hello"}})`.
+    /// Iterates the dict directly — no JSON serialization overhead.
+    /// `SimpleMatcher.from_dict({ProcessType.NONE: {1: "hello"}})`.
     #[classmethod]
     #[pyo3(signature=(table))]
-    fn from_dict(_cls: &Bound<'_, PyType>, py: Python, table: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let json_mod = py.import("json")?;
-        let json_str = json_mod.call_method1("dumps", (table,))?;
-        let bytes_str = json_str.call_method1("encode", ("utf-8",))?;
-        let bytes: Vec<u8> = bytes_str.extract()?;
-
-        let simple_table = deserialize_table(&bytes)?;
-        Ok(PySimpleMatcher {
-            simple_matcher: SimpleMatcher::new(&simple_table)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?,
-            simple_table_bytes: bytes,
-        })
+    fn from_dict(
+        _cls: &Bound<'_, PyType>,
+        _py: Python,
+        table: &Bound<'_, PyDict>,
+    ) -> PyResult<PySimpleMatcher> {
+        let mut words = Vec::new();
+        for (pt_key, inner_val) in table.iter() {
+            let pt = extract_process_type(&pt_key)?;
+            let inner: &Bound<'_, PyDict> = inner_val
+                .cast()
+                .map_err(|_| PyTypeError::new_err("table values must be dict[int, str]"))?;
+            for (id_key, word_val) in inner.iter() {
+                let word_id: u32 = id_key
+                    .extract()
+                    .map_err(|_| PyTypeError::new_err("word_id keys must be int"))?;
+                let word: String = word_val
+                    .extract()
+                    .map_err(|_| PyTypeError::new_err("pattern values must be str"))?;
+                words.push((pt.bits(), word_id, word));
+            }
+        }
+        build_from_words(words)
     }
 
     /// Pickle support: returns constructor args for `__new__`.
-    fn __getnewargs__(&self) -> (&[u8],) {
-        (&self.simple_table_bytes,)
-    }
-
-    /// Pickle support: returns serialized table bytes.
-    fn __getstate__(&self) -> &[u8] {
-        &self.simple_table_bytes
-    }
-
-    /// Pickle support: restores matcher from serialized bytes.
-    #[pyo3(signature=(simple_table_bytes))]
-    fn __setstate__(&mut self, simple_table_bytes: &[u8]) -> PyResult<()> {
-        let simple_table = deserialize_table(simple_table_bytes)?;
-        self.simple_matcher =
-            SimpleMatcher::new(&simple_table).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        self.simple_table_bytes = simple_table_bytes.to_vec();
-        Ok(())
+    fn __getnewargs__(&self, py: Python) -> PyResult<(Py<PyBytes>,)> {
+        let mut table: HashMap<u8, HashMap<u32, &str>> = HashMap::new();
+        for &(pt, id, ref word) in &self.words {
+            table.entry(pt).or_default().insert(id, word.as_str());
+        }
+        let bytes = sonic_rs::to_vec(&table)
+            .map_err(|e| PyValueError::new_err(format!("Pickle serialization failed: {e}")))?;
+        Ok((PyBytes::new(py, &bytes).into(),))
     }
 
     /// Debug representation showing matcher internals.
@@ -265,18 +345,22 @@ impl PySimpleMatcher {
     /// the matcher configuration.
     fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-
-        let table: HashMap<u8, HashMap<u32, String>> =
-            sonic_rs::from_slice(&self.simple_table_bytes).unwrap_or_default();
-
-        let rule_count: usize = table.values().map(|m| m.len()).sum();
-        dict.set_item("rule_count", rule_count)?;
-
-        let mut process_types: Vec<u8> = table.keys().copied().collect();
-        process_types.sort_unstable();
-        dict.set_item("process_types", process_types)?;
-
+        dict.set_item("rule_count", self.words.len())?;
+        let mut pts: Vec<u8> = self
+            .words
+            .iter()
+            .map(|(pt, _, _)| *pt)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        pts.sort_unstable();
+        dict.set_item("process_types", pts)?;
         Ok(dict)
+    }
+
+    /// Estimated heap memory in bytes used by the compiled matcher internals.
+    fn heap_bytes(&self) -> usize {
+        self.simple_matcher.heap_bytes()
     }
 
     /// Return `True` if `text` matches any rule. Releases the GIL.
@@ -391,6 +475,7 @@ impl PySimpleMatcher {
 fn matcher_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyProcessType>()?;
     m.add_class::<PySimpleMatcher>()?;
+    m.add_class::<PySimpleMatcherBuilder>()?;
     m.add_class::<PySimpleResult>()?;
     m.add_function(wrap_pyfunction!(py_reduce_text_process, m)?)?;
     m.add_function(wrap_pyfunction!(py_text_process, m)?)?;
