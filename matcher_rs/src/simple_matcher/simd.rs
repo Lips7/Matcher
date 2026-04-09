@@ -1,7 +1,7 @@
 //! SIMD-accelerated non-ASCII byte density estimation for engine dispatch.
 //!
 //! Provides [`count_non_ascii_simd`] which counts bytes ≥ 0x80 in a byte slice,
-//! used by [`super::engine::text_non_ascii_density`] to decide between the
+//! used by [`super::scan::text_non_ascii_density`] to decide between the
 //! bytewise and charwise scan engines.
 //!
 //! # Dispatch strategy
@@ -141,7 +141,7 @@ fn count_non_ascii_neon(bytes: &[u8]) -> usize {
 /// Counts the number of non-ASCII bytes (`≥ 0x80`) in `bytes` using the best
 /// available SIMD kernel.
 ///
-/// Used by [`super::engine::text_non_ascii_density`] for engine dispatch.
+/// Used by [`super::scan::text_non_ascii_density`] for engine dispatch.
 #[inline(always)]
 pub(super) fn count_non_ascii_simd(bytes: &[u8]) -> usize {
     #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "x86_64"))]

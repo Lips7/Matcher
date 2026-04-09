@@ -50,7 +50,8 @@ pub(crate) struct ProcessTypeBitNode {
     ///
     /// [`None`] only for the root node (which represents the raw input text and
     /// needs no transformation). All other nodes hold a `&'static` reference
-    /// obtained from the global `TRANSFORM_STEP_CACHE` in [`super::step`].
+    /// obtained from the global `TRANSFORM_STEP_CACHE` in
+    /// [`crate::process::step`].
     pub(crate) step: Option<&'static TransformStep>,
     /// Bitmask of compact process-type indices that produce a scannable variant
     /// at this node.

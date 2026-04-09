@@ -7,9 +7,9 @@
 //! intermediate `String`.
 //!
 //! Four transform engines implement [`CodepointFilter`]:
-//! [`DeleteFilter`](super::delete), [`NormalizeFilter`](super::replace),
-//! [`RomanizeFilter`](super::replace), and
-//! [`VariantNormFilter`](super::replace).
+//! [`DeleteFilter`](super::delete), [`NormalizeFilter`](super::normalize),
+//! [`RomanizeFilter`](super::romanize), and
+//! [`VariantNormFilter`](super::variant_norm).
 
 use super::utf8::decode_utf8_raw;
 

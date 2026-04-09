@@ -185,7 +185,7 @@ pub(super) struct ScanContext {
     /// all non-ASCII).
     ///
     /// Passed through to
-    /// [`ScanPlan::for_each_match_value`](super::engine::ScanPlan::for_each_match_value)
+    /// [`ScanPlan::for_each_match_value`](super::scan::ScanPlan::for_each_match_value)
     /// to select the bytewise or charwise automaton. Computed once at the root
     /// via SIMD, then propagated through the transform tree via the density
     /// estimate returned by

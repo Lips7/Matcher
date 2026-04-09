@@ -1,7 +1,7 @@
 //! Low-level text transformation engines.
 //!
 //! This module provides the building blocks used by the step registry
-//! ([`super::step`]) and pipeline executor ([`super::api`]) to transform
+//! ([`super::step`]) and pipeline executor to transform
 //! input text before pattern matching. Each sub-module implements one class of
 //! transformation:
 //!
@@ -21,7 +21,7 @@
 //!
 //! All types in this module are `pub(crate)` -- they are internal
 //! implementation details consumed by the higher-level [`super::step`] and
-//! [`super::api`] modules.
+//! the parent module.
 pub(crate) mod constants;
 pub(crate) mod delete;
 pub(crate) mod filter;
