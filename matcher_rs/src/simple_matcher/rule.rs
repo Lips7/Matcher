@@ -336,16 +336,12 @@ impl RuleSet {
             PatternKind::Simple => {
                 // SAFETY: `rule_idx` is in bounds — guaranteed by assert_unchecked above.
                 let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
-                if word_state.positive_generation == generation {
-                    return ctx.exit_early;
-                }
-                if word_state.matrix_generation != generation {
+                if word_state.positive_generation != generation {
                     word_state.matrix_generation = generation;
                     word_state.positive_generation = generation;
                     ss.touched_indices.push(rule_idx);
-
-                    return ctx.exit_early;
                 }
+                return ctx.exit_early;
             }
             PatternKind::And => {
                 let offset = offset as usize;
