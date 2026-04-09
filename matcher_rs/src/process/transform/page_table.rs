@@ -15,7 +15,7 @@
 //!
 //! Shared helpers ([`page_table_lookup`], [`decode_page_table`],
 //! [`unpack_str_ref`], [`replace_scan`], [`replace_spans`]) live in this
-//! module; each engine has its own sub-module.
+//! module; each engine has its own sibling module.
 //!
 //! # Performance
 //!
@@ -25,16 +25,6 @@
 //!   length, avoiding mid-write reallocations.
 //! - **Span-copy output**: unchanged byte ranges are bulk-copied; only mapped
 //!   codepoints incur per-replacement overhead.
-
-mod normalize;
-mod romanize;
-mod variant_norm;
-
-pub(crate) use normalize::{NormalizeFilter, NormalizeMatcher};
-pub(crate) use romanize::{RomanizeFilter, RomanizeMatcher};
-pub(crate) use variant_norm::{VariantNormFilter, VariantNormMatcher};
-
-use crate::process::transform::{simd::skip_ascii_simd, utf8::decode_utf8_raw};
 
 // ---------------------------------------------------------------------------
 // Shared replacement helpers
@@ -46,7 +36,7 @@ use crate::process::transform::{simd::skip_ascii_simd, utf8::decode_utf8_raw};
 /// Returns `None` if the iterator is empty (nothing to replace). Used by
 /// [`VariantNormMatcher::replace`] for single-codepoint replacements.
 #[inline(always)]
-fn replace_scan<I>(text: &str, mut iter: I) -> Option<String>
+pub(crate) fn replace_scan<I>(text: &str, mut iter: I) -> Option<String>
 where
     I: Iterator<Item = (usize, usize, char)>,
 {
@@ -74,7 +64,7 @@ where
 /// [`RomanizeMatcher::replace`] and [`NormalizeMatcher::replace`] for
 /// multi-byte string replacements.
 #[inline(always)]
-fn replace_spans<'a, I>(text: &str, mut iter: I) -> Option<String>
+pub(crate) fn replace_spans<'a, I>(text: &str, mut iter: I) -> Option<String>
 where
     I: Iterator<Item = (usize, usize, &'a str)>,
 {
@@ -106,7 +96,7 @@ where
 /// Uses `get_unchecked` for L1 (guarded by bounds check) and L2 (page index
 /// assigned during construction guarantees in-range access).
 #[inline(always)]
-fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
+pub(crate) fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> {
     let page_idx = (cp >> 8) as usize;
     let char_idx = (cp & 0xFF) as usize;
     if page_idx >= l1.len() {
@@ -146,13 +136,13 @@ fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
 }
 
 /// Convenience wrapper: decodes both L1 and L2 page tables from raw bytes.
-fn decode_page_table(l1: &[u8], l2: &[u8]) -> (Box<[u16]>, Box<[u32]>) {
+pub(crate) fn decode_page_table(l1: &[u8], l2: &[u8]) -> (Box<[u16]>, Box<[u32]>) {
     (decode_u16_table(l1), decode_u32_table(l2))
 }
 
 /// Unpacks a `(offset << 8) | length` L2 value into a string-buffer slice.
 #[inline(always)]
-fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
+pub(crate) fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
     let offset = (value >> 8) as usize;
     let len = (value & 0xFF) as usize;
     if offset + len <= strings.len() {
@@ -166,7 +156,7 @@ fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
 ///
 /// Used by [`RomanizeMatcher::new`] when `trim_space` is `true`
 /// (`RomanizeChar` variant) to produce space-free per-character romanization.
-fn trim_romanize_packed(value: u32, strings: &str) -> u32 {
+pub(crate) fn trim_romanize_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
         return 0;
     }

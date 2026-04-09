@@ -17,10 +17,9 @@ use crate::process::{
         constants::*,
         delete::{DeleteFilter, DeleteMatcher},
         filter::FilterIterator,
-        replace::{
-            NormalizeFilter, NormalizeMatcher, RomanizeFilter, RomanizeMatcher, VariantNormFilter,
-            VariantNormMatcher,
-        },
+        normalize::{NormalizeFilter, NormalizeMatcher},
+        romanize::{RomanizeFilter, RomanizeMatcher},
+        variant_norm::{VariantNormFilter, VariantNormMatcher},
     },
 };
 

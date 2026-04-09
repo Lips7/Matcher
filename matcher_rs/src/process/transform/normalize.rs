@@ -3,7 +3,7 @@
 //!
 //! Data sourced from `unicodedata.normalize("NFKC", ch).casefold()`. All 8,633
 //! keys are single Unicode codepoints (verified at build time). Cannot use
-//! [`skip_ascii_simd`](super::skip_ascii_simd) because A–Z have casefold
+//! [`skip_ascii_simd`](super::simd::skip_ascii_simd) because A–Z have casefold
 //! mappings; ASCII bytes are checked inline instead.
 //!
 //! Provides two consumption modes: materialized
@@ -13,8 +13,11 @@
 
 use std::borrow::Cow;
 
-use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_spans, unpack_str_ref};
-use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIterator};
+use super::{
+    filter::{CodepointFilter, FilterAction, FilterIterator},
+    page_table::{decode_page_table, page_table_lookup, replace_spans, unpack_str_ref},
+    utf8::decode_utf8_raw,
+};
 
 // ---------------------------------------------------------------------------
 // Find iterator (for materialized replace)

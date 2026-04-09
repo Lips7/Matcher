@@ -6,8 +6,12 @@
 //! Since all keys are non-ASCII CJK characters, [`skip_ascii_simd`] bypasses
 //! ASCII runs in O(1) per SIMD chunk. Output is always non-ASCII (CJK→CJK).
 
-use super::{decode_page_table, decode_utf8_raw, page_table_lookup, replace_scan, skip_ascii_simd};
-use crate::process::transform::filter::{CodepointFilter, FilterAction, FilterIterator};
+use super::{
+    filter::{CodepointFilter, FilterAction, FilterIterator},
+    page_table::{decode_page_table, page_table_lookup, replace_scan},
+    simd::skip_ascii_simd,
+    utf8::decode_utf8_raw,
+};
 
 // ---------------------------------------------------------------------------
 // Streaming filter (for fused variant-norm-scan)

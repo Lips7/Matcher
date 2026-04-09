@@ -7,11 +7,12 @@
 //!
 //! - [`constants`] -- Pre-compiled binary tables (page tables, bitsets)
 //!   embedded at build time by `build.rs`.
-//! - [`replace`] -- Text-replacement engines, each in its own sub-module:
-//!   [`replace::VariantNormMatcher`] (Traditional→Simplified, page-table),
-//!   [`replace::RomanizeMatcher`] (CJK romanization, page-table),
-//!   [`replace::NormalizeMatcher`] (Unicode normalization, page-table + fused
-//!   scan).
+//! - [`page_table`] -- Shared two-stage page-table infrastructure used by the
+//!   replacement engines below.
+//! - [`variant_norm`] -- CJK variant normalization (Traditional→Simplified,
+//!   Kyūjitai→Shinjitai, half-width katakana→full-width).
+//! - [`normalize`] -- Unicode NFKC normalization + casefolding.
+//! - [`romanize`] -- CJK romanization (Pinyin, Romaji, Revised Romanization).
 //! - [`delete`] -- A flat Unicode bitset engine ([`delete::DeleteMatcher`])
 //!   that strips configured codepoints from text, with a fast ASCII LUT path.
 //! - [`simd`] -- SIMD-accelerated byte-skip helpers that let the replace and
@@ -24,6 +25,9 @@
 pub(crate) mod constants;
 pub(crate) mod delete;
 pub(crate) mod filter;
-pub(crate) mod replace;
+pub(crate) mod normalize;
+pub(crate) mod page_table;
+pub(crate) mod romanize;
 pub(crate) mod simd;
 pub(crate) mod utf8;
+pub(crate) mod variant_norm;
