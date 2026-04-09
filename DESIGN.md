@@ -223,7 +223,7 @@ Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNorm
 
 #### Page-Table Lookup
 
-VariantNorm, Romanize, and Normalize share a two-stage page table (in `replace/mod.rs`):
+VariantNorm, Romanize, and Normalize share a two-stage page table (in `transform/page_table.rs`):
 
 ```
 page = l1[cp >> 8]                    // which 256-codepoint block?
@@ -232,8 +232,8 @@ value = l2[page * 256 + (cp & 0xFF)] // lookup within the block
 if value == 0 → no mapping
 ```
 
-- **VariantNorm**: L2 value is the normalized codepoint directly (`replace/variant_norm.rs`)
-- **Romanize/Normalize**: L2 value packs `(offset << 8) | length` into a shared string buffer (`replace/romanize.rs`, `replace/normalize.rs`)
+- **VariantNorm**: L2 value is the normalized codepoint directly (`transform/variant_norm.rs`)
+- **Romanize/Normalize**: L2 value packs `(offset << 8) | length` into a shared string buffer (`transform/romanize.rs`, `transform/normalize.rs`)
 
 Both L1 and L2 are accessed via `get_unchecked` for branchless hot-path performance.
 

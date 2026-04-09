@@ -115,20 +115,22 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores: `tree` (transform trie), `scan` (`ScanPlan`), `rules` (`RuleSet`), `is_match_fast` (AC-direct bypass flag).
 - `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
-- `encoding.rs` — Unified direct-rule bit-packing (`encode_direct`/`decode_direct`, `DIRECT_RULE_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
-- `engine.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration
-- `pattern.rs` — `PatternEntry` (8 bytes: rule_idx, offset, pt_index, kind, boundary), `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch
+- `scan.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration
+- `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch. Also contains direct-rule bit-packing (`encode_direct`/`decode_direct`, `DIRECT_RULE_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `rule.rs` — `RuleSet`, `Rule` (cold: `segment_counts` + `word_id` + `word`), `RuleInfo` (hot: `and_count` + `SatisfactionMethod` + `has_not`), unified `eval_hit()`, `SimpleTable`/`SimpleTableSerde` type aliases
 - `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `process_match`
 - `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
+- `tree.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction for transform prefix sharing)
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:
+- `mod.rs` — `ProcessType` re-export + public helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
 - `process_type.rs` — `ProcessType` bitflags + serde/display
-- `graph.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction, `pub(crate)`)
 - `step.rs` — `TransformStep` enum, `TRANSFORM_STEP_CACHE`, `get_transform_step` — uniform apply interface + lazy per-process init
-- `api.rs` — Standalone helpers: `text_process`, `reduce_text_process`, `reduce_text_process_emit`
-- `transform/replace/` — `VariantNormMatcher` (`variant_norm.rs`), `RomanizeMatcher` (`romanize.rs`), `NormalizeMatcher` (`normalize.rs`), shared page-table helpers (`mod.rs`)
+- `transform/page_table.rs` — Shared two-stage page-table lookup infrastructure for replacement engines
+- `transform/variant_norm.rs` — `VariantNormMatcher` (CJK variant normalization)
+- `transform/normalize.rs` — `NormalizeMatcher` (Unicode NFKC + casefolding)
+- `transform/romanize.rs` — `RomanizeMatcher` (CJK romanization)
 - `transform/delete.rs` — `DeleteMatcher` (flat BitSet + ASCII LUT + SIMD bulk-skip), `DeleteFilterIterator` (streaming)
 - `transform/utf8.rs` — Shared `decode_utf8_raw` unsafe helper
 - `transform/simd.rs` — SIMD helpers: `skip_ascii_simd`, `skip_ascii_non_delete_simd`
