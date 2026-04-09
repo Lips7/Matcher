@@ -113,7 +113,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 ### Key Source Files
 
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores: `tree` (transform trie), `scan` (`ScanPlan`), `rules` (`RuleSet`), `is_match_fast` (AC-direct bypass flag).
-- `mod.rs` — `SimpleMatcher`, `SimpleResult`, `SimpleMatchIter`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`, `process_iter`)
+- `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `encoding.rs` — Bit-packing constants (`DIRECT_RULE_BIT`, `DIRECT_PT_SHIFT`, etc.), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `engine.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration

@@ -3,7 +3,7 @@
 //! Run: `cargo run --example basic -p matcher_rs`
 //!
 //! Covers: builder API, is_match, process, process_into, for_each_match,
-//! find_match, process_iter, logical operators, HashMap construction.
+//! find_match, logical operators, HashMap construction.
 
 use std::collections::HashMap;
 
@@ -80,24 +80,8 @@ fn main() {
     }
     println!("  No match: {:?}", matcher.find_match("no keywords here"));
 
-    // ── 7. process_iter — composable iterator ──────────────────────────────────
-    println!("\n=== 7. process_iter ===\n");
-
-    let iter = matcher.process_iter("hello world, welcome to rust");
-    println!("  Iterator length: {}", iter.len());
-    for r in iter {
-        println!("    word_id={}, word=\"{}\"", r.word_id, r.word);
-    }
-
-    // Iterator combinators
-    let first_two: Vec<_> = matcher
-        .process_iter("hello world, welcome to rust")
-        .take(2)
-        .collect();
-    println!("  First 2 via .take(2): {:?}", first_two.len());
-
-    // ── 8. Logical operators ────────────────────────────────────────────────────
-    println!("\n=== 8. Logical Operators ===\n");
+    // ── 7. Logical operators ────────────────────────────────────────────────────
+    println!("\n=== 7. Logical Operators ===\n");
 
     // AND: both sub-patterns must appear (order-independent)
     let and_matcher = SimpleMatcherBuilder::new()

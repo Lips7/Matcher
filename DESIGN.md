@@ -197,7 +197,7 @@ R3 was never touched (no hit). Final output: `[SimpleResult { word_id: 2, word: 
 
 When no text transforms are needed (tree has no children), all rules are simple single-segment literals, and no patterns use word boundaries, `is_match_fast` is set at construction. `is_match` then delegates directly to `ScanPlan::is_match` — a SIMD density scan selects the bytewise or charwise AC engine, which returns a boolean without TLS state setup, generation counters, or trie walking.
 
-All other query methods (`process`, `process_into`, `for_each_match`, `find_match`, `process_iter`) always use `walk_and_scan` / `walk_and_scan_with` — the unified tree walk that transforms, scans, and evaluates rules in a single pass. For simple-literal matchers without transforms, this naturally short-circuits: the tree has no children, so only the root text is scanned once before collecting results.
+All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use `walk_and_scan` / `walk_and_scan_with` — the unified tree walk that transforms, scans, and evaluates rules in a single pass. For simple-literal matchers without transforms, this naturally short-circuits: the tree has no children, so only the root text is scanned once before collecting results.
 
 ---
 

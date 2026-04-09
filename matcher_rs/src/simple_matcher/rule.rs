@@ -241,17 +241,6 @@ impl RuleSet {
         false
     }
 
-    /// Collects indices of satisfied touched rules for iterator construction.
-    pub(super) fn collect_satisfied_indices(&self, ss: &ScanState<'_>) -> Vec<usize> {
-        let mut indices = Vec::new();
-        for &rule_idx in ss.touched_indices() {
-            if ss.rule_is_satisfied(rule_idx) {
-                indices.push(rule_idx);
-            }
-        }
-        indices
-    }
-
     /// Produces a [`SimpleResult`] for a given rule index.
     ///
     /// # Safety (internal)
