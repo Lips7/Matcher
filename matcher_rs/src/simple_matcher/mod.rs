@@ -10,8 +10,6 @@
 //! The implementation is split across private child modules:
 //!
 //! - `build` — [`SimpleMatcher::new`] and rule parsing / deduplication.
-//! - `encoding` — Bit-packing constants for direct-rule encoding and capacity
-//!   limits.
 //! - `scan` — Aho-Corasick automaton compilation (bytewise and charwise
 //!   engines) and density-based dispatch.
 //! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
@@ -23,7 +21,6 @@
 use std::{borrow::Cow, fmt};
 
 mod build;
-mod encoding;
 mod pattern;
 mod rule;
 mod scan;

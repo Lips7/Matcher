@@ -238,8 +238,8 @@ impl ScanState<'_> {
         self.touched_indices.push(rule_idx);
 
         // Derive use_matrix from segment_counts (same logic as build.rs).
-        let use_matrix = and_count > super::encoding::BITMASK_CAPACITY
-            || rule.segment_counts.len() > super::encoding::BITMASK_CAPACITY
+        let use_matrix = and_count > super::pattern::BITMASK_CAPACITY
+            || rule.segment_counts.len() > super::pattern::BITMASK_CAPACITY
             || rule.segment_counts[..and_count].iter().any(|&v| v != 1)
             || rule.segment_counts[and_count..].iter().any(|&v| v != 0);
         if use_matrix {

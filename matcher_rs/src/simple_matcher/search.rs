@@ -33,8 +33,7 @@ use std::{borrow::Cow, vec};
 use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
-    encoding::{DIRECT_RULE_BIT, decode_direct},
-    pattern::PatternDispatch,
+    pattern::{DIRECT_RULE_BIT, PatternDispatch, decode_direct},
     scan::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,

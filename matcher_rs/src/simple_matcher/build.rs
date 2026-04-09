@@ -33,8 +33,7 @@ type FoldHashMap<K, V> = HashMap<K, V, foldhash::fast::FixedState>;
 
 use super::{
     SimpleMatcher,
-    encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
-    pattern::{PatternEntry, PatternKind},
+    pattern::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE, PatternEntry, PatternKind},
     rule::{Rule, RuleInfo, RuleSet, SatisfactionMethod},
     scan::ScanPlan,
     tree::build_process_type_tree,

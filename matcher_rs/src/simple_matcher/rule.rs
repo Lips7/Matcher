@@ -8,7 +8,7 @@
 //!
 //! Pattern types ([`super::pattern::PatternEntry`],
 //! [`super::pattern::PatternIndex`], [`super::pattern::PatternDispatch`]) live
-//! in [`super::pattern`]. Bit-packing constants live in [`super::encoding`].
+//! in [`super::pattern`].
 
 use std::{borrow::Cow, collections::HashMap};
 
