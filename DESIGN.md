@@ -1,26 +1,16 @@
 # Design
 
-This document explains how `matcher_rs` works by walking through a concrete example end to end — from rule construction to query evaluation. Deep-dive sections at the end cover SIMD engines, state management, and memory efficiency.
+How `matcher_rs` works, explained through a concrete example. The library is a three-phase pipeline: **Transform** text variants → **Scan** with Aho-Corasick automata → **Evaluate** rule satisfaction. Construction compiles rules into this pipeline; queries execute it.
 
 ## Table of Contents
 
 - [Running Example](#running-example)
 - [1. Construction](#1-construction)
-  - [1.1 Parse Rules](#11-parse-rules)
-  - [1.2 Build Transform Trie](#12-build-transform-trie)
-  - [1.3 Compile Scan Engines](#13-compile-scan-engines)
-  - [1.4 Assemble](#14-assemble)
-- [2. Query](#2-query-processhello-你好世界-china-is-cool)
-  - [2.1 Prepare State](#21-prepare-state)
-  - [2.2 Walk the Trie](#22-walk-the-trie)
-  - [2.3 Evaluate](#23-evaluate-pass-2)
-- [Deep Dives](#deep-dives)
-  - [Text Transformation Engines](#text-transformation-engines)
-  - [Density-Based Engine Dispatch](#density-based-engine-dispatch)
-  - [State Management](#state-management)
-  - [Memory Efficiency](#memory-efficiency)
-  - [Feature Flags](#feature-flags)
-  - [Compiled Transformation Tables](#compiled-transformation-tables)
+- [2. Query](#2-query)
+- [3. `is_match` Fast Path](#3-is_match-fast-path)
+- [Why It's Fast](#why-its-fast)
+- [Transform Pipeline](#transform-pipeline)
+- [Feature Flags](#feature-flags)
 
 ---
 
@@ -36,100 +26,78 @@ Three rules, each using a different text transformation:
 
 Query text: `"Hello! 你好世界 china is cool"`
 
-We will trace both construction and query evaluation using these rules.
-
 ---
 
 ## 1. Construction
 
-`SimpleMatcher::new` (in `build.rs`) runs four stages.
+`SimpleMatcher::new` runs four stages.
 
 ### 1.1 Parse Rules
 
-`parse_rules` processes each rule string:
+Each rule string is split on `&` (AND), `~` (NOT), and `|` (OR within a segment):
 
-**R1: `"hello&world"` under `ProcessType::None`**
+**R1: `"hello&world"` under `ProcessType::None`** — two AND segments, both simple literals. Both sub-patterns emit unchanged since `None` has no transforms.
 
-Split on `&`/`~` → two AND segments: `["hello", "world"]`. Each segment is then split on `|` for OR alternatives (neither has any here). No NOT segments. `and_count = 2`, shape = `Bitmask` (both counts are 1, total ≤ 64), `has_not = false`.
+**R2: `"你好"` under `VariantNorm | Delete`** — single AND segment. Emitted under `VariantNorm` (Delete is subtracted from the indexing ProcessType — see below). Already in normalized form, so emits unchanged.
 
-Each sub-pattern is emitted via `reduce_text_process_emit(process_type - Delete, pattern)`. Since `None - Delete = None`, both `"hello"` and `"world"` emit themselves unchanged.
+**R3: `"zhongguo"` under `Romanize`** — single AND segment. Emitted under `Romanize`. Pure ASCII, so emits unchanged.
 
-**R2: `"你好"` under `VariantNorm | Delete`**
+**Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Indexing patterns under `process_type - Delete` avoids double-deletion.
 
-Single AND segment: `["你好"]`. `and_count = 1`, simple rule. Emitted under `VariantNorm | Delete - Delete = VariantNorm`. The VariantNorm transform normalizes CJK variant forms (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width); `"你好"` is already normalized, so it emits unchanged as `"你好"`.
+**Operators:**
 
-**R3: `"zhongguo"` under `Romanize`**
+- **AND (`&`):** All segments must match for the rule to fire. `"hello&world"` requires both `"hello"` and `"world"` in the text.
+- **NOT (`~`):** Any NOT segment vetoes the rule. `"hello~spam"` matches text with `"hello"` but not `"spam"`.
+- **OR (`|`):** Alternatives within a segment. `"color|colour&bright"` means (color OR colour) AND bright. OR binds tighter than `&`/`~`.
+- **Word boundaries (`\b`):** `"\bcat\b"` matches `"cat"` only at word boundaries. Checked at hit positions during scanning.
 
-Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delete = Romanize`. Since `"zhongguo"` is pure ASCII and Romanize only transforms CJK, it emits unchanged.
-
-**Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Double-deleting would break matches.
-
-**OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (And or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the `is_match` AC-direct fast path.
-
-**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries disable the `is_match` AC-direct fast path (but can still use `DIRECT_RULE_BIT` for entry-table bypass).
-
-After deduplication, we have a flat pattern table:
+After deduplication, the flat pattern table is:
 
 ```
-dedup_patterns: ["hello", "world", "你好", "zhongguo"]
-dedup_entries:
-  [0] → PatternEntry { rule_idx: 0, offset: 0, pt_index: 0, kind: And }   # "hello" → R1
-  [1] → PatternEntry { rule_idx: 0, offset: 1, pt_index: 0, kind: And }   # "world" → R1
-  [2] → PatternEntry { rule_idx: 1, offset: 0, pt_index: 1, kind: And }# "你好"  → R2
-  [3] → PatternEntry { rule_idx: 2, offset: 0, pt_index: 2, kind: And }# "zhongguo" → R3
+patterns: ["hello", "world", "你好", "zhongguo"]
 ```
+
+Each pattern has metadata linking it back to its rule, segment offset, ProcessType index, and operator kind (AND or NOT).
 
 ### 1.2 Build Transform Trie
 
-The three `ProcessType` values — `{None, VariantNorm|Delete, Romanize}` — are decomposed into single-bit steps and merged into a shared-prefix trie:
+The three ProcessTypes — `{None, VariantNorm|Delete, Romanize}` — are decomposed into single-bit steps and merged into a shared-prefix trie:
 
 ```
-[0] Root (None) ← terminates: pt_index_mask has bit 0 (None)
+[0] Root (None)  ← terminates: has rules under ProcessType::None
  ├─[1] VariantNorm
- │  └─[2] Delete ← terminates: pt_index_mask has bit 1 (VariantNorm|Delete)
- └─[3] Romanize  ← terminates: pt_index_mask has bit 2 (Romanize)
+ │  └─[2] Delete ← terminates: has rules under VariantNorm|Delete
+ └─[3] Romanize  ← terminates: has rules under Romanize
 ```
 
-Each node caches a `&'static TransformStep` reference from the global step registry. The root's step is `None` (no transformation). `pt_index_mask` is a `u64` bitmask of which compact indices terminate at or pass through each node.
-
-**Sequential index table** (`pt_index_table`): maps raw `ProcessType::bits()` → compact 0..N. `None` always gets index 0. This compact index lets `PatternEntry.pt_index` fit in a `u8`.
+Each node caches a reference to a lazily-initialized transform step. The root applies no transformation. Shared prefixes reuse intermediate results: if both `VariantNorm` and `VariantNorm|Delete` exist, the VariantNorm output is computed once and shared.
 
 ### 1.3 Compile Scan Engines
 
-`ScanPlan::compile` receives the deduplicated patterns and builds:
+Two Aho-Corasick engines are built from **all** deduplicated patterns:
 
-**PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for single-entry non-matrix patterns, the value is bit-packed with `DIRECT_RULE_BIT` (bit 31 set), encoding `(kind, pt_index, boundary, offset, rule_idx)` directly in the automaton hit value so the scan hot path skips the entry table lookup.
+- **Bytewise engine**: operates on raw bytes. With the `dfa` feature, uses a DFA with Teddy SIMD prefilter for maximum ASCII throughput. Falls back to a double-array automaton (DAAC) without `dfa`.
+- **Charwise engine**: operates on Unicode codepoints. CJK characters are 3 UTF-8 bytes — charwise does 1 state transition instead of 3, making it ~1.6–1.9× faster on CJK-heavy text.
 
-**Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature, uses `aho-corasick` DFA for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
-
-**Charwise engine** (`CharwiseMatcher`): compiled from **all** patterns. Always built. CJK characters are 3 UTF-8 bytes, so charwise does 1 state transition vs 3 for bytewise — ~1.6–1.9× faster on non-ASCII text.
-
-**Engine selection** is density-based at runtime: a SIMD scan counts non-ASCII bytes in the text. Below the crossover threshold (~40% CJK characters ≈ 0.67 non-ASCII byte fraction), bytewise/DFA is faster; above it, charwise wins.
+Both engines are correct for any input. Engine selection is a pure speed optimization decided at runtime per text based on non-ASCII byte density.
 
 ### 1.4 Assemble
 
-```rust
-SimpleMatcher {
-    tree: Vec<ProcessTypeBitNode>,  // the 4-node trie above
-    scan: ScanPlan { engines: Engines { bytewise, charwise }, pattern_index },
-    rules: RuleSet { rules: [Rule; 3] },  // segment_counts + word_id + word
-    is_match_fast: false,           // R1 has &-operator → can't bypass state machine for is_match
-}
-```
-
-`is_match_fast` is `false` because R1 uses `&` (not a simple literal). When all rules are pure literals under a single `ProcessType` with no boundaries, `is_match_fast` is `true` — enabling `is_match` to delegate directly to the AC automaton without TLS state setup.
+The final `SimpleMatcher` holds: the transform trie, the dual scan engines with pattern metadata, the compiled rule set, and a flag indicating whether the `is_match` AC-direct fast path is available. The fast path is enabled only when all rules are simple literals under a single ProcessType with no word boundaries.
 
 ---
 
-## 2. Query: `process("Hello! 你好世界 china is cool")`
+## 2. Query
+
+`process("Hello! 你好世界 china is cool")` walks the trie, transforming and scanning at each node.
 
 ### 2.1 Prepare State
 
-The thread-local `SimpleMatchState` bumps its `generation` counter (say, to `gen=5`). No arrays are zeroed — stale entries from previous calls have `generation < 5` and are invisible. A `ScanState` split-borrow view is created, caching `&mut [WordState]` and `&mut Vec<usize>` as individual stack references for register-friendly access.
+A thread-local state buffer bumps a generation counter. No arrays are zeroed — entries from previous calls have a stale generation and are ignored. This gives O(1) amortized reset regardless of rule count.
 
 ### 2.2 Walk the Trie
 
-`walk_and_scan` visits each trie node in flat-array order (parents before children), transforming text and scanning immediately.
+Each trie node is visited in flat-array order (parents before children). At each terminating node, the transformed text is scanned and hits update per-rule state.
 
 ---
 
@@ -140,249 +108,176 @@ text = "Hello! 你好世界 china is cool"
 density = 0.36 (≤ 0.67 threshold) → bytewise engine selected
 ```
 
-The bytewise AC automaton scans the full text. It finds no overlapping matches (our patterns are `"hello"` lowercase, `"你好"`, etc. — the raw text has `"Hello"` with capital H). No state updates.
+The bytewise AC scans the full text. No matches — `"hello"` doesn't match `"Hello"` (case-sensitive raw scan). No state updates.
 
 ---
 
-**Node 1 — VariantNorm**: apply `VariantNormMatcher` to the root text.
+**Node 1 — VariantNorm**: normalizes CJK variant forms (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width).
 
-`VariantNormMatcher::replace` scans for CJK variant codepoints via the page table. `你好世界` is already in normalized form → returns `None` (no change). The child node (Delete) receives the same text.
+`"你好世界"` is already in normalized form → no change. This is a non-terminating node, so no scan happens here.
 
 ---
 
-**Node 2 — Delete** (child of VariantNorm): apply `DeleteMatcher`.
-
-`DeleteMatcher::delete` strips punctuation, symbols, and whitespace:
+**Node 2 — Delete** (child of VariantNorm): strips punctuation, symbols, and whitespace.
 
 ```
 input:  "Hello! 你好世界 china is cool"
 output: "Hello你好世界chinaisscool"    (density = 0.41 → bytewise)
 ```
 
-This node terminates (`pt_index_mask` has bit 1 for `VariantNorm|Delete`). Scan with `pt_index_mask = 0b010`:
-
-The bytewise AC finds `"你好"` at byte offset 5. The raw value has `DIRECT_RULE_BIT` set (R2 is a simple single-entry pattern). `process_match` extracts `pt_index=1` from the bit-packed value, checks `pt_index_mask & (1 << 1) != 0` → match. Sets `positive_generation = 5` for R2.
+This node terminates (has rules under `VariantNorm|Delete`). The bytewise AC finds `"你好"` in the deleted text. R2 is a single-segment rule — the first hit satisfies it immediately.
 
 ---
 
-**Node 3 — Romanize**: apply `RomanizeMatcher` to the root text.
-
-`RomanizeMatcher::replace` converts CJK codepoints to romanized form (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization):
+**Node 3 — Romanize**: converts CJK to romanized form (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization).
 
 ```
 input:  "Hello! 你好世界 china is cool"
 output: "Hello!  ni  hao  shi  jie  china is cool"    (density = 0.0 → bytewise)
 ```
 
-This node terminates (`pt_index_mask` has bit 2 for `Romanize`). Since `density = 0.0` (≤ 0.67 threshold), the bytewise engine is selected.
-
-The bytewise AC finds no match for `"zhongguo"` (the text contains `"ni hao shi jie"`, not `"zhongguo"`). No state update for R3.
+This node terminates. The bytewise AC finds no match for `"zhongguo"` (the text contains `"ni hao shi jie"`, not `"zhongguo"`). No state update for R3.
 
 ---
 
-### 2.3 Evaluate (Pass 2)
+### 2.3 Evaluate
 
-`RuleSet::collect_matches` iterates `touched_indices` (rules that received at least one hit):
+After the tree walk, touched rules are checked for satisfaction. A rule is satisfied when all its AND segments have been matched and no NOT segment has vetoed it:
 
-| Rule | positive_generation == 5? | not_generation != 5? | Result |
-|------|--------------------------|---------------------|--------|
-| R1 | No (only 0 of 2 AND segments matched) | — | Not satisfied |
-| R2 | Yes | Yes (no NOT segments) | **Satisfied** → emit `SimpleResult { word_id: 2, word: "你好" }` |
+| Rule | All AND segments matched? | No NOT veto? | Result |
+|------|--------------------------|-------------|--------|
+| R1 | No (0 of 2 matched) | — | Not satisfied |
+| R2 | Yes (1 of 1) | Yes (no NOT segments) | **Satisfied** → `{ word_id: 2, word: "你好" }` |
 
-R3 was never touched (no hit). Final output: `[SimpleResult { word_id: 2, word: "你好" }]`.
+R3 was never touched (no hit). Final output: `[{ word_id: 2, word: "你好" }]`.
 
 ---
 
 ## 3. `is_match` Fast Path
 
-When no text transforms are needed (tree has no children), all rules are simple single-segment literals, and no patterns use word boundaries, `is_match_fast` is set at construction. `is_match` then delegates directly to `ScanPlan::is_match` — a SIMD density scan selects the bytewise or charwise AC engine, which returns a boolean without TLS state setup, generation counters, or trie walking.
+When all rules are simple single-segment literals under one ProcessType with no word boundaries, the matcher skips the full pipeline entirely. `is_match` delegates directly to the AC automaton — a single density-based engine dispatch returns a boolean. No thread-local state, no generation counters, no trie walking.
 
-All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use `walk_and_scan` / `walk_and_scan_with` — the unified tree walk that transforms, scans, and evaluates rules in a single pass. For simple-literal matchers without transforms, this naturally short-circuits: the tree has no children, so only the root text is scanned once before collecting results.
-
----
-
-## Deep Dives
-
-### Text Transformation Engines
-
-#### ProcessType Bitflags
-
-`ProcessType` is a `u8` bitflags type where each bit selects one transformation step:
-
-| Flag | Bit | Effect | Data Source |
-|------|-----|--------|-------------|
-| `None` | 0 | No transformation; match raw input | — |
-| `VariantNorm` | 1 | CJK variant normalization (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width) | OpenCC `t2s` + `tw2s`/`hk2s` + JIS mappings |
-| `Delete` | 2 | Remove punctuation/symbols/whitespace | `unicodedata.category()` |
-| `Normalize` | 3 | NFKC casefold + numeric normalization | `unicodedata.normalize().casefold()` |
-| `Romanize` | 4 | CJK → space-separated romanization (Chinese Pinyin, Japanese Romaji, Korean Revised Romanization) | `pypinyin` + kana/hangul tables |
-| `RomanizeChar` | 5 | CJK → romanization (no inter-syllable spaces) | same as Romanize |
-| `EmojiNorm` | 6 | Emoji → English words, strips modifiers (ZWJ, VS16, skin tones) | CLDR `annotations/en.xml` short names |
-
-Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`. Note: `EmojiNorm` does not compose usefully with `Delete` — Delete removes emoji before EmojiNorm can see them.
-
-#### Page-Table Lookup
-
-VariantNorm, Romanize, and Normalize share a two-stage page table (in `transform/page_table.rs`):
-
-```
-page = l1[cp >> 8]                    // which 256-codepoint block?
-if page == 0 → no mapping
-value = l2[page * 256 + (cp & 0xFF)] // lookup within the block
-if value == 0 → no mapping
-```
-
-- **VariantNorm**: L2 value is the normalized codepoint directly (`transform/variant_norm.rs`)
-- **Romanize/Normalize**: L2 value packs `(offset << 8) | length` into a shared string buffer (`transform/romanize.rs`, `transform/normalize.rs`)
-
-Both L1 and L2 are accessed via `get_unchecked` for branchless hot-path performance.
-
-#### SIMD Skip Functions
-
-The transform iterators use SIMD to skip irrelevant ASCII byte runs (in `transform/simd.rs`):
-
-| Engine | Skip Function | What It Skips |
-|--------|--------------|---------------|
-| VariantNorm, Romanize | `skip_ascii_simd` | All ASCII bytes (only CJK keys exist) |
-| Delete | `skip_ascii_non_delete_simd` | ASCII bytes not in the delete bitset |
-
-Dispatch: AVX2 intrinsics on x86-64 (runtime detection via `OnceLock`), NEON on AArch64 (compile-time), portable `std::simd` fallback. Chunk sizes: 32 bytes (AVX2/portable), 16 bytes (NEON).
-
-The delete-mask algorithm probes a 16-byte `ascii_lut` inside the SIMD loop using shuffle-based lookup: `byte_idx = byte >> 3`, `lut_byte = shuffle(ascii_lut, byte_idx)`, `bit_mask = shuffle(SHIFT_TABLE, byte & 7)`, `deleted = lut_byte & bit_mask`.
-
-#### Fused Transform-Scan
-
-For leaf nodes, `walk_and_scan` can bypass string materialization by streaming transformed bytes directly into the AC automaton via `daachorse`'s `find_overlapping_iter_from_iter`. `TransformStep::filter_bytes` returns an `Option<TransformFilter>` — an enum iterator wrapping the four fusible `FilterIterator` specializations (Delete, Normalize, VariantNorm, Romanize). Non-fusible steps (`None`, `EmojiNorm`) return `None`, falling through to the materialize path.
-
-This eliminates the intermediate `String` allocation and the second text traversal.
-
-The fused path uses a 3-way dispatch based on DFA availability and text density:
-
-| Condition | Strategy | Rationale |
-|---|---|---|
-| `dfa` feature ON + density ≤ 0.67 | Materialize via `step.apply()` → DFA scan | DFA is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text; allocation cost is negligible |
-| `dfa` feature OFF + density ≤ 0.67 | Stream via `filter_bytes()` → DAAC bytewise | Best available option without DFA |
-| density > 0.67 | Stream via `filter_bytes()` → DAAC charwise | Charwise does 1 transition per CJK char vs 3 bytewise; streaming avoids allocation |
+All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use the full trie walk. For simple matchers without transforms, this naturally short-circuits: the trie has only a root node, so one scan handles everything.
 
 ---
+
+## Why It's Fast
 
 ### Density-Based Engine Dispatch
 
-Engine selection uses non-ASCII byte density rather than a binary `is_ascii()` check. A SIMD scan (`simple_matcher/simd.rs`) counts non-ASCII bytes (≥ 0x80) across the full text in one pass (~2 µs for 200 KB). The density determines which engine is faster:
+**Problem:** DFA is 2–5× faster than DAAC on ASCII text (Teddy SIMD prefilter), but charwise DAAC is ~1.6× faster on CJK text (1 transition per character vs 3 bytewise). No single engine wins everywhere.
 
-| Text density | Engine | Reason |
+**Solution:** A SIMD scan counts non-ASCII bytes across the full text. If the non-ASCII byte fraction is ≤ 0.67 (~40% CJK characters), the bytewise/DFA engine is used; above that, charwise wins. Both engines are built from all patterns, so either is correct for any input.
+
+The threshold was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
+
+*Source: `simple_matcher/scan.rs`, `simple_matcher/simd.rs`*
+
+### Generation-Based State Reuse
+
+**Problem:** Each `process()` call needs a clean per-rule state array. Zeroing N rule slots is O(N) — expensive at 100K+ rules.
+
+**Solution:** A monotonic `u16` generation counter is bumped each call. A rule's state is "live" only when its stored generation matches the current one; stale entries are invisible. First touch initializes the slot and records its index in a touched-list. Evaluation iterates only touched rules.
+
+Cost: O(1) amortized reset. The counter wraps at `u16::MAX` (~65K calls), triggering a bulk reset that costs ~15µs — amortized to <1ns per scan.
+
+*Source: `simple_matcher/state.rs`*
+
+### Direct-Rule Bypass
+
+**Problem:** Every AC hit requires looking up the pattern's metadata (which rule, which segment, which ProcessType). The indirection through an entry table costs a cache miss on the hottest path.
+
+**Solution:** For simple single-entry patterns (the majority), the metadata is bit-packed directly into the 32-bit AC automaton value. The scan loop checks one bit — if set, it decodes the rule index, segment offset, and operator kind inline without touching the entry table.
+
+Falls back to the indirect table for multi-entry patterns, matrix-mode rules, or rule indices exceeding the packed capacity.
+
+*Source: `simple_matcher/pattern.rs`*
+
+### Fused Transform-Scan
+
+**Problem:** The normal path materializes a transformed `String`, then scans it — allocating memory and traversing the text twice.
+
+**Solution:** For streaming-friendly transforms (Delete, Normalize, VariantNorm, Romanize), an iterator adapter feeds transformed bytes directly to the DAAC automaton's `find_overlapping_iter_from_iter`. This eliminates the intermediate allocation and the second traversal.
+
+A 3-way dispatch selects the strategy:
+
+| Condition | Strategy | Rationale |
 |---|---|---|
-| ≤ 0.67 non-ASCII bytes (~≤40% CJK chars) | Bytewise (DFA or DAAC) | DFA is 2–5× faster than DAAC bytewise streaming on ASCII-heavy text |
-| > 0.67 non-ASCII bytes (~>40% CJK chars) | Charwise DAAC | 1 transition per char vs 3 bytewise on CJK |
+| DFA available + density ≤ 0.67 | Materialize → DFA scan | DFA's Teddy prefilter outweighs the allocation cost |
+| No DFA + density ≤ 0.67 | Stream → DAAC bytewise | Best available without DFA |
+| Density > 0.67 | Stream → DAAC charwise | Charwise wins on CJK; streaming avoids allocation |
 
-Both engines are built from the **full** pattern set (not split by ASCII/CJK), so either engine is correct for any text. The dispatch is a pure speed optimization.
+*Source: `simple_matcher/search.rs`, `process/step.rs`*
 
-The threshold (0.67) was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
+### No-Op Scan Folding
 
-In `walk_and_scan`, density propagates through the transform tree via the `(String, f32)` tuple returned by `TransformStep::apply()`. The returned density is conservative (typically `parent_density`, or `0.0` for Romanize which converts CJK→ASCII). `density == 0.0` replaces the old `is_ascii` boolean for transform no-op detection.
+**Problem:** When text is pure ASCII, CJK-only transforms (VariantNorm, Romanize, RomanizeChar, EmojiNorm) produce identical output. Scanning the same text N times with different ProcessType masks wastes N−1 full AC traversals.
 
-#### No-op Scan Folding
+**Solution:** Before scanning, fold no-op children's masks into the parent's scan mask. The parent scans once with the merged mask; no-op children are skipped. Correctness holds because each pattern has a fixed ProcessType index, so hits route to the right rule regardless of which scan produced them.
 
-When the parent text is pure ASCII (`density == 0.0`), transforms like VariantNorm, Romanize, RomanizeChar, and EmojiNorm produce identical text (they only operate on non-ASCII codepoints). Scanning the same text again with a different `pt_index_mask` wastes an entire DFA traversal.
+For a matcher with ProcessTypes {None, VariantNorm, Romanize, Delete} on ASCII text, this reduces 4 scans to 2 (root + VN + Romanize merged; Delete separate).
 
-`fold_noop_children_masks` recursively merges no-op children's `pt_index_mask` into the parent's scan mask. The parent scans once with the OR'd mask; no-op children are skipped entirely during the walk. This is correct because:
+*Source: `simple_matcher/search.rs`*
 
-- Each `PatternEntry` has a fixed `pt_index` — hits pass exactly one mask branch.
-- `mark_positive` and `satisfied_mask |= bit` are idempotent.
-- Matrix path uses the same `text_index` (`parent_vi`) — same column, same counters.
-- The AC engine reports each position exactly once per scan.
+### Split-Borrow State Access
 
-For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this reduces 4 scans to 2 (root+VN+Romanize merged, Delete separate), yielding ~7-8% throughput improvement on the scan-dominated path.
+**Problem:** Passing `&mut SimpleMatchState` through the scan loop forces the compiler to reload struct fields after each method call (pointer aliasing).
 
----
+**Solution:** `ScanState` borrows individual fields as separate mutable slices. The compiler keeps base pointers in registers across the scan loop, eliminating redundant loads. Profiled: 3–6% throughput improvement.
 
-### State Management
-
-#### Per-Rule State
-
-Each rule has two representations: cold `Rule` (segment_counts, word_id, word — only read for matrix init and result output) and hot `RuleInfo` (and_count, method, has_not — 3 bytes, stored contiguously in `RuleSet::rule_info`). Per-call mutable state lives in `WordState`. `PatternEntry` is 8 bytes (rule_idx, offset, pt_index, kind, boundary) — rule-level metadata was moved to `RuleInfo` to avoid per-entry duplication.
-
-- **`WordState`** (per-rule mutable state, 6 bytes): one `u16` generation stamp (init guard), `remaining_and: u16` (0 = all AND met), and `vetoed: bool`. The `satisfied_mask: u64` for bitmask-path rules lives in a parallel `satisfied_masks: Vec<u64>`, split out to keep the hot struct small (10K rules × 6B = 60KB, fits L1d).
-
-#### Generation-Based Reuse
-
-Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u16` counter is bumped. A rule's state is "live" only when `ws.generation == current_generation`; `remaining_and` and `vetoed` are stale otherwise. Cost: O(1) amortized reset. Wraps at `u16::MAX` (once per ~65K calls; bulk-reset cost ~15µs, amortized to <1ns per scan).
-
-#### ScanState Split-Borrow
-
-`ScanState<'a>` borrows `SimpleMatchState` fields as individual mutable slices rather than passing `&mut SimpleMatchState`. This enables register-cached base pointers (the compiler keeps `&mut [WordState]` data pointer in a register across the scan loop) and eliminates double word_state loads via disjoint-field borrowing. Profiled: −9.9% pointer-chase overhead, 3–6% throughput improvement.
-
-#### Unified Evaluation (`eval_hit`)
-
-All pattern hits — both direct-encoded and indirect — are routed through a single `RuleSet::eval_hit()` function. This replaces the previous dual-path design where direct-encoded hits had inline evaluation in `process_match()` and indirect hits went through `process_entry()`. The unified evaluator reads `RuleInfo` (and_count, method, has_not) for shape dispatch:
-
-| Kind | Behavior |
-|------|----------|
-| `And` | Dispatches on `SatisfactionMethod`: Immediate → mark positive; Bitmask → bit test-and-set; Matrix → counter decrement. |
-| `Not` | Sets `not_generation` to veto (or increments matrix counter for matrix-mode rules). |
-
-#### DIRECT_RULE_BIT
-
-For single-entry non-matrix patterns, the automaton value is bit-packed with `DIRECT_RULE_BIT` (bit 31) set. One uniform layout:
-
-```
-[31: DIRECT] [30: kind(1)] [29-27: pt_index(3)] [26-25: boundary(2)] [24-19: offset(6)] [18-0: rule_idx(19)]
-```
-
-The scan hot path checks bit 31 — if set, decodes `(pt_index, boundary, kind, offset, rule_idx)` directly without touching the entry table. All decoded values are forwarded to `eval_hit()`.
-
-Falls back to indirect dispatch for matrix rules, multi-entry patterns, or rule indices exceeding 19-bit capacity (512K).
-
-#### Bitmask vs Matrix
-
-- **Bitmask** (≤64 segments, no repeated counts): each AND hit sets bit `offset` in the parallel `satisfied_masks[rule_idx]` and decrements `remaining_and`. Reaching 0 → satisfied. NOT hits set `not_generation` immediately.
-- **Matrix** (>64 segments or repeated counts): a `Vec<i32>` counter grid sized `[segments × variants]`. AND cells decrement; NOT cells increment. Threshold crossings tracked per-segment via `matrix_status`.
-
-```
-Rule parsed from pattern string
-        │
-        ▼
-  1 AND segment?             ──► Immediate (mark positive on first hit)
-        │ NO
-        ▼
-  ≤64 segs, no repeats?     ──► Bitmask (u64 + remaining_and)
-        │ NO
-        ▼
-                                  Matrix (Vec counter grid)
-```
+*Source: `simple_matcher/state.rs`*
 
 ---
 
-### Memory Efficiency
+## Transform Pipeline
 
-#### Thread-Local Storage
+### ProcessType Bitflags
 
-| Slot | Type | Purpose |
-|------|------|---------|
-| `SIMPLE_MATCH_STATE` | `UnsafeCell<SimpleMatchState>` | Per-rule word states, counter matrices, touched-index list. Reused across calls. |
+`ProcessType` is a `u8` where each bit selects a transformation step:
 
-Uses `#[thread_local]` + `UnsafeCell` for zero-overhead TLS access (eliminates `thread_local!` macro's `.with()` closure). Sound because single-threaded access is guaranteed and no function is re-entrant.
+| Flag | Bit | Effect | Data Source |
+|------|-----|--------|-------------|
+| `None` | 0 | No transformation | — |
+| `VariantNorm` | 1 | CJK variant normalization (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width) | OpenCC + Unihan + JIS |
+| `Delete` | 2 | Remove punctuation/symbols/whitespace | Unicode categories |
+| `Normalize` | 3 | NFKC casefold + numeric normalization | Unicode standard |
+| `Romanize` | 4 | CJK → space-separated romanization (Pinyin, Romaji, Revised Romanization) | pypinyin + kana/hangul tables |
+| `RomanizeChar` | 5 | CJK → concatenated romanization (no spaces) | Same as Romanize |
+| `EmojiNorm` | 6 | Emoji → English words, strips modifiers | CLDR short names |
 
-#### Static Step Cache
+Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
 
-`TRANSFORM_STEP_CACHE: [OnceLock<TransformStep>; 8]` — one slot per `ProcessType` bit. Lazily initialized from build-time artifacts (`include_bytes!`/`include_str!`). Shared as `&'static` across all matchers and threads.
+**Gotcha:** `EmojiNorm | Delete` doesn't work — Delete removes emoji before EmojiNorm sees them. Use `EmojiNorm | Normalize` instead.
 
-#### Global Allocator
+### Page-Table Lookup
 
-`mimalloc` v3 replaces the system allocator for improved multi-threaded allocation throughput.
+VariantNorm, Romanize, and Normalize use a two-stage page table for O(1) codepoint lookup. The first stage indexes by `codepoint >> 8` (which 256-codepoint block); the second stage indexes within the block. Unmapped codepoints are passed through unchanged. Both stages use `get_unchecked` for branchless access.
+
+*Source: `process/transform/page_table.rs`*
+
+### SIMD Skip Functions
+
+Transform iterators use SIMD to skip irrelevant ASCII byte runs:
+
+| Transform | Skip Function | What It Skips |
+|-----------|--------------|---------------|
+| VariantNorm, Romanize | `skip_ascii_simd` | All ASCII bytes (only CJK keys exist) |
+| Delete | `skip_ascii_non_delete_simd` | ASCII bytes not in the delete bitset |
+
+Dispatch: AVX2 on x86-64 (runtime detection), NEON on AArch64 (compile-time), portable `std::simd` fallback.
+
+*Source: `process/transform/simd.rs`*
+
+### Compiled Tables
+
+`build.rs` compiles transformation data from source files in `process_map/` into binary artifacts embedded via `include_bytes!`. At runtime, page tables are decoded lazily on first access.
 
 ---
 
-### Feature Flags
+## Feature Flags
 
 | Flag | Default | Effect |
 |------|---------|--------|
 | `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
-| `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster (Teddy prefilter). |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON/portable) and density counting |
-
----
-
-### Compiled Transformation Tables
-
-`build.rs` pre-compiles transformation data from source files in `matcher_rs/process_map/` (`VARIANT_NORM.txt`, `ROMANIZE.txt`, `TEXT-DELETE.txt`, `NORM.txt`, `NUM-NORM.txt`) into binary artifacts embedded via `include_bytes!`/`include_str!` (in `transform/constants.rs`). At runtime, page tables are decoded lazily on first access by the step registry.
+| `dfa` | via `perf` | Aho-Corasick DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster. |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms and density counting |
