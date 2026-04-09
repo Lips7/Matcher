@@ -87,7 +87,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 - **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
 - **ScanPlan**: `Engines` struct bundling bytewise AC (DFA under `cfg(feature = "dfa")` + DAAC) and charwise AC (DAAC, CJK-optimized). Engine selection via SIMD density scan (≤0.67 non-ASCII → bytewise, >0.67 → charwise). Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
 - **RuleSet**: `Rule` stores `segment_counts` + `word_id` + `word`; hot path avoids loading it via `PatternEntry`. Generation-stamped sparse set for O(1) state reset.
-- **DIRECT_RULE_BIT**: single-entry simple patterns encode `rule_idx | (1 << 31)` directly in the automaton value, skipping the entry table on the hot path.
+- **DIRECT_RULE_BIT**: single-entry non-matrix patterns encode metadata directly in the automaton value (bit 31 set), skipping the entry table. A 2-bit kind discriminant (bits 30-29) selects: `00` SingleAnd, `01` SingleAndNot, `10` BitmaskAnd (with `has_not`/`offset`/`and_count`), `11` Not. Shared `pt_index`/`boundary` at fixed positions across all kinds.
 
 ### Construction subtlety: Delete and AC pattern indexing
 

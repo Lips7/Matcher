@@ -10,7 +10,7 @@
 //! hot-path dispatch API.
 
 use super::{
-    encoding::{DIRECT_BOUNDARY_SHIFT, DIRECT_PT_SHIFT, DIRECT_RULE_BIT},
+    encoding::{DIRECT_RULE_BIT, DirectValue},
     rule::RuleShape,
 };
 
@@ -186,10 +186,13 @@ impl PatternIndex {
     /// Builds the raw scan-value mapping used by the automata.
     ///
     /// For each deduplicated pattern, produces the `u32` value that the
-    /// automaton will report on a hit. A pattern with exactly one
-    /// [`RuleShape::SingleAnd`] entry is encoded as `rule_idx |
-    /// DIRECT_RULE_BIT` so the hot path can skip the indirection through the
-    /// entry table. All other patterns store the deduplicated index directly.
+    /// automaton will report on a hit. Single-entry patterns that fit the
+    /// direct encoding constraints are bit-packed with [`DIRECT_RULE_BIT`] set
+    /// so the hot path skips entry-table indirection. All other patterns store
+    /// the deduplicated index directly.
+    ///
+    /// Four direct encoding kinds are supported — see [`super::encoding`] for
+    /// the bit layout.
     ///
     /// # Safety
     ///
@@ -204,14 +207,7 @@ impl PatternIndex {
                 // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by
                 // `Self::new`.
                 let entry = unsafe { self.entries.get_unchecked(start) };
-                if matches!(entry.shape, RuleShape::SingleAnd)
-                    && (entry.pt_index as u32) < 8
-                    && entry.rule_idx < (1 << DIRECT_BOUNDARY_SHIFT)
-                {
-                    let encoded = DIRECT_RULE_BIT
-                        | ((entry.pt_index as u32) << DIRECT_PT_SHIFT)
-                        | ((entry.boundary as u32) << DIRECT_BOUNDARY_SHIFT)
-                        | entry.rule_idx;
+                if let Some(encoded) = Self::try_encode_direct(entry) {
                     value_map.push(encoded);
                     continue;
                 }
@@ -220,6 +216,33 @@ impl PatternIndex {
         }
 
         value_map
+    }
+
+    /// Attempts to encode a single-entry pattern into a direct value.
+    /// Returns `None` if the entry doesn't fit any direct encoding.
+    fn try_encode_direct(entry: &PatternEntry) -> Option<u32> {
+        if entry.shape.use_matrix() {
+            return None;
+        }
+        let rule_idx = entry.rule_idx as usize;
+        let dv = match entry.kind {
+            PatternKind::And => match entry.shape {
+                RuleShape::SingleAnd => DirectValue::SingleAnd { rule_idx },
+                RuleShape::SingleAndNot => DirectValue::SingleAndNot { rule_idx },
+                RuleShape::Bitmask | RuleShape::BitmaskNot => DirectValue::BitmaskAnd {
+                    rule_idx,
+                    offset: entry.offset as usize,
+                    and_count: entry.and_count as u16,
+                    has_not: entry.shape.has_not(),
+                },
+                _ => return None,
+            },
+            PatternKind::Not => DirectValue::Not {
+                rule_idx,
+                and_count: entry.and_count as u16,
+            },
+        };
+        dv.encode(entry.pt_index, entry.boundary)
     }
 
     /// Dispatches a non-direct raw scan value into a [`PatternDispatch`]
@@ -256,66 +279,161 @@ impl PatternIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::encoding::{DIRECT_PT_MASK, DIRECT_RULE_MASK},
-        *,
-    };
+    use super::*;
 
-    #[test]
-    fn test_pattern_index_direct_rule_encoding() {
-        let entries = vec![vec![PatternEntry {
-            rule_idx: 5,
-            offset: 0,
-            pt_index: 2,
-            kind: PatternKind::And,
-            shape: RuleShape::SingleAnd,
-            boundary: 0,
-            and_count: 1,
-        }]];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map();
-
-        assert_eq!(value_map.len(), 1);
-        let raw = value_map[0];
-        assert!(raw & DIRECT_RULE_BIT != 0, "should set DIRECT_RULE_BIT");
-
-        let rule_idx = (raw & DIRECT_RULE_MASK) as usize;
-        let pt_index = ((raw & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
-        assert_eq!(rule_idx, 5);
-        assert_eq!(pt_index, 2);
-    }
-
-    #[test]
-    fn test_pattern_index_dispatch_single_entry() {
-        // Non-Simple kind should NOT get DIRECT_RULE_BIT
-        let entries = vec![vec![PatternEntry {
-            rule_idx: 0,
-            offset: 0,
-            pt_index: 0,
-            kind: PatternKind::And,
-            shape: RuleShape::Bitmask,
-            boundary: 0,
-            and_count: 2,
-        }]];
-        let index = PatternIndex::new(entries);
-        let value_map = index.build_value_map();
-
-        assert!(
-            value_map[0] & DIRECT_RULE_BIT == 0,
-            "And kind should not get DIRECT_RULE_BIT"
-        );
-
-        match index.dispatch_indirect(value_map[0]) {
-            PatternDispatch::SingleEntry(entry) => {
-                assert_eq!(entry.rule_idx, 0);
-                assert_eq!(entry.kind, PatternKind::And);
-            }
-            _ => panic!("expected SingleEntry dispatch"),
+    fn make_entry(
+        rule_idx: u32,
+        offset: u8,
+        pt_index: u8,
+        kind: PatternKind,
+        shape: RuleShape,
+        boundary: u8,
+        and_count: u8,
+    ) -> PatternEntry {
+        PatternEntry {
+            rule_idx,
+            offset,
+            pt_index,
+            kind,
+            shape,
+            boundary,
+            and_count,
         }
     }
 
     #[test]
-    fn test_pattern_index_dispatch_multi_entry() {
+    fn test_direct_single_and() {
+        let entries = vec![vec![make_entry(
+            5,
+            0,
+            2,
+            PatternKind::And,
+            RuleShape::SingleAnd,
+            1,
+            1,
+        )]];
+        let raw = PatternIndex::new(entries).build_value_map()[0];
+        assert!(raw & DIRECT_RULE_BIT != 0);
+        let (pt, bd, dv) = DirectValue::decode(raw);
+        assert_eq!(pt, 2);
+        assert_eq!(bd, 1);
+        assert_eq!(dv, DirectValue::SingleAnd { rule_idx: 5 });
+    }
+
+    #[test]
+    fn test_direct_single_and_not() {
+        let entries = vec![vec![make_entry(
+            100,
+            0,
+            3,
+            PatternKind::And,
+            RuleShape::SingleAndNot,
+            0,
+            1,
+        )]];
+        let raw = PatternIndex::new(entries).build_value_map()[0];
+        assert!(raw & DIRECT_RULE_BIT != 0);
+        let (pt, _, dv) = DirectValue::decode(raw);
+        assert_eq!(pt, 3);
+        assert_eq!(dv, DirectValue::SingleAndNot { rule_idx: 100 });
+    }
+
+    #[test]
+    fn test_direct_bitmask_and() {
+        let entries = vec![vec![make_entry(
+            42,
+            1,
+            2,
+            PatternKind::And,
+            RuleShape::Bitmask,
+            0,
+            3,
+        )]];
+        let raw = PatternIndex::new(entries).build_value_map()[0];
+        assert!(raw & DIRECT_RULE_BIT != 0);
+        let (pt, _, dv) = DirectValue::decode(raw);
+        assert_eq!(pt, 2);
+        assert_eq!(
+            dv,
+            DirectValue::BitmaskAnd {
+                rule_idx: 42,
+                offset: 1,
+                and_count: 3,
+                has_not: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_direct_bitmask_not_and_entry() {
+        let entries = vec![vec![make_entry(
+            7,
+            0,
+            0,
+            PatternKind::And,
+            RuleShape::BitmaskNot,
+            0,
+            2,
+        )]];
+        let raw = PatternIndex::new(entries).build_value_map()[0];
+        assert!(raw & DIRECT_RULE_BIT != 0);
+        let (_, _, dv) = DirectValue::decode(raw);
+        assert!(matches!(dv, DirectValue::BitmaskAnd { has_not: true, .. }));
+    }
+
+    #[test]
+    fn test_direct_not_entry() {
+        let entries = vec![vec![make_entry(
+            50,
+            1,
+            0,
+            PatternKind::Not,
+            RuleShape::SingleAndNot,
+            0,
+            1,
+        )]];
+        let raw = PatternIndex::new(entries).build_value_map()[0];
+        assert!(raw & DIRECT_RULE_BIT != 0);
+        let (_, _, dv) = DirectValue::decode(raw);
+        assert_eq!(
+            dv,
+            DirectValue::Not {
+                rule_idx: 50,
+                and_count: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_bitmask_large_rule_idx_falls_back() {
+        let entries = vec![vec![make_entry(
+            40000,
+            0,
+            0,
+            PatternKind::And,
+            RuleShape::Bitmask,
+            0,
+            2,
+        )]];
+        assert!(PatternIndex::new(entries).build_value_map()[0] & DIRECT_RULE_BIT == 0);
+    }
+
+    #[test]
+    fn test_matrix_always_falls_back() {
+        let entries = vec![vec![make_entry(
+            0,
+            0,
+            0,
+            PatternKind::And,
+            RuleShape::Matrix,
+            0,
+            2,
+        )]];
+        assert!(PatternIndex::new(entries).build_value_map()[0] & DIRECT_RULE_BIT == 0);
+    }
+
+    #[test]
+    fn test_dispatch_multi_entry() {
         let entries = vec![vec![
             PatternEntry {
                 rule_idx: 0,

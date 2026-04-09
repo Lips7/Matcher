@@ -328,6 +328,15 @@ Each `PatternEntry` carries a pre-computed `PatternKind`, `RuleShape`, and `and_
 
 For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 31)` directly. The scan hot path checks bit 31 first — if set, extracts the rule index without touching the entry table. Eliminates two indirections for the common case.
 
+All direct encodings share a common prefix with `pt_index` (3b) and `boundary` (2b) at fixed positions. A 2-bit `kind` discriminant selects the payload:
+
+- **00 SingleAnd**: single-segment rule, no NOT. `rule_idx` (24b). Calls `mark_positive` inline.
+- **01 SingleAndNot**: AND entry of a single-segment rule with NOT. `rule_idx` (24b). Marks positive but never early-exits.
+- **10 BitmaskAnd**: AND entry of multi-segment rule (with or without NOT). `has_not` (1b), `offset` (5b), `and_count` (4b), `rule_idx` (14b). Inline bitmask-OR + `remaining_and` update.
+- **11 Not**: non-matrix NOT entry. `and_count` (5b), `rule_idx` (19b). Sets veto generation inline.
+
+Falls back to indirect dispatch for matrix rules, multi-entry patterns, or values exceeding bit-width limits.
+
 #### Bitmask vs Matrix
 
 - **Bitmask** (≤64 segments, no repeated counts): each AND hit sets bit `offset` in the parallel `satisfied_masks[rule_idx]` and decrements `remaining_and`. Reaching 0 → satisfied. NOT hits set `not_generation` immediately.

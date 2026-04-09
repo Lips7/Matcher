@@ -33,10 +33,7 @@ use std::{borrow::Cow, vec};
 use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
-    encoding::{
-        DIRECT_BOUNDARY_MASK, DIRECT_BOUNDARY_SHIFT, DIRECT_PT_MASK, DIRECT_PT_SHIFT,
-        DIRECT_RULE_BIT, DIRECT_RULE_MASK,
-    },
+    encoding::{DIRECT_RULE_BIT, DirectValue},
     engine::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
     pattern::PatternDispatch,
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
@@ -147,17 +144,13 @@ impl SimpleMatcher {
     /// Processes one raw match value reported by the scan engine.
     ///
     /// Two dispatch paths:
-    /// - **Direct**: when `DIRECT_RULE_BIT` is set, extracts `rule_idx`,
-    ///   `pt_index`, and `boundary` inline from the bit-packed value and marks
-    ///   the rule as positive — no entry table indirection.
-    /// - **Indirect**: delegates to
-    ///   [`PatternIndex::dispatch_indirect`](super::pattern::PatternIndex::dispatch_indirect)
-    ///   for multi-entry or non-simple patterns, then forwards each entry to
-    ///   [`RuleSet::process_entry`](super::rule::RuleSet::process_entry).
+    /// - **Direct** (`DIRECT_RULE_BIT` set): decoded via
+    ///   [`DirectValue::decode`], then matched on the 4 variants for inline
+    ///   rule evaluation.
+    /// - **Indirect**: delegates to [`PatternIndex::dispatch_indirect`] for
+    ///   multi-entry or matrix patterns.
     ///
-    /// Boundary checks via [`check_word_boundary`] filter out hits whose match
-    /// position does not satisfy the `\b` flags. Returns `true` when the caller
-    /// should stop scanning.
+    /// Returns `true` when the caller should stop scanning.
     #[inline(always)]
     fn process_match(
         &self,
@@ -169,17 +162,102 @@ impl SimpleMatcher {
         ss: &mut ScanState<'_>,
     ) -> bool {
         if raw_value & DIRECT_RULE_BIT != 0 {
-            let pt_index = ((raw_value & DIRECT_PT_MASK) >> DIRECT_PT_SHIFT) as u8;
+            let (pt_index, boundary, dv) = DirectValue::decode(raw_value);
             if ctx.process_type_mask & (1u64 << pt_index) == 0 {
                 return false;
             }
-            let boundary = ((raw_value & DIRECT_BOUNDARY_MASK) >> DIRECT_BOUNDARY_SHIFT) as u8;
             if boundary != 0 && !check_word_boundary(text, start, end, boundary) {
                 return false;
             }
-            let rule_idx = (raw_value & DIRECT_RULE_MASK) as usize;
-            ss.mark_positive(rule_idx);
-            return ctx.exit_early;
+
+            let generation = ss.generation;
+
+            match dv {
+                DirectValue::SingleAnd { rule_idx } => {
+                    ss.mark_positive(rule_idx);
+                    return ctx.exit_early;
+                }
+                DirectValue::SingleAndNot { rule_idx } => {
+                    // SAFETY: rule_idx from construction — always in bounds.
+                    unsafe { core::hint::assert_unchecked(rule_idx < ss.word_states.len()) };
+                    // SAFETY: bounds guaranteed by assert_unchecked above.
+                    let ws = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
+                    if ws.not_generation == generation || ws.positive_generation == generation {
+                        return false;
+                    }
+                    if ws.matrix_generation != generation {
+                        ws.matrix_generation = generation;
+                        ws.positive_generation = 0;
+                        ws.remaining_and = 1;
+                        ss.touched_indices.push(rule_idx);
+                    }
+                    ws.positive_generation = generation;
+                }
+                DirectValue::BitmaskAnd {
+                    rule_idx,
+                    offset,
+                    and_count,
+                    has_not,
+                } => {
+                    // SAFETY: rule_idx from construction — always in bounds.
+                    unsafe { core::hint::assert_unchecked(rule_idx < ss.word_states.len()) };
+                    // SAFETY: bounds guaranteed by assert_unchecked above.
+                    let ws = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
+
+                    if has_not && ws.not_generation == generation {
+                        return false;
+                    }
+                    if ws.positive_generation == generation {
+                        return !has_not && ctx.exit_early;
+                    }
+                    if ws.matrix_generation != generation {
+                        ws.matrix_generation = generation;
+                        ws.positive_generation = 0;
+                        ws.remaining_and = and_count;
+                        // SAFETY: satisfied_masks is sized to match word_states.
+                        unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
+                        ss.touched_indices.push(rule_idx);
+                    }
+
+                    let bit = 1u64 << offset;
+                    // SAFETY: satisfied_masks is sized to match word_states.
+                    let mask = unsafe { ss.satisfied_masks.get_unchecked_mut(rule_idx) };
+                    if *mask & bit == 0 {
+                        *mask |= bit;
+                        ws.remaining_and -= 1;
+                        if ws.remaining_and == 0 {
+                            ws.positive_generation = generation;
+                        }
+                    }
+
+                    if ctx.exit_early && !has_not && ws.positive_generation == generation {
+                        return true;
+                    }
+                }
+                DirectValue::Not {
+                    rule_idx,
+                    and_count,
+                } => {
+                    // SAFETY: rule_idx from construction — always in bounds.
+                    unsafe { core::hint::assert_unchecked(rule_idx < ss.word_states.len()) };
+                    // SAFETY: bounds guaranteed by assert_unchecked above.
+                    let ws = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
+
+                    if ws.not_generation == generation {
+                        return false;
+                    }
+                    if ws.matrix_generation != generation {
+                        ws.matrix_generation = generation;
+                        ws.positive_generation = if and_count == 0 { generation } else { 0 };
+                        ws.remaining_and = and_count;
+                        // SAFETY: satisfied_masks is sized to match word_states.
+                        unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
+                        ss.touched_indices.push(rule_idx);
+                    }
+                    ws.not_generation = generation;
+                }
+            }
+            return false;
         }
         match self.scan.patterns().dispatch_indirect(raw_value) {
             PatternDispatch::SingleEntry(entry) => {
