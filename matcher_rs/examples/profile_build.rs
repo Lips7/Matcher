@@ -12,6 +12,9 @@
 //!     --dict cn --rules 50000 --pt variant_norm --seconds 15
 //! ```
 
+#[path = "../benches/common/mod.rs"]
+mod common;
+
 use std::{
     collections::HashMap,
     env,
@@ -19,45 +22,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use matcher_rs::{ProcessType, SimpleMatcher};
-
-const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
-const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
-
-fn word_list(lang: &str) -> Vec<&str> {
-    match lang {
-        "cn" => {
-            let mut w: Vec<&str> = CN_WORD_LIST
-                .lines()
-                .filter(|s| !s.is_ascii() && !s.is_empty())
-                .collect();
-            w.sort_unstable();
-            w
-        }
-        _ => {
-            let mut w: Vec<&str> = EN_WORD_LIST
-                .lines()
-                .filter(|s| s.is_ascii() && !s.is_empty())
-                .collect();
-            w.sort_unstable();
-            w
-        }
-    }
-}
-
-fn parse_process_type(s: &str) -> ProcessType {
-    match s {
-        "none" => ProcessType::None,
-        "variant_norm" | "fanjian" => ProcessType::VariantNorm,
-        "delete" => ProcessType::Delete,
-        "norm" | "normalize" => ProcessType::Normalize,
-        "dn" => ProcessType::DeleteNormalize,
-        "fdn" => ProcessType::VariantNormDeleteNormalize,
-        "romanize" | "pinyin" => ProcessType::Romanize,
-        "pychar" | "romanize_char" => ProcessType::RomanizeChar,
-        other => panic!("Unknown process type: {other}"),
-    }
-}
+use common::{build_literal_map, parse_process_type};
+use matcher_rs::SimpleMatcher;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -100,14 +66,8 @@ fn main() {
 
     println!("profile_build: rules={rules}, dict={dict}, pt={pt}, seconds={seconds}");
 
-    let patterns = word_list(&dict);
-    let mut map = HashMap::with_capacity(rules);
-    for i in 0..rules {
-        let idx = (i * 997) % patterns.len();
-        map.insert((i + 1) as u32, patterns[idx].to_string());
-    }
-    let mut table = HashMap::new();
-    table.insert(pt, map);
+    let map = build_literal_map(&dict, rules, true);
+    let table = HashMap::from([(pt, map)]);
 
     println!("  table ready, starting build loop...");
 

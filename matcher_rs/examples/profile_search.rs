@@ -21,6 +21,9 @@
 //!     --dict en --rules 10000 --mode process --shape literal --pt none --seconds 30
 //! ```
 
+#[path = "../benches/common/mod.rs"]
+mod common;
+
 use std::{
     collections::HashMap,
     env,
@@ -30,12 +33,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use matcher_rs::{ProcessType, SimpleMatcher, SimpleResult};
-
-const CN_WORD_LIST: &str = include_str!("../../data/word/cn/jieba.txt");
-const EN_WORD_LIST: &str = include_str!("../../data/word/en/dictionary.txt");
-const CN_HAYSTACK: &str = include_str!("../../data/text/cn/三体.txt");
-const EN_HAYSTACK: &str = include_str!("../../data/text/en/sherlock.txt");
+use common::{CN_HAYSTACK, EN_HAYSTACK, build_shaped_map, parse_process_type};
+use matcher_rs::{SimpleMatcher, SimpleResult};
 
 // ── Scene registry
 // ─────────────────────────────────────────────────────────────
@@ -164,100 +163,6 @@ const SCENES: &[Scene] = &[
     },
 ];
 
-// ── Helpers
-// ─────────────────────────────────────────────────────────────────────
-
-fn parse_process_type(s: &str) -> ProcessType {
-    match s {
-        "none" => ProcessType::None,
-        "variant_norm" => ProcessType::VariantNorm,
-        "delete" => ProcessType::Delete,
-        "norm" => ProcessType::Normalize,
-        "dn" => ProcessType::DeleteNormalize,
-        "fdn" => ProcessType::VariantNormDeleteNormalize,
-        "romanize" => ProcessType::Romanize,
-        "pychar" => ProcessType::RomanizeChar,
-        other => panic!(
-            "Unknown PT shorthand: {other}. Use: none|variant_norm|delete|norm|dn|fdn|romanize|pychar"
-        ),
-    }
-}
-
-fn word_list(lang: &str) -> Vec<&'static str> {
-    match lang {
-        "cn" => {
-            let mut w: Vec<&str> = CN_WORD_LIST
-                .lines()
-                .filter(|s| !s.is_ascii() && !s.is_empty())
-                .collect();
-            w.sort_unstable();
-            w
-        }
-        "mixed" => {
-            let mut en: Vec<&str> = EN_WORD_LIST
-                .lines()
-                .filter(|s| s.is_ascii() && !s.is_empty())
-                .collect();
-            let mut cn: Vec<&str> = CN_WORD_LIST
-                .lines()
-                .filter(|s| !s.is_ascii() && !s.is_empty())
-                .collect();
-            en.sort_unstable();
-            cn.sort_unstable();
-            let cap = en.len() + cn.len();
-            let mut words = Vec::with_capacity(cap);
-            let (mut ei, mut ci) = (0, 0);
-            while ei < en.len() || ci < cn.len() {
-                if ei < en.len() {
-                    words.push(en[ei]);
-                    ei += 1;
-                }
-                if ci < cn.len() {
-                    words.push(cn[ci]);
-                    ci += 1;
-                }
-            }
-            words
-        }
-        _ => {
-            let mut w: Vec<&str> = EN_WORD_LIST
-                .lines()
-                .filter(|s| s.is_ascii() && !s.is_empty())
-                .collect();
-            w.sort_unstable();
-            w
-        }
-    }
-}
-
-fn build_rule_map(lang: &str, size: usize, shape: &str) -> HashMap<u32, String> {
-    let patterns = word_list(lang);
-    let mut map = HashMap::with_capacity(size);
-    for i in 0..size {
-        let idx = (i * 997) % patterns.len();
-        let pattern = match shape {
-            "literal" => patterns[idx].to_string(),
-            "and" => {
-                let a = patterns[idx];
-                let b = patterns[(idx + 101) % patterns.len()];
-                let c = patterns[(idx + 211) % patterns.len()];
-                format!("{a}&{b}&{c}")
-            }
-            "not" => format!("{}~__never_block_{i}__", patterns[idx]),
-            "or" => {
-                let a = patterns[idx];
-                let b = patterns[(idx + 101) % patterns.len()];
-                let c = patterns[(idx + 211) % patterns.len()];
-                format!("{a}|{b}|{c}")
-            }
-            "word_boundary" => format!("\\b{}\\b", patterns[idx]),
-            other => panic!("Unknown shape: {other}. Use: literal|and|not|or|word_boundary"),
-        };
-        map.insert((i + 1) as u32, pattern);
-    }
-    map
-}
-
 // ── Scene execution
 // ─────────────────────────────────────────────────────────────
 
@@ -277,7 +182,7 @@ fn run_scene(
         "  rules={rules}, dict={dict}, pt={pt}, mode={mode}, shape={shape}, seconds={seconds}"
     );
 
-    let map = build_rule_map(dict, rules, shape);
+    let map = build_shaped_map(dict, rules, shape);
     let (ascii_pats, non_ascii_pats) = map.values().fold((0u32, 0u32), |(a, n), v| {
         if v.is_ascii() { (a + 1, n) } else { (a, n + 1) }
     });

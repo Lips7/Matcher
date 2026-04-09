@@ -30,6 +30,23 @@ pub const BUILD_PROCESS_TYPES: &[ProcessType] = &[
 // ── Helpers
 // ─────────────────────────────────────────────────────────────────────
 
+pub fn parse_process_type(s: &str) -> ProcessType {
+    match s {
+        "none" => ProcessType::None,
+        "variant_norm" | "fanjian" => ProcessType::VariantNorm,
+        "delete" => ProcessType::Delete,
+        "norm" | "normalize" => ProcessType::Normalize,
+        "dn" => ProcessType::DeleteNormalize,
+        "fdn" => ProcessType::VariantNormDeleteNormalize,
+        "romanize" | "pinyin" => ProcessType::Romanize,
+        "pychar" | "romanize_char" => ProcessType::RomanizeChar,
+        other => panic!(
+            "Unknown PT shorthand: {other}. \
+             Use: none|variant_norm|delete|norm|dn|fdn|romanize|pychar"
+        ),
+    }
+}
+
 /// Returns a filtered, sorted word list.
 ///
 /// - `"en"`:    pure ASCII words from the English dictionary

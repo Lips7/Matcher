@@ -164,10 +164,7 @@ def preset_commands(
     presets: dict[str, list[tuple[str, str]]] = {
         "search": [
             ("bench_search", "search"),
-            ("bench_scaling", "search"),
             ("bench_transform", "search"),
-            ("bench_complexity", "search"),
-            ("bench_edge_cases", "search"),
         ],
         "build": [("bench_build", "build")],
     }
