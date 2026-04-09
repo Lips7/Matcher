@@ -285,6 +285,7 @@ impl ScanPlan {
     pub(super) fn compile(
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
+        rule_info: &[super::rule::RuleInfo],
     ) -> Result<Self, MatcherError> {
         debug_assert!(
             !dedup_patterns.is_empty(),
@@ -292,7 +293,7 @@ impl ScanPlan {
         );
 
         let patterns = PatternIndex::new(dedup_entries);
-        let value_map = patterns.build_value_map();
+        let value_map = patterns.build_value_map(rule_info);
         let engines = compile_automata(dedup_patterns, &value_map)?;
         let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
 

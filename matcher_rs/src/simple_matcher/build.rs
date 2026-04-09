@@ -36,7 +36,7 @@ use super::{
     encoding::{BITMASK_CAPACITY, PROCESS_TYPE_TABLE_SIZE},
     engine::ScanPlan,
     pattern::{PatternEntry, PatternKind},
-    rule::{Rule, RuleSet, RuleShape},
+    rule::{Rule, RuleInfo, RuleSet, SatisfactionMethod},
 };
 use crate::{
     MatcherError,
@@ -139,9 +139,13 @@ impl SimpleMatcher {
 
         let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
 
-        let scan = ScanPlan::compile(&parsed.dedup_patterns, parsed.dedup_entries)?;
+        let scan = ScanPlan::compile(
+            &parsed.dedup_patterns,
+            parsed.dedup_entries,
+            parsed.rules.rule_info(),
+        )?;
         let is_match_fast = process_type_tree[0].children.is_empty()
-            && scan.patterns().all_single_and()
+            && scan.patterns().all_single_and(parsed.rules.rule_info())
             && !scan.patterns().has_boundary();
 
         Ok(SimpleMatcher {
@@ -224,6 +228,7 @@ impl SimpleMatcher {
 
         let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
         let mut rules: Vec<Rule> = Vec::with_capacity(word_size);
+        let mut rule_infos: Vec<RuleInfo> = Vec::with_capacity(word_size);
         let mut word_id_to_idx: FoldHashMap<(ProcessType, u32), usize> =
             FoldHashMap::with_capacity(word_size);
 
@@ -296,6 +301,17 @@ impl SimpleMatcher {
                     || segment_counts[and_count..].iter().any(|&value| value != 0);
                 let has_not = and_count != segment_counts.len();
 
+                let method = match (use_matrix, and_count == 1) {
+                    (true, _) => SatisfactionMethod::Matrix,
+                    (false, true) => SatisfactionMethod::Immediate,
+                    (false, false) => SatisfactionMethod::Bitmask,
+                };
+                let info = RuleInfo {
+                    and_count: and_count as u8,
+                    method,
+                    has_not,
+                };
+
                 let rule_idx = if let Some(&existing_idx) =
                     word_id_to_idx.get(&(process_type, simple_word_id))
                 {
@@ -304,6 +320,7 @@ impl SimpleMatcher {
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
                     };
+                    rule_infos[existing_idx] = info;
                     existing_idx
                 } else {
                     let idx = rules.len();
@@ -313,16 +330,8 @@ impl SimpleMatcher {
                         word_id: simple_word_id,
                         word: simple_word.as_ref().to_owned(),
                     });
+                    rule_infos.push(info);
                     idx
-                };
-
-                let shape = match (use_matrix, and_count == 1, has_not) {
-                    (true, _, true) => RuleShape::MatrixNot,
-                    (true, _, false) => RuleShape::Matrix,
-                    (false, true, true) => RuleShape::SingleAndNot,
-                    (false, true, false) => RuleShape::SingleAnd,
-                    (false, false, true) => RuleShape::BitmaskNot,
-                    (false, false, false) => RuleShape::Bitmask,
                 };
 
                 for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
@@ -333,7 +342,7 @@ impl SimpleMatcher {
                     );
                     assert!(
                         and_count < 256,
-                        "rule has {and_count} AND segments; PatternEntry::and_count is u8 (max 255)"
+                        "rule has {and_count} AND segments; RuleInfo::and_count is u8 (max 255)"
                     );
 
                     let kind = if offset < and_count {
@@ -357,30 +366,21 @@ impl SimpleMatcher {
                         }
                         for ac_word in reduce_text_process_emit(word_process_type, inner) {
                             let pt_index = pt_index_table[process_type.bits() as usize];
-                            let Some(&dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
-                                pattern_id_map.insert(ac_word.clone(), next_pattern_id);
-                                dedup_entries.push(vec![PatternEntry {
-                                    rule_idx: rule_idx as u32,
-                                    offset: offset as u8,
-                                    pt_index,
-                                    kind,
-                                    shape,
-                                    boundary: boundary_flags,
-                                    and_count: and_count as u8,
-                                }]);
-                                dedup_patterns.push(ac_word);
-                                next_pattern_id += 1;
-                                continue;
-                            };
-                            dedup_entries[dedup_id].push(PatternEntry {
+                            let entry = PatternEntry {
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u8,
                                 pt_index,
                                 kind,
-                                shape,
                                 boundary: boundary_flags,
-                                and_count: and_count as u8,
-                            });
+                            };
+                            let Some(&dedup_id) = pattern_id_map.get(ac_word.as_ref()) else {
+                                pattern_id_map.insert(ac_word.clone(), next_pattern_id);
+                                dedup_entries.push(vec![entry]);
+                                dedup_patterns.push(ac_word);
+                                next_pattern_id += 1;
+                                continue;
+                            };
+                            dedup_entries[dedup_id].push(entry);
                         }
                     }
                 }
@@ -390,7 +390,7 @@ impl SimpleMatcher {
         ParsedRules {
             dedup_patterns,
             dedup_entries,
-            rules: RuleSet::new(rules),
+            rules: RuleSet::new(rules, rule_infos),
         }
     }
 }

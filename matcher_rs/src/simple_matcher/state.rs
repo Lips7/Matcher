@@ -79,7 +79,7 @@ pub(super) struct WordState {
 ///
 /// # Matrix layout
 ///
-/// For rules with `RuleShape::use_matrix()` = `true`,
+/// For rules with `SatisfactionMethod::Matrix`,
 /// `matrix[rule_idx]` is a flat 2-D array of shape `[num_segments ×
 /// num_variants]` stored in row-major order. Each cell starts at the segment's
 /// required count and is decremented (AND) or incremented (NOT) on each hit.
@@ -216,30 +216,6 @@ impl ScanState<'_> {
         };
         word_state.positive_generation == self.generation
             && word_state.not_generation != self.generation
-    }
-
-    /// Marks a simple rule as positive for the current generation.
-    ///
-    /// Returns `true` only when this is the first positive hit for the rule in
-    /// the current generation. If the rule has not been touched at all, it
-    /// is also added to `touched_indices`.
-    #[inline(always)]
-    pub(super) fn mark_positive(&mut self, rule_idx: usize) -> bool {
-        let generation = self.generation;
-        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
-        let word_state = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.word_states.len());
-            self.word_states.get_unchecked_mut(rule_idx)
-        };
-        if word_state.positive_generation == generation {
-            return false;
-        }
-        if word_state.matrix_generation != generation {
-            word_state.matrix_generation = generation;
-            self.touched_indices.push(rule_idx);
-        }
-        word_state.positive_generation = generation;
-        true
     }
 }
 
@@ -436,17 +412,6 @@ mod tests {
             assert_eq!(ws.positive_generation, 0);
             assert_eq!(ws.not_generation, 0);
         }
-    }
-
-    #[test]
-    fn test_mark_positive_dedup() {
-        let mut state = SimpleMatchState::new();
-        state.prepare(2);
-        let mut ss = state.as_scan_state();
-
-        assert!(ss.mark_positive(0), "first mark should return true");
-        assert!(!ss.mark_positive(0), "second mark should return false");
-        assert_eq!(ss.touched_indices(), &[0]);
     }
 
     #[test]

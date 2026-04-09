@@ -66,7 +66,7 @@ Single AND segment: `["zhongguo"]`. Simple rule. Emitted under `Romanize - Delet
 
 **OR alternatives (`|`):** Each segment (between `&`/`~` operators) may contain `|`-separated alternatives. For example, `"color|colour&bright"` produces two AND segments: segment 0 with alternatives `["color", "colour"]` and segment 1 with `["bright"]`. Each alternative becomes a separate AC pattern sharing the same `offset` — any single alternative matching satisfies that segment. `|` binds tighter than `&`/`~`, so `"a|b&c|d~e|f"` means (a OR b) AND (c OR d) AND NOT (e OR f). OR alternatives preserve their parent's `PatternKind` (And or Not), so single-rule OR patterns like `"color|colour"` remain eligible for the `is_match` AC-direct fast path.
 
-**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries cannot use `DIRECT_RULE_BIT` and disable the `is_match` AC-direct fast path.
+**Word boundaries (`\b`):** Each sub-pattern (after `&`/`~`/`|` splitting) may have `\b` at its start and/or end. `"\bcat\b"` matches "cat" only when surrounded by non-word characters (or text edges). Boundary checking happens inside the AC scan loop using hit positions — a byte-level check of `is_word_byte(text[start-1])` and `is_word_byte(text[end])`. Patterns with boundaries disable the `is_match` AC-direct fast path (but can still use `DIRECT_RULE_BIT` for entry-table bypass).
 
 After deduplication, we have a flat pattern table:
 
@@ -98,7 +98,7 @@ Each node caches a `&'static TransformStep` reference from the global step regis
 
 `ScanPlan::compile` receives the deduplicated patterns and builds:
 
-**PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for simple single-entry patterns, the value is `rule_idx | DIRECT_RULE_BIT` (bit 31 set), encoding the rule index directly in the automaton hit value so the scan hot path skips the entry table lookup.
+**PatternIndex**: maps each pattern's dedup index to its `PatternEntry` slice. Also builds the value map — for single-entry non-matrix patterns, the value is bit-packed with `DIRECT_RULE_BIT` (bit 31 set), encoding `(kind, pt_index, boundary, offset, rule_idx)` directly in the automaton hit value so the scan hot path skips the entry table lookup.
 
 **Bytewise engine** (`BytewiseMatcher`): compiled from **all** patterns. With the `dfa` feature, uses `aho-corasick` DFA for maximum throughput. Otherwise falls back to `daachorse` bytewise DAAC.
 
@@ -300,7 +300,7 @@ For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this
 
 #### Per-Rule State
 
-Each rule is stored as a single `Rule` struct containing `segment_counts: Vec<i32>`, `word_id: u32`, and `word: String`. `segment_counts` is only read on the `#[cold]` matrix-init path (first-touch of matrix-mode rules); `word_id` and `word` are only read when producing output results. The hot path avoids loading `Rule` entirely — `and_count` and `RuleShape` are pre-computed into `PatternEntry`, and per-call mutable state lives in `WordState`.
+Each rule has two representations: cold `Rule` (segment_counts, word_id, word — only read for matrix init and result output) and hot `RuleInfo` (and_count, method, has_not — 3 bytes, stored contiguously in `RuleSet::rule_info`). Per-call mutable state lives in `WordState`. `PatternEntry` is 8 bytes (rule_idx, offset, pt_index, kind, boundary) — rule-level metadata was moved to `RuleInfo` to avoid per-entry duplication.
 
 - **`WordState`** (per-rule mutable state, 8 bytes): three `u16` generation stamps (`matrix_generation`, `positive_generation`, `not_generation`) and `remaining_and: u16`. The `satisfied_mask: u64` for bitmask-path rules lives in a parallel `satisfied_masks: Vec<u64>`, split out to keep the hot struct small (10K rules × 8B = 80KB, fits L1d).
 
@@ -312,30 +312,26 @@ Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u1
 
 `ScanState<'a>` borrows `SimpleMatchState` fields as individual mutable slices rather than passing `&mut SimpleMatchState`. This enables register-cached base pointers (the compiler keeps `&mut [WordState]` data pointer in a register across the scan loop) and eliminates double word_state loads via disjoint-field borrowing. Profiled: −9.9% pointer-chase overhead, 3–6% throughput improvement.
 
-#### PatternKind Dispatch
+#### Unified Evaluation (`eval_hit`)
 
-Each `PatternEntry` carries a pre-computed `PatternKind`, `RuleShape`, and `and_count`:
+All pattern hits — both direct-encoded and indirect — are routed through a single `RuleSet::eval_hit()` function. This replaces the previous dual-path design where direct-encoded hits had inline evaluation in `process_match()` and indirect hits went through `process_entry()`. The unified evaluator reads `RuleInfo` (and_count, method, has_not) for shape dispatch:
 
-| Kind | Condition | Behavior |
-|------|-----------|----------|
-| `Simple` | 1 AND segment, no NOT, no matrix | First hit sets `positive_generation`. Done. |
-| `And` | `offset < and_count` | Decrements counter or sets bitmask bit. |
-| `Not` | `offset >= and_count` | Sets `not_generation` to veto the rule. |
-
-`and_count` is duplicated from build-time rule metadata into `PatternEntry` so the init block in `process_entry` can initialize `WordState` without loading `Rule` (which is only needed for the cold matrix-init path). This fits in the existing struct padding (9→10 bytes, still padded to 12).
+| Kind | Behavior |
+|------|----------|
+| `And` | Dispatches on `SatisfactionMethod`: Immediate → mark positive; Bitmask → bit test-and-set; Matrix → counter decrement. |
+| `Not` | Sets `not_generation` to veto (or increments matrix counter for matrix-mode rules). |
 
 #### DIRECT_RULE_BIT
 
-For single-entry simple patterns, the automaton value encodes `rule_idx | (1 << 31)` directly. The scan hot path checks bit 31 first — if set, extracts the rule index without touching the entry table. Eliminates two indirections for the common case.
+For single-entry non-matrix patterns, the automaton value is bit-packed with `DIRECT_RULE_BIT` (bit 31) set. One uniform layout:
 
-All direct encodings share a common prefix with `pt_index` (3b) and `boundary` (2b) at fixed positions. A 2-bit `kind` discriminant selects the payload:
+```
+[31: DIRECT] [30: kind(1)] [29-27: pt_index(3)] [26-25: boundary(2)] [24-19: offset(6)] [18-0: rule_idx(19)]
+```
 
-- **00 SingleAnd**: single-segment rule, no NOT. `rule_idx` (24b). Calls `mark_positive` inline.
-- **01 SingleAndNot**: AND entry of a single-segment rule with NOT. `rule_idx` (24b). Marks positive but never early-exits.
-- **10 BitmaskAnd**: AND entry of multi-segment rule (with or without NOT). `has_not` (1b), `offset` (5b), `and_count` (4b), `rule_idx` (14b). Inline bitmask-OR + `remaining_and` update.
-- **11 Not**: non-matrix NOT entry. `and_count` (5b), `rule_idx` (19b). Sets veto generation inline.
+The scan hot path checks bit 31 — if set, decodes `(pt_index, boundary, kind, offset, rule_idx)` directly without touching the entry table. All decoded values are forwarded to `eval_hit()`.
 
-Falls back to indirect dispatch for matrix rules, multi-entry patterns, or values exceeding bit-width limits.
+Falls back to indirect dispatch for matrix rules, multi-entry patterns, or rule indices exceeding 19-bit capacity (512K).
 
 #### Bitmask vs Matrix
 
@@ -346,13 +342,13 @@ Falls back to indirect dispatch for matrix rules, multi-entry patterns, or value
 Rule parsed from pattern string
         │
         ▼
-  shape == SingleAnd, no NOT? ──► SingleAnd (no counters)
+  1 AND segment?             ──► Immediate (mark positive on first hit)
         │ NO
         ▼
-  ≤64 segs, no repeats?  ──► Bitmask (u64 + remaining_and)
+  ≤64 segs, no repeats?     ──► Bitmask (u64 + remaining_and)
         │ NO
         ▼
-                              Matrix (Vec counter grid)
+                                  Matrix (Vec counter grid)
 ```
 
 ---
