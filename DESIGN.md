@@ -302,11 +302,11 @@ For a matcher with PTs {None, VariantNorm, Romanize, Delete} on ASCII text, this
 
 Each rule has two representations: cold `Rule` (segment_counts, word_id, word — only read for matrix init and result output) and hot `RuleInfo` (and_count, method, has_not — 3 bytes, stored contiguously in `RuleSet::rule_info`). Per-call mutable state lives in `WordState`. `PatternEntry` is 8 bytes (rule_idx, offset, pt_index, kind, boundary) — rule-level metadata was moved to `RuleInfo` to avoid per-entry duplication.
 
-- **`WordState`** (per-rule mutable state, 8 bytes): three `u16` generation stamps (`matrix_generation`, `positive_generation`, `not_generation`) and `remaining_and: u16`. The `satisfied_mask: u64` for bitmask-path rules lives in a parallel `satisfied_masks: Vec<u64>`, split out to keep the hot struct small (10K rules × 8B = 80KB, fits L1d).
+- **`WordState`** (per-rule mutable state, 6 bytes): one `u16` generation stamp (init guard), `remaining_and: u16` (0 = all AND met), and `vetoed: bool`. The `satisfied_mask: u64` for bitmask-path rules lives in a parallel `satisfied_masks: Vec<u64>`, split out to keep the hot struct small (10K rules × 6B = 60KB, fits L1d).
 
 #### Generation-Based Reuse
 
-Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u16` counter is bumped. A field is "live" only when its stamp matches the current generation. Cost: O(1) amortized reset. Wraps at `u16::MAX` (once per ~65K calls; bulk-reset cost ~20µs, amortized to <1ns per scan).
+Instead of zeroing `WordState` arrays between calls, a monotonic `generation: u16` counter is bumped. A rule's state is "live" only when `ws.generation == current_generation`; `remaining_and` and `vetoed` are stale otherwise. Cost: O(1) amortized reset. Wraps at `u16::MAX` (once per ~65K calls; bulk-reset cost ~15µs, amortized to <1ns per scan).
 
 #### ScanState Split-Borrow
 

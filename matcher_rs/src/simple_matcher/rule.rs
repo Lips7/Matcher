@@ -300,14 +300,14 @@ impl RuleSet {
     /// Returns `true` only when the caller may stop early because a
     /// non-vetoed rule is already satisfied and `exit_early` is set.
     ///
-    /// # State transitions
+    /// # Control flow
     ///
-    /// - **And**: Marks the segment satisfied. When all AND segments are done,
-    ///   the rule becomes positive. Dispatches on shape:
-    ///   `SingleAnd`/`SingleAndNot` → immediate, `Bitmask`/`BitmaskNot` → bit
-    ///   test-and-set, `Matrix`/`MatrixNot` → counter decrement.
-    /// - **Not**: Sets `not_generation` to veto the rule. With the matrix path,
-    ///   increments the per-segment counter and vetoes when it goes positive.
+    /// One generation comparison decides init-vs-process:
+    ///
+    /// - `ws.generation == current`: rule already touched this scan. Check
+    ///   vetoed / remaining_and before processing the hit.
+    /// - `ws.generation != current`: first touch. Initialize state, then
+    ///   process.
     ///
     /// # Safety (internal)
     ///
@@ -334,19 +334,19 @@ impl RuleSet {
         }
 
         // SAFETY: bounds guaranteed by assert_unchecked above.
-        let word_state = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
+        let ws = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
 
         // ── NOT hit ──────────────────────────────────────────────────
         if matches!(kind, PatternKind::Not) {
-            if word_state.not_generation == generation {
-                return false;
-            }
-
-            // Lazy init on first touch.
-            if word_state.matrix_generation != generation {
-                word_state.matrix_generation = generation;
-                word_state.positive_generation = if info.and_count == 0 { generation } else { 0 };
-                word_state.remaining_and = info.and_count as u16;
+            if ws.generation == generation {
+                if ws.vetoed {
+                    return false;
+                }
+            } else {
+                // First touch — initialize.
+                ws.generation = generation;
+                ws.remaining_and = info.and_count as u16;
+                ws.vetoed = false;
                 // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
                 unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
                 ss.touched_indices.push(rule_idx);
@@ -373,10 +373,10 @@ impl RuleSet {
                 *counter += 1;
                 if flat_status[offset] == 0 && *counter > 0 {
                     flat_status[offset] = 1;
-                    word_state.not_generation = generation;
+                    ws.vetoed = true;
                 }
             } else {
-                word_state.not_generation = generation;
+                ws.vetoed = true;
             }
 
             return false;
@@ -384,20 +384,19 @@ impl RuleSet {
 
         // ── AND hit ──────────────────────────────────────────────────
 
-        // Already vetoed by NOT — skip.
-        if info.has_not && word_state.not_generation == generation {
-            return false;
-        }
-        // Already satisfied — return exit_early if eligible.
-        if word_state.positive_generation == generation {
-            return !info.has_not && ctx.exit_early;
-        }
-
-        // Lazy init on first touch.
-        if word_state.matrix_generation != generation {
-            word_state.matrix_generation = generation;
-            word_state.positive_generation = if info.and_count == 0 { generation } else { 0 };
-            word_state.remaining_and = info.and_count as u16;
+        if ws.generation == generation {
+            // Already touched — check guards before processing.
+            if info.has_not && ws.vetoed {
+                return false;
+            }
+            if ws.remaining_and == 0 {
+                return !info.has_not && ctx.exit_early;
+            }
+        } else {
+            // First touch — initialize.
+            ws.generation = generation;
+            ws.remaining_and = info.and_count as u16;
+            ws.vetoed = false;
             // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
             unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
             ss.touched_indices.push(rule_idx);
@@ -426,15 +425,12 @@ impl RuleSet {
                 *counter -= 1;
                 if flat_status[offset] == 0 && *counter <= 0 {
                     flat_status[offset] = 1;
-                    word_state.remaining_and -= 1;
-                    if word_state.remaining_and == 0 {
-                        word_state.positive_generation = generation;
-                    }
+                    ws.remaining_and -= 1;
                 }
-                word_state.positive_generation == generation
+                ws.remaining_and == 0
             }
             SatisfactionMethod::Immediate => {
-                word_state.positive_generation = generation;
+                ws.remaining_and = 0;
                 true
             }
             SatisfactionMethod::Bitmask => {
@@ -443,16 +439,13 @@ impl RuleSet {
                 let mask = unsafe { ss.satisfied_masks.get_unchecked_mut(rule_idx) };
                 if *mask & bit == 0 {
                     *mask |= bit;
-                    word_state.remaining_and -= 1;
-                    if word_state.remaining_and == 0 {
-                        word_state.positive_generation = generation;
-                    }
+                    ws.remaining_and -= 1;
                 }
-                word_state.positive_generation == generation
+                ws.remaining_and == 0
             }
         };
 
-        ctx.exit_early && is_satisfied && !info.has_not && word_state.not_generation != generation
+        ctx.exit_early && is_satisfied && !info.has_not && !ws.vetoed
     }
 
     /// Pushes the borrowed public result for `rule_idx`.

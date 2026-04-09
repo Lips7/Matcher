@@ -15,8 +15,8 @@
 //! reset cost.
 //!
 //! When `generation` wraps to `u16::MAX`, all stamps are reset to 0 and the
-//! counter restarts at 1. Using `u16` keeps `WordState` at 8 bytes (fits 10K
-//! rules in 80KB — within L1d cache). The bulk-reset fires every ~65K scans
+//! counter restarts at 1. Using `u16` keeps `WordState` at 6 bytes (fits 10K
+//! rules in 60KB — within L1d cache). The bulk-reset fires every ~65K scans
 //! (~20µs amortized to <1ns per scan).
 //!
 //! ```text
@@ -31,42 +31,36 @@ use std::cell::UnsafeCell;
 /// Per-rule mutable state reused across scans.
 ///
 /// Each rule has one `WordState` slot in [`SimpleMatchState::word_states`],
-/// indexed by `rule_idx`. Fields use generation stamps rather than boolean
-/// flags so the entire vector can be "reset" by incrementing the global
-/// generation counter.
+/// indexed by `rule_idx`. The `generation` field acts as the sole init guard:
+/// all other fields are only meaningful when `generation ==
+/// current_generation`.
 ///
-/// # Layout
+/// # Layout (6 bytes)
 ///
-/// The three `*_generation` fields track whether the rule has been touched /
-/// satisfied / vetoed in the current scan. `satisfied_mask` and `remaining_and`
-/// are only meaningful when `matrix_generation == current_generation` (i.e.,
-/// the rule has been initialized for this scan).
+/// - `generation: u16` — init guard. Matches current scan generation iff rule
+///   has been touched.
+/// - `remaining_and: u16` — countdown. 0 means all AND segments satisfied.
+/// - `vetoed: bool` — true if any NOT segment was observed.
+///
+/// `satisfied_mask: u64` for bitmask-path rules lives in a parallel
+/// `satisfied_masks: Vec<u64>`, split out to keep this struct small.
 #[derive(Default, Clone, Copy)]
 pub(super) struct WordState {
-    /// Generation in which the rule's bitmask/matrix state was initialized.
+    /// Scan generation in which this rule was initialized.
     ///
-    /// Set to the current generation on first touch. If it does not match the
-    /// current generation, the rest of this struct's fields are stale.
-    pub(super) matrix_generation: u16,
-    /// Generation in which all positive (AND) requirements became satisfied.
+    /// Set to the current generation on first touch. If it does not match,
+    /// all other fields are stale and must not be read.
+    pub(super) generation: u16,
+    /// Remaining AND segments needed before the rule can fire.
     ///
-    /// Set to the current generation when `remaining_and` reaches zero or on a
-    /// [`PatternKind::And`](super::pattern::PatternKind::And) hit. A rule
-    /// is considered "satisfied" when `positive_generation ==
-    /// current_generation` and `not_generation != current_generation`.
-    pub(super) positive_generation: u16,
-    /// Generation in which a NOT segment vetoed the rule.
+    /// Initialized to the rule's `and_count`. The rule is "positive" (all AND
+    /// segments satisfied) when this reaches zero.
+    pub(super) remaining_and: u16,
+    /// Whether a NOT segment has vetoed this rule.
     ///
     /// Once set, the rule cannot fire regardless of how many AND segments
-    /// match.
-    pub(super) not_generation: u16,
-    /// Remaining AND segments still needed before the rule can fire.
-    ///
-    /// Initialized to
-    /// [`PatternEntry::and_count`](super::pattern::PatternEntry::and_count) and
-    /// decremented as segments are satisfied. The rule becomes positive when
-    /// this reaches zero.
-    pub(super) remaining_and: u16,
+    /// match. Only meaningful when `generation == current_generation`.
+    pub(super) vetoed: bool,
 }
 
 /// Thread-local state reused by every [`super::SimpleMatcher`] call on one
@@ -210,12 +204,11 @@ impl ScanState<'_> {
     #[inline(always)]
     pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
         // SAFETY: `rule_idx` is in bounds — indices originate from construction.
-        let word_state = unsafe {
+        let ws = unsafe {
             core::hint::assert_unchecked(rule_idx < self.word_states.len());
             self.word_states.get_unchecked(rule_idx)
         };
-        word_state.positive_generation == self.generation
-            && word_state.not_generation != self.generation
+        ws.generation == self.generation && ws.remaining_and == 0 && !ws.vetoed
     }
 }
 
@@ -237,10 +230,10 @@ impl ScanState<'_> {
     ) {
         let generation = self.generation;
         // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let word_state = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
-        word_state.matrix_generation = generation;
-        word_state.positive_generation = if and_count == 0 { generation } else { 0 };
-        word_state.remaining_and = and_count as u16;
+        let ws = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        ws.generation = generation;
+        ws.remaining_and = and_count as u16;
+        ws.vetoed = false;
         self.satisfied_masks[rule_idx] = 0;
         self.touched_indices.push(rule_idx);
 
@@ -288,10 +281,8 @@ impl SimpleMatchState {
     /// scans — the cost (~20µs for 10K rules) amortizes to <1ns per scan.
     pub(super) fn prepare(&mut self, size: usize) {
         if self.generation == u16::MAX {
-            for state in self.word_states.iter_mut() {
-                state.matrix_generation = 0;
-                state.positive_generation = 0;
-                state.not_generation = 0;
+            for ws in self.word_states.iter_mut() {
+                ws.generation = 0;
             }
             self.generation = 1;
         } else {
@@ -397,9 +388,9 @@ mod tests {
         let mut state = SimpleMatchState::new();
         state.prepare(3);
         let current = state.generation;
-        state.word_states[0].positive_generation = current;
-        state.word_states[1].matrix_generation = current;
-        state.word_states[2].not_generation = current;
+        state.word_states[0].generation = current;
+        state.word_states[1].generation = current;
+        state.word_states[2].generation = current;
 
         state.generation = u16::MAX - 1;
         state.prepare(3);
@@ -408,9 +399,7 @@ mod tests {
         state.prepare(3);
         assert_eq!(state.generation, 1);
         for ws in &state.word_states {
-            assert_eq!(ws.matrix_generation, 0);
-            assert_eq!(ws.positive_generation, 0);
-            assert_eq!(ws.not_generation, 0);
+            assert_eq!(ws.generation, 0);
         }
     }
 
@@ -420,7 +409,9 @@ mod tests {
         state.prepare(1);
         let current = state.generation;
 
-        state.word_states[0].positive_generation = current;
+        state.word_states[0].generation = current;
+        state.word_states[0].remaining_and = 0;
+        state.word_states[0].vetoed = false;
         let ss = state.as_scan_state();
         assert!(ss.rule_is_satisfied(0));
     }
@@ -431,8 +422,9 @@ mod tests {
         state.prepare(1);
         let current = state.generation;
 
-        state.word_states[0].positive_generation = current;
-        state.word_states[0].not_generation = current;
+        state.word_states[0].generation = current;
+        state.word_states[0].remaining_and = 0;
+        state.word_states[0].vetoed = true;
         let ss = state.as_scan_state();
         assert!(!ss.rule_is_satisfied(0));
     }
@@ -451,8 +443,9 @@ mod tests {
         let mut ss = state.as_scan_state();
         ss.init_rule(&rule, 2, 0, ctx);
 
-        assert_eq!(ss.word_states[0].matrix_generation, ss.generation());
+        assert_eq!(ss.word_states[0].generation, ss.generation());
         assert_eq!(ss.word_states[0].remaining_and, 2);
+        assert!(!ss.word_states[0].vetoed);
         assert_eq!(ss.satisfied_masks[0], 0);
         assert_eq!(ss.touched_indices(), &[0]);
 
