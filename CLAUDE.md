@@ -8,10 +8,12 @@ High-performance multi-language word/text matcher in Rust with Python, C, and Ja
 
 ## Commands
 
+All commands run from the workspace root via `just` — no `cd` needed.
+
 ```bash
 # Build
 just build                          # Full workspace + copy bindings artifacts
-cargo build --release               # Rust only
+just update                         # cargo update --breaking + cargo upgrade
 
 # Quick iteration
 just check                          # Fast type-check (no codegen)
@@ -19,48 +21,43 @@ just fmt                            # Auto-format
 just fmt-check                      # Check formatting without modifying
 
 # Test (test-rs and test-quick accept pass-through args)
-just test                                          # All languages (Rust + Python + Java + C)
-just test-rs                                       # All feature combos + doctests + docs
-just test-quick                                    # Default-features tests only
-just test-quick test_name                          # Single test by name (substring match)
-just test-quick --no-default-features              # Without DFA
-just test-quick --test test_engine                 # Single test file by name
-just test-py                                       # Python bindings
-just test-java                                     # Java bindings
-just test-c                                        # C bindings
+just test                           # All languages (Rust + Python + Java + C)
+just test-rs                        # All feature combos + doctests
+just test-quick                     # Default-features tests only
+just test-quick test_name           # Single test by name (substring match)
+just test-quick --no-default-features
+just test-quick --test test_engine  # Single test file by name
+just test-py                        # Python bindings
+just test-java                      # Java bindings
+just test-c                         # C bindings
 
-# Lint/Format
+# Lint
 just lint                           # All languages + workspace clippy + doc build
 just lint-check                     # Check-only (no auto-fix) — used in CI
-just lint-rs                        # cargo fmt + cargo clippy (matcher_rs)
-just lint-py                        # cargo fmt + cargo clippy + ruff + ty check (matcher_py)
-just lint-java                      # cargo fmt + cargo clippy + mvn checkstyle (matcher_java)
-just lint-c                         # cargo fmt + cargo clippy (matcher_c)
 
-# Benchmarks (harness: divan, single target: bench)
-# All bench recipes accept pass-through args: --quick, --profile, --repeats, --filter, etc.
-just bench-search                                      # Main throughput workflow (~15 min)
-just bench-search --quick                              # Quick directional signal (~2-3 min)
-just bench-search --filter text_transform              # Only transform benchmarks (~2 min)
-just bench-search --filter rule_complexity             # Only rule shape benchmarks (~3 min)
-just bench-search --filter "scaling::process_cn"       # Single benchmark group (~1 min)
+# Benchmarks (harness: divan, orchestration: matcher_rs/scripts/run_benchmarks.py)
+# Bench targets: bench_search (throughput), bench_transform (transforms), bench_build (construction)
+# Pass-through args: --quick, --filter <pattern>, --repeats N, --profile <name>
+just bench-search                   # Search + transform presets (full run)
+just bench-search --quick           # Quick directional signal
+just bench-search --filter scaling  # Only scaling benchmarks
+just bench-search --filter rule_complexity
+just bench-search --filter "scaling::process_cn"       # Single benchmark group
 just bench-search --profile bench-dev                  # Faster rebuild (thin LTO)
-just bench-build                                       # Matcher construction workflow
-just bench-all                                         # All presets (search + build)
-just bench-compare <baseline> <candidate>               # compare runs, dirs, or raw files
-just bench-viz <run_dir>                               # interactive HTML dashboard (Plotly)
-just bench-viz <baseline_dir> <candidate_dir>          # comparison visualization
+just bench-build                    # Construction benchmarks
+just bench-all                      # All presets (search + build)
+just bench-compare <baseline> <candidate>              # Compare runs, dirs, or raw files
+just bench-viz <run_dir>                               # Interactive HTML dashboard (Plotly)
+just bench-viz <baseline_dir> <candidate_dir>          # Comparison visualization
 
-# Profiling (scene-based, uses release + debug symbols)
-cargo run --profile profiling --example profile_search -p matcher_rs -- --list        # list scenes
-cargo run --profile profiling --example profile_search -p matcher_rs -- --scene all   # all scenes
-just profile record --scene en-search --analyze        # Instruments + auto-analyze
+# Profiling (macOS Instruments Time Profiler)
+just profile record --scene en-search --analyze        # Record + auto-analyze
+just profile record --scene all --seconds 5            # All scenes, 5s each
+just profile record --target build --dict cn --rules 50000 --analyze
+just profile analyze /tmp/prof_*.trace                 # Analyze existing trace
 
 # Coverage
-just coverage                       # cargo tarpaulin → matcher_rs/tarpaulin-report.html
-
-# Dependency updates
-just update                         # cargo update --breaking + cargo upgrade
+just coverage                       # cargo tarpaulin → cobertura.xml
 
 # Release
 scripts/bump-version.sh <version>   # Update version in all manifests + CHANGELOG
