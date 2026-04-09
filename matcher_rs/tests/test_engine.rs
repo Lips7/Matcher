@@ -37,7 +37,7 @@ fn test_bitmask_to_matrix_threshold() {
     // 64 unique AND segments → bitmask path (exactly at capacity)
     let parts_64: Vec<String> = (0..64).map(|i| format!("w{i}")).collect();
     let matcher_64 = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, &parts_64.join("&"))
+        .add_word(ProcessType::None, 1, parts_64.join("&"))
         .build()
         .unwrap();
 
@@ -48,7 +48,7 @@ fn test_bitmask_to_matrix_threshold() {
     // 65 unique AND segments → matrix fallback
     let parts_65: Vec<String> = (0..65).map(|i| format!("w{i}")).collect();
     let matcher_65 = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, &parts_65.join("&"))
+        .add_word(ProcessType::None, 1, parts_65.join("&"))
         .build()
         .unwrap();
 
@@ -59,7 +59,7 @@ fn test_bitmask_to_matrix_threshold() {
     // 63 AND + 1 NOT = 64 total → bitmask path (at capacity)
     let and_63: Vec<String> = (0..63).map(|i| format!("w{i}")).collect();
     let m_63_not = SimpleMatcherBuilder::new()
-        .add_word(ProcessType::None, 1, &format!("{}~veto", and_63.join("&")))
+        .add_word(ProcessType::None, 1, format!("{}~veto", and_63.join("&")))
         .build()
         .unwrap();
 
@@ -71,7 +71,7 @@ fn test_bitmask_to_matrix_threshold() {
         .add_word(
             ProcessType::None,
             1,
-            &format!("{}~notX~notY", and_63.join("&")),
+            format!("{}~notX~notY", and_63.join("&")),
         )
         .build()
         .unwrap();

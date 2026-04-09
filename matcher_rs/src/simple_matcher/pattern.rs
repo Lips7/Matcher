@@ -423,13 +423,15 @@ mod tests {
         ri
     }
 
+    type EncodingCase = (
+        (u32, u8, u8, PatternKind, u8),
+        RuleInfo,
+        (u8, PatternKind, usize),
+    );
+
     #[test]
     fn test_direct_encoding_variants() {
-        let cases: &[(
-            (u32, u8, u8, PatternKind, u8),
-            RuleInfo,
-            (u8, PatternKind, usize),
-        )] = &[
+        let cases: &[EncodingCase] = &[
             // Single AND → Immediate
             (
                 (5, 0, 2, PatternKind::And, 1),
@@ -466,7 +468,7 @@ mod tests {
 
         for &(ref e, ref ri, (exp_pt, exp_kind, exp_idx)) in cases {
             let entries = vec![vec![entry(e.0, e.1, e.2, e.3, e.4)]];
-            let ri_vec = ri_for(e.0, ri.clone());
+            let ri_vec = ri_for(e.0, *ri);
             let raw = PatternIndex::new(entries).build_value_map(&ri_vec)[0];
             assert!(raw & DIRECT_RULE_BIT != 0, "should use direct encoding");
             let (pt, _, kind, _, idx) = decode_direct(raw);
