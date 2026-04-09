@@ -26,7 +26,13 @@ from collections import defaultdict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from bench_utils import AggregateFile, AggregateRow, format_duration, load_aggregate_input
+from bench_utils import (
+    METRIC_CHOICES,
+    AggregateFile,
+    AggregateRow,
+    format_duration,
+    load_aggregate_input,
+)
 
 # =============================================================================
 # Constants
@@ -39,8 +45,8 @@ SERIES_PALETTE = [
 
 ENGINE_COLORS = {
     "ac_dfa": SERIES_PALETTE[0],
-    "daac_byte": SERIES_PALETTE[1],
-    "daac_char": SERIES_PALETTE[2],
+    "daac_bytewise": SERIES_PALETTE[1],
+    "daac_charwise": SERIES_PALETTE[2],
 }
 
 LAYOUT_DEFAULTS = dict(
@@ -324,7 +330,7 @@ def build_heatmap_fig(groups: list[ChartGroup]) -> go.Figure | None:
     # Check if data looks like engine benchmarks (series are engine names)
     sample_group = scaling_groups[0]
     series_names, sizes, by_series = decompose_scaling(sample_group)
-    known_engines = {"ac_dfa", "daac_byte", "daac_char"}
+    known_engines = {"ac_dfa", "daac_bytewise", "daac_charwise"}
     if not any(s in known_engines for s in series_names):
         return None
 
@@ -534,7 +540,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Visualize benchmark results as interactive HTML charts.")
     parser.add_argument("inputs", nargs="+", type=pathlib.Path, help="One path for single-run view, two for comparison.")
     parser.add_argument("--output", "-o", type=pathlib.Path, default=None, help="Output HTML path.")
-    parser.add_argument("--metric", choices=["median", "mean", "fastest", "slowest"], default="median")
+    parser.add_argument("--metric", choices=METRIC_CHOICES, default="median")
     parser.add_argument("--open", action="store_true", help="Open result in browser.")
     return parser
 

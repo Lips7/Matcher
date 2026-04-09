@@ -15,6 +15,7 @@ import sys
 from collections import OrderedDict
 
 from bench_utils import (
+    METRIC_CHOICES,
     AggregateFile,
     aggregate_bench_files,
     parse_bench_file,
@@ -77,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--metric",
-        choices=["median", "mean", "fastest", "slowest"],
+        choices=METRIC_CHOICES,
         default="median",
         help="Metric used in the aggregate summary. Default: median.",
     )

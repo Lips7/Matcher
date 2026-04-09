@@ -9,6 +9,8 @@ import re
 from statistics import median
 from typing import Iterable
 
+METRIC_CHOICES = ["median", "mean", "fastest", "slowest"]
+
 TREE_LINE_RE = re.compile(r"^(?P<prefix>(?:│  |   )*)(?P<branch>[├╰])─ (?P<rest>.*)$")
 BENCH_ROW_RE = re.compile(
     r"""

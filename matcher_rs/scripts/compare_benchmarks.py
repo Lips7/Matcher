@@ -9,6 +9,7 @@ import argparse
 import pathlib
 
 from bench_utils import (
+    METRIC_CHOICES,
     compare_result_maps,
     load_aggregate_input,
     print_change_section,
@@ -27,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("candidate", type=pathlib.Path)
     parser.add_argument(
         "--metric",
-        choices=["median", "mean", "fastest", "slowest"],
+        choices=METRIC_CHOICES,
         default="median",
         help="Metric to aggregate when raw benchmark files are provided.",
     )

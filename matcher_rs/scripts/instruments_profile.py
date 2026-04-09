@@ -263,12 +263,7 @@ def _build_source_attribution(
 
     Returns list of {source, weight_ms, pct, inline_chain} sorted by weight.
     """
-    OUR_FILES = {
-        "mod.rs", "build.rs", "engine.rs", "search.rs", "state.rs", "rule.rs",
-        "step.rs", "graph.rs", "api.rs", "process_type.rs", "string_pool.rs",
-        "replace.rs", "delete.rs", "utf8.rs", "simd.rs", "constants.rs",
-        "builder.rs",
-    }
+    OUR_FILES = {p.name for p in (REPO_ROOT / "matcher_rs" / "src").rglob("*.rs")}
 
     attribution: Counter[str] = Counter()
     attribution_chain: dict[str, str] = {}
@@ -450,25 +445,25 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("DFA scan",          ["dfa::", "DFA::", "aho_corasick::dfa", "aho_corasick::automaton",
                            "aho_corasick::ahocorasick", "AcAutomaton"]),
     ("Daachorse scan",    ["bytewise", "charwise", "daachorse"]),
-    ("Engine dispatch",   ["engine::", "ScanPlan", "BytewiseMatcher", "CharwiseMatcher",
-                           "count_non_ascii", "text_non_ascii_density",
-                           "PatternIndex", "dispatch_indirect", "DIRECT_RULE"]),
+    ("Engine dispatch",   ["scan::", "ScanPlan", "BytewiseMatcher", "CharwiseMatcher",
+                           "ScanEngine", "count_non_ascii", "text_non_ascii_density",
+                           "pattern::", "PatternIndex", "PatternDispatch", "DIRECT_RULE"]),
     ("Search hot path",   ["search::", "walk_and_scan", "scan_variant", "process_match",
-                           "is_match_simple", "process_simple"]),
+                           "tree::", "ProcessTypeBitNode"]),
     ("State machine",     ["state::", "WordState", "SimpleMatchState", "ScanContext",
                            "generation", "mark_positive"]),
-    ("Rule evaluation",   ["rule::", "process_entry", "RuleSet", "Rule", "RuleShape",
-                           "PatternEntry", "PatternKind"]),
+    ("Rule evaluation",   ["rule::", "eval_hit", "RuleSet", "Rule", "RuleInfo",
+                           "SatisfactionMethod", "PatternEntry", "PatternKind"]),
     ("Text transform",    ["process::", "transform::", "DeleteMatcher", "VariantNormMatcher",
-                           "RomanizeMatcher", "NormalizeMatcher", "NormalizeFilter",
-                           "string_pool", "ProcessType"]),
+                           "RomanizeMatcher", "NormalizeMatcher", "page_table",
+                           "variant_norm", "romanize", "filter::", "ProcessType"]),
     ("ASCII check",       ["is_ascii", "ascii::"]),
     ("Allocator",         ["alloc::", "mi_", "malloc", "free", "realloc", "Allocator"]),
     ("Vec / collections", ["vec::", "Vec::", "HashMap", "hashbrown", "AHash",
                            "drop_in_place"]),
     ("Std / overhead",    ["black_box", "hint::", "option.rs", "cmp::", "PartialOrd",
                            "PartialEq", "slice::cmp", "ptr::read", "ptr::copy",
-                           "memcmp", "memcpy", "memmove", "memmove"]),
+                           "memcmp", "memcpy", "memmove"]),
     ("Sort (init)",       ["sort::", "quicksort", "smallsort", "median"]),
     ("Main loop",         ["profile_search", "profile_build", "main"]),
     ("Thread / spawn",    ["thread::", "pthread", "thread_start", "spawn"]),
