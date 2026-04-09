@@ -447,6 +447,7 @@ impl PySimpleMatcher {
             })
             .collect()
     }
+
     /// Batch `find_match`: `list[str] → list[Optional[SimpleResult]]`. Single
     /// GIL release.
     #[pyo3(signature=(texts))]
