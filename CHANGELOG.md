@@ -1,6 +1,35 @@
 # Changelog
 
 
+## 0.15.0 - 2026-04-10
+
+### Bindings
+
+- **Python**: Rewrite `from_dict` to iterate PyDict directly (no `json.dumps` round-trip). Replace `simple_table_bytes` storage with `(pt, id, word)` triples, halving input memory. Remove `__getstate__`/`__setstate__` (pickle via `__getnewargs__` only). Add `SimpleMatcherBuilder`, `heap_bytes()`.
+- **Java**: Make `SimpleMatcher` `Serializable` for Spark distribution (stores config bytes, reconstructs native matcher on deserialization). Convert `SimpleResult` to a Java record. Add `SimpleMatcherBuilder`. Remove FastJSON runtime dependency. Make `MatcherJava` package-private; expose `textProcess`/`reduceTextProcess` as static methods on `SimpleMatcher`.
+- **C**: Extract `decode_c_str` helper and `ffi_fn!` macro to reduce FFI boilerplate. Add `SimpleMatcherBuilder` (init/add_word/build/drop). Add `simple_matcher_heap_bytes`.
+- **Python**: Add `batch_find_match` for batch first-match queries with single GIL release.
+
+### Refactor
+
+- Unify rule evaluation into single `eval_hit` with simplified direct-rule encoding.
+- Remove string pool, `process_iter`, and `PatternKind::Simple`; merge into `And`+`SingleAnd`.
+- Simplify `WordState` from 3 generation stamps to 1 + vetoed flag.
+- Flatten `transform/replace/` into `transform/`; merge `process/api.rs` into `process/mod.rs`; move `graph.rs` → `simple_matcher/tree.rs`; rename `engine.rs` → `scan.rs`; merge `encoding.rs` into `pattern.rs`.
+- Consolidate `RuleHot`/`RuleCold` into single `Rule` type.
+- Introduce streaming byte iterators for filter transform steps.
+- Replace `TinyVec` with `Vec` across modules.
+
+### Documentation
+
+- Rewrite DESIGN.md around concepts and rationale.
+- Fix stale doc links across workspace.
+
+### Tooling
+
+- Align pre-commit hooks with `just lint-check`.
+- Consolidate bench files and deduplicate test data.
+
 ## 0.14.3 - 2026-04-08
 
 ### Refactor
