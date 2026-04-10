@@ -130,16 +130,10 @@ impl<'a, F: CodepointFilter<'a>> Iterator for FilterIterator<'a, F> {
 
             match self.filter.filter_codepoint(cp) {
                 FilterAction::Keep => {
-                    // Yield lead byte, buffer continuation bytes.
-                    self.offset += 1;
-                    let remaining = (char_len - 1) as u8;
-                    if remaining > 0 {
-                        // Copy continuation bytes into inline buffer.
-                        let src = &self.bytes[self.offset..self.offset + remaining as usize];
-                        self.buf[..remaining as usize].copy_from_slice(src);
-                        self.buf_pos = 0;
-                        self.buf_len = remaining;
-                        self.offset += remaining as usize;
+                    self.offset += char_len;
+                    // Point remaining at continuation bytes in source — no copy.
+                    if char_len > 1 {
+                        self.remaining = &self.bytes[self.offset - (char_len - 1)..self.offset];
                     }
                     return Some(byte);
                 }

@@ -390,8 +390,15 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
                 thread_el = id_map[ref]
             thread_name = thread_el.get("fmt", "")
 
-        # Find backtrace (may be ref)
-        bt_el = row.find("backtrace")
+        # Find backtrace — may be nested inside <tagged-backtrace>
+        tbt_el = row.find("tagged-backtrace")
+        if tbt_el is not None:
+            ref = tbt_el.get("ref")
+            if ref and ref in id_map:
+                tbt_el = id_map[ref]
+            bt_el = tbt_el.find("backtrace")
+        else:
+            bt_el = row.find("backtrace")
         if bt_el is None:
             continue
         ref = bt_el.get("ref")
@@ -441,41 +448,83 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
 # Categorization
 # ---------------------------------------------------------------------------
 
+# Matched against the atos-resolved innermost frame (leaf only, not caller chain).
+# Order matters — first match wins.
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
-    ("DFA scan",          ["dfa::", "DFA::", "aho_corasick::dfa", "aho_corasick::automaton",
+    # ── Scan engines (AC automata) ────────────────────────────────────────
+    ("DFA scan",          ["aho_corasick::dfa", "aho_corasick::automaton",
                            "aho_corasick::ahocorasick", "AcAutomaton"]),
-    ("Daachorse scan",    ["bytewise", "charwise", "daachorse"]),
-    ("Engine dispatch",   ["scan::", "ScanPlan", "BytewiseMatcher", "CharwiseMatcher",
+    ("Charwise scan",     ["daachorse", "charwise"]),
+
+    # ── Hit processing & rule evaluation ──────────────────────────────────
+    ("Hit evaluation",    ["eval_hit", "process_match", "check_word_boundary",
+                           "check_satisfaction", "SatisfactionMethod",
+                           "fold_noop_children_masks"]),
+    ("Rule state",        ["SimpleMatchState", "WordState", "ScanState", "ScanContext",
+                           "generation", "mark_positive", "state::"]),
+
+    # ── Text transform pipeline ───────────────────────────────────────────
+    ("Text transform",    ["DeleteMatcher", "VariantNormMatcher", "NormalizeMatcher",
+                           "RomanizeMatcher", "EmojiNorm", "TransformFilter",
+                           "page_table", "variant_norm", "romanize",
+                           "transform::", "process_type"]),
+
+    # ── Construction (automaton build, warm-up) ───────────────────────────
+    ("Construction",      ["build_trie", "fill_failure", "shuffle",
+                           "build_from_noncontiguous", "compile_automata",
+                           "build_current_bytewise", "build_current_charwise",
+                           "parse_rules", "build_process_type_tree",
+                           "SimpleMatcher::new"]),
+
+    # ── Engine plumbing (dispatch, density, pattern tables) ───────────────
+    ("Engine dispatch",   ["ScanPlan", "BytewiseMatcher", "CharwiseMatcher",
                            "ScanEngine", "count_non_ascii", "text_non_ascii_density",
-                           "pattern::", "PatternIndex", "PatternDispatch", "DIRECT_RULE"]),
-    ("Search hot path",   ["search::", "walk_and_scan", "scan_variant", "process_match",
-                           "tree::", "ProcessTypeBitNode"]),
-    ("State machine",     ["state::", "WordState", "SimpleMatchState", "ScanContext",
-                           "generation", "mark_positive"]),
-    ("Rule evaluation",   ["rule::", "eval_hit", "RuleSet", "Rule", "RuleInfo",
-                           "SatisfactionMethod", "PatternEntry", "PatternKind"]),
-    ("Text transform",    ["process::", "transform::", "DeleteMatcher", "VariantNormMatcher",
-                           "RomanizeMatcher", "NormalizeMatcher", "page_table",
-                           "variant_norm", "romanize", "filter::", "ProcessType"]),
-    ("ASCII check",       ["is_ascii", "ascii::"]),
-    ("Allocator",         ["alloc::", "mi_", "malloc", "free", "realloc", "Allocator"]),
-    ("Vec / collections", ["vec::", "Vec::", "HashMap", "hashbrown", "AHash",
-                           "drop_in_place"]),
-    ("Std / overhead",    ["black_box", "hint::", "option.rs", "cmp::", "PartialOrd",
-                           "PartialEq", "slice::cmp", "ptr::read", "ptr::copy",
-                           "memcmp", "memcpy", "memmove"]),
-    ("Sort (init)",       ["sort::", "quicksort", "smallsort", "median"]),
-    ("Main loop",         ["profile_search", "profile_build", "main"]),
-    ("Thread / spawn",    ["thread::", "pthread", "thread_start", "spawn"]),
-    ("dyld / system",     ["dyld", "libsystem", "boot_boot", "ignite", "_open"]),
+                           "PatternIndex", "PatternDispatch", "DIRECT_RULE"]),
+
+    # ── Tree walk / scan loop (catch-all for search.rs self-time) ─────────
+    ("Tree walk",         ["walk_and_scan", "scan_variant",
+                           "ProcessTypeBitNode"]),
+
+    # ── Allocator ─────────────────────────────────────────────────────────
+    ("Allocator",         ["mi_free", "mi_malloc", "mi_zalloc", "mi_realloc",
+                           "mi_page", "_mi_", "malloc", "free", "realloc",
+                           "raw_vec", "finish_grow"]),
+
+    # ── Std / system ──────────────────────────────────────────────────────
+    ("Std / system",      ["dyld", "libsystem", "pthread", "thread_start",
+                           "_platform_mem", "mach_absolute_time", "__bzero",
+                           "DYLD-STUB", "_tlv_get_addr", "clock_gettime",
+                           "memcmp", "memcpy", "memmove",
+                           "sort::", "quicksort", "smallsort",
+                           "black_box", "hint::", "drop_in_place"]),
+
+    # ── Harness ───────────────────────────────────────────────────────────
+    ("Harness",           ["profile_search", "profile_build", "run_scene"]),
 ]
 
 
-def categorize(demangled_leaf: str, demangled_chain: list[str]) -> str:
-    combined = demangled_leaf + " " + " ".join(demangled_chain[:5])
+def categorize(
+    demangled_leaf: str,
+    atos_chain: list[dict] | None = None,
+) -> str:
+    """Categorize a sample using the atos-resolved inline chain.
+
+    Walks the atos chain from innermost to outermost, returning the first
+    match. This handles std functions (e.g. u32::partial_cmp) inlined into
+    domain code (e.g. DFA scan) — the inner frame won't match, but the
+    outer DFA frame will.  Falls back to the demangled leaf symbol.
+    """
+    if atos_chain:
+        for frame in atos_chain:
+            target = frame["name"]
+            for category, keywords in CATEGORY_RULES:
+                for kw in keywords:
+                    if kw in target:
+                        return category
+    # Fallback: match on the raw demangled leaf symbol
     for category, keywords in CATEGORY_RULES:
         for kw in keywords:
-            if kw in combined:
+            if kw in demangled_leaf:
                 return category
     return "Other"
 
@@ -582,6 +631,9 @@ def analyze_trace(trace_path: Path) -> dict:
     leaf_symbols: Counter[str] = Counter()
     # Also track leaf + first caller for richer view
     leaf_with_caller: Counter[str] = Counter()
+    # Track atos-resolved inline breakdown per leaf symbol
+    # leaf_display → {innermost_name → weight_ns}
+    inline_breakdown: dict[str, Counter[str]] = {}
 
     for s in main_samples:
         frames = s["frames"]
@@ -591,7 +643,10 @@ def analyze_trace(trace_path: Path) -> dict:
         leaf_name = demangle_map.get(frames[0]["name"], frames[0]["name"])
         chain_names = [demangle_map.get(f["name"], f["name"]) for f in frames[1:]]
 
-        cat = categorize(leaf_name, chain_names)
+        # Use atos inline chain for categorization
+        leaf_addr = frames[0].get("addr", "")
+        atos_chain = atos_cache.get(leaf_addr)
+        cat = categorize(leaf_name, atos_chain)
         categories[cat] += w
 
         # Build display name for leaf
@@ -606,6 +661,18 @@ def analyze_trace(trace_path: Path) -> dict:
             leaf_display = leaf_short
 
         leaf_symbols[leaf_display] += w
+
+        # Record atos-resolved innermost frame for inline sub-breakdown
+        if atos_chain and len(atos_chain) >= 2:
+            inner = atos_chain[0]
+            inner_name = inner["name"]
+            if inner.get("file") and inner.get("line"):
+                inner_label = f"{inner_name}  ({inner['file']}:{inner['line']})"
+            else:
+                inner_label = inner_name
+            if leaf_display not in inline_breakdown:
+                inline_breakdown[leaf_display] = Counter()
+            inline_breakdown[leaf_display][inner_label] += w
 
         # Leaf + meaningful caller (skip std boilerplate)
         meaningful_caller = _find_meaningful_caller(chain_names)
@@ -642,6 +709,15 @@ def analyze_trace(trace_path: Path) -> dict:
         "call_tree": call_tree,
         "heavy_backtraces": heavy_backtraces,
         "source_attribution": source_attribution,
+        "inline_breakdown": {
+            sym: [
+                {"inner": name, "weight_ms": iw / 1_000_000,
+                 "pct": iw / total_weight_ns * 100}
+                for name, iw in counter.most_common(8)
+            ]
+            for sym, counter in inline_breakdown.items()
+            if counter.total() / total_weight_ns >= 0.02  # only for ≥2% symbols
+        },
     }
 
 
@@ -909,12 +985,21 @@ def print_report(result: dict, path: Path) -> None:
         bar = "█" * int(pct / 2)
         print(f"  {pct:5.1f}%  {info['weight_ms']:7.0f}ms  {cat:<25s} {bar}")
 
+    inline_bd = result.get("inline_breakdown", {})
     print("\n  Top Leaf Symbols:")
     print("  " + "-" * 74)
     print(f"  {'%':>6s}  {'ms':>7s}  Symbol")
     print(f"  {'-' * 74}")
     for entry in result["top_symbols"][:20]:
         print(f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['symbol']}")
+        # Show atos-resolved inline sub-breakdown if available
+        inlines = inline_bd.get(entry["symbol"])
+        if inlines:
+            for j, item in enumerate(inlines):
+                if item["pct"] < 0.5:
+                    break
+                connector = "└─" if j == len(inlines) - 1 or inlines[j + 1]["pct"] < 0.5 else "├─"
+                print(f"           {connector} {item['pct']:4.1f}%  {item['weight_ms']:6.0f}ms  {item['inner']}")
 
     if result.get("top_with_caller"):
         print("\n  Top Leaf + Caller:")
