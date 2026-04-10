@@ -2,7 +2,7 @@
 //!
 //! # Lifecycle
 //!
-//! 1. Call [`init_simple_matcher`] with JSON bytes to get a `*mut
+//! 1. Call [`init_simple_matcher`] (JSON) or use the builder API to get a `*mut
 //!    SimpleMatcher`.
 //! 2. Pass the pointer to query functions ([`simple_matcher_is_match`],
 //!    [`simple_matcher_process`], [`simple_matcher_find_match`]).
@@ -32,19 +32,49 @@ use std::{
     ptr, str,
 };
 
-/// Returns the library version as a static null-terminated string.
-///
-/// The returned pointer is valid for the lifetime of the process and must NOT
-/// be freed.
-#[unsafe(no_mangle)]
-pub extern "C" fn matcher_version() -> *const c_char {
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
-}
-
 use matcher_rs::{
-    ProcessType, SimpleMatcher, SimpleTableSerde as SimpleTable,
+    ProcessType, SimpleMatcher, SimpleMatcherBuilder, SimpleTableSerde as SimpleTable,
     reduce_text_process as reduce_text_process_rs, text_process as text_process_rs,
 };
+
+// ---------------------------------------------------------------------------
+// FFI helpers
+// ---------------------------------------------------------------------------
+
+/// Wraps an FFI function body in [`catch_unwind`] with a default return value
+/// on panic.
+macro_rules! ffi_fn {
+    ($name:expr, $default:expr, $body:expr) => {{
+        let result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $body));
+        result.unwrap_or_else(|_| {
+            eprintln!(concat!($name, " panicked"));
+            $default
+        })
+    }};
+}
+
+/// Null-checks a C string pointer, then decodes it as UTF-8.
+///
+/// # Safety
+///
+/// `ptr` must be a valid null-terminated C string pointer or null.
+unsafe fn decode_c_str<'a>(ptr: *const c_char) -> Option<&'a str> {
+    if ptr.is_null() {
+        return None;
+    }
+    let bytes = unsafe { CStr::from_ptr(ptr) }.to_bytes();
+    match str::from_utf8(bytes) {
+        Ok(s) => Some(s),
+        Err(_) => {
+            eprintln!("Input is not a valid utf-8 string");
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Result types
+// ---------------------------------------------------------------------------
 
 /// A single match result returned across the FFI boundary.
 ///
@@ -67,40 +97,134 @@ pub struct CSimpleResultList {
     pub items: *mut CSimpleResult,
 }
 
-/// Initializes a [`SimpleMatcher`] instance from serialized table bytes.
+// ---------------------------------------------------------------------------
+// Builder
+// ---------------------------------------------------------------------------
+
+/// Opaque builder for constructing a [`SimpleMatcher`] from C without JSON.
+pub struct CSimpleMatcherBuilder {
+    words: Vec<(u8, u32, String)>,
+}
+
+/// Creates a new empty builder. The caller must either call
+/// [`simple_matcher_builder_build`] (which consumes it) or
+/// [`drop_simple_matcher_builder`] to free it.
+#[unsafe(no_mangle)]
+pub extern "C" fn init_simple_matcher_builder() -> *mut CSimpleMatcherBuilder {
+    Box::into_raw(Box::new(CSimpleMatcherBuilder { words: Vec::new() }))
+}
+
+/// Adds a word pattern to the builder. The `word` string is copied; the
+/// caller retains ownership. Returns `true` on success.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The
-/// caller must ensure that `simple_table_bytes` points to a valid
-/// null-terminated C string. The returned [`SimpleMatcher`] pointer must be
-/// properly managed and eventually deallocated by calling
-/// `drop_simple_matcher`.
 ///
-/// # Arguments
-/// - `simple_table_bytes`: A pointer to a C string containing the serialized
-///   table bytes.
+/// `builder` must be a valid pointer from [`init_simple_matcher_builder`].
+/// `word` must be a valid null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_builder_add_word(
+    builder: *mut CSimpleMatcherBuilder,
+    process_type: u8,
+    word_id: u32,
+    word: *const c_char,
+) -> bool {
+    ffi_fn!("simple_matcher_builder_add_word", false, unsafe {
+        let Some(b) = builder.as_mut() else {
+            return false;
+        };
+        let Some(word_str) = decode_c_str(word) else {
+            return false;
+        };
+        b.words.push((process_type, word_id, word_str.to_owned()));
+        true
+    })
+}
+
+/// Consumes the builder and produces a [`SimpleMatcher`]. The builder is
+/// **always** freed by this call (even on error). Returns null on error.
 ///
-/// # Returns
-/// A pointer to a newly allocated [`SimpleMatcher`] instance, or null on error.
-/// The caller is responsible for managing the lifetime of this pointer and must
-/// eventually call [`drop_simple_matcher`] to free the memory.
+/// # Safety
+///
+/// `builder` must be a valid pointer from [`init_simple_matcher_builder`]
+/// and must not be used after this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_builder_build(
+    builder: *mut CSimpleMatcherBuilder,
+) -> *mut SimpleMatcher {
+    ffi_fn!("simple_matcher_builder_build", ptr::null_mut(), unsafe {
+        if builder.is_null() {
+            return ptr::null_mut();
+        }
+        let builder = Box::from_raw(builder);
+        let mut rs_builder = SimpleMatcherBuilder::new();
+        for &(bits, id, ref word) in &builder.words {
+            rs_builder =
+                rs_builder.add_word(ProcessType::from_bits_retain(bits), id, word.as_str());
+        }
+        match rs_builder.build() {
+            Ok(matcher) => Box::into_raw(Box::new(matcher)),
+            Err(e) => {
+                eprintln!("SimpleMatcherBuilder build failed: {e}");
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Frees a builder that was NOT consumed by [`simple_matcher_builder_build`].
+///
+/// # Safety
+///
+/// `builder` must be a valid pointer or null. Must not be called after
+/// [`simple_matcher_builder_build`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_simple_matcher_builder(builder: *mut CSimpleMatcherBuilder) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if !builder.is_null() {
+            drop(Box::from_raw(builder));
+        }
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Version
+// ---------------------------------------------------------------------------
+
+/// Returns the library version as a static null-terminated string.
+///
+/// The returned pointer is valid for the lifetime of the process and must NOT
+/// be freed.
+#[unsafe(no_mangle)]
+pub extern "C" fn matcher_version() -> *const c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
+}
+
+// ---------------------------------------------------------------------------
+// SimpleMatcher lifecycle
+// ---------------------------------------------------------------------------
+
+/// Initializes a [`SimpleMatcher`] from JSON bytes. Returns null on error.
+///
+/// # Safety
+///
+/// `simple_table_bytes` must be a valid null-terminated C string containing
+/// UTF-8 JSON. The returned pointer must be freed with [`drop_simple_matcher`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init_simple_matcher(
     simple_table_bytes: *const c_char,
 ) -> *mut SimpleMatcher {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+    ffi_fn!("init_simple_matcher", ptr::null_mut(), unsafe {
         if simple_table_bytes.is_null() {
             return ptr::null_mut();
         }
         let simple_table: SimpleTable =
             match sonic_rs::from_slice(CStr::from_ptr(simple_table_bytes).to_bytes()) {
-                Ok(simple_table) => simple_table,
+                Ok(t) => t,
                 Err(e) => {
-                    eprintln!("Deserialize simple_table_bytes failed: {}", e);
+                    eprintln!("Deserialize simple_table_bytes failed: {e}");
                     return ptr::null_mut();
                 }
             };
-
         match SimpleMatcher::new(&simple_table) {
             Ok(matcher) => Box::into_raw(Box::new(matcher)),
             Err(e) => {
@@ -108,98 +232,76 @@ pub unsafe extern "C" fn init_simple_matcher(
                 ptr::null_mut()
             }
         }
-    }));
-
-    result.unwrap_or_else(|_| {
-        eprintln!("init_simple_matcher panicked");
-        ptr::null_mut()
     })
 }
 
-/// Determines if the input text matches using the [`SimpleMatcher`].
+/// Deallocates a [`SimpleMatcher`].
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The
-/// caller must ensure that `simple_matcher` points to a valid [`SimpleMatcher`]
-/// instance and that `text` points to a valid null-terminated C string. Both
-/// the `simple_matcher` and the `text` must remain valid for the duration of
-/// the call.
 ///
-/// # Arguments
-/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance.
-/// - `text`: A pointer to a C string containing the text to be processed.
+/// `simple_matcher` must have been returned by [`init_simple_matcher`] or
+/// [`simple_matcher_builder_build`] and must not be used after this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if !simple_matcher.is_null() {
+            drop(Box::from_raw(simple_matcher))
+        }
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Matching
+// ---------------------------------------------------------------------------
+
+/// Returns whether any rule matches `text`. Returns `false` on null or error.
 ///
-/// # Returns
-/// A boolean indicating whether the text matches, or `false` on any error.
+/// # Safety
+///
+/// `simple_matcher` must be a valid matcher pointer. `text` must be a valid
+/// null-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_is_match(
     simple_matcher: *const SimpleMatcher,
     text: *const c_char,
 ) -> bool {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if text.is_null() {
+    ffi_fn!("simple_matcher_is_match", false, unsafe {
+        let Some(text_str) = decode_c_str(text) else {
             return false;
-        }
-        let text_bytes = CStr::from_ptr(text).to_bytes();
-        let text_str = match str::from_utf8(text_bytes) {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("Input is not a valid utf-8 string");
-                return false;
-            }
         };
         simple_matcher
             .as_ref()
             .is_some_and(|m| m.is_match(text_str))
-    }));
-
-    result.unwrap_or_else(|_| {
-        eprintln!("simple_matcher_is_match panicked");
-        false
     })
 }
 
-/// Returns all matches for the input text as a [`CSimpleResultList`].
+/// Returns all matches as a [`CSimpleResultList`], or null on error.
 ///
 /// # Safety
-/// The caller must ensure that `simple_matcher` points to a valid
-/// [`SimpleMatcher`] instance and that `text` points to a valid
-/// null-terminated C string. The caller must free the returned list with
-/// [`drop_simple_result_list`].
 ///
-/// # Returns
-/// A pointer to a heap-allocated [`CSimpleResultList`], or null on error.
+/// `simple_matcher` must be a valid matcher pointer. `text` must be a valid
+/// null-terminated C string. Free the result with [`drop_simple_result_list`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_process(
     simple_matcher: *const SimpleMatcher,
     text: *const c_char,
 ) -> *mut CSimpleResultList {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if text.is_null() {
+    ffi_fn!("simple_matcher_process", ptr::null_mut(), unsafe {
+        let Some(text_str) = decode_c_str(text) else {
             return ptr::null_mut();
-        }
-        let text_bytes = CStr::from_ptr(text).to_bytes();
-        let text_str = match str::from_utf8(text_bytes) {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("Input is not a valid utf-8 string");
-                return ptr::null_mut();
-            }
         };
-        let m = match simple_matcher.as_ref() {
-            Some(m) => m,
-            None => return ptr::null_mut(),
+        let Some(m) = simple_matcher.as_ref() else {
+            return ptr::null_mut();
         };
         let results = m.process(text_str);
         let mut items: Vec<CSimpleResult> = Vec::with_capacity(results.len());
         for r in &results {
-            let word = match CString::new(r.word.as_ref()) {
-                Ok(cs) => cs.into_raw(),
-                Err(_) => continue,
+            let Ok(word) = CString::new(r.word.as_ref()) else {
+                continue;
             };
             items.push(CSimpleResult {
                 word_id: r.word_id,
-                word,
+                word: word.into_raw(),
             });
         }
         let len = items.len();
@@ -208,71 +310,62 @@ pub unsafe extern "C" fn simple_matcher_process(
             len,
             items: items_ptr,
         }))
-    }));
-
-    result.unwrap_or_else(|_| {
-        eprintln!("simple_matcher_process panicked");
-        ptr::null_mut()
     })
 }
 
-/// Returns the first match for the input text as a [`CSimpleResult`].
+/// Returns the first match as a [`CSimpleResult`], or null if none.
 ///
 /// # Safety
-/// The caller must ensure that `simple_matcher` points to a valid
-/// [`SimpleMatcher`] instance and that `text` points to a valid
-/// null-terminated C string. The caller must free the returned result
-/// with [`drop_simple_result`].
 ///
-/// # Returns
-/// A pointer to a heap-allocated [`CSimpleResult`], or null if no match
-/// is found or an error occurs.
+/// `simple_matcher` must be a valid matcher pointer. `text` must be a valid
+/// null-terminated C string. Free a non-null result with
+/// [`drop_simple_result`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn simple_matcher_find_match(
     simple_matcher: *const SimpleMatcher,
     text: *const c_char,
 ) -> *mut CSimpleResult {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if text.is_null() {
+    ffi_fn!("simple_matcher_find_match", ptr::null_mut(), unsafe {
+        let Some(text_str) = decode_c_str(text) else {
             return ptr::null_mut();
-        }
-        let text_bytes = CStr::from_ptr(text).to_bytes();
-        let text_str = match str::from_utf8(text_bytes) {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("Input is not a valid utf-8 string");
-                return ptr::null_mut();
-            }
         };
-        let m = match simple_matcher.as_ref() {
-            Some(m) => m,
-            None => return ptr::null_mut(),
+        let Some(m) = simple_matcher.as_ref() else {
+            return ptr::null_mut();
         };
-        let r = match m.find_match(text_str) {
-            Some(r) => r,
-            None => return ptr::null_mut(),
+        let Some(r) = m.find_match(text_str) else {
+            return ptr::null_mut();
         };
-        let word = match CString::new(r.word.as_ref()) {
-            Ok(cs) => cs.into_raw(),
-            Err(_) => return ptr::null_mut(),
+        let Ok(word) = CString::new(r.word.as_ref()) else {
+            return ptr::null_mut();
         };
         Box::into_raw(Box::new(CSimpleResult {
             word_id: r.word_id,
-            word,
+            word: word.into_raw(),
         }))
-    }));
-
-    result.unwrap_or_else(|_| {
-        eprintln!("simple_matcher_find_match panicked");
-        ptr::null_mut()
     })
 }
+
+/// Approximate heap memory in bytes used by the matcher. Returns 0 on null.
+///
+/// # Safety
+///
+/// `simple_matcher` must be a valid matcher pointer or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_heap_bytes(simple_matcher: *const SimpleMatcher) -> usize {
+    ffi_fn!("simple_matcher_heap_bytes", 0, unsafe {
+        simple_matcher.as_ref().map_or(0, |m| m.heap_bytes())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Result deallocation
+// ---------------------------------------------------------------------------
 
 /// Frees a single [`CSimpleResult`] returned by [`simple_matcher_find_match`].
 ///
 /// # Safety
-/// The pointer must have been returned by [`simple_matcher_find_match`] and
-/// must not be used after this call.
+///
+/// `result` must have been returned by [`simple_matcher_find_match`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_result(result: *mut CSimpleResult) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -288,8 +381,8 @@ pub unsafe extern "C" fn drop_simple_result(result: *mut CSimpleResult) {
 /// Frees a [`CSimpleResultList`] returned by [`simple_matcher_process`].
 ///
 /// # Safety
-/// The pointer must have been returned by [`simple_matcher_process`] and
-/// must not be used after this call.
+///
+/// `list` must have been returned by [`simple_matcher_process`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_simple_result_list(list: *mut CSimpleResultList) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -307,39 +400,67 @@ pub unsafe extern "C" fn drop_simple_result_list(list: *mut CSimpleResultList) {
     }));
 }
 
-/// Deallocates a [`SimpleMatcher`] instance.
+// ---------------------------------------------------------------------------
+// Text processing
+// ---------------------------------------------------------------------------
+
+/// Applies the text transformation pipeline. Returns null on error.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The
-/// caller must ensure that `simple_matcher` points to a valid [`SimpleMatcher`]
-/// instance that was previously allocated by [`init_simple_matcher`]. After
-/// calling this function, the `simple_matcher` pointer must not be used again
-/// as it points to deallocated memory.
 ///
-/// # Arguments
-/// - `simple_matcher`: A pointer to the [`SimpleMatcher`] instance to be
-///   deallocated.
+/// `text` must be a valid null-terminated C string. Free the result with
+/// [`drop_string`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn drop_simple_matcher(simple_matcher: *mut SimpleMatcher) {
-    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if !simple_matcher.is_null() {
-            drop(Box::from_raw(simple_matcher))
-        }
-    }));
+pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> *mut c_char {
+    ffi_fn!("text_process", ptr::null_mut(), unsafe {
+        let Some(text_str) = decode_c_str(text) else {
+            return ptr::null_mut();
+        };
+        let res = text_process_rs(ProcessType::from_bits_retain(process_type), text_str);
+        CString::new(res.as_ref())
+            .map(CString::into_raw)
+            .unwrap_or(ptr::null_mut())
+    })
 }
 
-/// Deallocates a C string that was previously allocated by the Rust code and
-/// passed to C.
+/// Applies the transformation pipeline, returning a null-terminated array of
+/// all intermediate variants. Returns null on error.
 ///
 /// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI. The
-/// caller must ensure that `ptr` points to a valid C string that was previously
-/// allocated by Rust code using [`CString::into_raw`] or a similar method.
-/// After calling this function, the `ptr` pointer must not be used again as it
-/// points to deallocated memory.
 ///
-/// # Arguments
-/// - `ptr`: A pointer to the C string to be deallocated.
+/// `text` must be a valid null-terminated C string. Free the result with
+/// [`drop_string_array`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn reduce_text_process(
+    process_type: u8,
+    text: *const c_char,
+) -> *mut *mut c_char {
+    ffi_fn!("reduce_text_process", ptr::null_mut(), unsafe {
+        let Some(text_str) = decode_c_str(text) else {
+            return ptr::null_mut();
+        };
+        let variants =
+            reduce_text_process_rs(ProcessType::from_bits_retain(process_type), text_str);
+        let mut c_strings: Vec<*mut c_char> = Vec::with_capacity(variants.len() + 1);
+        for cow in variants {
+            if let Ok(cs) = CString::new(cow.as_ref()) {
+                c_strings.push(cs.into_raw());
+            }
+        }
+        c_strings.push(ptr::null_mut());
+        Box::into_raw(c_strings.into_boxed_slice()) as *mut *mut c_char
+    })
+}
+
+// ---------------------------------------------------------------------------
+// String deallocation
+// ---------------------------------------------------------------------------
+
+/// Frees a C string returned by [`text_process`].
+///
+/// # Safety
+///
+/// `ptr` must have been returned by a function in this library.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -349,98 +470,21 @@ pub unsafe extern "C" fn drop_string(ptr: *mut c_char) {
     }));
 }
 
-/// Processes text using the specified ProcessType bit.
+/// Frees a null-terminated `char**` array returned by
+/// [`reduce_text_process`].
 ///
 /// # Safety
-/// The caller must ensure `text` points to a valid null-terminated C string.
-/// Returns a null pointer if an error occurs.
-/// The caller must free the returned pointer using `drop_string`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn text_process(process_type: u8, text: *const c_char) -> *mut c_char {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if text.is_null() {
-            return ptr::null_mut();
-        }
-        let text_bytes = CStr::from_ptr(text).to_bytes();
-        let text_str = match str::from_utf8(text_bytes) {
-            Ok(s) => s,
-            Err(_) => return ptr::null_mut(),
-        };
-        let process_type_bit = ProcessType::from_bits_retain(process_type);
-        let res = text_process_rs(process_type_bit, text_str);
-        match CString::new(res.as_ref()) {
-            Ok(cs) => cs.into_raw(),
-            Err(_) => ptr::null_mut(),
-        }
-    }));
-    result.unwrap_or_else(|_| {
-        eprintln!("text_process panicked");
-        ptr::null_mut()
-    })
-}
-
-/// Applies a sequence of rules to text, returning all intermediate variants.
 ///
-/// # Safety
-/// The caller must ensure `text` points to a valid null-terminated C string.
-/// The caller must free the returned struct using `drop_string_array`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn reduce_text_process(
-    process_type: u8,
-    text: *const c_char,
-) -> *mut *mut c_char {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        if text.is_null() {
-            return ptr::null_mut();
-        }
-        let text_bytes = CStr::from_ptr(text).to_bytes();
-        let text_str = match str::from_utf8(text_bytes) {
-            Ok(s) => s,
-            Err(_) => return ptr::null_mut(),
-        };
-        let process_type_bits = ProcessType::from_bits_retain(process_type);
-
-        let processed_texts = reduce_text_process_rs(process_type_bits, text_str);
-
-        let mut c_strings: Vec<*mut c_char> = Vec::with_capacity(processed_texts.len() + 1);
-        for cow in processed_texts {
-            if let Ok(cs) = CString::new(cow.as_ref()) {
-                c_strings.push(cs.into_raw());
-            }
-        }
-
-        // Add a NULL terminator to the end of the array
-        c_strings.push(ptr::null_mut());
-
-        // into_boxed_slice guarantees capacity == len, avoiding UB in drop_string_array
-        Box::into_raw(c_strings.into_boxed_slice()) as *mut *mut c_char
-    }));
-
-    result.unwrap_or_else(|_| {
-        eprintln!("reduce_text_process panicked");
-        ptr::null_mut()
-    })
-}
-
-/// Deallocates a `char**` array that was returned by `reduce_text_process`.
-///
-/// # Safety
-/// This function is unsafe because it relies on raw pointers and FFI.
-/// The caller must pass a valid null-terminated array returned by
-/// `reduce_text_process`.
+/// `array` must have been returned by [`reduce_text_process`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn drop_string_array(array: *mut *mut c_char) {
     let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         if !array.is_null() {
-            // Walk to find length (null terminator not included in count), freeing each
-            // string
             let mut len = 0;
             while !(*array.add(len)).is_null() {
                 drop(CString::from_raw(*array.add(len)));
                 len += 1;
             }
-            // Reconstruct the boxed slice (len + 1 includes the null terminator) and drop
-            // it
             drop(Box::from_raw(ptr::slice_from_raw_parts_mut(array, len + 1)));
         }
     }));

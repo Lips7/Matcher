@@ -25,13 +25,33 @@ typedef struct {
     SimpleResult* items;
 } SimpleResultList;
 
+// --- SimpleMatcherBuilder ---
+
+// Create a new builder. Caller must either:
+//   (a) call simple_matcher_builder_build() which consumes the builder, OR
+//   (b) call drop_simple_matcher_builder() to free it without building.
+void* init_simple_matcher_builder(void);
+
+// Add a word pattern. The word string is copied; caller retains ownership.
+// Returns true on success, false on null builder/word or internal error.
+bool simple_matcher_builder_add_word(void* builder, uint8_t process_type,
+                                     uint32_t word_id, const char* word);
+
+// Consume the builder and produce a SimpleMatcher. Returns NULL on error.
+// The builder is ALWAYS freed by this call (even on error). Do NOT call
+// drop_simple_matcher_builder or use the builder pointer after this.
+void* simple_matcher_builder_build(void* builder);
+
+// Free a builder NOT consumed by build(). No-op on NULL.
+void drop_simple_matcher_builder(void* builder);
+
 // --- SimpleMatcher lifecycle ---
 
 // Initialize a SimpleMatcher from JSON bytes. Returns null on error.
 // Caller must free with drop_simple_matcher.
 void* init_simple_matcher(const char* simple_table_bytes);
 
-// Frees a SimpleMatcher created by init_simple_matcher.
+// Frees a SimpleMatcher created by init_simple_matcher or builder_build.
 void drop_simple_matcher(void* simple_matcher);
 
 // --- Matching ---
@@ -46,6 +66,9 @@ SimpleResultList* simple_matcher_process(const void* simple_matcher, const char*
 // Returns the first match, or NULL if no match.
 // Caller must free a non-NULL return with drop_simple_result.
 SimpleResult* simple_matcher_find_match(const void* simple_matcher, const char* text);
+
+// Approximate heap memory in bytes used by the matcher. Returns 0 on NULL.
+size_t simple_matcher_heap_bytes(const void* simple_matcher);
 
 // --- Result deallocation ---
 
