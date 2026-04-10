@@ -7,7 +7,7 @@
 //! 2. Walks the process-type tree, transforming and scanning each variant
 //!    immediately.
 //! 3. Dispatches each raw match value into the rule state machine
-//!    ([`RuleSet::process_entry`](super::rule::RuleSet::process_entry)).
+//!    (`RuleSet::eval_hit`).
 //! 4. Collects or checks results depending on the caller (`is_match` vs
 //!    `process`).
 //!
@@ -144,11 +144,11 @@ impl SimpleMatcher {
     ///
     /// Two dispatch paths:
     /// - **Direct** (`DIRECT_RULE_BIT` set): bit-packed value decoded via
-    ///   [`DirectValue::decode`] into `(rule_idx, kind, offset)`, then
-    ///   forwarded to [`RuleSet::eval_hit`].
-    /// - **Indirect**: delegates to [`PatternIndex::dispatch_indirect`] for
+    ///   `decode_direct` into `(rule_idx, kind, offset)`, then forwarded to
+    ///   `RuleSet::eval_hit`.
+    /// - **Indirect**: delegates to `PatternIndex::dispatch_indirect` for
     ///   multi-entry or matrix patterns, then forwards each entry to
-    ///   [`RuleSet::eval_hit`].
+    ///   `RuleSet::eval_hit`.
     ///
     /// Returns `true` when the caller should stop scanning.
     #[inline(always)]

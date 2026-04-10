@@ -155,7 +155,7 @@ pub(super) struct ScanState<'a> {
 /// Scan metadata passed through the hot match-processing path.
 ///
 /// One `ScanContext` is constructed per text variant and threaded through
-/// [`RuleSet::process_entry`](super::rule::RuleSet::process_entry) for every
+/// `RuleSet::eval_hit` for every
 /// hit in that variant. Kept `Copy` to avoid reference overhead in tight loops.
 #[derive(Clone, Copy)]
 pub(super) struct ScanContext {

@@ -41,8 +41,8 @@ use matcher_rs::{
 // FFI helpers
 // ---------------------------------------------------------------------------
 
-/// Wraps an FFI function body in [`catch_unwind`] with a default return value
-/// on panic.
+/// Wraps an FFI function body in [`std::panic::catch_unwind`] with a default
+/// return value on panic.
 macro_rules! ffi_fn {
     ($name:expr, $default:expr, $body:expr) => {{
         let result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $body));

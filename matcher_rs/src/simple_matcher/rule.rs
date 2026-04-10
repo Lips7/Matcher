@@ -2,7 +2,7 @@
 //!
 //! This module contains the types that bind rule metadata to the scan state
 //! machine. [`RuleSet`] owns the rule metadata vector and exposes
-//! [`process_entry`](RuleSet::process_entry) — the core state-transition
+//! `eval_hit` — the core state-transition
 //! function that tracks bitmasks, matrix counters, and generation stamps in the
 //! thread-local [`super::state::SimpleMatchState`].
 //!

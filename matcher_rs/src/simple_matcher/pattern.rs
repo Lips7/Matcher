@@ -125,7 +125,7 @@ pub(super) fn decode_direct(raw: u32) -> (u8, u8, PatternKind, usize, usize) {
 /// - No operator, or `&` → [`And`](Self::And)
 /// - `~` → [`Not`](Self::Not)
 ///
-/// Single-segment rules without NOT use [`RuleShape::SingleAnd`] for the
+/// Single-segment rules without NOT use `SatisfactionMethod::SingleAnd` for the
 /// simplified satisfaction path. The DIRECT bit-packing in `process_match`
 /// handles these inline without consulting `PatternKind`.
 ///
@@ -137,7 +137,7 @@ pub(super) enum PatternKind {
     ///
     /// All AND segments in a rule must be satisfied (across any text variant)
     /// before the rule can fire. Single-segment rules also use this variant
-    /// (with [`RuleShape::SingleAnd`]).
+    /// (with `SatisfactionMethod::SingleAnd`).
     And = 0,
     /// Negative segment that vetoes the rule when observed.
     ///
@@ -197,7 +197,7 @@ pub(super) struct PatternIndex {
 
 /// Dispatch result for a non-direct raw scan value.
 ///
-/// Returned by [`PatternIndex::dispatch_indirect`] for values that do **not**
+/// Returned by `PatternIndex::dispatch_indirect` for values that do **not**
 /// have [`DIRECT_RULE_BIT`] set. Callers handle direct-rule values inline
 /// (checking `DIRECT_RULE_BIT` and extracting `rule_idx` / `pt_index` from the
 /// bit-packed value) before falling through to `dispatch_indirect` for the

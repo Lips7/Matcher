@@ -34,7 +34,7 @@
 /// iterator over a source `text`.
 ///
 /// Returns `None` if the iterator is empty (nothing to replace). Used by
-/// [`VariantNormMatcher::replace`] for single-codepoint replacements.
+/// `VariantNormMatcher::replace` for single-codepoint replacements.
 #[inline(always)]
 pub(crate) fn replace_scan<I>(text: &str, mut iter: I) -> Option<String>
 where
@@ -61,7 +61,7 @@ where
 /// iterator over a source `text`.
 ///
 /// Returns `None` if the iterator is empty. Used by
-/// [`RomanizeMatcher::replace`] and [`NormalizeMatcher::replace`] for
+/// `RomanizeMatcher::replace` and `NormalizeMatcher::replace` for
 /// multi-byte string replacements.
 #[inline(always)]
 pub(crate) fn replace_spans<'a, I>(text: &str, mut iter: I) -> Option<String>
@@ -154,7 +154,7 @@ pub(crate) fn unpack_str_ref(value: u32, strings: &str) -> Option<&str> {
 
 /// Trims leading and trailing ASCII spaces from a packed L2 entry.
 ///
-/// Used by [`RomanizeMatcher::new`] when `trim_space` is `true`
+/// Used by `RomanizeMatcher::new` when `trim_space` is `true`
 /// (`RomanizeChar` variant) to produce space-free per-character romanization.
 pub(crate) fn trim_romanize_packed(value: u32, strings: &str) -> u32 {
     if value == 0 {
