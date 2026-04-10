@@ -56,39 +56,36 @@ cp target/release/libmatcher_java.dylib matcher_java/src/main/resources/  # .so 
 
 ### SimpleMatcher (recommended)
 
-The high-level `SimpleMatcher` class provides a safe, idiomatic API and handles native memory management via `AutoCloseable`.
+The high-level `SimpleMatcher` class provides a safe, idiomatic API and handles native memory management via `AutoCloseable`. Use the builder to construct:
 
 ```java
 import com.matcherjava.SimpleMatcher;
+import com.matcherjava.SimpleMatcherBuilder;
 import com.matcherjava.extensiontypes.ProcessType;
-import com.matcherjava.extensiontypes.ProcessTypeSerializer;
 import com.matcherjava.extensiontypes.SimpleResult;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.serializer.SerializeConfig;
-import java.util.*;
 
-// Prepare configuration
-SerializeConfig config = new SerializeConfig();
-config.put(ProcessType.class, new ProcessTypeSerializer());
+try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    .add(ProcessType.NONE, 1, "hello&world")
+    .add(ProcessType.DELETE, 2, "你好")
+    .build()) {
 
-Map<ProcessType, Map<String, String>> simpleTable = new HashMap<>();
-Map<String, String> wordMap = new HashMap<>();
-wordMap.put("1", "hello&world");
-simpleTable.put(ProcessType.NONE, wordMap);
+    boolean matched = matcher.isMatch("hello,world");
 
-byte[] configBytes = JSON.toJSONBytes(simpleTable, config);
+    List<SimpleResult> results = matcher.process("hello,world");
 
-// Use try-with-resources for automatic cleanup
-try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
-    String text = "hello,world";
-
-    boolean matched = matcher.isMatch(text);
-
-    List<SimpleResult> results = matcher.process(text);
-
-    SimpleResult first = matcher.findMatch(text); // first match, or null
+    SimpleResult first = matcher.findMatch("hello,world"); // first match, or null
 }
 // matcher.close() is called automatically here
+```
+
+You can also construct from raw JSON bytes if you already have them:
+
+```java
+String json = """
+    {"1":{"1":"hello&world"}}""";
+try (SimpleMatcher matcher = new SimpleMatcher(json.getBytes())) {
+    assert matcher.isMatch("hello,world");
+}
 ```
 
 ### Batch Operations
@@ -96,19 +93,37 @@ try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
 Process multiple texts in a single native call to avoid per-text JNI overhead:
 
 ```java
-try (SimpleMatcher matcher = new SimpleMatcher(configBytes)) {
+try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    .add(ProcessType.NONE, 1, "hello")
+    .add(ProcessType.NONE, 2, "world")
+    .build()) {
     List<String> texts = Arrays.asList("hello world", "no match", "hello");
 
     List<Boolean> matches = matcher.batchIsMatch(texts);
     // [true, false, true]
 
     List<List<SimpleResult>> results = matcher.batchProcess(texts);
-    // [[SimpleResult(1, "hello"), ...], [], [SimpleResult(1, "hello")]]
 
     List<SimpleResult> firstMatches = matcher.batchFindMatch(texts);
-    // [SimpleResult(1, "hello"), null, SimpleResult(1, "hello")]
 }
 ```
+
+### Spark / Serialization
+
+`SimpleMatcher` implements `Serializable`. On deserialization, the native matcher is automatically reconstructed from stored config bytes. This enables Spark broadcast variables and closure capture:
+
+```java
+// Driver
+SimpleMatcher matcher = new SimpleMatcherBuilder()
+    .add(ProcessType.NONE, 1, "hello&world")
+    .build();
+Broadcast<SimpleMatcher> bc = sc.broadcast(matcher);
+
+// Executors — native matcher is reconstructed per executor
+rdd.map(text -> bc.value().isMatch(text));
+```
+
+`SimpleResult` is also `Serializable` (a Java record), so match results flow through Spark shuffle/collect without custom serializers.
 
 ### Composing ProcessTypes
 
@@ -147,41 +162,24 @@ try (SimpleMatcher matcher = new SimpleMatcher(json.getBytes())) {
 
 ### Text Processing
 
-Use `MatcherJava.textProcess` and `MatcherJava.reduceTextProcess` to apply transformations without a matcher:
+Use the static methods on `SimpleMatcher` to apply transformations without a matcher:
 
 ```java
-import com.matcherjava.MatcherJava;
+import com.matcherjava.SimpleMatcher;
 import com.matcherjava.extensiontypes.ProcessType;
-import java.nio.charset.StandardCharsets;
 
 // Apply a single transformation
-String normalized = MatcherJava.textProcess(
-    ProcessType.NORMALIZE.getValue(),
-    "Ｈｅｌｌｏ".getBytes(StandardCharsets.UTF_8)
-);
+String normalized = SimpleMatcher.textProcess(
+    ProcessType.NORMALIZE.getValue(), "Ｈｅｌｌｏ");
 
 // Get all intermediate transformation variants
-String[] variants = MatcherJava.reduceTextProcess(
-    ProcessType.VARIANT_NORM_DELETE_NORMALIZE.getValue(),
-    "你好，世界！".getBytes(StandardCharsets.UTF_8)
-);
-```
-
-### Low-Level API
-
-For direct pointer access, use the static methods on `MatcherJava`. You **must** manually free the matcher via `dropSimpleMatcher` to avoid memory leaks.
-
-```java
-long ptr = MatcherJava.initSimpleMatcher(bytes);
-boolean matched = MatcherJava.simpleMatcherIsMatch(ptr, text.getBytes(StandardCharsets.UTF_8));
-SimpleResult[] results = MatcherJava.simpleMatcherProcess(ptr, text.getBytes(StandardCharsets.UTF_8));
-SimpleResult first = MatcherJava.simpleMatcherFindMatch(ptr, text.getBytes(StandardCharsets.UTF_8));
-MatcherJava.dropSimpleMatcher(ptr);
+String[] variants = SimpleMatcher.reduceTextProcess(
+    ProcessType.VARIANT_NORM_DELETE_NORMALIZE.getValue(), "你好，世界！");
 ```
 
 ## Error Handling
 
-- **Construction** (`new SimpleMatcher(bytes)`): throws a `RuntimeException` if the JSON config is malformed or contains invalid `ProcessType` values. This is the only operation that can fail.
+- **Construction** (`new SimpleMatcher(bytes)` or `builder.build()`): throws a `RuntimeException` if the JSON config is malformed or contains invalid `ProcessType` values. This is the only operation that can fail.
 - **Matching** (`isMatch`, `process`, `findMatch`, `batchIsMatch`, `batchProcess`, `batchFindMatch`): infallible once the matcher is built. These methods never throw.
 
 ## Contributing

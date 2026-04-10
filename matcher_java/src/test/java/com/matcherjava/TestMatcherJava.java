@@ -4,48 +4,36 @@ import com.matcherjava.extensiontypes.ProcessType;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
-import java.nio.charset.StandardCharsets;
-
 public class TestMatcherJava {
 
   @Test
   public void testTextProcessVariantNorm() {
-    String text = "A B 測試 Ａ １";
-    int variantNormType = ProcessType.VARIANT_NORM.getValue();
-    String result = MatcherJava.textProcess(variantNormType, text.getBytes(StandardCharsets.UTF_8));
+    String result = SimpleMatcher.textProcess(ProcessType.VARIANT_NORM.getValue(), "A B 測試 Ａ １");
     assertEquals("A B 测试 Ａ １", result);
   }
 
   @Test
   public void testTextProcessNone() {
-    String text = "Hello World";
-    String result = MatcherJava.textProcess(
-        ProcessType.NONE.getValue(), text.getBytes(StandardCharsets.UTF_8));
+    String result = SimpleMatcher.textProcess(ProcessType.NONE.getValue(), "Hello World");
     assertEquals("Hello World", result);
   }
 
   @Test
   public void testTextProcessDelete() {
-    String text = "你！好";
-    String result = MatcherJava.textProcess(
-        ProcessType.DELETE.getValue(), text.getBytes(StandardCharsets.UTF_8));
+    String result = SimpleMatcher.textProcess(ProcessType.DELETE.getValue(), "你！好");
     assertEquals("你好", result);
   }
 
   @Test
   public void testTextProcessNormalize() {
-    String text = "ＡＢ";
-    String result = MatcherJava.textProcess(
-        ProcessType.NORMALIZE.getValue(), text.getBytes(StandardCharsets.UTF_8));
+    String result = SimpleMatcher.textProcess(ProcessType.NORMALIZE.getValue(), "ＡＢ");
     assertEquals("ab", result);
   }
 
   @Test
   public void testReduceTextProcess() {
-    String text = "A B 測試 Ａ １";
     int combinedType = ProcessType.VARIANT_NORM_DELETE_NORMALIZE.getValue();
-    String[] variants = MatcherJava.reduceTextProcess(
-        combinedType, text.getBytes(StandardCharsets.UTF_8));
+    String[] variants = SimpleMatcher.reduceTextProcess(combinedType, "A B 測試 Ａ １");
     assertArrayEquals(
         new String[] {"A B 測試 Ａ １", "A B 测试 Ａ １", "AB测试Ａ１", "ab测试a1"},
         variants);
@@ -53,18 +41,15 @@ public class TestMatcherJava {
 
   @Test
   public void testReduceTextProcessComposite() {
-    String text = "Hello World";
     int combo = ProcessType.or(ProcessType.DELETE, ProcessType.ROMANIZE);
-    String[] variants = MatcherJava.reduceTextProcess(
-        combo, text.getBytes(StandardCharsets.UTF_8));
+    String[] variants = SimpleMatcher.reduceTextProcess(combo, "Hello World");
     assertNotNull(variants);
     assertTrue(variants.length > 0);
   }
 
   @Test
   public void testReduceTextProcessEmpty() {
-    String[] variants = MatcherJava.reduceTextProcess(
-        ProcessType.NONE.getValue(), "".getBytes(StandardCharsets.UTF_8));
+    String[] variants = SimpleMatcher.reduceTextProcess(ProcessType.NONE.getValue(), "");
     assertNotNull(variants);
   }
 

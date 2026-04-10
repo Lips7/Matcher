@@ -1,6 +1,8 @@
 package com.matcherjava;
 
 import com.matcherjava.extensiontypes.SimpleResult;
+import java.io.IOException;
+import java.io.Serializable;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -8,26 +10,52 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** High-level Java wrapper around the native simple matcher. */
-public final class SimpleMatcher implements AutoCloseable {
+/**
+ * High-level Java wrapper around the native simple matcher.
+ *
+ * <p>Implements {@link Serializable} so instances can be broadcast across Spark executors. On
+ * deserialization the native matcher is reconstructed from the stored config bytes.
+ */
+public final class SimpleMatcher implements AutoCloseable, Serializable {
 
+  private static final long serialVersionUID = 1L;
   private static final Cleaner CLEANER = Cleaner.create();
 
-  private long matcherPtr;
-  private boolean closed;
-  private final Cleaner.Cleanable cleanable;
+  private final byte[] configBytes;
+
+  private transient long matcherPtr;
+  private transient boolean closed;
+  private transient Cleaner.Cleanable cleanable;
 
   /** Creates a matcher from serialized table bytes. */
-  public SimpleMatcher(byte[] simpleTableBytes) {
-    matcherPtr = MatcherJava.initSimpleMatcher(
-        Objects.requireNonNull(simpleTableBytes, "simpleTableBytes"));
+  public SimpleMatcher(byte[] configBytes) {
+    this.configBytes = Objects.requireNonNull(configBytes, "configBytes").clone();
+    initNative();
+  }
+
+  private void initNative() {
+    matcherPtr = MatcherJava.initSimpleMatcher(configBytes);
     if (matcherPtr == 0) {
       throw new RuntimeException("Failed to initialize SimpleMatcher");
     }
-
     long ptr = matcherPtr;
     cleanable = CLEANER.register(this, () -> MatcherJava.dropSimpleMatcher(ptr));
+    closed = false;
   }
+
+  // --- Static text processing utilities ---
+
+  /** Applies the text transformation pipeline and returns the result. */
+  public static String textProcess(int processType, String text) {
+    return MatcherJava.textProcess(processType, utf8Bytes(text));
+  }
+
+  /** Applies the transformation pipeline, returning all intermediate variants. */
+  public static String[] reduceTextProcess(int processType, String text) {
+    return MatcherJava.reduceTextProcess(processType, utf8Bytes(text));
+  }
+
+  // --- Query methods ---
 
   /** Returns whether the input text matches any configured rule. */
   public boolean isMatch(String text) {
@@ -47,6 +75,8 @@ public final class SimpleMatcher implements AutoCloseable {
     checkClosed();
     return MatcherJava.simpleMatcherFindMatch(matcherPtr, utf8Bytes(text));
   }
+
+  // --- Batch methods ---
 
   /** Check multiple texts in a single native call. */
   public List<Boolean> batchIsMatch(List<String> texts) {
@@ -82,6 +112,8 @@ public final class SimpleMatcher implements AutoCloseable {
     return results == null ? null : Arrays.asList(results);
   }
 
+  // --- Lifecycle ---
+
   @Override
   public void close() {
     if (!closed) {
@@ -90,6 +122,22 @@ public final class SimpleMatcher implements AutoCloseable {
       closed = true;
     }
   }
+
+  // --- Serialization ---
+
+  @java.io.Serial
+  private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+    out.defaultWriteObject();
+  }
+
+  @java.io.Serial
+  private void readObject(java.io.ObjectInputStream in)
+      throws IOException, ClassNotFoundException {
+    in.defaultReadObject();
+    initNative();
+  }
+
+  // --- Internal helpers ---
 
   private void checkClosed() {
     if (closed) {

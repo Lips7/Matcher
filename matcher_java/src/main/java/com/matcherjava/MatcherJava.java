@@ -3,7 +3,7 @@ package com.matcherjava;
 import com.matcherjava.extensiontypes.SimpleResult;
 
 /** Native entry points backed by the Rust matcher library. */
-public final class MatcherJava {
+final class MatcherJava {
 
   static {
     try {

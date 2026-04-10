@@ -1,14 +1,15 @@
 package com.matcherjava;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.serializer.SerializeConfig;
 import com.matcherjava.extensiontypes.ProcessType;
-import com.matcherjava.extensiontypes.ProcessTypeSerializer;
 import com.matcherjava.extensiontypes.SimpleResult;
 
 import org.junit.Test;
 import static org.junit.Assert.*;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -21,11 +22,11 @@ import java.util.ArrayList;
 public class TestSimpleMatcher {
 
   private static byte[] buildTable(ProcessType pt, Map<String, String> wordMap) {
-    SerializeConfig config = new SerializeConfig();
-    config.put(ProcessType.class, new ProcessTypeSerializer());
-    Map<ProcessType, Map<String, String>> table = new HashMap<>();
-    table.put(pt, wordMap);
-    return JSON.toJSONBytes(table, config);
+    SimpleMatcherBuilder builder = new SimpleMatcherBuilder();
+    for (Map.Entry<String, String> entry : wordMap.entrySet()) {
+      builder.add(pt, Integer.parseInt(entry.getKey()), entry.getValue());
+    }
+    return builder.toJsonBytes();
   }
 
   private static Map<String, String> words(String... pairs) {
@@ -45,8 +46,8 @@ public class TestSimpleMatcher {
       List<SimpleResult> results = matcher.process("hello,world");
       assertNotNull(results);
       assertEquals(1, results.size());
-      assertEquals("hello&world", results.get(0).getWord());
-      assertEquals(1, results.get(0).getWordId());
+      assertEquals("hello&world", results.get(0).word());
+      assertEquals(1, results.get(0).wordId());
     }
   }
 
@@ -89,7 +90,7 @@ public class TestSimpleMatcher {
 
       List<SimpleResult> results = matcher.process("测试");
       assertEquals(1, results.size());
-      assertEquals("测试", results.get(0).getWord());
+      assertEquals("测试", results.get(0).word());
     }
   }
 
@@ -155,7 +156,7 @@ public class TestSimpleMatcher {
       assertEquals(2, results.get(0).size());
       assertTrue(results.get(1).isEmpty());
       assertEquals(1, results.get(2).size());
-      assertEquals("hello", results.get(2).get(0).getWord());
+      assertEquals("hello", results.get(2).get(0).word());
     }
   }
 
@@ -165,7 +166,7 @@ public class TestSimpleMatcher {
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
       SimpleResult result = matcher.findMatch("hello world");
       assertNotNull(result);
-      assertTrue(result.getWordId() == 1 || result.getWordId() == 2);
+      assertTrue(result.wordId() == 1 || result.wordId() == 2);
     }
   }
 
@@ -184,8 +185,8 @@ public class TestSimpleMatcher {
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
       SimpleResult result = matcher.findMatch("a and b");
       assertNotNull(result);
-      assertEquals(1, result.getWordId());
-      assertEquals("a&b", result.getWord());
+      assertEquals(1, result.wordId());
+      assertEquals("a&b", result.word());
       assertNull(matcher.findMatch("a only"));
     }
   }
@@ -198,10 +199,10 @@ public class TestSimpleMatcher {
           matcher.batchFindMatch(Arrays.asList("hello", "miss", "world", ""));
       assertEquals(4, results.size());
       assertNotNull(results.get(0));
-      assertEquals(1, results.get(0).getWordId());
+      assertEquals(1, results.get(0).wordId());
       assertNull(results.get(1));
       assertNotNull(results.get(2));
-      assertEquals(2, results.get(2).getWordId());
+      assertEquals(2, results.get(2).wordId());
       assertNull(results.get(3));
     }
   }
@@ -229,6 +230,86 @@ public class TestSimpleMatcher {
       for (Future<Boolean> f : futures) {
         assertTrue(f.get());
       }
+    }
+  }
+
+  // --- Serialization tests ---
+
+  @Test
+  public void testSerializationRoundTrip() throws Exception {
+    byte[] table = buildTable(ProcessType.NONE, words("1", "hello&world"));
+
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    try (SimpleMatcher original = new SimpleMatcher(table);
+        ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+      oos.writeObject(original);
+    }
+
+    ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+    try (ObjectInputStream ois = new ObjectInputStream(bais);
+        SimpleMatcher restored = (SimpleMatcher) ois.readObject()) {
+      assertTrue(restored.isMatch("hello,world"));
+      assertFalse(restored.isMatch("goodbye"));
+      List<SimpleResult> results = restored.process("hello,world");
+      assertEquals(1, results.size());
+      assertEquals("hello&world", results.get(0).word());
+    }
+  }
+
+  // --- Builder tests ---
+
+  @Test
+  public void testBuilderBasic() {
+    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+        .add(ProcessType.NONE, 1, "hello")
+        .add(ProcessType.NONE, 2, "world")
+        .build()) {
+      assertTrue(matcher.isMatch("hello"));
+      assertTrue(matcher.isMatch("world"));
+      assertFalse(matcher.isMatch("miss"));
+    }
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void testBuilderEmpty() {
+    new SimpleMatcherBuilder().build();
+  }
+
+  @Test
+  public void testBuilderWithProcessTypes() {
+    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+        .add(ProcessType.VARIANT_NORM, 1, "测试")
+        .build()) {
+      assertTrue(matcher.isMatch("測試"));
+    }
+  }
+
+  @Test
+  public void testBuilderBackslashPattern() {
+    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+        .add(ProcessType.NONE, 1, "\\bcat\\b")
+        .build()) {
+      assertTrue(matcher.isMatch("the cat sat"));
+      assertFalse(matcher.isMatch("concatenate"));
+    }
+  }
+
+  @Test
+  public void testBuilderSerializationRoundTrip() throws Exception {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    try (SimpleMatcher original = new SimpleMatcherBuilder()
+        .add(ProcessType.NONE, 1, "hello")
+        .add(ProcessType.DELETE, 2, "你好")
+        .build();
+        ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+      oos.writeObject(original);
+    }
+
+    ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+    try (ObjectInputStream ois = new ObjectInputStream(bais);
+        SimpleMatcher restored = (SimpleMatcher) ois.readObject()) {
+      assertTrue(restored.isMatch("hello"));
+      assertTrue(restored.isMatch("你！好"));
     }
   }
 }
