@@ -90,8 +90,9 @@ impl DeleteMatcher {
             if offset >= len {
                 return None;
             }
-            // SAFETY: `offset < len` is checked by the guard above.
-            let byte = unsafe { *bytes.get_unchecked(offset) };
+            // SAFETY: The `offset >= len` guard above ensures `offset < len`.
+            unsafe { core::hint::assert_unchecked(offset < len) };
+            let byte = bytes[offset];
             if byte < 0x80 {
                 if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
                     break;
@@ -99,7 +100,8 @@ impl DeleteMatcher {
                 offset += 1;
                 offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
             } else {
-                // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
+                // SAFETY: `byte >= 0x80` in a valid UTF-8 `&str`; offset in bounds per guard
+                // above.
                 let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
                 let cp = cp as usize;
                 if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
@@ -112,9 +114,9 @@ impl DeleteMatcher {
         let mut result = String::with_capacity(text.len());
         result.push_str(&text[..offset]);
 
-        // SAFETY: The seek loop above broke on a match at `offset`, so `offset < len`
-        // still holds.
-        let byte = unsafe { *bytes.get_unchecked(offset) };
+        // SAFETY: We broke out of the seek loop above, so offset < len.
+        unsafe { core::hint::assert_unchecked(offset < len) };
+        let byte = bytes[offset];
         if byte < 0x80 {
             offset += 1;
         } else {
@@ -125,8 +127,9 @@ impl DeleteMatcher {
 
         let mut gap_start = offset;
         while offset < len {
-            // SAFETY: `offset < len` is checked by the while condition.
-            let byte = unsafe { *bytes.get_unchecked(offset) };
+            // SAFETY: The `while offset < len` guard ensures `offset < len`.
+            unsafe { core::hint::assert_unchecked(offset < len) };
+            let byte = bytes[offset];
             if byte < 0x80 {
                 if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
                     result.push_str(&text[gap_start..offset]);

@@ -203,11 +203,10 @@ impl ScanState<'_> {
     /// Returns whether `rule_idx` is satisfied in the current generation.
     #[inline(always)]
     pub(super) fn rule_is_satisfied(&self, rule_idx: usize) -> bool {
-        // SAFETY: `rule_idx` is in bounds — indices originate from construction.
-        let ws = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.word_states.len());
-            self.word_states.get_unchecked(rule_idx)
-        };
+        // SAFETY: `rule_idx` originates from `touched_indices`, bounded by
+        // `prepare(size)`.
+        unsafe { core::hint::assert_unchecked(rule_idx < self.word_states.len()) };
+        let ws = &self.word_states[rule_idx];
         ws.generation == self.generation && ws.remaining_and == 0 && !ws.vetoed
     }
 }
@@ -229,25 +228,21 @@ impl ScanState<'_> {
         ctx: ScanContext,
     ) {
         let generation = self.generation;
-        // SAFETY: `rule_idx` is in bounds — guarded by the debug_assert above.
-        let ws = unsafe { self.word_states.get_unchecked_mut(rule_idx) };
+        let ws = &mut self.word_states[rule_idx];
         ws.generation = generation;
         ws.remaining_and = and_count as u16;
         ws.vetoed = false;
         self.satisfied_masks[rule_idx] = 0;
         self.touched_indices.push(rule_idx);
 
-        // Derive use_matrix from segment_counts (same logic as build.rs).
         let use_matrix = and_count > super::pattern::BITMASK_CAPACITY
             || rule.segment_counts.len() > super::pattern::BITMASK_CAPACITY
             || rule.segment_counts[..and_count].iter().any(|&v| v != 1)
             || rule.segment_counts[and_count..].iter().any(|&v| v != 0);
         if use_matrix {
             init_matrix(
-                // SAFETY: `rule_idx` is in bounds — matrix vecs are sized to match word_states.
-                unsafe { self.matrix.get_unchecked_mut(rule_idx) },
-                // SAFETY: `rule_idx` is in bounds — matrix_status is sized identically.
-                unsafe { self.matrix_status.get_unchecked_mut(rule_idx) },
+                &mut self.matrix[rule_idx],
+                &mut self.matrix_status[rule_idx],
                 &rule.segment_counts,
                 ctx.num_variants,
             );

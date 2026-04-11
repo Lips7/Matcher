@@ -100,8 +100,9 @@ impl<'a, F: CodepointFilter<'a>> Iterator for FilterIterator<'a, F> {
                 return None;
             }
 
-            // SAFETY: offset < len checked above.
-            let byte = unsafe { *self.bytes.get_unchecked(self.offset) };
+            // SAFETY: The `offset >= len` guard above ensures `offset < len`.
+            unsafe { core::hint::assert_unchecked(self.offset < self.bytes.len()) };
+            let byte = self.bytes[self.offset];
 
             if byte < 0x80 {
                 self.offset += 1;

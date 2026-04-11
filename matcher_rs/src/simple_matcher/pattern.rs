@@ -271,19 +271,15 @@ impl PatternIndex {
     /// the deduplicated index directly.
     ///
     /// # Safety
-    ///
-    /// Uses `get_unchecked` on `self.entries` when checking the single-entry
-    /// fast path. The index `start` comes from `self.ranges` which was
-    /// built by [`Self::new`] and is always in bounds.
     pub(super) fn build_value_map(&self, rule_info: &[RuleInfo]) -> Vec<u32> {
         let mut value_map = Vec::with_capacity(self.ranges.len());
 
         for (dedup_idx, &(start, len)) in self.ranges.iter().enumerate() {
             if len == 1 {
-                // SAFETY: `start` is in bounds — sourced from `self.ranges`, built by
-                // `Self::new`.
-                let entry = unsafe { self.entries.get_unchecked(start) };
-                if let Some(encoded) = Self::try_encode_direct(entry, rule_info) {
+                // SAFETY: `len == 1` and `start` comes from `self.ranges`, which is built from
+                // valid indices.
+                unsafe { core::hint::assert_unchecked(start < self.entries.len()) };
+                if let Some(encoded) = Self::try_encode_direct(&self.entries[start], rule_info) {
                     value_map.push(encoded);
                     continue;
                 }
@@ -321,23 +317,21 @@ impl PatternIndex {
     #[inline(always)]
     pub(super) fn dispatch_indirect(&self, raw_value: u32) -> PatternDispatch<'_> {
         let pattern_idx = raw_value as usize;
-        // SAFETY: caller guarantees DIRECT_RULE_BIT is not set; pattern_idx
-        // and range bounds originate from construction with validated indices.
-        let (start, len) = unsafe {
+        // SAFETY: Caller verified `DIRECT_RULE_BIT` is clear; `pattern_idx` is a valid
+        // dedup index assigned during construction. `start + len` is within
+        // `entries` by construction invariant.
+        unsafe {
             core::hint::assert_unchecked(raw_value & DIRECT_RULE_BIT == 0);
             core::hint::assert_unchecked(pattern_idx < self.ranges.len());
-            *self.ranges.get_unchecked(pattern_idx)
-        };
-        // SAFETY: range bounds validated during construction.
+        }
+        let (start, len) = self.ranges[pattern_idx];
+        // SAFETY: `ranges` entries are built from valid slices into `entries`.
         unsafe { core::hint::assert_unchecked(start + len <= self.entries.len()) };
 
         if len == 1 {
-            // SAFETY: `start` is in bounds — guaranteed by assert_unchecked above.
-            PatternDispatch::SingleEntry(unsafe { self.entries.get_unchecked(start) })
+            PatternDispatch::SingleEntry(&self.entries[start])
         } else {
-            // SAFETY: `start..start + len` is in bounds — guaranteed by assert_unchecked
-            // above.
-            PatternDispatch::Entries(unsafe { self.entries.get_unchecked(start..start + len) })
+            PatternDispatch::Entries(&self.entries[start..start + len])
         }
     }
 }

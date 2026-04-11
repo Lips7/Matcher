@@ -208,11 +208,9 @@ impl RuleSet {
     /// Returns the hot-path metadata for a given rule index.
     #[inline(always)]
     pub(super) fn info(&self, rule_idx: usize) -> RuleInfo {
-        // SAFETY: rule_idx originates from construction — always in bounds.
-        unsafe {
-            core::hint::assert_unchecked(rule_idx < self.rule_info.len());
-            *self.rule_info.get_unchecked(rule_idx)
-        }
+        // SAFETY: `rule_idx` originates from a valid scan hit; bounded by construction.
+        unsafe { core::hint::assert_unchecked(rule_idx < self.rule_info.len()) };
+        self.rule_info[rule_idx]
     }
 
     /// Returns the estimated heap memory in bytes owned by this rule set.
@@ -274,16 +272,13 @@ impl RuleSet {
     ///
     /// # Safety (internal)
     ///
-    /// Uses `get_unchecked` on `self.rules`. The caller must ensure `rule_idx`
-    /// originated from a valid scan (e.g. `touched_indices`).
+    /// The caller must ensure `rule_idx` originated from a valid scan (e.g.
+    /// `touched_indices`).
     #[inline(always)]
     pub(super) fn result_at<'a>(&'a self, rule_idx: usize) -> SimpleResult<'a> {
-        // SAFETY: `rule_idx` originates from `touched_indices` which only
-        // contains valid rule indices populated during construction.
-        let rule = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.rules.len());
-            self.rules.get_unchecked(rule_idx)
-        };
+        // SAFETY: `rule_idx` originates from a valid scan (e.g. `touched_indices`).
+        unsafe { core::hint::assert_unchecked(rule_idx < self.rules.len()) };
+        let rule = &self.rules[rule_idx];
         SimpleResult {
             word_id: rule.word_id,
             word: Cow::Borrowed(&rule.word),
@@ -326,15 +321,18 @@ impl RuleSet {
         let generation = ss.generation;
         let info = self.info(rule_idx);
 
-        // SAFETY: `rule_idx` originates from pattern entries built during
-        // construction with validated indices — always in bounds.
+        // SAFETY: `rule_idx` is bounded by construction; all parallel arrays have the
+        // same length (allocated in `SimpleMatchState::prepare` to at least
+        // `rules.len()`).
         unsafe {
             core::hint::assert_unchecked(rule_idx < ss.word_states.len());
+            core::hint::assert_unchecked(rule_idx < ss.satisfied_masks.len());
+            core::hint::assert_unchecked(rule_idx < ss.matrix.len());
+            core::hint::assert_unchecked(rule_idx < ss.matrix_status.len());
             core::hint::assert_unchecked(rule_idx < self.rules.len());
         }
 
-        // SAFETY: bounds guaranteed by assert_unchecked above.
-        let ws = unsafe { ss.word_states.get_unchecked_mut(rule_idx) };
+        let ws = &mut ss.word_states[rule_idx];
 
         // ── NOT hit ──────────────────────────────────────────────────
         if matches!(kind, PatternKind::Not) {
@@ -343,32 +341,24 @@ impl RuleSet {
                     return false;
                 }
             } else {
-                // First touch — initialize.
                 ws.generation = generation;
                 ws.remaining_and = info.and_count as u16;
                 ws.vetoed = false;
-                // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-                unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
+                ss.satisfied_masks[rule_idx] = 0;
                 ss.touched_indices.push(rule_idx);
                 if info.method.use_matrix() {
-                    // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-                    let rule = unsafe { self.rules.get_unchecked(rule_idx) };
                     init_matrix(
-                        // SAFETY: `rule_idx` in bounds — matrix vecs sized to match rules.
-                        unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
-                        // SAFETY: ditto.
-                        unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
-                        &rule.segment_counts,
+                        &mut ss.matrix[rule_idx],
+                        &mut ss.matrix_status[rule_idx],
+                        &self.rules[rule_idx].segment_counts,
                         ctx.num_variants,
                     );
                 }
             }
 
             if info.method.use_matrix() {
-                // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-                let flat_matrix = unsafe { ss.matrix.get_unchecked_mut(rule_idx) };
-                // SAFETY: ditto.
-                let flat_status = unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) };
+                let flat_matrix = &mut ss.matrix[rule_idx];
+                let flat_status = &mut ss.matrix_status[rule_idx];
                 let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                 *counter += 1;
                 if flat_status[offset] == 0 && *counter > 0 {
@@ -385,7 +375,6 @@ impl RuleSet {
         // ── AND hit ──────────────────────────────────────────────────
 
         if ws.generation == generation {
-            // Already touched — check guards before processing.
             if info.has_not && ws.vetoed {
                 return false;
             }
@@ -393,34 +382,25 @@ impl RuleSet {
                 return !info.has_not && ctx.exit_early;
             }
         } else {
-            // First touch — initialize.
             ws.generation = generation;
             ws.remaining_and = info.and_count as u16;
             ws.vetoed = false;
-            // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-            unsafe { *ss.satisfied_masks.get_unchecked_mut(rule_idx) = 0 };
+            ss.satisfied_masks[rule_idx] = 0;
             ss.touched_indices.push(rule_idx);
             if info.method.use_matrix() {
-                // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-                let rule = unsafe { self.rules.get_unchecked(rule_idx) };
                 init_matrix(
-                    // SAFETY: `rule_idx` in bounds — matrix vecs sized to match rules.
-                    unsafe { ss.matrix.get_unchecked_mut(rule_idx) },
-                    // SAFETY: ditto.
-                    unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) },
-                    &rule.segment_counts,
+                    &mut ss.matrix[rule_idx],
+                    &mut ss.matrix_status[rule_idx],
+                    &self.rules[rule_idx].segment_counts,
                     ctx.num_variants,
                 );
             }
         }
 
-        // Shape-specific satisfaction tracking.
         let is_satisfied = match info.method {
             SatisfactionMethod::Matrix => {
-                // SAFETY: `rule_idx` in bounds — guaranteed by assert_unchecked above.
-                let flat_matrix = unsafe { ss.matrix.get_unchecked_mut(rule_idx) };
-                // SAFETY: ditto.
-                let flat_status = unsafe { ss.matrix_status.get_unchecked_mut(rule_idx) };
+                let flat_matrix = &mut ss.matrix[rule_idx];
+                let flat_status = &mut ss.matrix_status[rule_idx];
                 let counter = &mut flat_matrix[offset * ctx.num_variants + ctx.text_index];
                 *counter -= 1;
                 if flat_status[offset] == 0 && *counter <= 0 {
@@ -435,8 +415,7 @@ impl RuleSet {
             }
             SatisfactionMethod::Bitmask => {
                 let bit = 1u64 << offset;
-                // SAFETY: `rule_idx` in bounds — satisfied_masks sized to match word_states.
-                let mask = unsafe { ss.satisfied_masks.get_unchecked_mut(rule_idx) };
+                let mask = &mut ss.satisfied_masks[rule_idx];
                 if *mask & bit == 0 {
                     *mask |= bit;
                     ws.remaining_and -= 1;
@@ -448,20 +427,11 @@ impl RuleSet {
         ctx.exit_early && is_satisfied && !info.has_not && !ws.vetoed
     }
 
-    /// Pushes the borrowed public result for `rule_idx`.
-    ///
-    /// # Safety
-    ///
-    /// Uses `get_unchecked` on `self.rules`. Bounds communicated to the
-    /// optimizer via [`core::hint::assert_unchecked`].
     #[inline(always)]
     fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
-        // SAFETY: `rule_idx` originates from `touched_indices` which only
-        // contains valid rule indices populated during construction.
-        let rule = unsafe {
-            core::hint::assert_unchecked(rule_idx < self.rules.len());
-            self.rules.get_unchecked(rule_idx)
-        };
+        // SAFETY: `rule_idx` originates from a valid scan (e.g. `touched_indices`).
+        unsafe { core::hint::assert_unchecked(rule_idx < self.rules.len()) };
+        let rule = &self.rules[rule_idx];
         results.push(SimpleResult {
             word_id: rule.word_id,
             word: Cow::Borrowed(&rule.word),

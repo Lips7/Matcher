@@ -136,9 +136,10 @@ impl ScanEngine for BytewiseMatcher {
         #[cfg(feature = "dfa")]
         {
             for m in self.dfa.find_overlapping_iter(text) {
-                // SAFETY: `dfa_to_value` has one entry per pattern; pattern index is always
-                // in bounds.
-                let value = unsafe { *self.dfa_to_value.get_unchecked(m.pattern().as_usize()) };
+                let pid = m.pattern().as_usize();
+                // SAFETY: `pid` is a pattern id from the DFA; bounded by construction.
+                unsafe { core::hint::assert_unchecked(pid < self.dfa_to_value.len()) };
+                let value = self.dfa_to_value[pid];
                 if on_value(value, m.start(), m.end()) {
                     return true;
                 }

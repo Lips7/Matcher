@@ -102,16 +102,16 @@ pub(crate) fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> 
     if page_idx >= l1.len() {
         return None;
     }
-    // SAFETY: `page_idx < l1.len()` checked above.
-    let page = unsafe { *l1.get_unchecked(page_idx) as usize };
+    // SAFETY: The `page_idx >= l1.len()` guard above ensures in-bounds.
+    unsafe { core::hint::assert_unchecked(page_idx < l1.len()) };
+    let page = l1[page_idx] as usize;
     if page == 0 {
         return None;
     }
-    // SAFETY: `page` is a non-zero index assigned during table construction.
-    let value = unsafe {
-        core::hint::assert_unchecked(page * 256 + char_idx < l2.len());
-        *l2.get_unchecked(page * 256 + char_idx)
-    };
+    // SAFETY: Page indices assigned during construction guarantee in-range L2
+    // access.
+    unsafe { core::hint::assert_unchecked(page * 256 + char_idx < l2.len()) };
+    let value = l2[page * 256 + char_idx];
     (value != 0).then_some(value)
 }
 

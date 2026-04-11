@@ -59,28 +59,27 @@ static WORD_BYTE_LUT: [u8; 256] = {
 
 /// Checks whether word boundaries are satisfied at the given match position.
 ///
-/// # Safety (internal)
-///
-/// Uses `get_unchecked` after explicit bounds guards: `start > 0` ensures
-/// `start - 1` and `start` are valid; `end < text.len()` ensures `end - 1`
-/// and `end` are valid (match spans are always non-empty, so `end >= 1`).
+/// The `if` guards (`start > 0`, `end < text.len()`) prove the array indices
+/// are in bounds. `assert_unchecked` communicates this to the optimizer so
+/// the subsequent plain indexing compiles without bounds checks.
 #[inline(always)]
 fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool {
     if flags & BOUNDARY_LEFT != 0 && start > 0 {
-        // SAFETY: `start > 0` guarantees `start - 1` in bounds;
-        // `start <= end <= text.len()` guarantees `start` in bounds.
-        let prev = unsafe { *text.get_unchecked(start - 1) };
-        // SAFETY: same guard — `start` is at most `text.len() - 1`.
-        let curr = unsafe { *text.get_unchecked(start) };
+        // SAFETY: `start > 0` guard above; `start` is a valid match offset within
+        // `text`.
+        unsafe { core::hint::assert_unchecked(start < text.len()) };
+        let prev = text[start - 1];
+        let curr = text[start];
         if WORD_BYTE_LUT[prev as usize] != 0 && WORD_BYTE_LUT[curr as usize] != 0 {
             return false;
         }
     }
     if flags & BOUNDARY_RIGHT != 0 && end < text.len() {
-        // SAFETY: `end >= 1` (non-empty match) guarantees `end - 1` in bounds.
-        let prev = unsafe { *text.get_unchecked(end - 1) };
-        // SAFETY: `end < text.len()` guarantees `end` in bounds.
-        let next = unsafe { *text.get_unchecked(end) };
+        // SAFETY: `end < text.len()` guard above; match end is always >= 1 (non-empty
+        // pattern).
+        unsafe { core::hint::assert_unchecked(end >= 1) };
+        let prev = text[end - 1];
+        let next = text[end];
         if WORD_BYTE_LUT[prev as usize] != 0 && WORD_BYTE_LUT[next as usize] != 0 {
             return false;
         }

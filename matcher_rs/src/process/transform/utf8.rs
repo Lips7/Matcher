@@ -37,34 +37,30 @@
 ///   continuation bytes exist, and valid UTF-8 guarantees they are present.
 #[inline(always)]
 pub(crate) unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
-    // SAFETY: `offset` points at a valid UTF-8 lead byte within `bytes`.
-    let b0 = unsafe { *bytes.get_unchecked(offset) };
+    // SAFETY: Caller guarantees `offset` points at a valid UTF-8 lead byte within
+    // `bytes`.
+    unsafe { core::hint::assert_unchecked(offset < bytes.len()) };
+    let b0 = bytes[offset];
     if b0 < 0xE0 {
-        // SAFETY: 2-byte sequence; valid UTF-8 guarantees the continuation byte is
-        // present.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
+        // SAFETY: 2-byte sequence; valid UTF-8 guarantees continuation byte exists.
+        unsafe { core::hint::assert_unchecked(offset + 1 < bytes.len()) };
+        let b1 = bytes[offset + 1];
         (((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2)
     } else if b0 < 0xF0 {
-        // SAFETY: 3-byte sequence; valid UTF-8 guarantees both continuation bytes are
-        // present.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
-        // SAFETY: Second continuation byte of a 3-byte UTF-8 sequence; guaranteed
-        // present.
-        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
+        // SAFETY: 3-byte sequence; valid UTF-8 guarantees 2 continuation bytes exist.
+        unsafe { core::hint::assert_unchecked(offset + 2 < bytes.len()) };
+        let b1 = bytes[offset + 1];
+        let b2 = bytes[offset + 2];
         (
             ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F),
             3,
         )
     } else {
-        // SAFETY: 4-byte sequence; valid UTF-8 guarantees all three continuation bytes
-        // are present.
-        let b1 = unsafe { *bytes.get_unchecked(offset + 1) };
-        // SAFETY: Second continuation byte of a 4-byte UTF-8 sequence; guaranteed
-        // present.
-        let b2 = unsafe { *bytes.get_unchecked(offset + 2) };
-        // SAFETY: Third continuation byte of a 4-byte UTF-8 sequence; guaranteed
-        // present.
-        let b3 = unsafe { *bytes.get_unchecked(offset + 3) };
+        // SAFETY: 4-byte sequence; valid UTF-8 guarantees 3 continuation bytes exist.
+        unsafe { core::hint::assert_unchecked(offset + 3 < bytes.len()) };
+        let b1 = bytes[offset + 1];
+        let b2 = bytes[offset + 2];
+        let b3 = bytes[offset + 3];
         (
             ((b0 as u32 & 0x07) << 18)
                 | ((b1 as u32 & 0x3F) << 12)
