@@ -35,6 +35,7 @@ use pyo3::{
     prelude::{
         Py, PyAny, PyModule, PyResult, Python, pyclass, pymethods, pymodule, wrap_pyfunction,
     },
+    pybacked::PyBackedStr,
     pyfunction,
     types::{PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyModuleMethods, PyString, PyType},
 };
@@ -411,22 +412,26 @@ impl PySimpleMatcher {
 
     /// Batch `is_match`: `list[str] → list[bool]`. Single GIL release for the
     /// entire batch. Uses rayon for parallel matching across CPU cores.
+    ///
+    /// Input uses `PyBackedStr` (zero-copy borrow from Python strings).
     #[pyo3(signature=(texts))]
-    fn batch_is_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<bool> {
+    fn batch_is_match(&self, py: Python<'_>, texts: Vec<PyBackedStr>) -> Vec<bool> {
         let matcher = &self.simple_matcher;
         py.detach(|| {
-            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
             matcher.batch_is_match(&refs)
         })
     }
 
     /// Batch `process`: `list[str] → list[list[SimpleResult]]`. Single GIL
     /// release. Uses rayon for parallel matching across CPU cores.
+    ///
+    /// Input uses `PyBackedStr` (zero-copy borrow from Python strings).
     #[pyo3(signature=(texts))]
-    fn batch_process(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Vec<PySimpleResult>> {
+    fn batch_process(&self, py: Python<'_>, texts: Vec<PyBackedStr>) -> Vec<Vec<PySimpleResult>> {
         let matcher = &self.simple_matcher;
         let all: Vec<Vec<(u32, String)>> = py.detach(|| {
-            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
             matcher
                 .batch_process(&refs)
                 .into_iter()
@@ -453,11 +458,17 @@ impl PySimpleMatcher {
 
     /// Batch `find_match`: `list[str] → list[Optional[SimpleResult]]`. Single
     /// GIL release. Uses rayon for parallel matching across CPU cores.
+    ///
+    /// Input uses `PyBackedStr` (zero-copy borrow from Python strings).
     #[pyo3(signature=(texts))]
-    fn batch_find_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Option<PySimpleResult>> {
+    fn batch_find_match(
+        &self,
+        py: Python<'_>,
+        texts: Vec<PyBackedStr>,
+    ) -> Vec<Option<PySimpleResult>> {
         let matcher = &self.simple_matcher;
         let all: Vec<Option<(u32, String)>> = py.detach(|| {
-            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
             matcher
                 .batch_find_match(&refs)
                 .into_iter()
