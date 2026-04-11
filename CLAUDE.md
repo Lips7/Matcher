@@ -118,7 +118,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 - `rule.rs` — `RuleSet`, `Rule` (cold: `segment_counts` + `word_id` + `word`), `RuleInfo` (hot: `and_count` + `SatisfactionMethod` + `has_not`), unified `eval_hit()`, `SimpleTable`/`SimpleTableSerde` type aliases
 - `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `process_match`
 - `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
-- `state.rs` — `WordState`, `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
+- `state.rs` — `RuleState` (fused per-rule state: generation + countdown + veto + bitmask in one cache line), `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 - `tree.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction for transform prefix sharing)
 
 **`matcher_rs/src/process/`** — Text normalization pipeline:

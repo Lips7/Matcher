@@ -291,9 +291,9 @@ impl RuleSet {
     ///
     /// One generation comparison decides init-vs-process:
     ///
-    /// - `ws.generation == current`: rule already touched this scan. Check
+    /// - `rs.generation == current`: rule already touched this scan. Check
     ///   vetoed / remaining_and before processing the hit.
-    /// - `ws.generation != current`: first touch. Initialize state, then
+    /// - `rs.generation != current`: first touch. Initialize state, then
     ///   process.
     ///
     /// # Safety (internal)
@@ -317,26 +317,25 @@ impl RuleSet {
         // same length (allocated in `SimpleMatchState::prepare` to at least
         // `rules.len()`).
         unsafe {
-            core::hint::assert_unchecked(rule_idx < ss.word_states.len());
-            core::hint::assert_unchecked(rule_idx < ss.satisfied_masks.len());
+            core::hint::assert_unchecked(rule_idx < ss.rule_states.len());
             core::hint::assert_unchecked(rule_idx < ss.matrix.len());
             core::hint::assert_unchecked(rule_idx < ss.matrix_status.len());
             core::hint::assert_unchecked(rule_idx < self.rules.len());
         }
 
-        let ws = &mut ss.word_states[rule_idx];
+        let rs = &mut ss.rule_states[rule_idx];
 
         // ── NOT hit ──────────────────────────────────────────────────
         if matches!(kind, PatternKind::Not) {
-            if ws.generation == generation {
-                if ws.vetoed {
+            if rs.generation == generation {
+                if rs.vetoed {
                     return false;
                 }
             } else {
-                ws.generation = generation;
-                ws.remaining_and = info.and_count as u16;
-                ws.vetoed = false;
-                ss.satisfied_masks[rule_idx] = 0;
+                rs.generation = generation;
+                rs.remaining_and = info.and_count as u16;
+                rs.vetoed = false;
+                rs.satisfied_mask = 0;
                 ss.touched_indices.push(rule_idx);
                 if info.method.use_matrix() {
                     init_matrix(
@@ -355,10 +354,10 @@ impl RuleSet {
                 *counter += 1;
                 if flat_status[offset] == 0 && *counter > 0 {
                     flat_status[offset] = 1;
-                    ws.vetoed = true;
+                    rs.vetoed = true;
                 }
             } else {
-                ws.vetoed = true;
+                rs.vetoed = true;
             }
 
             return false;
@@ -366,18 +365,18 @@ impl RuleSet {
 
         // ── AND hit ──────────────────────────────────────────────────
 
-        if ws.generation == generation {
-            if info.has_not && ws.vetoed {
+        if rs.generation == generation {
+            if info.has_not && rs.vetoed {
                 return false;
             }
-            if ws.remaining_and == 0 {
+            if rs.remaining_and == 0 {
                 return !info.has_not && ctx.exit_early;
             }
         } else {
-            ws.generation = generation;
-            ws.remaining_and = info.and_count as u16;
-            ws.vetoed = false;
-            ss.satisfied_masks[rule_idx] = 0;
+            rs.generation = generation;
+            rs.remaining_and = info.and_count as u16;
+            rs.vetoed = false;
+            rs.satisfied_mask = 0;
             ss.touched_indices.push(rule_idx);
             if info.method.use_matrix() {
                 init_matrix(
@@ -397,26 +396,25 @@ impl RuleSet {
                 *counter -= 1;
                 if flat_status[offset] == 0 && *counter <= 0 {
                     flat_status[offset] = 1;
-                    ws.remaining_and -= 1;
+                    rs.remaining_and -= 1;
                 }
-                ws.remaining_and == 0
+                rs.remaining_and == 0
             }
             SatisfactionMethod::Immediate => {
-                ws.remaining_and = 0;
+                rs.remaining_and = 0;
                 true
             }
             SatisfactionMethod::Bitmask => {
                 let bit = 1u64 << offset;
-                let mask = &mut ss.satisfied_masks[rule_idx];
-                if *mask & bit == 0 {
-                    *mask |= bit;
-                    ws.remaining_and -= 1;
+                if rs.satisfied_mask & bit == 0 {
+                    rs.satisfied_mask |= bit;
+                    rs.remaining_and -= 1;
                 }
-                ws.remaining_and == 0
+                rs.remaining_and == 0
             }
         };
 
-        ctx.exit_early && is_satisfied && !info.has_not && !ws.vetoed
+        ctx.exit_early && is_satisfied && !info.has_not && !rs.vetoed
     }
 }
 
