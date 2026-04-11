@@ -279,12 +279,6 @@ impl SimpleMatcher {
                 }
 
                 if and_splits.is_empty() && !not_splits.is_empty() {
-                    eprintln!(
-                        "matcher_rs: skipping pure-NOT rule (word_id={simple_word_id}, \
-                         word={:?}) — rules with only NOT (~) segments and no AND segments \
-                         can never match",
-                        simple_word.as_ref(),
-                    );
                     continue;
                 }
 

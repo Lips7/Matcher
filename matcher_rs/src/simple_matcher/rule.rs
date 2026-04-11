@@ -247,7 +247,7 @@ impl RuleSet {
     ) {
         for &rule_idx in ss.touched_indices() {
             if ss.rule_is_satisfied(rule_idx) {
-                self.push_result(rule_idx, results);
+                results.push(self.result_at(rule_idx));
             }
         }
     }
@@ -425,17 +425,6 @@ impl RuleSet {
         };
 
         ctx.exit_early && is_satisfied && !info.has_not && !ws.vetoed
-    }
-
-    #[inline(always)]
-    fn push_result<'a>(&'a self, rule_idx: usize, results: &mut Vec<SimpleResult<'a>>) {
-        // SAFETY: `rule_idx` originates from a valid scan (e.g. `touched_indices`).
-        unsafe { core::hint::assert_unchecked(rule_idx < self.rules.len()) };
-        let rule = &self.rules[rule_idx];
-        results.push(SimpleResult {
-            word_id: rule.word_id,
-            word: Cow::Borrowed(&rule.word),
-        });
     }
 }
 

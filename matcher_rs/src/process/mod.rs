@@ -30,11 +30,6 @@ use std::borrow::Cow;
 pub use process_type::ProcessType;
 use step::get_transform_step;
 
-#[inline(always)]
-fn replace_cow<'a>(current: &mut Cow<'a, str>, next: String) {
-    *current = Cow::Owned(next);
-}
-
 fn reduce_text_process_inner<'a>(
     process_type: ProcessType,
     text: &'a str,
@@ -52,7 +47,7 @@ fn reduce_text_process_inner<'a>(
 
         if let Some((s, _)) = changed {
             if overwrite_replace && process_type_bit != ProcessType::Delete {
-                replace_cow(current, s);
+                *current = Cow::Owned(s);
             } else {
                 text_list.push(Cow::Owned(s));
             }
@@ -95,7 +90,7 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     for process_type_bit in process_type.iter() {
         let density = if result.is_ascii() { 0.0 } else { 1.0 };
         if let Some((s, _)) = get_transform_step(process_type_bit).apply(result.as_ref(), density) {
-            replace_cow(&mut result, s);
+            result = Cow::Owned(s);
         }
     }
 

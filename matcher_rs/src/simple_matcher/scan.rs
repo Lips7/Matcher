@@ -336,7 +336,7 @@ impl ScanPlan {
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
         let density = text_non_ascii_density(text);
-        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
+        if self.all_patterns_ascii && density >= 1.0 {
             return false;
         }
         dispatch!(self.engines, density, is_match(text))
@@ -356,7 +356,7 @@ impl ScanPlan {
         density: f32,
         on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
-        if self.all_patterns_ascii && density >= 1.0 && text.bytes().all(|b| b >= 0x80) {
+        if self.all_patterns_ascii && density >= 1.0 {
             return false;
         }
         dispatch!(self.engines, density, for_each_match_value(text, on_value))
@@ -439,11 +439,8 @@ fn compile_automata(
 /// Always builds DAAC bytewise (needed for streaming). With the `dfa` feature,
 /// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan).
 fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatcher, MatcherError> {
-    let daac = BytewiseDAACBuilder::new()
-        .match_kind(DAACMatchKind::Standard)
-        .build_with_values(all_patvals.clone())
-        .map_err(MatcherError::automaton_build)?;
-
+    // Build DFA first (reads via iterator), then DAAC last (consumes the vec),
+    // so we avoid cloning all_patvals.
     #[cfg(feature = "dfa")]
     let dfa_to_value: Vec<u32> = all_patvals.iter().map(|&(_, v)| v).collect();
     #[cfg(feature = "dfa")]
@@ -451,6 +448,11 @@ fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatch
         .kind(Some(AcKind::DFA))
         .match_kind(AcMatchKind::Standard)
         .build(all_patvals.iter().map(|(p, _)| p))
+        .map_err(MatcherError::automaton_build)?;
+
+    let daac = BytewiseDAACBuilder::new()
+        .match_kind(DAACMatchKind::Standard)
+        .build_with_values(all_patvals)
         .map_err(MatcherError::automaton_build)?;
 
     Ok(BytewiseMatcher {
