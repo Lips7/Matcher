@@ -1,6 +1,18 @@
 # Changelog
 
 
+## 0.15.1 - 2026-04-11
+
+### Added
+
+- **Core**: `batch_is_match`, `batch_process`, `batch_find_match` — parallel batch API powered by rayon. Distributes texts across CPU cores via work-stealing. Behind `rayon` feature flag (off by default in `matcher_rs`, enabled by all binding crates).
+- **Core**: Batch benchmarks (`bench_search::batch`) comparing sequential vs parallel throughput. 2.6–7.2× speedup on M3 Max.
+- **C**: `simple_matcher_batch_is_match`, `simple_matcher_batch_process`, `simple_matcher_batch_find_match` FFI functions with corresponding `drop_*` deallocators.
+
+### Changed
+
+- **Python/Java**: Existing `batch_is_match`, `batch_process`, `batch_find_match` now use rayon parallelism internally (previously sequential).
+
 ## 0.15.0 - 2026-04-10
 
 ### Bindings
