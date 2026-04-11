@@ -29,7 +29,7 @@ It's helpful for
                              Query
 ┌─────────────────────────────────────────────────────────────┐
 │  Text ──▶ walk trie ──▶ scan variants ──▶ evaluate ──▶ hits │
-│             │                 │                              │
+│             │                 │                             │
 │        transform text    AC automaton                       │
 │        (reuse shared     (bytewise or                       │
 │         prefixes)         charwise)                         │
