@@ -410,26 +410,29 @@ impl PySimpleMatcher {
     }
 
     /// Batch `is_match`: `list[str] → list[bool]`. Single GIL release for the
-    /// entire batch.
+    /// entire batch. Uses rayon for parallel matching across CPU cores.
     #[pyo3(signature=(texts))]
     fn batch_is_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<bool> {
         let matcher = &self.simple_matcher;
-        py.detach(|| texts.iter().map(|t| matcher.is_match(t)).collect())
+        py.detach(|| {
+            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            matcher.batch_is_match(&refs)
+        })
     }
 
     /// Batch `process`: `list[str] → list[list[SimpleResult]]`. Single GIL
-    /// release.
+    /// release. Uses rayon for parallel matching across CPU cores.
     #[pyo3(signature=(texts))]
     fn batch_process(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Vec<PySimpleResult>> {
         let matcher = &self.simple_matcher;
         let all: Vec<Vec<(u32, String)>> = py.detach(|| {
-            let mut buf = Vec::new();
-            texts
-                .iter()
-                .map(|t| {
-                    buf.clear();
-                    matcher.process_into(t, &mut buf);
-                    buf.drain(..)
+            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            matcher
+                .batch_process(&refs)
+                .into_iter()
+                .map(|results| {
+                    results
+                        .into_iter()
                         .map(|r| (r.word_id, r.word.into_owned()))
                         .collect()
                 })
@@ -449,18 +452,16 @@ impl PySimpleMatcher {
     }
 
     /// Batch `find_match`: `list[str] → list[Optional[SimpleResult]]`. Single
-    /// GIL release.
+    /// GIL release. Uses rayon for parallel matching across CPU cores.
     #[pyo3(signature=(texts))]
     fn batch_find_match(&self, py: Python<'_>, texts: Vec<String>) -> Vec<Option<PySimpleResult>> {
         let matcher = &self.simple_matcher;
         let all: Vec<Option<(u32, String)>> = py.detach(|| {
-            texts
-                .iter()
-                .map(|t| {
-                    matcher
-                        .find_match(t)
-                        .map(|r| (r.word_id, r.word.into_owned()))
-                })
+            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            matcher
+                .batch_find_match(&refs)
+                .into_iter()
+                .map(|opt| opt.map(|r| (r.word_id, r.word.into_owned())))
                 .collect()
         });
         all.into_iter()

@@ -97,6 +97,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch` |
 | `dfa` | via `perf` | Aho-Corasick DFA — 1.7–3.3× faster than DAAC; ~17× more memory |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and density counting |
+| `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`) via rayon. Enabled by all binding crates. |
 
 **Note:** `EmojiNorm` (bit 6) maps emoji to English words via CLDR short names. Does NOT compose usefully with `Delete` — Delete removes emoji before EmojiNorm sees them. Use `EmojiNorm | Normalize` for emoji→word matching.
 
@@ -110,7 +111,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 ### Key Source Files
 
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores: `tree` (transform trie), `scan` (`ScanPlan`), `rules` (`RuleSet`), `is_match_fast` (AC-direct bypass flag).
-- `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`)
+- `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`; `batch_is_match`, `batch_process`, `batch_find_match` under `rayon` feature)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `scan.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration
 - `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch. Also contains direct-rule bit-packing (`encode_direct`/`decode_direct`, `DIRECT_RULE_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)

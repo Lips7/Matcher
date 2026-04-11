@@ -20,6 +20,9 @@
 
 use std::{borrow::Cow, fmt};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 mod build;
 mod pattern;
 mod rule;
@@ -377,5 +380,102 @@ impl SimpleMatcher {
             + self.tree.iter().map(|n| n.heap_bytes()).sum::<usize>()
             + self.scan.heap_bytes()
             + self.rules.heap_bytes()
+    }
+}
+
+/// Parallel batch methods powered by [rayon](https://docs.rs/rayon).
+///
+/// These methods distribute work across all available CPU cores via rayon's
+/// work-stealing scheduler. Each text is matched independently — the shared
+/// `&self` is read-only, and all mutable state lives in per-thread
+/// thread-local storage.
+///
+/// For small batches (<16 texts), the overhead of rayon scheduling may
+/// outweigh the parallelism benefit. Use the single-text methods instead.
+#[cfg(feature = "rayon")]
+impl SimpleMatcher {
+    /// Matches each text in parallel, returning a boolean per text.
+    ///
+    /// Equivalent to calling [`is_match`](Self::is_match) on each text, but
+    /// distributed across CPU cores. The output order matches the input order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::collections::HashMap;
+    ///
+    /// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
+    ///
+    /// let mut table: SimpleTable = HashMap::new();
+    /// table
+    ///     .entry(ProcessType::None)
+    ///     .or_default()
+    ///     .insert(1, "hello");
+    ///
+    /// let matcher = SimpleMatcher::new(&table).unwrap();
+    /// let results = matcher.batch_is_match(&["hello world", "goodbye", "say hello"]);
+    /// assert_eq!(results, vec![true, false, true]);
+    /// ```
+    #[must_use]
+    pub fn batch_is_match(&self, texts: &[&str]) -> Vec<bool> {
+        texts.par_iter().map(|text| self.is_match(text)).collect()
+    }
+
+    /// Collects all matching rules for each text in parallel.
+    ///
+    /// Equivalent to calling [`process`](Self::process) on each text, but
+    /// distributed across CPU cores. The output order matches the input order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::collections::HashMap;
+    ///
+    /// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
+    ///
+    /// let mut table: SimpleTable = HashMap::new();
+    /// table
+    ///     .entry(ProcessType::None)
+    ///     .or_default()
+    ///     .insert(1, "hello");
+    ///
+    /// let matcher = SimpleMatcher::new(&table).unwrap();
+    /// let results = matcher.batch_process(&["hello world", "goodbye"]);
+    /// assert_eq!(results[0].len(), 1);
+    /// assert_eq!(results[0][0].word_id, 1);
+    /// assert!(results[1].is_empty());
+    /// ```
+    #[must_use]
+    pub fn batch_process<'a>(&'a self, texts: &[&'a str]) -> Vec<Vec<SimpleResult<'a>>> {
+        texts.par_iter().map(|text| self.process(text)).collect()
+    }
+
+    /// Finds the first matching rule for each text in parallel.
+    ///
+    /// Equivalent to calling [`find_match`](Self::find_match) on each text,
+    /// but distributed across CPU cores. The output order matches the input
+    /// order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::collections::HashMap;
+    ///
+    /// use matcher_rs::{ProcessType, SimpleMatcher, SimpleTable};
+    ///
+    /// let mut table: SimpleTable = HashMap::new();
+    /// table
+    ///     .entry(ProcessType::None)
+    ///     .or_default()
+    ///     .insert(1, "hello");
+    ///
+    /// let matcher = SimpleMatcher::new(&table).unwrap();
+    /// let results = matcher.batch_find_match(&["hello world", "goodbye"]);
+    /// assert_eq!(results[0].as_ref().unwrap().word_id, 1);
+    /// assert!(results[1].is_none());
+    /// ```
+    #[must_use]
+    pub fn batch_find_match<'a>(&'a self, texts: &[&'a str]) -> Vec<Option<SimpleResult<'a>>> {
+        texts.par_iter().map(|text| self.find_match(text)).collect()
     }
 }

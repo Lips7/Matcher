@@ -125,7 +125,70 @@ int main() {
         return 1;
     }
 
-    // 4. Test builder
+    // 4. Test batch methods
+    printf("\n--- Batch tests ---\n");
+    {
+        const char* json2 = "{\"1\": {\"1\": \"hello\", \"2\": \"world\"}}";
+        void* batch_matcher = init_simple_matcher(json2);
+        if (!batch_matcher) {
+            fprintf(stderr, "Error: init_simple_matcher for batch tests failed.\n");
+            return 1;
+        }
+
+        const char* batch_texts[] = {"hello world", "goodbye", "say hello", "the world"};
+        size_t batch_count = 4;
+
+        // batch_is_match
+        bool* is_matches = simple_matcher_batch_is_match(batch_matcher, batch_texts, batch_count);
+        if (!is_matches) {
+            fprintf(stderr, "Error: batch_is_match returned null.\n");
+            return 1;
+        }
+        printf("batch_is_match: [%d, %d, %d, %d]\n",
+               is_matches[0], is_matches[1], is_matches[2], is_matches[3]);
+        if (!is_matches[0] || is_matches[1] || !is_matches[2] || !is_matches[3]) {
+            fprintf(stderr, "Error: batch_is_match results incorrect.\n");
+            return 1;
+        }
+        drop_bool_array(is_matches, batch_count);
+
+        // batch_process
+        SimpleResultList* batch_results = simple_matcher_batch_process(
+            batch_matcher, batch_texts, batch_count);
+        if (!batch_results) {
+            fprintf(stderr, "Error: batch_process returned null.\n");
+            return 1;
+        }
+        printf("batch_process: [%zu, %zu, %zu, %zu] matches\n",
+               batch_results[0].len, batch_results[1].len,
+               batch_results[2].len, batch_results[3].len);
+        if (batch_results[0].len != 2 || batch_results[1].len != 0 ||
+            batch_results[2].len != 1 || batch_results[3].len != 1) {
+            fprintf(stderr, "Error: batch_process match counts incorrect.\n");
+            return 1;
+        }
+        drop_simple_result_list_array(batch_results, batch_count);
+
+        // batch_find_match
+        SimpleResult** batch_found = simple_matcher_batch_find_match(
+            batch_matcher, batch_texts, batch_count);
+        if (!batch_found) {
+            fprintf(stderr, "Error: batch_find_match returned null.\n");
+            return 1;
+        }
+        if (!batch_found[0] || batch_found[1] || !batch_found[2] || !batch_found[3]) {
+            fprintf(stderr, "Error: batch_find_match nullity pattern incorrect.\n");
+            return 1;
+        }
+        printf("batch_find_match: [word_id=%u, NULL, word_id=%u, word_id=%u]\n",
+               batch_found[0]->word_id, batch_found[2]->word_id, batch_found[3]->word_id);
+        drop_simple_result_ptr_array(batch_found, batch_count);
+
+        drop_simple_matcher(batch_matcher);
+        printf("Batch tests: passed.\n");
+    }
+
+    // 5. Test builder
     printf("\n--- Builder tests ---\n");
 
     void* builder = init_simple_matcher_builder();

@@ -159,6 +159,16 @@ When all rules are simple single-segment literals under one ProcessType with no 
 
 All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use the full trie walk. For simple matchers without transforms, this naturally short-circuits: the trie has only a root node, so one scan handles everything.
 
+## 4. Batch Parallelism
+
+With the `rayon` feature enabled, `batch_is_match`, `batch_process`, and `batch_find_match` distribute N texts across all CPU cores via rayon's work-stealing scheduler.
+
+This works without locking because `SimpleMatcher` is `Send + Sync` (all fields are read-only after construction) and all mutable scan state lives in thread-local `SIMPLE_MATCH_STATE` — each rayon worker thread gets its own independent state. The implementation is `texts.par_iter().map(|t| self.method(t)).collect()`.
+
+Throughput scales linearly with core count: 2.6–7.2× on M3 Max (12P + 4E cores) for typical workloads, with higher gains on CJK text (more work per line amortizes scheduling overhead).
+
+*Source: `simple_matcher/mod.rs` (`#[cfg(feature = "rayon")]` impl block)*
+
 ---
 
 ## Why It's Fast
@@ -283,3 +293,4 @@ Dispatch: AVX2 on x86-64 (runtime detection), NEON on AArch64 (compile-time), po
 | `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
 | `dfa` | via `perf` | Aho-Corasick DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster. |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms and density counting |
+| `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`). Enabled by binding crates. |

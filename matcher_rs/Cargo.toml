@@ -28,6 +28,7 @@ aho-corasick = { version = "1.1.4", optional = true }
 bitflags = "2.11.0"
 daachorse = "1.0.1"
 mimalloc = { version = "0.1.48", features = ["v3"] }
+rayon = { version = "1.10", optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
@@ -45,11 +46,13 @@ perf = ["dfa", "simd_runtime_dispatch"]
 dfa = ["aho-corasick"]
 # By enabling the simd_runtime_dispatch feature, the best available transform kernel is selected at runtime (AVX2/NEON/portable).
 simd_runtime_dispatch = []
+# Enables parallel batch matching via rayon (batch_is_match, batch_process, batch_find_match).
+rayon = ["dep:rayon"]
 # Enables Serialize/Deserialize impls for ProcessType and Serialize for SimpleResult.
 serde = ["dep:serde", "dep:serde_json"]
 
 [package.metadata.cargo-all-features]
-allowlist = ["perf", "serde"]
+allowlist = ["perf", "rayon", "serde"]
 
 [[bench]]
 name = "bench_build"

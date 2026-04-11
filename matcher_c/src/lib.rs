@@ -345,6 +345,233 @@ pub unsafe extern "C" fn simple_matcher_find_match(
     })
 }
 
+/// Batch `is_match`: tests each text in parallel, returning a `bool` per text.
+///
+/// The caller must free the returned pointer with [`drop_bool_array`] when
+/// done. Returns null on error.
+///
+/// # Safety
+///
+/// `simple_matcher` must be a valid matcher pointer. `texts` must point to
+/// `count` valid null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_batch_is_match(
+    simple_matcher: *const SimpleMatcher,
+    texts: *const *const c_char,
+    count: usize,
+) -> *mut bool {
+    ffi_fn!("simple_matcher_batch_is_match", ptr::null_mut(), unsafe {
+        let Some(m) = simple_matcher.as_ref() else {
+            return ptr::null_mut();
+        };
+        if texts.is_null() || count == 0 {
+            return ptr::null_mut();
+        }
+        let text_ptrs = core::slice::from_raw_parts(texts, count);
+        let decoded: Vec<&str> = text_ptrs
+            .iter()
+            .map(|&p| {
+                if p.is_null() {
+                    ""
+                } else {
+                    CStr::from_ptr(p).to_str().unwrap_or("")
+                }
+            })
+            .collect();
+        let results = m.batch_is_match(&decoded);
+        let mut boxed = results.into_boxed_slice();
+        let ptr = boxed.as_mut_ptr();
+        core::mem::forget(boxed);
+        ptr
+    })
+}
+
+/// Batch `process`: matches each text in parallel, returning a
+/// [`CSimpleResultList`] per text.
+///
+/// Returns a heap-allocated array of `count` [`CSimpleResultList`] structs.
+/// Free with [`drop_simple_result_list_array`]. Returns null on error.
+///
+/// # Safety
+///
+/// `simple_matcher` must be a valid matcher pointer. `texts` must point to
+/// `count` valid null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_batch_process(
+    simple_matcher: *const SimpleMatcher,
+    texts: *const *const c_char,
+    count: usize,
+) -> *mut CSimpleResultList {
+    ffi_fn!("simple_matcher_batch_process", ptr::null_mut(), unsafe {
+        let Some(m) = simple_matcher.as_ref() else {
+            return ptr::null_mut();
+        };
+        if texts.is_null() || count == 0 {
+            return ptr::null_mut();
+        }
+        let text_ptrs = core::slice::from_raw_parts(texts, count);
+        let decoded: Vec<&str> = text_ptrs
+            .iter()
+            .map(|&p| {
+                if p.is_null() {
+                    ""
+                } else {
+                    CStr::from_ptr(p).to_str().unwrap_or("")
+                }
+            })
+            .collect();
+        let all_results = m.batch_process(&decoded);
+        let mut lists: Vec<CSimpleResultList> = Vec::with_capacity(count);
+        for results in all_results {
+            let mut items: Vec<CSimpleResult> = Vec::with_capacity(results.len());
+            for r in &results {
+                let Ok(word) = CString::new(r.word.as_ref()) else {
+                    continue;
+                };
+                items.push(CSimpleResult {
+                    word_id: r.word_id,
+                    word: word.into_raw(),
+                });
+            }
+            let len = items.len();
+            let items_ptr = Box::into_raw(items.into_boxed_slice()) as *mut CSimpleResult;
+            lists.push(CSimpleResultList {
+                len,
+                items: items_ptr,
+            });
+        }
+        let mut boxed = lists.into_boxed_slice();
+        let ptr = boxed.as_mut_ptr();
+        core::mem::forget(boxed);
+        ptr
+    })
+}
+
+/// Batch `find_match`: finds the first match per text in parallel.
+///
+/// Returns a heap-allocated array of `count` [`CSimpleResult`] pointers.
+/// Each element is either a valid pointer (match found) or null (no match).
+/// Free with [`drop_simple_result_ptr_array`].
+///
+/// # Safety
+///
+/// `simple_matcher` must be a valid matcher pointer. `texts` must point to
+/// `count` valid null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simple_matcher_batch_find_match(
+    simple_matcher: *const SimpleMatcher,
+    texts: *const *const c_char,
+    count: usize,
+) -> *mut *mut CSimpleResult {
+    ffi_fn!("simple_matcher_batch_find_match", ptr::null_mut(), unsafe {
+        let Some(m) = simple_matcher.as_ref() else {
+            return ptr::null_mut();
+        };
+        if texts.is_null() || count == 0 {
+            return ptr::null_mut();
+        }
+        let text_ptrs = core::slice::from_raw_parts(texts, count);
+        let decoded: Vec<&str> = text_ptrs
+            .iter()
+            .map(|&p| {
+                if p.is_null() {
+                    ""
+                } else {
+                    CStr::from_ptr(p).to_str().unwrap_or("")
+                }
+            })
+            .collect();
+        let all_results = m.batch_find_match(&decoded);
+        let mut ptrs: Vec<*mut CSimpleResult> = Vec::with_capacity(count);
+        for opt in all_results {
+            match opt {
+                Some(r) => {
+                    let Ok(word) = CString::new(r.word.as_ref()) else {
+                        ptrs.push(ptr::null_mut());
+                        continue;
+                    };
+                    ptrs.push(Box::into_raw(Box::new(CSimpleResult {
+                        word_id: r.word_id,
+                        word: word.into_raw(),
+                    })));
+                }
+                None => ptrs.push(ptr::null_mut()),
+            }
+        }
+        let mut boxed = ptrs.into_boxed_slice();
+        let ptr = boxed.as_mut_ptr();
+        core::mem::forget(boxed);
+        ptr
+    })
+}
+
+/// Frees a `bool` array returned by [`simple_matcher_batch_is_match`].
+///
+/// # Safety
+///
+/// `ptr` must have been returned by `simple_matcher_batch_is_match` with
+/// the same `count`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_bool_array(ptr: *mut bool, count: usize) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if !ptr.is_null() && count > 0 {
+            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, count)));
+        }
+    }));
+}
+
+/// Frees a [`CSimpleResultList`] array returned by
+/// [`simple_matcher_batch_process`].
+///
+/// # Safety
+///
+/// `ptr` must have been returned by `simple_matcher_batch_process` with
+/// the same `count`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_simple_result_list_array(ptr: *mut CSimpleResultList, count: usize) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if ptr.is_null() || count == 0 {
+            return;
+        }
+        let lists = Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, count));
+        for list in lists.iter() {
+            if !list.items.is_null() && list.len > 0 {
+                let items = Box::from_raw(ptr::slice_from_raw_parts_mut(list.items, list.len));
+                for item in items.iter() {
+                    if !item.word.is_null() {
+                        drop(CString::from_raw(item.word));
+                    }
+                }
+            }
+        }
+    }));
+}
+
+/// Frees a [`CSimpleResult`] pointer array returned by
+/// [`simple_matcher_batch_find_match`].
+///
+/// # Safety
+///
+/// `ptr` must have been returned by `simple_matcher_batch_find_match` with
+/// the same `count`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn drop_simple_result_ptr_array(ptr: *mut *mut CSimpleResult, count: usize) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        if ptr.is_null() || count == 0 {
+            return;
+        }
+        let ptrs = Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, count));
+        for &item_ptr in ptrs.iter() {
+            if !item_ptr.is_null() {
+                let r = Box::from_raw(item_ptr);
+                if !r.word.is_null() {
+                    drop(CString::from_raw(r.word));
+                }
+            }
+        }
+    }));
+}
+
 /// Approximate heap memory in bytes used by the matcher. Returns 0 on null.
 ///
 /// # Safety

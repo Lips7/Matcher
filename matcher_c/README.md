@@ -117,6 +117,36 @@ if (first) {
 size_t bytes = simple_matcher_heap_bytes(matcher);
 ```
 
+### Batch matching (parallel)
+
+Batch methods distribute work across all CPU cores via rayon:
+
+```c
+const char* texts[] = {"hello world", "goodbye", "say hello"};
+size_t count = 3;
+
+// Batch is_match — returns bool array
+bool* matches = simple_matcher_batch_is_match(matcher, texts, count);
+for (size_t i = 0; i < count; i++) {
+    printf("%s: %s\n", texts[i], matches[i] ? "match" : "no match");
+}
+drop_bool_array(matches, count);
+
+// Batch process — returns SimpleResultList array
+SimpleResultList* results = simple_matcher_batch_process(matcher, texts, count);
+for (size_t i = 0; i < count; i++) {
+    printf("%s: %zu matches\n", texts[i], results[i].len);
+}
+drop_simple_result_list_array(results, count);
+
+// Batch find_match — returns SimpleResult* array (NULL for no match)
+SimpleResult** found = simple_matcher_batch_find_match(matcher, texts, count);
+for (size_t i = 0; i < count; i++) {
+    if (found[i]) printf("%s: word_id=%u\n", texts[i], found[i]->word_id);
+}
+drop_simple_result_ptr_array(found, count);
+```
+
 ### OR, NOT, and Word Boundary
 
 Pattern operators work in both builder and JSON construction:
@@ -163,6 +193,9 @@ Every pointer returned has a corresponding `drop_*` function:
 | `init_simple_matcher` / `builder_build` | `drop_simple_matcher` |
 | `simple_matcher_process` | `drop_simple_result_list` |
 | `simple_matcher_find_match` | `drop_simple_result` |
+| `simple_matcher_batch_is_match` | `drop_bool_array` |
+| `simple_matcher_batch_process` | `drop_simple_result_list_array` |
+| `simple_matcher_batch_find_match` | `drop_simple_result_ptr_array` |
 | `text_process` | `drop_string` |
 | `reduce_text_process` | `drop_string_array` |
 

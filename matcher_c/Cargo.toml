@@ -17,5 +17,5 @@ name = "matcher_c"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-matcher_rs = { path = "../matcher_rs", version = "0.15.0", features = ["serde"] }
+matcher_rs = { path = "../matcher_rs", version = "0.15.0", features = ["serde", "rayon"] }
 sonic-rs = "0.5.8"

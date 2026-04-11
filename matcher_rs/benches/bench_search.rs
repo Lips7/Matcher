@@ -335,6 +335,102 @@ mod text_length {
     }
 }
 
+// ── Batch (sequential vs rayon)
+// ─────────────────────────────────────────────────────
+// Question: What is the throughput multiplier from rayon parallelism?
+
+#[cfg(feature = "rayon")]
+mod batch {
+    use super::*;
+
+    #[divan::bench(max_time = 5)]
+    fn sequential_is_match_en(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = EN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(EN_HAYSTACK.len()))
+            .bench(|| {
+                let results: Vec<bool> = lines.iter().map(|l| matcher.is_match(l)).collect();
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn batch_is_match_en(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = EN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(EN_HAYSTACK.len()))
+            .bench(|| black_box(matcher.batch_is_match(&lines)));
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn sequential_is_match_cn(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("cn", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = CN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(CN_HAYSTACK.len()))
+            .bench(|| {
+                let results: Vec<bool> = lines.iter().map(|l| matcher.is_match(l)).collect();
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn batch_is_match_cn(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("cn", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = CN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(CN_HAYSTACK.len()))
+            .bench(|| black_box(matcher.batch_is_match(&lines)));
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn sequential_process_en(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = EN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(EN_HAYSTACK.len()))
+            .bench(|| {
+                let results: Vec<Vec<_>> = lines.iter().map(|l| matcher.process(l)).collect();
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn batch_process_en(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            build_literal_map("en", DEFAULT_RULE_COUNT, true),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let lines: Vec<&str> = EN_HAYSTACK.lines().collect();
+        bencher
+            .counter(BytesCount::new(EN_HAYSTACK.len()))
+            .bench(|| black_box(matcher.batch_process(&lines)));
+    }
+}
+
 fn main() {
     divan::main()
 }

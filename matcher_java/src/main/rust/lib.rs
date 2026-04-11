@@ -318,7 +318,8 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchIsMatc
         };
 
         let texts = decode_texts(env, &texts_bytes)?;
-        let results: Vec<bool> = texts.iter().map(|t| matcher.is_match(t)).collect();
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let results = matcher.batch_is_match(&refs);
         let array = env.new_boolean_array(results.len())?;
         array.set_region(env, 0, &results)?;
 
@@ -345,14 +346,16 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProces
         };
 
         let texts = decode_texts(env, &texts_bytes)?;
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let all_results = matcher.batch_process(&refs);
         let class = env.find_class(simple_result_class!())?;
         let init = env.get_method_id(&class, jni::jni_str!("<init>"), simple_result_init_sig!())?;
         let array_class = env.find_class(simple_result_array_class!())?;
 
-        let outer = env.new_object_array(texts.len() as i32, &array_class, JObject::null())?;
-        for (i, text) in texts.iter().enumerate() {
-            let results = matcher.process(text);
-            let inner = build_result_array(env, &class, init, &results)?;
+        let outer =
+            env.new_object_array(all_results.len() as i32, &array_class, JObject::null())?;
+        for (i, results) in all_results.iter().enumerate() {
+            let inner = build_result_array(env, &class, init, results)?;
             outer.set_element(env, i, &inner)?;
         }
 
@@ -380,13 +383,15 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchFindMa
         };
 
         let texts = decode_texts(env, &texts_bytes)?;
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let all_results = matcher.batch_find_match(&refs);
         let class = env.find_class(simple_result_class!())?;
         let init = env.get_method_id(&class, jni::jni_str!("<init>"), simple_result_init_sig!())?;
 
-        let array = env.new_object_array(texts.len() as i32, &class, JObject::null())?;
-        for (i, text) in texts.iter().enumerate() {
-            if let Some(result) = matcher.find_match(text) {
-                let obj = build_result_object(env, &class, init, &result)?;
+        let array = env.new_object_array(all_results.len() as i32, &class, JObject::null())?;
+        for (i, result) in all_results.iter().enumerate() {
+            if let Some(result) = result {
+                let obj = build_result_object(env, &class, init, result)?;
                 array.set_element(env, i, &obj)?;
             }
         }

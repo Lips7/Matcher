@@ -70,6 +70,24 @@ SimpleResult* simple_matcher_find_match(const void* simple_matcher, const char* 
 // Approximate heap memory in bytes used by the matcher. Returns 0 on NULL.
 size_t simple_matcher_heap_bytes(const void* simple_matcher);
 
+// --- Batch matching (parallel via rayon) ---
+
+// Batch is_match: tests each text in parallel, returns bool array of `count`.
+// Caller must free with drop_bool_array(ptr, count).
+bool* simple_matcher_batch_is_match(const void* simple_matcher,
+                                     const char** texts, size_t count);
+
+// Batch process: matches each text in parallel, returns SimpleResultList array of `count`.
+// Caller must free with drop_simple_result_list_array(ptr, count).
+SimpleResultList* simple_matcher_batch_process(const void* simple_matcher,
+                                                const char** texts, size_t count);
+
+// Batch find_match: finds first match per text in parallel, returns SimpleResult* array.
+// Each element is either a valid pointer (match found) or NULL (no match).
+// Caller must free with drop_simple_result_ptr_array(ptr, count).
+SimpleResult** simple_matcher_batch_find_match(const void* simple_matcher,
+                                                const char** texts, size_t count);
+
 // --- Result deallocation ---
 
 // Frees a single SimpleResult returned by simple_matcher_find_match.
@@ -77,6 +95,15 @@ void drop_simple_result(SimpleResult* result);
 
 // Frees a SimpleResultList returned by simple_matcher_process.
 void drop_simple_result_list(SimpleResultList* list);
+
+// Frees a bool array returned by simple_matcher_batch_is_match.
+void drop_bool_array(bool* ptr, size_t count);
+
+// Frees a SimpleResultList array returned by simple_matcher_batch_process.
+void drop_simple_result_list_array(SimpleResultList* ptr, size_t count);
+
+// Frees a SimpleResult* array returned by simple_matcher_batch_find_match.
+void drop_simple_result_ptr_array(SimpleResult** ptr, size_t count);
 
 // Frees a string returned by text_process.
 void drop_string(char* ptr);
