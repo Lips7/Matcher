@@ -52,7 +52,7 @@ rayon = ["dep:rayon"]
 serde = ["dep:serde", "dep:serde_json"]
 
 [package.metadata.cargo-all-features]
-allowlist = ["perf", "rayon", "serde"]
+allowlist = ["perf"]
 
 [[bench]]
 name = "bench_build"
