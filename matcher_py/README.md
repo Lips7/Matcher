@@ -75,16 +75,32 @@ print(reduce_text_process(ProcessType.DELETE_NORMALIZE, "hello, world!"))
 print(text_process(ProcessType.DELETE, "hello, world!"))
 ```
 
-### Simple Matcher Basic Usage
+### Simple Matcher — Builder (recommended)
 
-Here’s an example of how to use the `SimpleMatcher`:
+```python
+from matcher_py import ProcessType, SimpleMatcherBuilder
+
+builder = SimpleMatcherBuilder()
+builder.add_word(ProcessType.NONE, 1, "hello&world")
+builder.add_word(ProcessType.NONE, 2, "word&word~hello")
+builder.add_word(ProcessType.DELETE, 3, "hallo")
+matcher = builder.build()
+
+assert matcher.is_match("hello^&!#*#&!^#*()world")
+result = matcher.process("hello,world,word,word,hallo")
+print(result)
+```
+
+### Simple Matcher — JSON constructor
+
+You can also construct from JSON bytes if you already have them:
 
 ```python
 import json
 
 from matcher_py import ProcessType, SimpleMatcher
 
-simple_matcher = SimpleMatcher(
+matcher = SimpleMatcher(
     json.dumps(
         {
             ProcessType.NONE: {
@@ -97,32 +113,20 @@ simple_matcher = SimpleMatcher(
         }
     ).encode()
 )
-# Check if a text matches
-assert simple_matcher.is_match("hello^&!#*#&!^#*()world")
-# Perform simple processing
-result = simple_matcher.process("hello,world,word,word,hallo")
-print(result)
+assert matcher.is_match("hello^&!#*#&!^#*()world")
 ```
 
 ### OR, NOT, and Word Boundary
 
 ```python
-import json
+from matcher_py import ProcessType, SimpleMatcherBuilder
 
-from matcher_py import ProcessType, SimpleMatcher
-
-matcher = SimpleMatcher(
-    json.dumps(
-        {
-            ProcessType.NONE: {
-                1: "color|colour",          # OR: matches either spelling
-                2: "banana~peel",           # NOT: "banana" without "peel"
-                3: r"\bcat\b",             # word boundary: whole word only
-                4: r"bright&color|colour~\bdark\b",  # combined
-            }
-        }
-    ).encode()
-)
+builder = SimpleMatcherBuilder()
+builder.add_word(ProcessType.NONE, 1, "color|colour")                     # OR
+builder.add_word(ProcessType.NONE, 2, "banana~peel")                      # NOT
+builder.add_word(ProcessType.NONE, 3, r"\bcat\b")                         # word boundary
+builder.add_word(ProcessType.NONE, 4, r"bright&color|colour~\bdark\b")    # combined
+matcher = builder.build()
 
 assert matcher.is_match("nice colour")            # OR
 assert matcher.is_match("banana split")            # NOT (no veto)

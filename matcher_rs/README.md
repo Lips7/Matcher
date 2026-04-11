@@ -153,9 +153,9 @@ assert!(!matcher.is_match("bright dark color"));   // vetoed by whole-word "dark
 assert!(matcher.is_match("bright darken color"));  // "darken" ≠ "\bdark\b"
 ```
 
-### Iterator & Callback API
+### Callback & Early-Exit API
 
-Beyond `process()` (returns `Vec`) and `process_into()` (reuses `Vec`), three zero/low-allocation query methods are available:
+Beyond `process()` (returns `Vec`) and `process_into()` (reuses `Vec`), two zero/low-allocation query methods are available:
 
 ```rust
 use matcher_rs::{ProcessType, SimpleMatcherBuilder};
@@ -175,16 +175,9 @@ matcher.for_each_match("hello world", |r| {
 });
 assert_eq!(ids.len(), 2);
 
-// find_match — first matching rule
+// find_match — first matching rule (early exit)
 let first = matcher.find_match("hello world").unwrap();
 assert!(first.word_id == 1 || first.word_id == 2);
-
-// process_iter — composable iterator (ExactSizeIterator + DoubleEndedIterator)
-let count = matcher.process_iter("hello world").count();
-assert_eq!(count, 2);
-
-let first_match = matcher.process_iter("hello world").next();
-assert!(first_match.is_some());
 ```
 
 For more examples, run `cargo run --example basic -p matcher_rs` or see [test_operators.rs](./tests/test_operators.rs).

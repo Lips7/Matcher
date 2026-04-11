@@ -103,18 +103,14 @@ pip install matcher_py
 ```
 
 ```python
-import json
-from matcher_py import ProcessType, SimpleMatcher
+from matcher_py import ProcessType, SimpleMatcherBuilder
 
-matcher = SimpleMatcher(
-    json.dumps({
-        ProcessType.NONE: {
-            1: "hello&world",        # AND: both must appear
-            2: "color|colour",       # OR: either spelling
-            3: r"\bcat\b",          # word boundary
-        }
-    }).encode()
-)
+builder = SimpleMatcherBuilder()
+builder.add_word(ProcessType.NONE, 1, "hello&world")     # AND: both must appear
+builder.add_word(ProcessType.NONE, 2, "color|colour")    # OR: either spelling
+builder.add_word(ProcessType.NONE, 3, r"\bcat\b")        # word boundary
+matcher = builder.build()
+
 assert matcher.is_match("hello, world!")
 assert matcher.is_match("nice colour")
 assert not matcher.is_match("concatenate")  # "cat" not a whole word
@@ -129,10 +125,14 @@ See the [Python README](./matcher_py/README.md) for full docs.
 
 ```java
 import com.matcherjava.SimpleMatcher;
+import com.matcherjava.SimpleMatcherBuilder;
+import com.matcherjava.extensiontypes.ProcessType;
 
-// ProcessType.NONE = 1; word_id 1/2/3
-byte[] config = "{\"1\":{\"1\":\"hello&world\",\"2\":\"color|colour\",\"3\":\"\\\\bcat\\\\b\"}}".getBytes();
-try (SimpleMatcher matcher = new SimpleMatcher(config)) {
+try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    .add(ProcessType.NONE, 1, "hello&world")       // AND: both must appear
+    .add(ProcessType.NONE, 2, "color|colour")      // OR: either spelling
+    .add(ProcessType.NONE, 3, "\\bcat\\b")         // word boundary
+    .build()) {
     assert matcher.isMatch("hello, world!");
     assert matcher.isMatch("nice colour");
     assert !matcher.isMatch("concatenate");   // "cat" not a whole word
@@ -149,12 +149,16 @@ See the [Java README](./matcher_java/README.md) for full docs.
 ```c
 #include "matcher_c.h"
 
-// ProcessType NONE=1; word_ids 1, 2, 3
-void* m = init_simple_matcher("{\"1\":{\"1\":\"hello&world\",\"2\":\"color|colour\",\"3\":\"\\\\bcat\\\\b\"}}");
-simple_matcher_is_match(m, "hello, world!");   // true  — AND
-simple_matcher_is_match(m, "nice colour");     // true  — OR
-simple_matcher_is_match(m, "concatenate");     // false — word boundary
-drop_simple_matcher(m);
+void* builder = init_simple_matcher_builder();
+simple_matcher_builder_add_word(builder, PROCESS_TYPE_NONE, 1, "hello&world");    // AND
+simple_matcher_builder_add_word(builder, PROCESS_TYPE_NONE, 2, "color|colour");   // OR
+simple_matcher_builder_add_word(builder, PROCESS_TYPE_NONE, 3, "\\bcat\\b");      // word boundary
+void* matcher = simple_matcher_builder_build(builder);
+
+simple_matcher_is_match(matcher, "hello, world!");   // true  — AND
+simple_matcher_is_match(matcher, "nice colour");     // true  — OR
+simple_matcher_is_match(matcher, "concatenate");     // false — word boundary
+drop_simple_matcher(matcher);
 ```
 
 See the [C README](./matcher_c/README.md) for full docs.

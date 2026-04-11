@@ -1,6 +1,23 @@
 # Changelog
 
 
+## 0.15.2 - 2026-04-11
+
+### Changed
+
+- **Python**: Batch methods (`batch_is_match`, `batch_process`, `batch_find_match`) use `PyBackedStr` for zero-copy string handling, avoiding redundant UTF-8 copies across the FFI boundary.
+- **Core**: Replace unsafe `get_unchecked` with safe indexing guarded by `assert_unchecked` hints across scan and pattern modules.
+- **Core**: Add safety assertions for bitset indexing in `DeleteMatcher`.
+- **Core**: Simplify text processing by inlining `replace_cow` functionality.
+- **Core**: Move `has_match` into `ScanState` and remove unused methods.
+- **Tooling**: Trim `cargo-all-features` allowlist to only the `perf` feature.
+
+### Documentation
+
+- Update all README Quick Start examples to use builder APIs (Python, Java, C) for consistency with Rust.
+- Remove phantom `process_iter` reference from Rust README (method was removed in 0.15.0).
+- Fix formatting in root README architecture diagram.
+
 ## 0.15.1 - 2026-04-11
 
 ### Added
