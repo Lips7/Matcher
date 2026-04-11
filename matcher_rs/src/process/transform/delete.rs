@@ -104,7 +104,10 @@ impl DeleteMatcher {
                 // above.
                 let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
                 let cp = cp as usize;
-                if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+                // SAFETY: Valid UTF-8 codepoints are ≤ 0x10FFFF; bitset covers 0x0–0x10FFFF
+                // (139,264 bytes). cp / 8 ≤ 139,263 < 139,264.
+                unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
+                if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     break;
                 }
                 offset += char_len;
@@ -143,7 +146,9 @@ impl DeleteMatcher {
                 // SAFETY: `byte >= 0x80` means non-ASCII in a valid UTF-8 `&str`.
                 let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
                 let cp = cp as usize;
-                if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+                // SAFETY: same invariant as seek phase.
+                unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
+                if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
                     result.push_str(&text[gap_start..offset]);
                     offset += char_len;
                     gap_start = offset;
@@ -182,6 +187,10 @@ impl DeleteMatcher {
     /// Copies the first 16 bytes of `bitset` into the `ascii_lut` for fast
     /// SIMD-accelerated ASCII probing.
     pub(crate) fn new(bitset: &'static [u8]) -> Self {
+        debug_assert!(
+            bitset.len() >= 0x110000 / 8,
+            "delete bitset must cover all Unicode codepoints"
+        );
         let mut ascii_lut = [0u8; 16];
         let copy_len = bitset.len().min(16);
         ascii_lut[..copy_len].copy_from_slice(&bitset[..copy_len]);
@@ -215,7 +224,10 @@ impl<'a> CodepointFilter<'a> for DeleteFilter<'a> {
     #[inline(always)]
     fn filter_codepoint(&self, cp: u32) -> FilterAction<'a> {
         let cp = cp as usize;
-        if cp / 8 < self.bitset.len() && (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+        // SAFETY: `cp` comes from `decode_utf8_raw` on valid UTF-8, so cp ≤ 0x10FFFF.
+        // Bitset covers the full Unicode range (139,264 bytes).
+        unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
+        if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
             FilterAction::Delete
         } else {
             FilterAction::Keep
