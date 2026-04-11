@@ -3,9 +3,9 @@
 //! Merges Chinese Pinyin, Japanese kana Romaji, and Korean Revised Romanization
 //! into a single two-stage page table. L2 entries are packed as
 //! `(byte_offset << 8) | byte_length` into a shared string buffer.
-//! The `RomanizeChar` variant trims inter-syllable spaces via
-//! [`trim_romanize_packed`] at construction time.
-//! All keys are non-ASCII CJK, so [`skip_ascii_simd`]
+//! Each entry has a build-time-prepended leading space for word separation;
+//! the `RomanizeChar` variant trims this space via [`trim_romanize_packed`]
+//! at construction time. All keys are non-ASCII CJK, so [`skip_ascii_simd`]
 //! bypasses ASCII runs.
 
 use std::borrow::Cow;
@@ -97,13 +97,14 @@ impl<'a> CodepointFilter<'a> for RomanizeFilter<'a> {
 // Matcher
 // ---------------------------------------------------------------------------
 
-/// Two-stage page-table matcher for CJK romanization.
+/// Two-stage page-table matcher for CJK romanization and emoji normalization.
 ///
 /// Each non-zero L2 entry encodes `(byte_offset << 8) | byte_length` into a
-/// shared string buffer containing all romanization strings concatenated.
+/// shared string buffer containing all replacement strings concatenated. Each
+/// entry is prepended with a leading space at build time for word separation.
 ///
 /// When `trim_space` is `true` (used by the `RomanizeChar` variant), each L2
-/// entry is adjusted by [`trim_romanize_packed`] to exclude surrounding spaces.
+/// entry is adjusted by [`trim_romanize_packed`] to strip the leading space.
 #[derive(Clone)]
 pub(crate) struct RomanizeMatcher {
     l1: Box<[u16]>,
@@ -159,8 +160,8 @@ impl RomanizeMatcher {
 
     /// Decodes L1/L2 page tables from build-time binary artifacts.
     ///
-    /// When `trim_space` is `true`, L2 entries are adjusted to exclude leading
-    /// and trailing spaces from each syllable (used by `RomanizeChar`).
+    /// When `trim_space` is `true`, L2 entries are adjusted to strip the
+    /// build-time-prepended leading space (used by `RomanizeChar`).
     pub(crate) fn new(
         l1: &'static [u8],
         l2: &'static [u8],

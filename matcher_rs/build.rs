@@ -30,11 +30,11 @@ use std::{
 /// 3. **Romanize & RomanizeChar**: Character-to-string mappings (Chinese
 ///    Pinyin, Japanese kana Romaji, Korean RR) stored using:
 ///    - A **Concatenated String Buffer**: Stores all romanization strings as a
-///      single UTF-8 block.
+///      single UTF-8 block. Each entry is prepended with a leading space for
+///      word boundary separation. `RomanizeChar` trims this space at runtime.
 ///    - A **2-Stage Page Table**: Maps character code points to a packed `u32`
 ///      containing both the `offset` into the string buffer and the `length` of
-///      the string. `RomanizeChar` trims boundary spaces after the table is
-///      decoded at runtime.
+///      the string.
 ///
 /// 4. **Text Delete (BitSet)**: Delete-table codepoints are compiled into a
 ///    **Global BitSet** (139 KB) covering the Unicode range U+0000 to U+10FFFF.
@@ -176,8 +176,9 @@ fn main() -> Result<()> {
         );
 
         let offset = romanize_str_buffer.len();
+        romanize_str_buffer.push(' ');
         romanize_str_buffer.push_str(v);
-        let length = v.len();
+        let length = v.len() + 1;
         assert!(
             length < 256,
             "ROMANIZE.txt:{}: string length {length} exceeds 8-bit packing limit for key U+{k:04X}",
@@ -193,6 +194,7 @@ fn main() -> Result<()> {
     build_2_stage_table(&romanize_map, &format!("{out_dir}/romanize"))?;
 
     // 4. Build EmojiNorm 2-stage flat array & string buffer
+    // Same leading-space convention as Romanize for word boundary separation.
     let mut emoji_norm_map = HashMap::new();
     // Start with a dummy byte so that offset 0 is never used — packed value 0
     // means "unmapped" in page_table_lookup. Empty-string entries (modifier
@@ -221,8 +223,11 @@ fn main() -> Result<()> {
         let v = split.next().unwrap_or(""); // empty value = delete the codepoint
 
         let offset = emoji_norm_str_buffer.len();
+        if !v.is_empty() {
+            emoji_norm_str_buffer.push(' ');
+        }
         emoji_norm_str_buffer.push_str(v);
-        let length = v.len();
+        let length = if v.is_empty() { 0 } else { v.len() + 1 };
         assert!(
             length < 256,
             "EMOJI_NORM.txt:{}: string length {length} exceeds 8-bit packing limit for key U+{k:04X}",

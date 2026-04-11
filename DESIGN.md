@@ -251,7 +251,9 @@ Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNorm
 
 ### Page-Table Lookup
 
-VariantNorm, Romanize, and Normalize use a two-stage page table for O(1) codepoint lookup. The first stage indexes by `codepoint >> 8` (which 256-codepoint block); the second stage indexes within the block. Unmapped codepoints are passed through unchanged. Both stages use `get_unchecked` for branchless access.
+VariantNorm, Romanize, EmojiNorm, and Normalize use a two-stage page table for O(1) codepoint lookup. The first stage indexes by `codepoint >> 8` (which 256-codepoint block); the second stage indexes within the block. Unmapped codepoints are passed through unchanged. Both stages use `get_unchecked` for branchless access.
+
+Romanize and EmojiNorm string buffers store each replacement with a **build-time-prepended leading space** for word boundary separation (source data in `process_map/` is space-free). `RomanizeChar` trims this space at runtime via `trim_romanize_packed`.
 
 *Source: `process/transform/page_table.rs`*
 
