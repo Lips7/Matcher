@@ -291,7 +291,7 @@ impl SimpleMatcher {
 
         if tree[0].children.is_empty() {
             let r = collect.take().map(|f| f(&self.rules, &ss));
-            return (self.rules.has_match(&ss), r);
+            return (ss.has_match(), r);
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
@@ -350,8 +350,8 @@ impl SimpleMatcher {
                         // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
                         // Parent density is the correct estimate for all fused transforms.
                         // Note: is_noop leaves are already skipped above.
-                        let use_fused =
-                            !(self.scan.has_dfa() && parent_density <= CHARWISE_DENSITY_THRESHOLD);
+                        let use_fused = !(cfg!(feature = "dfa")
+                            && parent_density <= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             step.filter_bytes(parent_text).map(|iter| {
@@ -463,6 +463,6 @@ impl SimpleMatcher {
         }
 
         let r = collect.take().map(|f| f(&self.rules, &ss));
-        (self.rules.has_match(&ss), r)
+        (ss.has_match(), r)
     }
 }

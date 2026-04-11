@@ -231,14 +231,6 @@ impl RuleSet {
         self.rules.len()
     }
 
-    /// Returns whether any touched rule is satisfied in the current generation.
-    #[inline(always)]
-    pub(super) fn has_match(&self, ss: &ScanState<'_>) -> bool {
-        ss.touched_indices()
-            .iter()
-            .any(|&rule_idx| ss.rule_is_satisfied(rule_idx))
-    }
-
     /// Appends every satisfied touched rule to `results`.
     pub(super) fn collect_matches<'a>(
         &'a self,

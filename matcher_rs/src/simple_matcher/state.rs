@@ -105,7 +105,7 @@ pub(super) struct SimpleMatchState {
     ///
     /// Cleared at the start of each scan in [`prepare`](Self::prepare). Used by
     /// [`RuleSet::collect_matches`](super::rule::RuleSet::collect_matches) and
-    /// [`RuleSet::has_match`](super::rule::RuleSet::has_match) to iterate only
+    /// [`ScanState::has_match`] to iterate only
     /// over rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
     /// Monotonic generation id used to avoid clearing full state between calls.
@@ -198,6 +198,14 @@ impl ScanState<'_> {
     /// Returns the rules touched during the current generation.
     pub(super) fn touched_indices(&self) -> &[usize] {
         self.touched_indices
+    }
+
+    /// Returns whether any touched rule is satisfied in the current generation.
+    #[inline(always)]
+    pub(super) fn has_match(&self) -> bool {
+        self.touched_indices()
+            .iter()
+            .any(|&rule_idx| self.rule_is_satisfied(rule_idx))
     }
 
     /// Returns whether `rule_idx` is satisfied in the current generation.
