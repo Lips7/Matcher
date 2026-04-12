@@ -1,6 +1,21 @@
 # Changelog
 
 
+## 0.15.3 - 2026-04-12
+
+### Changed
+
+- **Core**: Fuse `WordState` + `satisfied_masks` into a single `RuleState` struct, consolidating per-rule hot state into one cache line.
+
+### Fixed
+
+- **Core**: Resolve NORM/NUM-NORM overlap in process maps where shared codepoints caused ambiguous transform behavior.
+- **Docs**: Improve clarity in density-based engine dispatch problem description in DESIGN.md.
+
+### Tests
+
+- Add exhaustive `process_map` coverage validating all transform tables (VARIANT_NORM, ROMANIZE, DELETE, NORM, NUM-NORM, EMOJI_NORM).
+
 ## 0.15.2 - 2026-04-11
 
 ### Changed
