@@ -23,6 +23,7 @@ name = "matcher_rs"
 crate-type = ["rlib"]
 
 [dependencies]
+bytecount = { version = "0.6.9", default-features = false }
 foldhash = "0.2"
 aho-corasick = { version = "1.1.4", optional = true }
 bitflags = "2.11.0"
@@ -44,8 +45,9 @@ default = ["perf"]
 perf = ["dfa", "simd_runtime_dispatch"]
 # By enabling the dfa feature, DFA-backed Aho-Corasick automata are used for matching, significantly increasing memory usage.
 dfa = ["aho-corasick"]
-# By enabling the simd_runtime_dispatch feature, the best available transform kernel is selected at runtime (AVX2/NEON/portable).
-simd_runtime_dispatch = []
+# By enabling the simd_runtime_dispatch feature, the best available SIMD kernel is selected at runtime (AVX2/NEON/portable)
+# for transforms and bytecount's character density scan.
+simd_runtime_dispatch = ["bytecount/runtime-dispatch-simd"]
 # Enables parallel batch matching via rayon (batch_is_match, batch_process, batch_find_match).
 rayon = ["dep:rayon"]
 # Enables Serialize/Deserialize impls for ProcessType and Serialize for SimpleResult.

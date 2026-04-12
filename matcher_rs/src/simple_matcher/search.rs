@@ -34,7 +34,7 @@ use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
     pattern::{DIRECT_RULE_BIT, PatternDispatch, decode_direct},
-    scan::{CHARWISE_DENSITY_THRESHOLD, text_non_ascii_density},
+    scan::{CHARWISE_DENSITY_THRESHOLD, text_char_density},
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,
 };
@@ -132,11 +132,10 @@ impl SimpleMatcher {
     #[inline(always)]
     fn scan_variant(&self, processed_text: &str, ctx: ScanContext, ss: &mut ScanState<'_>) -> bool {
         let text_bytes = processed_text.as_bytes();
-        self.scan.for_each_match_value(
-            processed_text,
-            ctx.non_ascii_density,
-            |raw_value, start, end| self.process_match(raw_value, text_bytes, start, end, ctx, ss),
-        )
+        self.scan
+            .for_each_match_value(processed_text, ctx.char_density, |raw_value, start, end| {
+                self.process_match(raw_value, text_bytes, start, end, ctx, ss)
+            })
     }
 
     /// Processes one raw match value reported by the scan engine.
@@ -265,15 +264,15 @@ impl SimpleMatcher {
 
         let mut collect = Some(collect);
 
-        // One SIMD pass: exact non-ASCII byte density for engine dispatch.
-        // density == 0.0 ↔ text is pure ASCII (replaces text.is_ascii()).
-        let root_density = text_non_ascii_density(text);
+        // One SIMD pass: character density for engine dispatch.
+        // density >= 1.0 ↔ text is pure ASCII.
+        let root_density = text_char_density(text);
 
         // Fold no-op children's masks into the root scan to eliminate redundant
         // DFA traversals. On ASCII text, transforms like VariantNorm/Romanize
         // produce identical text — scanning it again with a different mask is
         // pure waste. Folding merges those masks into one scan.
-        let root_scan_mask = fold_noop_children_masks(tree, 0, root_density == 0.0);
+        let root_scan_mask = fold_noop_children_masks(tree, 0, root_density >= 1.0);
 
         // Scan root text if any PT terminates here (including folded no-ops).
         if root_scan_mask != 0 {
@@ -282,7 +281,7 @@ impl SimpleMatcher {
                 process_type_mask: root_scan_mask,
                 num_variants,
                 exit_early,
-                non_ascii_density: root_density,
+                char_density: root_density,
             };
             if self.scan_variant(text, ctx, &mut ss) {
                 return (true, None);
@@ -297,8 +296,8 @@ impl SimpleMatcher {
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
         let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
         texts.push(Cow::Borrowed(text));
-        // density_flags[i] — non-ASCII byte density for arena index i.
-        // density == 0.0 means pure ASCII (used for both engine dispatch and
+        // density_flags[i] — character density for arena index i.
+        // density >= 1.0 means pure ASCII (used for both engine dispatch and
         // transform correctness: is_noop_on_ascii_input, step.apply).
         let mut density_flags: Vec<f32> = Vec::new();
         density_flags.push(root_density);
@@ -327,7 +326,7 @@ impl SimpleMatcher {
                 };
                 let is_leaf = child.children.is_empty();
                 let parent_density = density_flags[parent_aidx];
-                let parent_ascii = parent_density == 0.0;
+                let parent_ascii = parent_density >= 1.0;
 
                 let is_noop = parent_ascii && step.is_noop_on_ascii_input();
 
@@ -341,17 +340,17 @@ impl SimpleMatcher {
 
                         // Fused transform-scan dispatch:
                         //
-                        // - DFA available + low density: skip fused, fall through to materialize
-                        //   path — DFA+Teddy is 2–5× faster than DAAC bytewise streaming on
+                        // - DFA available + high char density: skip fused, fall through to
+                        //   materialize path — DFA is 2–5× faster than DAAC bytewise streaming on
                         //   ASCII-heavy text.
-                        // - No DFA + low density: stream via DAAC bytewise.
-                        // - High density: stream via DAAC charwise.
+                        // - No DFA + high char density: stream via DAAC bytewise.
+                        // - Low char density: stream via DAAC charwise.
                         //
                         // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
                         // Parent density is the correct estimate for all fused transforms.
                         // Note: is_noop leaves are already skipped above.
                         let use_fused = !(cfg!(feature = "dfa")
-                            && parent_density <= CHARWISE_DENSITY_THRESHOLD);
+                            && parent_density >= CHARWISE_DENSITY_THRESHOLD);
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             step.filter_bytes(parent_text).map(|iter| {
@@ -361,13 +360,13 @@ impl SimpleMatcher {
                                     process_type_mask: child.pt_index_mask,
                                     num_variants,
                                     exit_early,
-                                    non_ascii_density: parent_density,
+                                    char_density: parent_density,
                                 };
                                 let fused_text_bytes = parent_text.as_bytes();
                                 variant_counter += 1;
                                 self.scan.for_each_match_value_from_iter(
                                     iter,
-                                    ctx.non_ascii_density,
+                                    ctx.char_density,
                                     |v, start, end| {
                                         self.process_match(
                                             v,
@@ -400,7 +399,7 @@ impl SimpleMatcher {
                                     process_type_mask: child.pt_index_mask,
                                     num_variants,
                                     exit_early,
-                                    non_ascii_density: child_density,
+                                    char_density: child_density,
                                 };
                                 self.scan_variant(&s, ctx, &mut ss)
                             } else {
@@ -409,7 +408,7 @@ impl SimpleMatcher {
                                     process_type_mask: child.pt_index_mask,
                                     num_variants,
                                     exit_early,
-                                    non_ascii_density: parent_density,
+                                    char_density: parent_density,
                                 };
                                 self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
                             }
@@ -440,14 +439,14 @@ impl SimpleMatcher {
                     // already folded into the parent's scan — skip.
                     // Also fold this node's own no-op children into its mask.
                     if child.pt_index_mask != 0 && !is_noop {
-                        let child_ascii = density_flags[child_aidx] == 0.0;
+                        let child_ascii = density_flags[child_aidx] >= 1.0;
                         let scan_mask = fold_noop_children_masks(tree, child_idx, child_ascii);
                         let ctx = ScanContext {
                             text_index: child_vi,
                             process_type_mask: scan_mask,
                             num_variants,
                             exit_early,
-                            non_ascii_density: density_flags[child_aidx],
+                            char_density: density_flags[child_aidx],
                         };
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
                         if stopped {

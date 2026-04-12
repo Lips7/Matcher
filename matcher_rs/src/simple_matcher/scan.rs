@@ -19,10 +19,10 @@
 //! # Engine selection
 //!
 //! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] use a SIMD
-//! density scan ([`text_non_ascii_density`]) to select the engine. When the
-//! non-ASCII byte fraction is ≤ [`CHARWISE_DENSITY_THRESHOLD`] (0.67, ~40%
-//! CJK characters) the bytewise engine is used; above the threshold the
-//! charwise engine is selected.
+//! character density scan ([`text_char_density`]) to select the engine. When
+//! the character density (chars/bytes) is ≥ [`CHARWISE_DENSITY_THRESHOLD`]
+//! (0.55, ~40% CJK characters) the bytewise engine is used; below the
+//! threshold the charwise engine is selected.
 
 use std::borrow::Cow;
 
@@ -43,29 +43,28 @@ use daachorse::{
 use super::pattern::{PatternEntry, PatternIndex};
 use crate::MatcherError;
 
-/// Non-ASCII byte density threshold for switching from bytewise to charwise
-/// engine.
+/// Character density threshold for switching from bytewise to charwise engine.
 ///
 /// Calibrated from 8,932-point characterization sweep (4 engines × 12 sizes ×
-/// 11 CJK densities). At ~40% CJK characters the non-ASCII byte fraction is
-/// `0.4×3 / (0.4×3 + 0.6×1) ≈ 0.667`. Charwise overtakes DFA+Teddy at this
-/// crossover, consistent across pattern sizes and both `search` and `is_match`
-/// modes.
-pub(super) const CHARWISE_DENSITY_THRESHOLD: f32 = 0.67;
+/// 11 CJK densities). At ~40% CJK characters the character density (chars per
+/// byte) is `1 / (0.4×3 + 0.6×1) ≈ 0.556`. Charwise overtakes DFA at
+/// this crossover, consistent across pattern sizes and both `search` and
+/// `is_match` modes.
+pub(super) const CHARWISE_DENSITY_THRESHOLD: f32 = 0.55;
 
-/// Computes the non-ASCII byte fraction of the full text using SIMD.
+/// Computes character density (codepoints / bytes) using SIMD via `bytecount`.
 ///
-/// Returns a value in `[0.0, 1.0]`: 0.0 = pure ASCII, 1.0 = all non-ASCII.
-/// Uses platform-specific SIMD (NEON / AVX2 / portable `std::simd`) via
-/// [`super::simd::count_non_ascii_simd`]. ~2 µs for 200 KB.
+/// Returns a value in `(0.0, 1.0]` for non-empty text: 1.0 = pure ASCII,
+/// lower values indicate more multi-byte characters (e.g. 0.33 for pure
+/// 3-byte CJK). Returns 1.0 for empty text.
 #[inline(always)]
-pub(super) fn text_non_ascii_density(text: &str) -> f32 {
+pub(super) fn text_char_density(text: &str) -> f32 {
     let bytes = text.as_bytes();
     let len = bytes.len();
     if len == 0 {
-        return 0.0;
+        return 1.0;
     }
-    super::simd::count_non_ascii_simd(bytes) as f32 / len as f32
+    bytecount::num_chars(bytes) as f32 / len as f32
 }
 
 // ── Unified scan trait ──────────────────────────────────────────────────
@@ -237,14 +236,15 @@ struct Engines {
     charwise: CharwiseMatcher,
 }
 
-/// Dispatches to the bytewise or charwise engine based on density.
+/// Dispatches to the bytewise or charwise engine based on character density.
 ///
-/// Expands to: `if density <= threshold { bytewise.$method } else {
-/// charwise.$method }`. Avoids `dyn ScanEngine` (methods have `impl Trait`
-/// params → not object-safe).
+/// Expands to: `if density >= threshold { bytewise.$method } else {
+/// charwise.$method }`. Higher density = more ASCII-like = bytewise.
+/// Avoids `dyn ScanEngine` (methods have `impl Trait` params → not
+/// object-safe).
 macro_rules! dispatch {
     ($engines:expr, $density:expr, $method:ident ($($arg:expr),*)) => {
-        if $density <= CHARWISE_DENSITY_THRESHOLD {
+        if $density >= CHARWISE_DENSITY_THRESHOLD {
             ScanEngine::$method(&$engines.bytewise, $($arg),*)
         } else {
             ScanEngine::$method(&$engines.charwise, $($arg),*)
@@ -266,11 +266,6 @@ macro_rules! dispatch {
 #[derive(Clone)]
 pub(super) struct ScanPlan {
     engines: Engines,
-    /// `true` when every compiled pattern is pure ASCII.
-    ///
-    /// Used for a fast-return: when all patterns are ASCII and the text
-    /// contains zero ASCII bytes, no match is possible.
-    all_patterns_ascii: bool,
     /// Flat index mapping automaton raw values back to rule-entry metadata.
     patterns: PatternIndex,
 }
@@ -296,13 +291,8 @@ impl ScanPlan {
         let patterns = PatternIndex::new(dedup_entries);
         let value_map = patterns.build_value_map(rule_info);
         let engines = compile_automata(dedup_patterns, &value_map)?;
-        let all_patterns_ascii = dedup_patterns.iter().all(|p| p.is_ascii());
 
-        Ok(Self {
-            engines,
-            all_patterns_ascii,
-            patterns,
-        })
+        Ok(Self { engines, patterns })
     }
 
     /// Returns the pattern metadata referenced by the compiled scan engines.
@@ -319,26 +309,21 @@ impl ScanPlan {
 
     /// Returns whether any compiled pattern matches `text`.
     ///
-    /// Density-based engine dispatch: bytewise for low non-ASCII density
-    /// (≤ [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density.
+    /// Density-based engine dispatch: bytewise for high character density
+    /// (≥ [`CHARWISE_DENSITY_THRESHOLD`]), charwise below.
     /// Skips TLS state entirely — used as a fast path for
     /// `SimpleMatcher::is_match` when no text transforms are needed.
     #[inline(always)]
     pub(super) fn is_match(&self, text: &str) -> bool {
-        let density = text_non_ascii_density(text);
-        if self.all_patterns_ascii && density >= 1.0 {
-            return false;
-        }
+        let density = text_char_density(text);
         dispatch!(self.engines, density, is_match(text))
     }
 
     /// Calls `on_value` for each raw match value produced by the chosen engine.
     ///
     /// Returns `true` if the callback requests early exit. Engine selection is
-    /// density-based: bytewise for low non-ASCII density (≤
-    /// [`CHARWISE_DENSITY_THRESHOLD`]), charwise for high density. When
-    /// `all_patterns_ascii` and the text is entirely non-ASCII, returns
-    /// `false` without scanning (no ASCII pattern can match).
+    /// density-based: bytewise for high character density
+    /// (≥ [`CHARWISE_DENSITY_THRESHOLD`]), charwise below.
     #[inline(always)]
     pub(super) fn for_each_match_value(
         &self,
@@ -346,9 +331,6 @@ impl ScanPlan {
         density: f32,
         on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
-        if self.all_patterns_ascii && density >= 1.0 {
-            return false;
-        }
         dispatch!(self.engines, density, for_each_match_value(text, on_value))
     }
 
@@ -356,7 +338,7 @@ impl ScanPlan {
     /// iterator.
     ///
     /// Used by the fused delete-scan path. Always uses DAAC bytewise (DFA has
-    /// no streaming API). Falls back to charwise for high-density text.
+    /// no streaming API). Falls back to charwise for low-density text.
     #[inline(always)]
     pub(super) fn for_each_match_value_from_iter(
         &self,

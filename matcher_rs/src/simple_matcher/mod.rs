@@ -28,7 +28,6 @@ mod pattern;
 mod rule;
 mod scan;
 mod search;
-mod simd;
 mod state;
 pub(crate) mod tree;
 

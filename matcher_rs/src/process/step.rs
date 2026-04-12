@@ -119,28 +119,29 @@ impl TransformStep {
     /// output_density))` if the text was modified, `None` if the step is a
     /// no-op for this input.
     ///
-    /// `parent_density` is the non-ASCII byte density of `text` (0.0 = pure
-    /// ASCII). The returned density is an estimate for engine dispatch:
+    /// `parent_density` is the character density of `text` (1.0 = pure
+    /// ASCII, lower = more multi-byte). The returned density is an estimate
+    /// for engine dispatch:
     /// - **VariantNorm**: CJK→CJK, density unchanged → `parent_density`
     /// - **Delete / Normalize**: density approximately unchanged →
     ///   `parent_density`
-    /// - **Romanize / RomanizeChar**: CJK→ASCII, density drops → `0.0`
+    /// - **Romanize / RomanizeChar**: CJK→ASCII, density rises → `1.0`
     ///
-    /// When `parent_density == 0.0` the ASCII fast path fires:
+    /// When `parent_density >= 1.0` the ASCII fast path fires:
     /// VariantNorm/Romanize/RomanizeChar are guaranteed no-ops on ASCII input,
     /// and Delete/Normalize produce ASCII output from ASCII input (proven by
     /// process map analysis).
     #[inline(always)]
     pub(crate) fn apply(&self, text: &str, parent_density: f32) -> Option<(String, f32)> {
-        if parent_density == 0.0 {
+        if parent_density >= 1.0 {
             return match self {
                 Self::None
                 | Self::VariantNorm(_)
                 | Self::Romanize(_)
                 | Self::RomanizeChar(_)
                 | Self::EmojiNorm(_) => None,
-                Self::Delete(matcher) => matcher.delete(text).map(|s| (s, 0.0)),
-                Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, 0.0)),
+                Self::Delete(matcher) => matcher.delete(text).map(|s| (s, 1.0)),
+                Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, 1.0)),
             };
         }
 
@@ -150,7 +151,7 @@ impl TransformStep {
             Self::Delete(matcher) => matcher.delete(text).map(|s| (s, parent_density)),
             Self::Normalize(matcher) => matcher.replace(text).map(|s| (s, parent_density)),
             Self::Romanize(matcher) | Self::RomanizeChar(matcher) | Self::EmojiNorm(matcher) => {
-                matcher.replace(text).map(|s| (s, 0.0))
+                matcher.replace(text).map(|s| (s, 1.0))
             }
         }
     }

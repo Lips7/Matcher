@@ -42,7 +42,7 @@ fn reduce_text_process_inner<'a>(
         let Some(current) = text_list.last_mut() else {
             unreachable!()
         };
-        let density = if current.is_ascii() { 0.0 } else { 1.0 };
+        let density = if current.is_ascii() { 1.0 } else { 0.5 };
         let changed = get_transform_step(process_type_bit).apply(current.as_ref(), density);
 
         if let Some((s, _)) = changed {
@@ -88,7 +88,7 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
     let mut result = Cow::Borrowed(text);
 
     for process_type_bit in process_type.iter() {
-        let density = if result.is_ascii() { 0.0 } else { 1.0 };
+        let density = if result.is_ascii() { 1.0 } else { 0.5 };
         if let Some((s, _)) = get_transform_step(process_type_bit).apply(result.as_ref(), density) {
             result = Cow::Owned(s);
         }

@@ -428,7 +428,7 @@ mod tests {
             process_type_mask: u64::MAX,
             num_variants: 1,
             exit_early,
-            non_ascii_density: 0.0,
+            char_density: 1.0,
         }
     }
 
