@@ -73,7 +73,7 @@ For the full narrative walkthrough, see the [Design Document](./DESIGN.md).
 ```toml
 # Cargo.toml
 [dependencies]
-matcher_rs = "0.14"
+matcher_rs = "0.15"
 ```
 
 ```rust
