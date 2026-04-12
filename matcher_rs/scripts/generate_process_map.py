@@ -345,10 +345,14 @@ def build_text_delete_codepoints(chars: list[str]) -> list[int]:
     return [ord(char) for char in chars if unicodedata.category(char) in DELETE_CATEGORIES]
 
 
-def build_norm_map(chars: list[str]) -> dict[str, str]:
+def build_norm_map(chars: list[str], num_norm: dict[str, str]) -> dict[str, str]:
     combining_categories = frozenset({"Mn", "Mc", "Me"})
     mapping: dict[str, str] = {}
     for char in chars:
+        # Skip codepoints already handled by NUM-NORM (which takes priority
+        # at build time because it is loaded second into the same HashMap).
+        if char in num_norm:
+            continue
         nfkd = unicodedata.normalize("NFKD", char)
         stripped = "".join(
             c for c in nfkd if unicodedata.category(c) not in combining_categories
@@ -528,8 +532,8 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, str | dict[s
 
     variant_norm = build_variant_norm_map(chars)
     text_delete = build_text_delete_codepoints(chars)
-    norm = build_norm_map(chars)
     num_norm = build_num_norm_map(chars)
+    norm = build_norm_map(chars, num_norm)
     romanize = build_romanize_map()
     emoji_norm = build_emoji_norm_map()
 

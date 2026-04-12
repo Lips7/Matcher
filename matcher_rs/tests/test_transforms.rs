@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use matcher_rs::{
     ProcessType, SimpleMatcherBuilder, reduce_text_process, reduce_text_process_emit, text_process,
 };
@@ -358,4 +360,200 @@ fn test_unicode_robustness() {
     assert!(m5.is_match("🔥"));
     assert!(m5.is_match("👍🏽"));
     assert_eq!(m5.process("I love 🔥 and 👍").len(), 2);
+}
+
+// ===========================================================================
+// Exhaustive process_map validation
+// ===========================================================================
+
+fn process_map_dir() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("process_map")
+        .leak()
+}
+
+fn parse_tab_mappings(path: &Path) -> Vec<(String, String)> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|line| {
+            let mut parts = line.splitn(2, '\t');
+            let src = parts.next().unwrap().to_owned();
+            let dst = parts.next().unwrap_or("").to_owned();
+            (src, dst)
+        })
+        .collect()
+}
+
+fn parse_hex_codepoints(path: &Path) -> Vec<char> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|line| {
+            let hex = line.strip_prefix("U+")?;
+            u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+        })
+        .collect()
+}
+
+#[test]
+fn test_process_map_variant_norm_exhaustive() {
+    let mappings = parse_tab_mappings(&process_map_dir().join("VARIANT_NORM.txt"));
+    assert!(
+        mappings.len() > 1000,
+        "expected 1000+ mappings, got {}",
+        mappings.len()
+    );
+
+    let mut failures = Vec::new();
+    for (src, expected) in &mappings {
+        let result = text_process(ProcessType::VariantNorm, src);
+        if result.as_ref() != expected.as_str() {
+            failures.push(format!(
+                "{src:?} → expected {expected:?}, got {:?}",
+                result.as_ref()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} VariantNorm failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn test_process_map_romanize_exhaustive() {
+    let mappings = parse_tab_mappings(&process_map_dir().join("ROMANIZE.txt"));
+    assert!(
+        mappings.len() > 10000,
+        "expected 10000+ mappings, got {}",
+        mappings.len()
+    );
+
+    let mut failures = Vec::new();
+    for (src, raw_dst) in &mappings {
+        // build.rs prepends a space for Romanize
+        let expected_romanize = format!(" {raw_dst}");
+        let result = text_process(ProcessType::Romanize, src);
+        if result.as_ref() != expected_romanize.as_str() {
+            failures.push(format!(
+                "Romanize {src:?} → expected {expected_romanize:?}, got {:?}",
+                result.as_ref()
+            ));
+        }
+        // RomanizeChar: same but no leading space
+        let result_char = text_process(ProcessType::RomanizeChar, src);
+        if result_char.as_ref() != raw_dst.as_str() {
+            failures.push(format!(
+                "RomanizeChar {src:?} → expected {raw_dst:?}, got {:?}",
+                result_char.as_ref()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} Romanize failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn test_process_map_normalize_exhaustive() {
+    let norm = parse_tab_mappings(&process_map_dir().join("NORM.txt"));
+    let num_norm = parse_tab_mappings(&process_map_dir().join("NUM-NORM.txt"));
+    let all_mappings: Vec<_> = norm.iter().chain(num_norm.iter()).collect();
+    assert!(
+        all_mappings.len() > 5000,
+        "expected 5000+ mappings, got {}",
+        all_mappings.len()
+    );
+
+    // NORM.txt and NUM-NORM.txt are merged at build time into one page table.
+    // NUM-NORM entries take priority (loaded second, overwrite NORM). After
+    // fixing the generate script to exclude NUM-NORM overlaps from NORM, both
+    // files should produce exact matches.
+    let mut failures = Vec::new();
+    for (src, expected) in &all_mappings {
+        let result = text_process(ProcessType::Normalize, src);
+        if result.as_ref() != expected.as_str() {
+            failures.push(format!(
+                "{src:?} → expected {expected:?}, got {:?}",
+                result.as_ref()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} Normalize failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn test_process_map_delete_exhaustive() {
+    let codepoints = parse_hex_codepoints(&process_map_dir().join("TEXT-DELETE.txt"));
+    assert!(
+        codepoints.len() > 1000,
+        "expected 1000+ codepoints, got {}",
+        codepoints.len()
+    );
+
+    let mut failures = Vec::new();
+    for ch in &codepoints {
+        let input = ch.to_string();
+        let result = text_process(ProcessType::Delete, &input);
+        if !result.is_empty() {
+            failures.push(format!(
+                "U+{:04X} ({ch:?}) should be deleted, got {:?}",
+                *ch as u32,
+                result.as_ref()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} Delete failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn test_process_map_emoji_norm_exhaustive() {
+    let mappings = parse_tab_mappings(&process_map_dir().join("EMOJI_NORM.txt"));
+    assert!(
+        mappings.len() > 500,
+        "expected 500+ mappings, got {}",
+        mappings.len()
+    );
+
+    let mut failures = Vec::new();
+    for (src, raw_dst) in &mappings {
+        let expected = if raw_dst.is_empty() {
+            // Empty value = stripped (modifier/ZWJ codepoints)
+            String::new()
+        } else {
+            // build.rs prepends a space for named emoji
+            format!(" {raw_dst}")
+        };
+        let result = text_process(ProcessType::EmojiNorm, src);
+        if result.as_ref() != expected.as_str() {
+            failures.push(format!(
+                "{src:?} → expected {expected:?}, got {:?}",
+                result.as_ref()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} EmojiNorm failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
