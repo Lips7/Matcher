@@ -456,34 +456,47 @@ define_avx2_entry! {
     |b0| b0 >= 0x80 || ascii_delete_contains(b0, ascii_lut)
 }
 
-/// NEON helper: finds the exact lane index of the first non-ASCII byte in a
-/// 16-byte chunk.
+/// NEON movemask: extracts one bit per lane from a 0xFF/0x00 comparison mask
+/// into a scalar `u64`.
 ///
-/// Called after `vmaxvq_u8` confirmed at least one lane is `>= 0x80`. Stores
-/// the vector to a stack scratch buffer and scans it byte-by-byte to find the
-/// exact position. This avoids the need for a NEON horizontal-scan intrinsic
-/// that does not exist on aarch64.
+/// Uses the `vshrn_n_u16` (shift-right-narrow) pattern from `memchr`:
+/// narrows 16 bytes to 8 nibbles, then masks to keep one bit per nibble.
+/// Lane index = `trailing_zeros() >> 2`.
+///
+/// # Safety
+///
+/// NEON intrinsics require aarch64 (enforced by `cfg`).
+#[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
+#[inline(always)]
+unsafe fn neon_movemask(mask: uint8x16_t) -> u64 {
+    // SAFETY: all intrinsics operate on the input vector; no memory access.
+    unsafe {
+        let narrowed = vshrn_n_u16(vreinterpretq_u16_u8(mask), 4);
+        vget_lane_u64(vreinterpret_u64_u8(narrowed), 0) & 0x8888888888888888
+    }
+}
+
+/// NEON helper: finds the exact lane index of the first non-ASCII byte in a
+/// 16-byte chunk via bitmask extraction (no scratch buffer).
+///
+/// Called after `vmaxvq_u8` confirmed at least one lane is `>= 0x80`.
 ///
 /// # Safety
 ///
 /// - `bytes.add(offset)` must point to a valid 16-byte region (guaranteed by
 ///   the caller's `offset + 16 <= bytes.len()` guard).
-/// - NEON intrinsics (`vld1q_u8`, `vst1q_u8`) require aarch64 (enforced by
-///   `cfg`).
+/// - NEON intrinsics require aarch64 (enforced by `cfg`).
 #[cfg(all(feature = "simd_runtime_dispatch", target_arch = "aarch64"))]
 #[inline(always)]
 unsafe fn first_non_ascii_in_neon(bytes: *const u8, offset: usize) -> usize {
     // SAFETY: caller guarantees `offset + 16 <= bytes.len()`, so
     // `bytes.add(offset)` is valid for a 16-byte read.
-    let chunk = unsafe { vld1q_u8(bytes.add(offset)) };
-    let mut scratch = [0u8; 16];
-    // SAFETY: `scratch` is a local [u8; 16] on the stack, so the pointer is valid
-    // for a 16-byte store.
-    unsafe { vst1q_u8(scratch.as_mut_ptr(), chunk) };
-    scratch
-        .iter()
-        .position(|&b| b >= 0x80)
-        .map_or(offset + 16, |idx| offset + idx)
+    unsafe {
+        let chunk = vld1q_u8(bytes.add(offset));
+        let mask = vcgeq_u8(chunk, vdupq_n_u8(0x80));
+        let bits = neon_movemask(mask);
+        offset + (bits.trailing_zeros() >> 2) as usize
+    }
 }
 
 /// NEON 16-byte-at-a-time ASCII skip.
@@ -562,12 +575,10 @@ fn skip_ascii_non_delete_neon(bytes: &[u8], offset: usize, ascii_lut: &[u8; 16])
             let deleted = vandq_u8(lut_byte, bit_mask);
 
             if has_non_ascii || vmaxvq_u8(deleted) != 0 {
-                let mut scratch = [0u8; 16];
-                vst1q_u8(scratch.as_mut_ptr(), chunk);
-                return scratch
-                    .iter()
-                    .position(|&b| b >= 0x80 || ascii_delete_contains(b, ascii_lut))
-                    .map_or(offset + 16, |idx| offset + idx);
+                let non_ascii_bits = neon_movemask(vcgeq_u8(chunk, vdupq_n_u8(0x80)));
+                let delete_bits = neon_movemask(vtstq_u8(deleted, deleted));
+                let stop_bits = non_ascii_bits | delete_bits;
+                return offset + (stop_bits.trailing_zeros() >> 2) as usize;
             }
             offset += 16;
         }
