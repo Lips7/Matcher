@@ -79,7 +79,7 @@ Two Aho-Corasick engines are built from **all** deduplicated patterns:
 - **Bytewise engine**: operates on raw bytes. With the `dfa` feature, uses a DFA with Teddy SIMD prefilter for maximum ASCII throughput. Falls back to a double-array automaton (DAAC) without `dfa`.
 - **Charwise engine**: operates on Unicode codepoints. CJK characters are 3 UTF-8 bytes — charwise does 1 state transition instead of 3, making it ~1.6–1.9× faster on CJK-heavy text.
 
-Both engines are correct for any input. Engine selection is a pure speed optimization decided at runtime per text based on non-ASCII byte density.
+Both engines are correct for any input. Engine selection is a pure speed optimization decided at runtime per text based on character density (codepoints / bytes, via `bytecount::num_chars`).
 
 ### 1.4 Assemble
 
@@ -105,7 +105,7 @@ Each trie node is visited in flat-array order (parents before children). At each
 
 ```
 text = "Hello! 你好世界 china is cool"
-density = 0.36 (≤ 0.67 threshold) → bytewise engine selected
+char_density = 0.72 (≥ 0.55 threshold) → bytewise engine selected
 ```
 
 The bytewise AC scans the full text. No matches — `"hello"` doesn't match `"Hello"` (case-sensitive raw scan). No state updates.
@@ -122,7 +122,7 @@ The bytewise AC scans the full text. No matches — `"hello"` doesn't match `"He
 
 ```
 input:  "Hello! 你好世界 china is cool"
-output: "Hello你好世界chinaisscool"    (density = 0.41 → bytewise)
+output: "Hello你好世界chinaisscool"    (char_density ≈ 0.70 → bytewise)
 ```
 
 This node terminates (has rules under `VariantNorm|Delete`). The bytewise AC finds `"你好"` in the deleted text. R2 is a single-segment rule — the first hit satisfies it immediately.
@@ -133,7 +133,7 @@ This node terminates (has rules under `VariantNorm|Delete`). The bytewise AC fin
 
 ```
 input:  "Hello! 你好世界 china is cool"
-output: "Hello!  ni  hao  shi  jie  china is cool"    (density = 0.0 → bytewise)
+output: "Hello!  ni  hao  shi  jie  china is cool"    (char_density = 1.0 → bytewise)
 ```
 
 This node terminates. The bytewise AC finds no match for `"zhongguo"` (the text contains `"ni hao shi jie"`, not `"zhongguo"`). No state update for R3.
@@ -155,7 +155,7 @@ R3 was never touched (no hit). Final output: `[{ word_id: 2, word: "你好" }]`.
 
 ## 3. `is_match` Fast Path
 
-When all rules are simple single-segment literals under one ProcessType with no word boundaries, the matcher skips the full pipeline entirely. `is_match` delegates directly to the AC automaton — a single density-based engine dispatch returns a boolean. No thread-local state, no generation counters, no trie walking.
+When all rules are simple single-segment literals under one ProcessType with no word boundaries, the matcher skips the full pipeline entirely. `is_match` delegates directly to the AC automaton — a single character-density-based engine dispatch returns a boolean. No thread-local state, no generation counters, no trie walking.
 
 All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use the full trie walk. For simple matchers without transforms, this naturally short-circuits: the trie has only a root node, so one scan handles everything.
 
@@ -177,11 +177,11 @@ Throughput scales linearly with core count: 2.6–7.2× on M3 Max (12P + 4E core
 
 **Problem:** DFA is 2–5× faster than DAAC on ASCII text, but charwise DAAC is ~1.6× faster on CJK text (1 transition per character vs 3 bytewise). No single engine wins everywhere.
 
-**Solution:** A SIMD scan counts non-ASCII bytes across the full text. If the non-ASCII byte fraction is ≤ 0.67 (~40% CJK characters), the bytewise/DFA engine is used; above that, charwise wins. Both engines are built from all patterns, so either is correct for any input.
+**Solution:** `bytecount::num_chars` computes character density (codepoints / bytes) via SIMD. If the density is ≥ 0.55 (~40% CJK characters), the bytewise/DFA engine is used; below that, charwise wins. Both engines are built from all patterns, so either is correct for any input.
 
 The threshold was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
 
-*Source: `simple_matcher/scan.rs`, `simple_matcher/simd.rs`*
+*Source: `simple_matcher/scan.rs`*
 
 ### Generation-Based State Reuse
 
@@ -213,9 +213,9 @@ A 3-way dispatch selects the strategy:
 
 | Condition | Strategy | Rationale |
 |---|---|---|
-| DFA available + density ≤ 0.67 | Materialize → DFA scan | DFA's Teddy prefilter outweighs the allocation cost |
-| No DFA + density ≤ 0.67 | Stream → DAAC bytewise | Best available without DFA |
-| Density > 0.67 | Stream → DAAC charwise | Charwise wins on CJK; streaming avoids allocation |
+| DFA available + char_density ≥ 0.55 | Materialize → DFA scan | DFA's Teddy prefilter outweighs the allocation cost |
+| No DFA + char_density ≥ 0.55 | Stream → DAAC bytewise | Best available without DFA |
+| char_density < 0.55 | Stream → DAAC charwise | Charwise wins on CJK; streaming avoids allocation |
 
 *Source: `simple_matcher/search.rs`, `process/step.rs`*
 
@@ -292,5 +292,5 @@ Dispatch: AVX2 on x86-64 (runtime detection), NEON on AArch64 (compile-time), po
 |------|---------|--------|
 | `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
 | `dfa` | via `perf` | Aho-Corasick DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster. |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms and density counting |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON) and `bytecount` character density (NEON/AVX2) |
 | `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`). Enabled by binding crates. |

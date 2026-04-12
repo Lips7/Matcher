@@ -74,7 +74,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 ### How a Query Works
 
 1. **Transform** — Walk a shared-prefix trie of `ProcessType` steps, producing text variants (VariantNorm, Delete, Normalize, Romanize, RomanizeChar, EmojiNorm). Intermediate results are reused across combinations.
-2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise or charwise, selected by SIMD density scan at threshold 0.67). Hits update per-rule state.
+2. **Scan** — Each variant is scanned by a single deduplicated Aho-Corasick automaton (bytewise or charwise, selected by character density via `bytecount::num_chars` at threshold 0.55). Hits update per-rule state.
 3. **Evaluate** — Touched rules are checked: all AND segments satisfied + no NOT veto → match.
 4. **`is_match` fast path** — When no text transforms are needed and all rules are simple literals without boundaries, `is_match` delegates directly to the AC automaton without TLS state setup.
 
@@ -82,7 +82,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 
 - **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
 - **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
-- **ScanPlan**: `Engines` struct bundling bytewise AC (DFA under `cfg(feature = "dfa")` + DAAC) and charwise AC (DAAC, CJK-optimized). Engine selection via SIMD density scan (≤0.67 non-ASCII → bytewise, >0.67 → charwise). Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
+- **ScanPlan**: `Engines` struct bundling bytewise AC (DFA under `cfg(feature = "dfa")` + DAAC) and charwise AC (DAAC, CJK-optimized). Engine selection via character density (`bytecount::num_chars / len`): ≥0.55 → bytewise, <0.55 → charwise. Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
 - **RuleSet**: `Rule` stores cold data (`segment_counts` + `word_id` + `word`); `RuleInfo` stores hot data (`and_count`, `SatisfactionMethod`, `has_not`). All hits routed through unified `eval_hit()`. Generation-stamped sparse set for O(1) state reset.
 - **DIRECT_RULE_BIT**: single-entry non-matrix patterns encode `(kind, pt_index, boundary, offset, rule_idx)` in one uniform 32-bit layout (bit 31 set), skipping the entry table. Decoded directly into `eval_hit()` args.
 
@@ -96,7 +96,7 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 |------|---------|-------|
 | `perf` | on | Meta-feature enabling `dfa + simd_runtime_dispatch` |
 | `dfa` | via `perf` | Aho-Corasick DFA — 1.7–3.3× faster than DAAC; ~17× more memory |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and density counting |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD dispatch for transforms (AVX2/NEON/portable) and `bytecount` character density (NEON/AVX2) |
 | `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`) via rayon. Enabled by all binding crates. |
 
 **Note:** `EmojiNorm` (bit 6) maps emoji to English words via CLDR short names. Does NOT compose usefully with `Delete` — Delete removes emoji before EmojiNorm sees them. Use `EmojiNorm | Normalize` for emoji→word matching.
@@ -113,11 +113,10 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores: `tree` (transform trie), `scan` (`ScanPlan`), `rules` (`RuleSet`), `is_match_fast` (AC-direct bypass flag).
 - `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`; `batch_is_match`, `batch_process`, `batch_find_match` under `rayon` feature)
 - `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
-- `scan.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro — AC automaton compilation, density-based dispatch, scan iteration
+- `scan.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (AC DFA + DAAC bytewise), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro, `text_char_density` (via `bytecount::num_chars`) — AC automaton compilation, density-based dispatch, scan iteration
 - `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch. Also contains direct-rule bit-packing (`encode_direct`/`decode_direct`, `DIRECT_RULE_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
 - `rule.rs` — `RuleSet`, `Rule` (cold: `segment_counts` + `word_id` + `word`), `RuleInfo` (hot: `and_count` + `SatisfactionMethod` + `has_not`), unified `eval_hit()`, `SimpleTable`/`SimpleTableSerde` type aliases
 - `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `process_match`
-- `simd.rs` — `count_non_ascii_simd` — SIMD non-ASCII byte counting for density-based engine dispatch (NEON/AVX2/portable)
 - `state.rs` — `RuleState` (fused per-rule state: generation + countdown + veto + bitmask in one cache line), `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 - `tree.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction for transform prefix sharing)
 

@@ -186,22 +186,23 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_op
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `perf` | on | Meta-feature enabling `dfa` and `simd_runtime_dispatch` |
+| `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
 | `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine. 1.7–3.3× faster, ~17× more memory. |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and density counting |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and `bytecount` character density |
+| `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`) via rayon. Enabled by all binding crates. |
 
 ### Feature Comparison
 
 | Feature Set | Engine | Speed | Memory | Best For |
 |:---|:---|:---|:---|:---|
-| **Default (`perf`)** | DFA + SIMD density dispatch | Fastest | Higher | General purpose |
+| **Default (`perf`)** | DFA + SIMD char-density dispatch | Fastest | Higher | General purpose |
 | `--no-default-features --features dfa` | DFA, no SIMD transforms | Fast | Higher | When SIMD dispatch is not needed |
 | `--no-default-features` | `daachorse`-only, portable transforms | Good | Lower | Lean builds |
 
 ### When to Use Which
 
 - **Default (`perf`)**: Best for most use cases. DFA + SIMD gives maximum throughput. Use this unless you have a specific constraint.
-- **Drop DFA** (`--no-default-features --features simd_runtime_dispatch`): When memory is constrained — DFA uses ~17× more memory than the DAAC fallback. Still gets SIMD-accelerated transforms and density dispatch.
+- **Drop DFA** (`--no-default-features --features simd_runtime_dispatch`): When memory is constrained — DFA uses ~17× more memory than the DAAC fallback. Still gets SIMD-accelerated transforms and character density dispatch.
 - **Minimal** (`--no-default-features`): Embedded, WASM, or minimal-dependency builds. Portable across all targets with good baseline performance.
 - **Platform notes**: AVX2 (x86_64) and NEON (aarch64) are auto-detected at runtime when `simd_runtime_dispatch` is enabled — no manual target-feature flags needed.
 
