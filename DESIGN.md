@@ -175,7 +175,7 @@ Throughput scales linearly with core count: 2.6–7.2× on M3 Max (12P + 4E core
 
 ### Density-Based Engine Dispatch
 
-**Problem:** DFA is 2–5× faster than DAAC on ASCII text (Teddy SIMD prefilter), but charwise DAAC is ~1.6× faster on CJK text (1 transition per character vs 3 bytewise). No single engine wins everywhere.
+**Problem:** DFA is 2–5× faster than DAAC on ASCII text, but charwise DAAC is ~1.6× faster on CJK text (1 transition per character vs 3 bytewise). No single engine wins everywhere.
 
 **Solution:** A SIMD scan counts non-ASCII bytes across the full text. If the non-ASCII byte fraction is ≤ 0.67 (~40% CJK characters), the bytewise/DFA engine is used; above that, charwise wins. Both engines are built from all patterns, so either is correct for any input.
 
