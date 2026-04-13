@@ -23,6 +23,21 @@ use std::{borrow::Cow, fmt};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+/// Dispatches to `par_iter()` when the `rayon` feature is active, otherwise
+/// `iter()`.
+macro_rules! maybe_par_iter {
+    ($slice:expr) => {{
+        #[cfg(feature = "rayon")]
+        {
+            $slice.par_iter()
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            $slice.iter()
+        }
+    }};
+}
+
 mod build;
 mod pattern;
 mod rule;
@@ -380,23 +395,17 @@ impl SimpleMatcher {
             + self.scan.heap_bytes()
             + self.rules.heap_bytes()
     }
-}
 
-/// Parallel batch methods powered by [rayon](https://docs.rs/rayon).
-///
-/// These methods distribute work across all available CPU cores via rayon's
-/// work-stealing scheduler. Each text is matched independently — the shared
-/// `&self` is read-only, and all mutable state lives in per-thread
-/// thread-local storage.
-///
-/// For small batches (<16 texts), the overhead of rayon scheduling may
-/// outweigh the parallelism benefit. Use the single-text methods instead.
-#[cfg(feature = "rayon")]
-impl SimpleMatcher {
-    /// Matches each text in parallel, returning a boolean per text.
+    /// Matches each text in the slice, returning a boolean per text.
     ///
-    /// Equivalent to calling [`is_match`](Self::is_match) on each text, but
-    /// distributed across CPU cores. The output order matches the input order.
+    /// Equivalent to calling [`is_match`](Self::is_match) on each text.
+    /// With the `rayon` feature enabled, work is distributed across CPU cores;
+    /// otherwise it runs sequentially. The output order matches the input
+    /// order.
+    ///
+    /// For small batches (<16 texts), the overhead of rayon scheduling may
+    /// outweigh the parallelism benefit. Use [`is_match`](Self::is_match)
+    /// instead.
     ///
     /// # Examples
     ///
@@ -417,13 +426,21 @@ impl SimpleMatcher {
     /// ```
     #[must_use]
     pub fn batch_is_match(&self, texts: &[&str]) -> Vec<bool> {
-        texts.par_iter().map(|text| self.is_match(text)).collect()
+        maybe_par_iter!(texts)
+            .map(|text| self.is_match(text))
+            .collect()
     }
 
-    /// Collects all matching rules for each text in parallel.
+    /// Collects all matching rules for each text in the slice.
     ///
-    /// Equivalent to calling [`process`](Self::process) on each text, but
-    /// distributed across CPU cores. The output order matches the input order.
+    /// Equivalent to calling [`process`](Self::process) on each text.
+    /// With the `rayon` feature enabled, work is distributed across CPU cores;
+    /// otherwise it runs sequentially. The output order matches the input
+    /// order.
+    ///
+    /// For small batches (<16 texts), the overhead of rayon scheduling may
+    /// outweigh the parallelism benefit. Use [`process`](Self::process)
+    /// instead.
     ///
     /// # Examples
     ///
@@ -446,14 +463,21 @@ impl SimpleMatcher {
     /// ```
     #[must_use]
     pub fn batch_process<'a>(&'a self, texts: &[&'a str]) -> Vec<Vec<SimpleResult<'a>>> {
-        texts.par_iter().map(|text| self.process(text)).collect()
+        maybe_par_iter!(texts)
+            .map(|text| self.process(text))
+            .collect()
     }
 
-    /// Finds the first matching rule for each text in parallel.
+    /// Finds the first matching rule for each text in the slice.
     ///
-    /// Equivalent to calling [`find_match`](Self::find_match) on each text,
-    /// but distributed across CPU cores. The output order matches the input
+    /// Equivalent to calling [`find_match`](Self::find_match) on each text.
+    /// With the `rayon` feature enabled, work is distributed across CPU cores;
+    /// otherwise it runs sequentially. The output order matches the input
     /// order.
+    ///
+    /// For small batches (<16 texts), the overhead of rayon scheduling may
+    /// outweigh the parallelism benefit. Use [`find_match`](Self::find_match)
+    /// instead.
     ///
     /// # Examples
     ///
@@ -475,6 +499,8 @@ impl SimpleMatcher {
     /// ```
     #[must_use]
     pub fn batch_find_match<'a>(&'a self, texts: &[&'a str]) -> Vec<Option<SimpleResult<'a>>> {
-        texts.par_iter().map(|text| self.find_match(text)).collect()
+        maybe_par_iter!(texts)
+            .map(|text| self.find_match(text))
+            .collect()
     }
 }

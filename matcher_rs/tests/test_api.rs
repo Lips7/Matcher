@@ -290,6 +290,67 @@ fn test_large_inputs() {
 }
 
 // ---------------------------------------------------------------------------
+// Batch API
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_batch_is_match() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "hello")
+        .add_word(ProcessType::None, 2, "world")
+        .build()
+        .unwrap();
+
+    let results = m.batch_is_match(&["hello world", "goodbye", "say hello", ""]);
+    assert_eq!(results, vec![true, false, true, false]);
+
+    // Empty slice
+    assert_eq!(m.batch_is_match(&[]), Vec::<bool>::new());
+
+    // Order is preserved
+    let texts: Vec<&str> = (0..100).map(|_| "hello").collect();
+    let bools = m.batch_is_match(&texts);
+    assert!(bools.iter().all(|&b| b));
+}
+
+#[test]
+fn test_batch_process() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "apple")
+        .add_word(ProcessType::None, 2, "banana")
+        .build()
+        .unwrap();
+
+    let results = m.batch_process(&["apple banana", "banana", "cherry", ""]);
+    assert_eq!(results.len(), 4);
+    assert_eq!(results[0].len(), 2);
+    assert_eq!(results[1].len(), 1);
+    assert_eq!(results[1][0].word_id, 2);
+    assert!(results[2].is_empty());
+    assert!(results[3].is_empty());
+
+    // Empty slice
+    assert!(m.batch_process(&[]).is_empty());
+}
+
+#[test]
+fn test_batch_find_match() {
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 42, "needle")
+        .build()
+        .unwrap();
+
+    let results = m.batch_find_match(&["find the needle", "nothing here", ""]);
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].as_ref().unwrap().word_id, 42);
+    assert!(results[1].is_none());
+    assert!(results[2].is_none());
+
+    // Empty slice
+    assert!(m.batch_find_match(&[]).is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // Serde (requires `serde` feature)
 // ---------------------------------------------------------------------------
 

@@ -48,7 +48,7 @@ dfa = ["aho-corasick"]
 # By enabling the simd_runtime_dispatch feature, the best available SIMD kernel is selected at runtime (AVX2/NEON/portable)
 # for transforms and bytecount's character density scan.
 simd_runtime_dispatch = ["bytecount/runtime-dispatch-simd"]
-# Enables parallel batch matching via rayon (batch_is_match, batch_process, batch_find_match).
+# Enables parallel execution for batch methods (batch_is_match, batch_process, batch_find_match). Without this feature, batch methods run sequentially.
 rayon = ["dep:rayon"]
 # Enables Serialize/Deserialize impls for ProcessType and Serialize for SimpleResult.
 serde = ["dep:serde", "dep:serde_json"]
