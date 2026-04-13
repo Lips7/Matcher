@@ -182,7 +182,7 @@ This builds all packages and copies the dynamic libraries to the right locations
 
 - **`EmojiNorm` + `Delete` don't compose**: `Delete` strips emoji codepoints before `EmojiNorm` can convert them to words. Use `EmojiNorm | Normalize` instead.
 - **`Romanize` vs `RomanizeChar`**: `Romanize` adds boundary spaces (`西安` → ` xi an`) so homophones like `洗按` match but `先` doesn't. `RomanizeChar` omits spaces (`xian`) for fuzzier matching.
-- **Including `None` in a composite ProcessType**: `None | Delete` matches against *both* the original text and the delete-transformed text. Useful when some sub-patterns should match raw input.
+- **`None` is standalone-only**: `None` means "match raw input, no transforms." Combining it with any transform is redundant and the `None` bit is silently stripped. `Delete` already scans both the original and delete-transformed text (since patterns are stored verbatim and may contain deletable characters).
 - **Repeated AND segments count repetitions**: `无&法&无&天` requires `无` to appear at least twice in the text.
 - **`\b` is per-sub-pattern, not per-rule**: `\bcat\b&dog` requires "cat" as a whole word but "dog" as a substring.
 

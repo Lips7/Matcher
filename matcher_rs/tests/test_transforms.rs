@@ -221,13 +221,15 @@ fn test_delete_emoji_norm_gotcha() {
 }
 
 #[test]
-fn test_none_in_composite_preserves_raw() {
+fn test_none_in_composite_is_redundant() {
+    // None|Delete is silently normalized to Delete. Delete scans both
+    // original and deleted text, so the None flag adds nothing.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None | ProcessType::Delete, 1, "helloworld")
         .build()
         .unwrap();
 
-    assert!(matcher.is_match("helloworld"), "raw match via None");
+    assert!(matcher.is_match("helloworld"), "original text match");
     assert!(matcher.is_match("hello world"), "Delete strips space");
     assert!(matcher.is_match("hello-world"), "Delete strips hyphen");
     assert!(!matcher.is_match("hallo"));

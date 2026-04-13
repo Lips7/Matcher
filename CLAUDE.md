@@ -80,7 +80,7 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 
 ### Key Concepts
 
-- **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching.
+- **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching. `None` is standalone-only (stripped from composites via `normalize()`).
 - **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
 - **ScanPlan**: `Engines` struct bundling `BytewiseMatcher` (holds `BytewiseDFAEngine` + DAAC) and `CharwiseMatcher` (DAAC, CJK-optimized). `BytewiseDFAEngine` owns `dfa::DFA`, `dfa_to_value`, and `has_prefilter`; the `has_prefilter` flag drives a 4-way fused-path dispatch: Teddy prefilter active → materialize + `try_find_overlapping`; no prefilter → stream via custom `next_state` loop. Engine selection via character density (`bytecount::num_chars / len`): ≥0.55 → bytewise, <0.55 → charwise. Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
 - **RuleSet**: `Rule` stores cold data (`segment_counts` + `word_id` + `word`); `RuleInfo` stores hot data (`and_count`, `SatisfactionMethod`, `has_not`). All hits routed through unified `eval_hit()`. Generation-stamped sparse set for O(1) state reset.
@@ -88,7 +88,9 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 
 ### Construction subtlety: Delete and AC pattern indexing
 
-During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - ProcessType::Delete` rather than the full `ProcessType`. Delete-normalized text is what the automaton scans, so patterns must NOT themselves be Delete-transformed before indexing — they are stored verbatim and matched against the already-deleted text variants.
+During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - ProcessType::Delete` rather than the full `ProcessType`. Delete is the only non-bijective transform — patterns are stored verbatim (not delete-transformed). The AC automaton scans **both** the original text and the delete-transformed text (dual scan), because patterns may contain deletable characters that only exist in the original. When Delete is a direct child of root in the transform trie, `build_process_type_tree` propagates the mask bit to root to enable this dual scan.
+
+**`None` in composites:** `ProcessType::None` is only meaningful standalone. Combining it with any transform is redundant — the `None` bit is silently stripped during construction via `ProcessType::normalize()`.
 
 ### Feature Flags
 

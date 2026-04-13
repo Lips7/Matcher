@@ -73,8 +73,13 @@ bitflags! {
     pub struct ProcessType: u8 {
         /// No transformation; match the raw input.
         ///
-        /// Including this flag alongside others ensures the untransformed text is also
-        /// checked during matching.
+        /// Only meaningful as a standalone flag. Combining `None` with any
+        /// transform is redundant: mapping transforms (VariantNorm, Normalize,
+        /// etc.) apply the same function to both pattern and text so the
+        /// transformed scan already covers the match; Delete implicitly scans
+        /// both original and deleted text. Composite types containing `None`
+        /// are silently normalized (the `None` bit is stripped) during
+        /// construction.
         const None = 0b00000001;
 
         /// CJK variant normalization (Chinese Traditional→Simplified, Japanese
@@ -122,6 +127,23 @@ bitflags! {
         /// Does NOT compose usefully with [`Delete`](Self::Delete) — Delete removes emoji
         /// before EmojiNorm can see them. Use one or the other.
         const EmojiNorm = 0b01000000;
+    }
+}
+
+impl ProcessType {
+    /// Strips the `None` bit from composite types.
+    ///
+    /// `None` is only meaningful standalone (no transforms). When combined with
+    /// any transform flag it is redundant and should be removed to avoid
+    /// creating an unnecessary tree path. Returns `self` unchanged if `None`
+    /// is the only bit set or if `None` is absent.
+    #[inline]
+    pub fn normalize(self) -> Self {
+        if self != Self::None && self.contains(Self::None) {
+            self.difference(Self::None)
+        } else {
+            self
+        }
     }
 }
 

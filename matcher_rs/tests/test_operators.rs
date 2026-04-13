@@ -74,7 +74,8 @@ fn test_not_vetoes_match() {
 
 #[test]
 fn test_not_veto_global_across_variants() {
-    // NOT firing in ANY transform variant kills the rule for all variants.
+    // NOT firing in ANY scan variant (original or deleted) kills the rule.
+    // None|Delete normalizes to Delete, which scans both original and deleted.
     let matcher = SimpleMatcherBuilder::new()
         .add_word(ProcessType::None | ProcessType::Delete, 1, "apple~pie")
         .build()
@@ -82,7 +83,7 @@ fn test_not_veto_global_across_variants() {
 
     assert!(
         !matcher.is_match("apple p.i.e"),
-        "Delete variant sees 'pie'"
+        "Delete-transformed text contains 'pie' → NOT veto"
     );
 }
 

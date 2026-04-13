@@ -42,7 +42,7 @@ Each rule string is split on `&` (AND), `~` (NOT), and `|` (OR within a segment)
 
 **R3: `"zhongguo"` under `Romanize`** — single AND segment. Emitted under `Romanize`. Pure ASCII, so emits unchanged.
 
-**Why subtract Delete?** Input text is Delete-transformed before scanning, so patterns are stored verbatim and matched against already-deleted text. Indexing patterns under `process_type - Delete` avoids double-deletion.
+**Why subtract Delete?** Delete is the only non-bijective transform — it destroys information. Patterns are stored verbatim (not delete-transformed), and the AC automaton scans **both** the original text and the delete-transformed text. This dual scan is necessary because patterns may contain deletable characters that only exist in the original text. Indexing patterns under `process_type - Delete` avoids applying Delete to the pattern itself.
 
 **Operators:**
 

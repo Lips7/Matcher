@@ -126,10 +126,13 @@ impl SimpleMatcher {
             }
         }
 
-        let pt_index_table = Self::build_pt_index_table(process_type_word_map.keys().copied());
+        let pt_index_table =
+            Self::build_pt_index_table(process_type_word_map.keys().map(|pt| pt.normalize()));
 
-        let process_type_set: HashSet<ProcessType> =
-            process_type_word_map.keys().copied().collect();
+        let process_type_set: HashSet<ProcessType> = process_type_word_map
+            .keys()
+            .map(|pt| pt.normalize())
+            .collect();
 
         let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
 
@@ -239,8 +242,8 @@ impl SimpleMatcher {
 
         let mut and_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
         let mut not_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
-
         for (&process_type, simple_word_map) in process_type_word_map {
+            let process_type = process_type.normalize();
             let word_process_type = process_type - ProcessType::Delete;
 
             for (&simple_word_id, simple_word) in simple_word_map {

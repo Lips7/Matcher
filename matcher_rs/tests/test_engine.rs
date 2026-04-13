@@ -133,6 +133,92 @@ fn test_delete_adjusted_pattern_indexing() {
     assert!(m2.is_match("測！試"), "traditional + noise → both");
 }
 
+#[test]
+fn test_delete_scans_original_text() {
+    // Delete is non-bijective: patterns are stored verbatim, so the original
+    // (pre-Delete) text must also be scanned. Patterns containing deletable
+    // characters can only match via the original-text scan.
+
+    // Pattern "a*b" contains deletable '*'. It can only match inputs that
+    // literally contain "a*b" (via original-text scan).
+    let m = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "a*b")
+        .build()
+        .unwrap();
+
+    assert!(m.is_match("a*b"), "literal match via original-text scan");
+    assert!(m.is_match("xa*by"), "substring match in original text");
+    assert!(!m.is_match("ab"), "delete-stripped text has no '*'");
+    assert!(!m.is_match("a b"), "pattern '*' ≠ space");
+
+    // Pattern "hello world" contains deletable space. Only matchable when
+    // the input literally contains "hello world".
+    let m2 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "hello world")
+        .build()
+        .unwrap();
+
+    assert!(m2.is_match("hello world"), "original text matches directly");
+    assert!(
+        !m2.is_match("helloworld"),
+        "pattern has space, text doesn't"
+    );
+
+    // Pattern without deletable chars works via both scans.
+    let m3 = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "ab")
+        .build()
+        .unwrap();
+
+    assert!(m3.is_match("ab"), "exact match in original");
+    assert!(m3.is_match("a*b"), "delete-transformed 'a*b' → 'ab'");
+    assert!(m3.is_match("a b"), "delete-transformed 'a b' → 'ab'");
+}
+
+#[test]
+fn test_none_redundant_in_composites() {
+    // None combined with any transform is redundant and silently stripped.
+    // None|Delete should behave identically to Delete alone.
+    let m_delete = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::Delete, 1, "helloworld")
+        .build()
+        .unwrap();
+
+    let m_none_delete = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::Delete, 1, "helloworld")
+        .build()
+        .unwrap();
+
+    for input in ["helloworld", "hello world", "hello-world", "hello  world"] {
+        assert_eq!(
+            m_delete.is_match(input),
+            m_none_delete.is_match(input),
+            "Delete and None|Delete must agree on {input:?}"
+        );
+    }
+    assert!(!m_delete.is_match("hallo"));
+    assert!(!m_none_delete.is_match("hallo"));
+
+    // None|VariantNorm should behave identically to VariantNorm alone.
+    let m_vn = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::VariantNorm, 1, "测试")
+        .build()
+        .unwrap();
+
+    let m_none_vn = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None | ProcessType::VariantNorm, 1, "测试")
+        .build()
+        .unwrap();
+
+    for input in ["测试", "測試"] {
+        assert_eq!(
+            m_vn.is_match(input),
+            m_none_vn.is_match(input),
+            "VariantNorm and None|VariantNorm must agree on {input:?}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Engine routing: density-based dispatch
 // ---------------------------------------------------------------------------

@@ -78,9 +78,10 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// - `~` — NOT: the following sub-pattern must be absent for the rule to
     ///   fire.
     ///
-    /// `process_type` may be a composite flag. For example, `ProcessType::None
-    /// | ProcessType::Delete` means the rule can match against both the raw
-    /// input and the delete-normalized variant. If the same `(process_type,
+    /// `process_type` may be a composite flag (e.g.,
+    /// `ProcessType::VariantNorm | ProcessType::Delete`). `None` is only
+    /// meaningful standalone — combining it with any transform is redundant
+    /// and the `None` bit is silently stripped. If the same `(process_type,
     /// word_id)` is inserted multiple times, the most recent `word`
     /// replaces the previous one.
     ///
@@ -121,20 +122,20 @@ impl<'a> SimpleMatcherBuilder<'a> {
     /// assert!(!matcher.is_match("the lazy fox can jump"));
     /// ```
     ///
-    /// Composite [`ProcessType`] for matching across raw and transformed text:
+    /// Composite [`ProcessType`] for matching across transformed text:
     ///
     /// ```rust
     /// use matcher_rs::{ProcessType, SimpleMatcherBuilder};
     ///
     /// let matcher = SimpleMatcherBuilder::new()
-    ///     // Match against both raw input and VariantNorm-converted text
-    ///     .add_word(ProcessType::None | ProcessType::VariantNorm, 1, "测试")
+    ///     // Match after VariantNorm conversion
+    ///     .add_word(ProcessType::VariantNorm, 1, "测试")
     ///     // Match after deleting noise characters and normalizing
     ///     .add_word(ProcessType::VariantNormDeleteNormalize, 2, "测试")
     ///     .build()
     ///     .unwrap();
     ///
-    /// // Raw "测试" matches via the ProcessType::None path
+    /// // Simplified "测试" matches directly (VariantNorm is identity)
     /// assert!(matcher.is_match("测试世界"));
     /// // Traditional "測試" matches via the ProcessType::VariantNorm path
     /// assert!(matcher.is_match("測試世界"));
@@ -146,7 +147,7 @@ impl<'a> SimpleMatcherBuilder<'a> {
         word_id: u32,
         word: impl Into<Cow<'a, str>>,
     ) -> Self {
-        let bucket = self.word_map.entry(process_type).or_default();
+        let bucket = self.word_map.entry(process_type.normalize()).or_default();
         bucket.insert(word_id, word.into());
         self
     }
