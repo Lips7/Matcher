@@ -5,61 +5,18 @@
 //! `(byte_offset << 8) | byte_length` into a shared string buffer.
 //! Each entry has a build-time-prepended leading space for word separation;
 //! the `RomanizeChar` variant trims this space via [`trim_romanize_packed`]
-//! at construction time. All keys are non-ASCII CJK, so [`skip_ascii_simd`]
-//! bypasses ASCII runs.
+//! at construction time. All keys are non-ASCII CJK, so
+//! [`skip_ascii_simd`](super::simd::skip_ascii_simd) bypasses ASCII runs.
 
 use std::borrow::Cow;
 
 use super::{
     filter::{CodepointFilter, FilterAction, FilterIterator},
     page_table::{
-        decode_page_table, page_table_lookup, replace_spans, trim_romanize_packed, unpack_str_ref,
+        StrReplaceFindIter, decode_page_table, page_table_lookup, replace_spans,
+        trim_romanize_packed, unpack_str_ref,
     },
-    simd::skip_ascii_simd,
-    utf8::decode_utf8_raw,
 };
-
-/// Materialized find iterator for CJK romanization.
-///
-/// Yields `(byte_start, byte_end, &str)` tuples for each CJK codepoint that
-/// has a romanization mapping. Uses [`skip_ascii_simd`] to jump over ASCII
-/// runs.
-struct RomanizeFindIter<'a> {
-    l1: &'a [u16],
-    l2: &'a [u32],
-    strings: &'a str,
-    text: &'a str,
-    byte_offset: usize,
-}
-
-impl<'a> Iterator for RomanizeFindIter<'a> {
-    type Item = (usize, usize, &'a str);
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let bytes = self.text.as_bytes();
-        let len = bytes.len();
-
-        loop {
-            self.byte_offset = skip_ascii_simd(bytes, self.byte_offset);
-            if self.byte_offset >= len {
-                return None;
-            }
-
-            let start = self.byte_offset;
-            // SAFETY: `skip_ascii_simd` positioned `start` at a non-ASCII byte in a valid
-            // UTF-8 `&str`.
-            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
-            self.byte_offset += char_len;
-
-            if let Some(value) = page_table_lookup(cp, self.l1, self.l2)
-                && let Some(s) = unpack_str_ref(value, self.strings)
-            {
-                return Some((start, self.byte_offset, s));
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Streaming filter (for fused romanize-scan)
@@ -114,9 +71,12 @@ pub(crate) struct RomanizeMatcher {
 
 impl RomanizeMatcher {
     /// Returns a find iterator over romanizable codepoints in `text`.
+    ///
+    /// Uses `CHECK_ASCII = false` — all romanization keys are non-ASCII CJK,
+    /// so ASCII runs are bulk-skipped via SIMD.
     #[inline(always)]
-    fn iter<'a>(&'a self, text: &'a str) -> RomanizeFindIter<'a> {
-        RomanizeFindIter {
+    fn iter<'a>(&'a self, text: &'a str) -> StrReplaceFindIter<'a, false> {
+        StrReplaceFindIter {
             l1: &self.l1,
             l2: &self.l2,
             strings: self.strings.as_ref(),

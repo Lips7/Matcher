@@ -24,7 +24,7 @@ use crate::process::ProcessType;
 ///
 /// The outer key is the [`ProcessType`] that governs which text-transformation
 /// pipeline to apply before matching. The inner key is a caller-chosen rule id
-/// (`word_id`) that will be returned in
+/// that will be returned in
 /// [`SimpleResult::word_id`](super::SimpleResult::word_id) on a match. The
 /// inner value is the pattern string, which may contain `&` (AND), `~` (NOT),
 /// and `|` (OR) operators to combine sub-patterns. `|` binds tighter than
@@ -143,6 +143,10 @@ impl SatisfactionMethod {
 /// counts start at 0 and veto the rule when they go above 0 (for matrix mode)
 /// or on first hit (for bitmask mode).
 ///
+/// Example: rule `"a&a&b~c"` has `and_count=2` (segments "a" and "b") and one
+/// NOT segment "c". The repeated "a" is counted: `segment_counts = [2, 1, 0]`
+/// where `[2, 1]` are AND hit requirements and `[0]` is the NOT baseline.
+///
 /// `segment_counts` is only read on first-touch of a matrix-mode rule (the
 /// `#[cold]` `init_matrix` path). `word_id` and `word` are only read when
 /// producing result output after scanning completes.
@@ -156,12 +160,12 @@ pub(super) struct Rule {
     /// `RuleShape::use_matrix()` is true.
     pub(super) segment_counts: Vec<i32>,
     /// Caller-supplied rule identifier returned in match results.
-    pub(super) word_id: u32,
+    pub(super) rule_id: u32,
     /// Original rule string stored for borrowed result output.
     ///
     /// Owned here so that [`SimpleResult::word`](super::SimpleResult::word) can
     /// borrow it as `Cow::Borrowed`.
-    pub(super) word: String,
+    pub(super) pattern: String,
 }
 
 /// Per-rule compact metadata loaded on the hot evaluation path.
@@ -218,7 +222,7 @@ impl RuleSet {
         let inner: usize = self
             .rules
             .iter()
-            .map(|r| r.segment_counts.capacity() * size_of::<i32>() + r.word.capacity())
+            .map(|r| r.segment_counts.capacity() * size_of::<i32>() + r.pattern.capacity())
             .sum();
         self.rules.capacity() * size_of::<Rule>()
             + self.rule_info.capacity() * size_of::<RuleInfo>()
@@ -272,8 +276,8 @@ impl RuleSet {
         unsafe { core::hint::assert_unchecked(rule_idx < self.rules.len()) };
         let rule = &self.rules[rule_idx];
         SimpleResult {
-            word_id: rule.word_id,
-            word: Cow::Borrowed(&rule.word),
+            word_id: rule.rule_id,
+            word: Cow::Borrowed(&rule.pattern),
         }
     }
 
@@ -291,10 +295,10 @@ impl RuleSet {
     ///
     /// One generation comparison decides init-vs-process:
     ///
-    /// - `rs.generation == current`: rule already touched this scan. Check
-    ///   vetoed / remaining_and before processing the hit.
-    /// - `rs.generation != current`: first touch. Initialize state, then
-    ///   process.
+    /// - `rule_state.generation == current`: rule already touched this scan.
+    ///   Check vetoed / remaining_and before processing the hit.
+    /// - `rule_state.generation != current`: first touch. Initialize state,
+    ///   then process.
     ///
     /// # Safety (internal)
     ///
@@ -324,19 +328,19 @@ impl RuleSet {
             core::hint::assert_unchecked(rule_idx < self.rules.len());
         }
 
-        let rs = &mut ss.rule_states[rule_idx];
+        let rule_state = &mut ss.rule_states[rule_idx];
 
         // ── NOT hit ──────────────────────────────────────────────────
         if matches!(kind, PatternKind::Not) {
-            if rs.generation == generation {
-                if rs.vetoed {
+            if rule_state.generation == generation {
+                if rule_state.vetoed {
                     return false;
                 }
             } else {
-                rs.generation = generation;
-                rs.remaining_and = info.and_count as u16;
-                rs.vetoed = false;
-                rs.satisfied_mask = 0;
+                rule_state.generation = generation;
+                rule_state.remaining_and = info.and_count as u16;
+                rule_state.vetoed = false;
+                rule_state.satisfied_mask = 0;
                 ss.touched_indices.push(rule_idx);
                 if info.method.use_matrix() {
                     init_matrix(
@@ -355,10 +359,10 @@ impl RuleSet {
                 *counter += 1;
                 if flat_status[offset] == 0 && *counter > 0 {
                     flat_status[offset] = 1;
-                    rs.vetoed = true;
+                    rule_state.vetoed = true;
                 }
             } else {
-                rs.vetoed = true;
+                rule_state.vetoed = true;
             }
 
             return false;
@@ -366,18 +370,20 @@ impl RuleSet {
 
         // ── AND hit ──────────────────────────────────────────────────
 
-        if rs.generation == generation {
-            if info.has_not && rs.vetoed {
+        // Already-touched: skip if vetoed, or return early if satisfied.
+        if rule_state.generation == generation {
+            if info.has_not && rule_state.vetoed {
                 return false;
             }
-            if rs.remaining_and == 0 {
+            if rule_state.remaining_and == 0 {
                 return !info.has_not && ctx.exit_early;
             }
         } else {
-            rs.generation = generation;
-            rs.remaining_and = info.and_count as u16;
-            rs.vetoed = false;
-            rs.satisfied_mask = 0;
+            // First touch: initialize state and register in touched set.
+            rule_state.generation = generation;
+            rule_state.remaining_and = info.and_count as u16;
+            rule_state.vetoed = false;
+            rule_state.satisfied_mask = 0;
             ss.touched_indices.push(rule_idx);
             if info.method.use_matrix() {
                 init_matrix(
@@ -389,6 +395,7 @@ impl RuleSet {
             }
         }
 
+        // ── Satisfaction tracking (Matrix / Immediate / Bitmask) ────
         let is_satisfied = match info.method {
             SatisfactionMethod::Matrix => {
                 let flat_matrix = &mut ss.matrix[rule_idx];
@@ -397,25 +404,27 @@ impl RuleSet {
                 *counter -= 1;
                 if flat_status[offset] == 0 && *counter <= 0 {
                     flat_status[offset] = 1;
-                    rs.remaining_and -= 1;
+                    rule_state.remaining_and -= 1;
                 }
-                rs.remaining_and == 0
+                rule_state.remaining_and == 0
             }
             SatisfactionMethod::Immediate => {
-                rs.remaining_and = 0;
+                rule_state.remaining_and = 0;
                 true
             }
             SatisfactionMethod::Bitmask => {
                 let bit = 1u64 << offset;
-                if rs.satisfied_mask & bit == 0 {
-                    rs.satisfied_mask |= bit;
-                    rs.remaining_and -= 1;
+                if rule_state.satisfied_mask & bit == 0 {
+                    rule_state.satisfied_mask |= bit;
+                    rule_state.remaining_and -= 1;
                 }
-                rs.remaining_and == 0
+                rule_state.remaining_and == 0
             }
         };
 
-        ctx.exit_early && is_satisfied && !info.has_not && !rs.vetoed
+        // True = caller may stop: rule satisfied, exit_early set, no
+        // pending NOT veto that could still flip the result.
+        ctx.exit_early && is_satisfied && !info.has_not && !rule_state.vetoed
     }
 }
 
@@ -433,12 +442,12 @@ mod tests {
         }
     }
 
-    fn make_simple_ruleset(word_id: u32, word: &str) -> RuleSet {
+    fn make_simple_ruleset(rule_id: u32, pattern: &str) -> RuleSet {
         RuleSet::new(
             vec![Rule {
                 segment_counts: vec![1],
-                word_id,
-                word: word.to_owned(),
+                rule_id,
+                pattern: pattern.to_owned(),
             }],
             vec![RuleInfo {
                 and_count: 1,
@@ -473,8 +482,8 @@ mod tests {
         let rules = RuleSet::new(
             vec![Rule {
                 segment_counts: vec![1, 1, 1],
-                word_id: 1,
-                word: "a&b&c".to_owned(),
+                rule_id: 1,
+                pattern: "a&b&c".to_owned(),
             }],
             vec![RuleInfo {
                 and_count: 3,
@@ -502,8 +511,8 @@ mod tests {
         let rules = RuleSet::new(
             vec![Rule {
                 segment_counts: vec![1, 0],
-                word_id: 1,
-                word: "a~b".to_owned(),
+                rule_id: 1,
+                pattern: "a~b".to_owned(),
             }],
             vec![RuleInfo {
                 and_count: 1,
@@ -528,8 +537,8 @@ mod tests {
         let rules = RuleSet::new(
             vec![Rule {
                 segment_counts: vec![2, 1],
-                word_id: 1,
-                word: "a&a&b".to_owned(),
+                rule_id: 1,
+                pattern: "a&a&b".to_owned(),
             }],
             vec![RuleInfo {
                 and_count: 2,

@@ -97,7 +97,7 @@ pub(super) struct SimpleMatchState {
     /// Rule indices touched during the current scan generation.
     ///
     /// Cleared at the start of each scan in [`prepare`](Self::prepare). Used by
-    /// [`RuleSet::collect_matches`](RuleSet::collect_matches) and
+    /// [`RuleSet::collect_matches`](super::rule::RuleSet::collect_matches) and
     /// [`ScanState::has_match`] to iterate only
     /// over rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
@@ -144,11 +144,51 @@ pub(super) struct ScanState<'a> {
     pub(super) generation: u16,
 }
 
-/// Scan metadata passed through the hot match-processing path.
+/// Walk-level constants that stay fixed for the entire tree walk.
+///
+/// Extracted from [`ScanContext`] so that walk-loop helpers can accept these
+/// constants without repeating them as individual parameters. Use
+/// [`scan_ctx`](WalkConfig::scan_ctx) to construct a per-variant
+/// [`ScanContext`] from these constants.
+#[derive(Clone, Copy)]
+pub(super) struct WalkConfig {
+    /// Total number of transformed variants participating in this scan.
+    pub(super) num_variants: usize,
+    /// Whether the caller may stop on the first satisfied rule.
+    pub(super) exit_early: bool,
+}
+
+impl WalkConfig {
+    /// Constructs a per-variant [`ScanContext`] from walk constants and
+    /// variant-specific values.
+    #[inline(always)]
+    pub(super) fn scan_ctx(
+        self,
+        text_index: usize,
+        process_type_mask: u64,
+        char_density: f32,
+    ) -> ScanContext {
+        ScanContext {
+            text_index,
+            process_type_mask,
+            num_variants: self.num_variants,
+            exit_early: self.exit_early,
+            char_density,
+        }
+    }
+}
+
+/// Per-variant scan metadata passed through the hot match-processing path.
 ///
 /// One `ScanContext` is constructed per text variant and threaded through
-/// `RuleSet::eval_hit` for every
-/// hit in that variant. Kept `Copy` to avoid reference overhead in tight loops.
+/// `RuleSet::eval_hit` for every hit in that variant.
+///
+/// Intentionally `Copy` (32 bytes) so that values live in registers during the
+/// hot eval loop, avoiding pointer-chase overhead. Passed by value, not by
+/// reference.
+///
+/// Contains both walk-level constants (from [`WalkConfig`]) and per-variant
+/// values, bundled for efficient passthrough on the hot path.
 #[derive(Clone, Copy)]
 pub(super) struct ScanContext {
     /// Index of the current transformed text variant.
@@ -161,7 +201,7 @@ pub(super) struct ScanContext {
     ///
     /// Bit `i` is set if the variant was produced by (or is reachable from) the
     /// process type whose compact index is `i`. Checked against
-    /// [`PatternEntry::pt_index`](super::pattern::PatternEntry::pt_index) to
+    /// [`PatternEntry::process_type_index`](super::pattern::PatternEntry::process_type_index) to
     /// filter hits from irrelevant variants.
     pub(super) process_type_mask: u64,
     /// Total number of transformed variants participating in this scan.
@@ -415,8 +455,8 @@ mod tests {
 
         let rule = Rule {
             segment_counts: vec![2, 1, 0],
-            word_id: 1,
-            word: "a&a&b~c".to_owned(),
+            rule_id: 1,
+            pattern: "a&a&b~c".to_owned(),
         };
         let ctx = make_ctx(2, false);
         let mut ss = state.as_scan_state();

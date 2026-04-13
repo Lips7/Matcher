@@ -33,12 +33,25 @@ use std::{borrow::Cow, vec};
 use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
-    pattern::{DIRECT_RULE_BIT, PatternDispatch, decode_direct},
+    pattern::{DIRECT_ENCODED_BIT, PatternDispatch, decode_direct},
     rule::RuleSet,
     scan::{CHARWISE_DENSITY_THRESHOLD, text_char_density},
-    state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
+    state::{SIMPLE_MATCH_STATE, ScanContext, ScanState, WalkConfig},
     tree::ProcessTypeBitNode,
 };
+use crate::process::step::TransformStep;
+
+/// Parent node state passed to leaf and non-leaf child handlers.
+///
+/// Bundles the materialized text, variant index, density estimate, and root
+/// flag for the parent node being expanded during the tree walk.
+#[derive(Clone, Copy)]
+struct ParentNode<'a> {
+    text: &'a str,
+    variant_index: usize,
+    density: f32,
+    is_root: bool,
+}
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -88,7 +101,8 @@ fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool
     true
 }
 
-/// Recursively folds no-op children's `pt_index_mask` into the parent's mask.
+/// Recursively folds no-op children's `process_type_index_mask` into the
+/// parent's mask.
 ///
 /// When the parent text is pure ASCII, certain transforms (VariantNorm,
 /// Romanize, RomanizeChar, EmojiNorm) are guaranteed no-ops — the child's text
@@ -96,11 +110,11 @@ fn check_word_boundary(text: &[u8], start: usize, end: usize, flags: u8) -> bool
 /// wastes an entire DFA traversal. By folding the child's mask into the
 /// parent's scan, we eliminate redundant scans while preserving correctness:
 ///
-/// - Each `PatternEntry` has a fixed `pt_index` → hits pass exactly one mask
-///   branch.
+/// - Each `PatternEntry` has a fixed `process_type_index` → hits pass exactly
+///   one mask branch.
 /// - `mark_positive` / `satisfied_mask |= bit` are idempotent (bitmask path).
-/// - Matrix path uses the same `text_index` (parent_vi) → same column, same
-///   counters.
+/// - Matrix path uses the same `text_index` (parent_variant) → same column,
+///   same counters.
 /// - The AC engine reports each position exactly once per scan → no
 ///   double-counting.
 fn fold_noop_children_masks(
@@ -108,16 +122,16 @@ fn fold_noop_children_masks(
     node_idx: usize,
     parent_ascii: bool,
 ) -> u64 {
-    let mut mask = tree[node_idx].pt_index_mask;
+    let mut mask = tree[node_idx].process_type_index_mask;
     if !parent_ascii {
         return mask;
     }
-    for &ci in &tree[node_idx].children {
-        let child = &tree[ci];
-        if child.pt_index_mask != 0 && child.step.is_some_and(|s| s.is_noop_on_ascii_input()) {
-            // Recurse: a no-op non-leaf may itself have no-op children whose
-            // masks should also fold up to the same scan point.
-            mask |= fold_noop_children_masks(tree, ci, true);
+    for &child_node_idx in &tree[node_idx].children {
+        let child = &tree[child_node_idx];
+        if child.process_type_index_mask != 0
+            && child.step.is_some_and(|s| s.is_noop_on_ascii_input())
+        {
+            mask |= fold_noop_children_masks(tree, child_node_idx, true);
         }
     }
     mask
@@ -142,7 +156,7 @@ impl SimpleMatcher {
     /// Processes one raw match value reported by the scan engine.
     ///
     /// Two dispatch paths:
-    /// - **Direct** (`DIRECT_RULE_BIT` set): bit-packed value decoded via
+    /// - **Direct** (`DIRECT_ENCODED_BIT` set): bit-packed value decoded via
     ///   `decode_direct` into `(rule_idx, kind, offset)`, then forwarded to
     ///   `RuleSet::eval_hit`.
     /// - **Indirect**: delegates to `PatternIndex::dispatch_indirect` for
@@ -161,9 +175,9 @@ impl SimpleMatcher {
         ctx: ScanContext,
         ss: &mut ScanState<'_>,
     ) -> bool {
-        if raw_value & DIRECT_RULE_BIT != 0 {
-            let (pt_index, boundary, kind, offset, rule_idx) = decode_direct(raw_value);
-            if ctx.process_type_mask & (1u64 << pt_index) == 0 {
+        if raw_value & DIRECT_ENCODED_BIT != 0 {
+            let (process_type_index, boundary, kind, offset, rule_idx) = decode_direct(raw_value);
+            if ctx.process_type_mask & (1u64 << process_type_index) == 0 {
                 return false;
             }
             if boundary != 0 && !check_word_boundary(text, start, end, boundary) {
@@ -176,7 +190,7 @@ impl SimpleMatcher {
                 if entry.boundary != 0 && !check_word_boundary(text, start, end, entry.boundary) {
                     return false;
                 }
-                if ctx.process_type_mask & (1u64 << entry.pt_index) == 0 {
+                if ctx.process_type_mask & (1u64 << entry.process_type_index) == 0 {
                     return false;
                 }
                 self.rules.eval_hit(
@@ -193,7 +207,7 @@ impl SimpleMatcher {
                     {
                         continue;
                     }
-                    if ctx.process_type_mask & (1u64 << entry.pt_index) == 0 {
+                    if ctx.process_type_mask & (1u64 << entry.process_type_index) == 0 {
                         continue;
                     }
                     if self.rules.eval_hit(
@@ -208,6 +222,79 @@ impl SimpleMatcher {
                 }
                 false
             }
+        }
+    }
+
+    /// Scans a leaf child node, choosing between delete dual-scan, fused
+    /// streaming, or materialize-then-scan based on the transform type and
+    /// engine capabilities.
+    ///
+    /// Called only for non-noop leaves with a non-zero
+    /// `process_type_index_mask`. Returns `true` when the caller should
+    /// stop scanning.
+    #[inline(always)]
+    fn scan_leaf_child(
+        &self,
+        step: &'static TransformStep,
+        parent: ParentNode<'_>,
+        child_mask: u64,
+        walk: WalkConfig,
+        variant_counter: &mut usize,
+        ss: &mut ScanState<'_>,
+    ) -> bool {
+        // ── Delete dual-scan (root child only) ───────────────────────
+        // Delete is the only non-bijective transform — patterns are stored
+        // verbatim and may contain deletable characters. When Delete is a
+        // direct root child, scan both deleted and original text. Non-root
+        // parents already scan pre-Delete text as intermediates.
+        if parent.is_root && step.is_non_bijective() {
+            let changed = step.apply(parent.text, parent.density);
+            return if let Some((deleted, child_density)) = changed {
+                let new_variant = *variant_counter;
+                *variant_counter += 1;
+                let del_ctx = walk.scan_ctx(new_variant, child_mask, child_density);
+                if self.scan_variant(&deleted, del_ctx, ss) {
+                    return true;
+                }
+                let orig_ctx = walk.scan_ctx(parent.variant_index, child_mask, parent.density);
+                self.scan_variant(parent.text, orig_ctx, ss)
+            } else {
+                let ctx = walk.scan_ctx(parent.variant_index, child_mask, parent.density);
+                self.scan_variant(parent.text, ctx, ss)
+            };
+        }
+
+        // ── Fused streaming or materialize-then-scan ─────────────────
+        // Fused streaming pipes the transform's byte iterator directly into
+        // the AC engine, avoiding full materialization. Disabled when the DFA
+        // has a Teddy prefilter — Teddy's SIMD skip outperforms streaming.
+        let use_fused = !(cfg!(feature = "dfa")
+            && parent.density >= CHARWISE_DENSITY_THRESHOLD
+            && self.scan.has_dfa_prefilter());
+
+        if use_fused && let Some(iter) = step.filter_bytes(parent.text) {
+            let new_variant = *variant_counter;
+            *variant_counter += 1;
+            let ctx = walk.scan_ctx(new_variant, child_mask, parent.density);
+            let fused_text_bytes = parent.text.as_bytes();
+            return self.scan.for_each_match_value_from_iter(
+                iter,
+                ctx.char_density,
+                |v, start, end| self.process_match(v, fused_text_bytes, start, end, ctx, ss),
+            );
+        }
+
+        // ── Materialize path ─────────────────────────────────────────
+        // Apply transform, then scan the result.
+        let changed = step.apply(parent.text, parent.density);
+        if let Some((s, child_density)) = changed {
+            let new_variant = *variant_counter;
+            *variant_counter += 1;
+            let ctx = walk.scan_ctx(new_variant, child_mask, child_density);
+            self.scan_variant(&s, ctx, ss)
+        } else {
+            let ctx = walk.scan_ctx(parent.variant_index, child_mask, parent.density);
+            self.scan_variant(parent.text, ctx, ss)
         }
     }
 
@@ -272,7 +359,7 @@ impl SimpleMatcher {
     /// # Panics
     ///
     /// Panics if a non-root node in the transform trie lacks a cached
-    /// [`TransformStep`](crate::process::step::TransformStep). This is a
+    /// [`TransformStep`]. This is a
     /// construction invariant maintained by
     /// [`build_process_type_tree`](super::tree::build_process_type_tree).
     #[inline]
@@ -286,7 +373,10 @@ impl SimpleMatcher {
         F: FnOnce(&'a RuleSet, &ScanState<'_>) -> R,
     {
         let tree = &self.tree;
-        let num_variants = tree.len();
+        let walk = WalkConfig {
+            num_variants: tree.len(),
+            exit_early,
+        };
         // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
@@ -306,13 +396,7 @@ impl SimpleMatcher {
 
         // Scan root text if any PT terminates here (including folded no-ops).
         if root_scan_mask != 0 {
-            let ctx = ScanContext {
-                text_index: 0,
-                process_type_mask: root_scan_mask,
-                num_variants,
-                exit_early,
-                char_density: root_density,
-            };
+            let ctx = walk.scan_ctx(0, root_scan_mask, root_density);
             if self.scan_variant(text, ctx, &mut ss) {
                 return (true, None);
             }
@@ -324,18 +408,16 @@ impl SimpleMatcher {
         }
 
         // Arena for materialized non-leaf texts. Index 0 = root (borrowed).
-        let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(num_variants);
+        let mut texts: Vec<Cow<'_, str>> = Vec::with_capacity(walk.num_variants);
         texts.push(Cow::Borrowed(text));
         // density_flags[i] — character density for arena index i.
-        // density >= 1.0 means pure ASCII (used for both engine dispatch and
-        // transform correctness: is_noop_on_ascii_input, step.apply).
         let mut density_flags: Vec<f32> = Vec::new();
         density_flags.push(root_density);
 
         // Maps tree node index -> arena index for its text.
-        let mut node_arena: Vec<usize> = vec![0; num_variants];
+        let mut node_arena: Vec<usize> = vec![0; walk.num_variants];
         // Maps tree node index -> variant index used in ScanContext::text_index.
-        let mut node_variant: Vec<usize> = vec![0; num_variants];
+        let mut node_variant: Vec<usize> = vec![0; walk.num_variants];
         let mut variant_counter = 1usize;
         let mut stopped = false;
 
@@ -344,215 +426,81 @@ impl SimpleMatcher {
             if num_children == 0 {
                 continue;
             }
-            let parent_aidx = node_arena[node_idx];
-            let parent_vi = node_variant[node_idx];
+            let parent_arena_idx = node_arena[node_idx];
+            let parent_variant = node_variant[node_idx];
+            let parent_density = density_flags[parent_arena_idx];
+            let is_root = node_idx == 0;
 
-            for ci in 0..num_children {
-                let child_idx = tree[node_idx].children[ci];
+            for child_pos in 0..num_children {
+                let child_idx = tree[node_idx].children[child_pos];
                 let child = &tree[child_idx];
-                // Invariant: non-root tree nodes always cache a transform step.
-                let Some(step) = child.step else {
-                    unreachable!()
-                };
-                let is_leaf = child.children.is_empty();
-                let parent_density = density_flags[parent_aidx];
-                let parent_ascii = parent_density >= 1.0;
+                let step = child
+                    .step
+                    .expect("non-root node must have cached TransformStep");
+                let is_noop = parent_density >= 1.0 && step.is_noop_on_ascii_input();
 
-                let is_noop = parent_ascii && step.is_noop_on_ascii_input();
-
-                if is_leaf {
-                    if child.pt_index_mask != 0 {
-                        // No-op leaves were already folded into the parent's scan
-                        // mask by fold_noop_children_masks — skip entirely.
-                        if is_noop {
-                            continue;
-                        }
-
-                        // Non-bijective dual-scan: Delete is the only
-                        // non-bijective transform — patterns are stored verbatim
-                        // and may contain deletable characters. Call apply() once
-                        // and reuse the result: if text changed, scan both the
-                        // deleted and original text; if unchanged, one scan
-                        // covers both. Only needed when Delete is a direct root
-                        // child; non-root parents already scan pre-Delete text
-                        // as intermediates.
-                        if node_idx == 0 && step.is_non_bijective() {
-                            let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
-                            stopped = if let Some((s, child_density)) = changed {
-                                let vi = variant_counter;
-                                variant_counter += 1;
-                                let del_ctx = ScanContext {
-                                    text_index: vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    char_density: child_density,
-                                };
-                                let del_stopped = self.scan_variant(&s, del_ctx, &mut ss);
-                                if !del_stopped {
-                                    let orig_ctx = ScanContext {
-                                        text_index: parent_vi,
-                                        process_type_mask: child.pt_index_mask,
-                                        num_variants,
-                                        exit_early,
-                                        char_density: parent_density,
-                                    };
-                                    self.scan_variant(
-                                        texts[parent_aidx].as_ref(),
-                                        orig_ctx,
-                                        &mut ss,
-                                    )
-                                } else {
-                                    true
-                                }
-                            } else {
-                                let ctx = ScanContext {
-                                    text_index: parent_vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    char_density: parent_density,
-                                };
-                                self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
-                            };
-                            if stopped {
-                                break 'walk;
-                            }
-                            continue;
-                        }
-
-                        // Fused transform-scan dispatch:
-                        //
-                        // - DFA + high density + Teddy prefilter: skip fused, fall through to
-                        //   materialize path — Teddy SIMD skips non-matching regions; the
-                        //   next_state streaming loop cannot replicate this.
-                        // - DFA + high density + no prefilter: stream via DFA next_state loop.
-                        // - No DFA + high density: stream via DAAC bytewise.
-                        // - Low char density: stream via DAAC charwise.
-                        //
-                        // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
-                        // Parent density is the correct estimate for all fused transforms.
-                        // Note: is_noop leaves are already skipped above.
-                        let use_fused = !(cfg!(feature = "dfa")
-                            && parent_density >= CHARWISE_DENSITY_THRESHOLD
-                            && self.scan.has_dfa_prefilter());
-                        let fused_result = if use_fused {
-                            let parent_text = texts[parent_aidx].as_ref();
-                            step.filter_bytes(parent_text).map(|iter| {
-                                let vi = variant_counter;
-                                let ctx = ScanContext {
-                                    text_index: vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    char_density: parent_density,
-                                };
-                                let fused_text_bytes = parent_text.as_bytes();
-                                variant_counter += 1;
-                                self.scan.for_each_match_value_from_iter(
-                                    iter,
-                                    ctx.char_density,
-                                    |v, start, end| {
-                                        self.process_match(
-                                            v,
-                                            fused_text_bytes,
-                                            start,
-                                            end,
-                                            ctx,
-                                            &mut ss,
-                                        )
-                                    },
-                                )
-                            })
-                        } else {
-                            None
-                        };
-
-                        stopped = if let Some(result) = fused_result {
-                            result
-                        } else {
-                            // Normal path: materialize then scan.
-                            // Note: is_noop leaves are skipped above, so apply()
-                            // always runs here.
-                            let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
-
-                            if let Some((s, child_density)) = changed {
-                                let vi = variant_counter;
-                                variant_counter += 1;
-                                let ctx = ScanContext {
-                                    text_index: vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    char_density: child_density,
-                                };
-                                self.scan_variant(&s, ctx, &mut ss)
-                            } else {
-                                let ctx = ScanContext {
-                                    text_index: parent_vi,
-                                    process_type_mask: child.pt_index_mask,
-                                    num_variants,
-                                    exit_early,
-                                    char_density: parent_density,
-                                };
-                                self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
-                            }
-                        };
-
-                        if stopped {
-                            break 'walk;
-                        }
+                // ── Leaf node ────────────────────────────────────
+                if child.children.is_empty() {
+                    if child.process_type_index_mask == 0 || is_noop {
+                        continue;
                     }
-                } else {
-                    // Non-leaf: materialize for children.
-                    let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
-                    let (child_aidx, child_vi) = match changed {
-                        Some((s, child_density)) => {
-                            let idx = texts.len();
-                            density_flags.push(child_density);
-                            texts.push(Cow::Owned(s));
-                            let vi = variant_counter;
-                            variant_counter += 1;
-                            (idx, vi)
-                        }
-                        None => (parent_aidx, parent_vi),
+                    let parent = ParentNode {
+                        text: texts[parent_arena_idx].as_ref(),
+                        variant_index: parent_variant,
+                        density: parent_density,
+                        is_root,
                     };
-                    node_arena[child_idx] = child_aidx;
-                    node_variant[child_idx] = child_vi;
+                    stopped = self.scan_leaf_child(
+                        step,
+                        parent,
+                        child.process_type_index_mask,
+                        walk,
+                        &mut variant_counter,
+                        &mut ss,
+                    );
+                    if stopped {
+                        break 'walk;
+                    }
+                    continue;
+                }
 
-                    // Scan if this node terminates. No-op non-leaves were
-                    // already folded into the parent's scan — skip.
-                    // Also fold this node's own no-op children into its mask.
-                    if child.pt_index_mask != 0 && !is_noop {
-                        let child_ascii = density_flags[child_aidx] >= 1.0;
-                        let scan_mask = fold_noop_children_masks(tree, child_idx, child_ascii);
-                        let ctx = ScanContext {
-                            text_index: child_vi,
-                            process_type_mask: scan_mask,
-                            num_variants,
-                            exit_early,
-                            char_density: density_flags[child_aidx],
-                        };
-                        stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
+                // ── Non-leaf node: materialize for children ──────
+                let changed = step.apply(texts[parent_arena_idx].as_ref(), parent_density);
+                let (child_arena_idx, child_variant) = match changed {
+                    Some((s, child_density)) => {
+                        let idx = texts.len();
+                        density_flags.push(child_density);
+                        texts.push(Cow::Owned(s));
+                        let new_variant = variant_counter;
+                        variant_counter += 1;
+                        (idx, new_variant)
+                    }
+                    None => (parent_arena_idx, parent_variant),
+                };
+                node_arena[child_idx] = child_arena_idx;
+                node_variant[child_idx] = child_variant;
+
+                // Scan if this node terminates a process type. No-op non-leaves
+                // were already folded into the parent scan — skip. Also fold
+                // this node's own no-op children into its mask.
+                if child.process_type_index_mask != 0 && !is_noop {
+                    let child_ascii = density_flags[child_arena_idx] >= 1.0;
+                    let scan_mask = fold_noop_children_masks(tree, child_idx, child_ascii);
+                    let ctx =
+                        walk.scan_ctx(child_variant, scan_mask, density_flags[child_arena_idx]);
+                    stopped = self.scan_variant(texts[child_arena_idx].as_ref(), ctx, &mut ss);
+                    if stopped {
+                        break 'walk;
+                    }
+
+                    // Non-bijective dual-scan: scan original text when Delete
+                    // changed it and parent is root.
+                    if is_root && step.is_non_bijective() && child_arena_idx != parent_arena_idx {
+                        let orig_ctx = walk.scan_ctx(parent_variant, scan_mask, parent_density);
+                        stopped =
+                            self.scan_variant(texts[parent_arena_idx].as_ref(), orig_ctx, &mut ss);
                         if stopped {
                             break 'walk;
-                        }
-
-                        // Non-bijective dual-scan (non-leaf): scan original
-                        // text when the transform changed it and parent is root.
-                        if node_idx == 0 && step.is_non_bijective() && child_aidx != parent_aidx {
-                            let orig_ctx = ScanContext {
-                                text_index: parent_vi,
-                                process_type_mask: scan_mask,
-                                num_variants,
-                                exit_early,
-                                char_density: parent_density,
-                            };
-                            stopped =
-                                self.scan_variant(texts[parent_aidx].as_ref(), orig_ctx, &mut ss);
-                            if stopped {
-                                break 'walk;
-                            }
                         }
                     }
                 }

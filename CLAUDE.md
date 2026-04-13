@@ -83,8 +83,8 @@ For the full narrative walkthrough with a running example, see [DESIGN.md](./DES
 - **ProcessType**: `u8` bitflags composable with `|`. Controls which transforms are applied before matching. `None` is standalone-only (stripped from composites via `normalize()`).
 - **Transform trie**: shared-prefix DAG so `VariantNorm|Delete` reuses the VariantNorm result.
 - **ScanPlan**: `Engines` struct bundling `BytewiseMatcher` (holds `BytewiseDFAEngine` + DAAC) and `CharwiseMatcher` (DAAC, CJK-optimized). `BytewiseDFAEngine` owns `dfa::DFA`, `dfa_to_value`, and `has_prefilter`; the `has_prefilter` flag drives a 4-way fused-path dispatch: Teddy prefilter active → materialize + `try_find_overlapping`; no prefilter → stream via custom `next_state` loop. Engine selection via character density (`bytecount::num_chars / len`): ≥0.55 → bytewise, <0.55 → charwise. Unified behind `ScanEngine` trait, dispatched via `dispatch!` macro.
-- **RuleSet**: `Rule` stores cold data (`segment_counts` + `word_id` + `word`); `RuleInfo` stores hot data (`and_count`, `SatisfactionMethod`, `has_not`). All hits routed through unified `eval_hit()`. Generation-stamped sparse set for O(1) state reset.
-- **DIRECT_RULE_BIT**: single-entry non-matrix patterns encode `(kind, pt_index, boundary, offset, rule_idx)` in one uniform 32-bit layout (bit 31 set), skipping the entry table. Decoded directly into `eval_hit()` args.
+- **RuleSet**: `Rule` stores cold data (`segment_counts` + `rule_id` + `pattern`); `RuleInfo` stores hot data (`and_count`, `SatisfactionMethod`, `has_not`). All hits routed through unified `eval_hit()`. Generation-stamped sparse set for O(1) state reset.
+- **DIRECT_ENCODED_BIT**: single-entry non-matrix patterns encode `(kind, process_type_index, boundary, offset, rule_idx)` in one uniform 32-bit layout (bit 31 set), skipping the entry table. Decoded directly into `eval_hit()` args.
 
 ### Construction subtlety: Delete and AC pattern indexing
 
@@ -114,11 +114,11 @@ During `SimpleMatcher::new`, each sub-pattern is indexed under `process_type - P
 
 **`matcher_rs/src/simple_matcher/`** — Core matching engine (directory module). `SimpleMatcher` stores: `tree` (transform trie), `scan` (`ScanPlan`), `rules` (`RuleSet`), `is_match_fast` (AC-direct bypass flag).
 - `mod.rs` — `SimpleMatcher`, `SimpleResult`, public API (`is_match`, `process`, `process_into`, `for_each_match`, `find_match`; `batch_is_match`, `batch_process`, `batch_find_match` always available, parallel when `rayon` is on)
-- `build.rs` — `SimpleMatcher::new()` + helpers (`build_pt_index_table`, `parse_rules`), `ParsedRules` intermediate representation
+- `build.rs` — `SimpleMatcher::new()` + helpers (`build_process_type_index_table`, `parse_rules`), `ParsedRules` intermediate representation
 - `scan.rs` — `ScanPlan`, `Engines`, `ScanEngine` trait, `BytewiseMatcher` (holds `BytewiseDFAEngine` + DAAC), `BytewiseDFAEngine` (owns `dfa::DFA`, `dfa_to_value`, `has_prefilter`; all DFA scan logic), `CharwiseMatcher` (DAAC charwise), `dispatch!` macro, `text_char_density` (via `bytecount::num_chars`) — AC automaton compilation, density-based dispatch, prefilter-aware scan (Teddy → materialize+`try_find_overlapping`; no prefilter → stream via `next_state` loop)
-- `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch. Also contains direct-rule bit-packing (`encode_direct`/`decode_direct`, `DIRECT_RULE_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
-- `rule.rs` — `RuleSet`, `Rule` (cold: `segment_counts` + `word_id` + `word`), `RuleInfo` (hot: `and_count` + `SatisfactionMethod` + `has_not`), unified `eval_hit()`, `SimpleTable`/`SimpleTableSerde` type aliases
-- `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `process_match`
+- `pattern.rs` — `PatternEntry`, `PatternKind`, `PatternIndex`, `PatternDispatch` — deduplicated pattern storage and dispatch. Also contains direct encoding (`encode_direct`/`decode_direct`, `DIRECT_ENCODED_BIT`), capacity limits (`BITMASK_CAPACITY`, `PROCESS_TYPE_TABLE_SIZE`)
+- `rule.rs` — `RuleSet`, `Rule` (cold: `segment_counts` + `rule_id` + `pattern`), `RuleInfo` (hot: `and_count` + `SatisfactionMethod` + `has_not`), unified `eval_hit()`, `SimpleTable`/`SimpleTableSerde` type aliases
+- `search.rs` — Hot-path: `walk_and_scan`/`walk_and_scan_with` (unified tree walk with materialize+scan), `scan_variant`, `scan_leaf_child`, `process_match`
 - `state.rs` — `RuleState` (fused per-rule state: generation + countdown + veto + bitmask in one cache line), `SimpleMatchState`, `ScanState` (split-borrow view for register-cached base pointers), `ScanContext`, TLS `SIMPLE_MATCH_STATE`, generation-based state reset
 - `tree.rs` — `ProcessTypeBitNode`, `build_process_type_tree` (trie construction for transform prefix sharing)
 

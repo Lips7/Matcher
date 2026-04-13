@@ -3,9 +3,9 @@
 //!
 //! The construction pipeline has three stages:
 //!
-//! 1. **Index table** ([`SimpleMatcher::build_pt_index_table`]) — assigns a
-//!    compact sequential index (0..N) to each distinct [`ProcessType`] present
-//!    in the input.
+//! 1. **Index table** ([`SimpleMatcher::build_process_type_index_table`]) —
+//!    assigns a compact sequential index (0..N) to each distinct
+//!    [`ProcessType`] present in the input.
 //!
 //! 2. **Rule parsing** ([`SimpleMatcher::parse_rules`]) — splits each rule
 //!    string on `&`/`~` operators, then splits each segment on `|` to extract
@@ -143,15 +143,17 @@ impl SimpleMatcher {
         let process_type_set: HashSet<ProcessType> =
             normalized_process_type_word_map.keys().copied().collect();
 
-        let pt_index_table = Self::build_pt_index_table(&process_type_set);
+        let process_type_index_table = Self::build_process_type_index_table(&process_type_set);
 
-        let parsed = Self::parse_rules(&normalized_process_type_word_map, &pt_index_table);
+        let parsed =
+            Self::parse_rules(&normalized_process_type_word_map, &process_type_index_table);
 
         if parsed.dedup_patterns.is_empty() {
             return Err(MatcherError::EmptyPatterns);
         }
 
-        let process_type_tree = build_process_type_tree(&process_type_set, &pt_index_table);
+        let process_type_tree =
+            build_process_type_tree(&process_type_set, &process_type_index_table);
 
         let scan = ScanPlan::compile(
             &parsed.dedup_patterns,
@@ -176,27 +178,27 @@ impl SimpleMatcher {
     /// a dense `u8` index starting at 0. [`ProcessType::None`] always gets
     /// index 0. Unused entries are set to `u8::MAX`.
     ///
-    /// These compact indices are stored in [`PatternEntry::pt_index`] and used
-    /// to build the `process_type_mask` bitmask in
+    /// These compact indices are stored in [`PatternEntry::process_type_index`]
+    /// and used to build the `process_type_mask` bitmask in
     /// [`ScanContext`](super::state::ScanContext).
-    fn build_pt_index_table(
+    fn build_process_type_index_table(
         process_type_set: &HashSet<ProcessType>,
     ) -> [u8; PROCESS_TYPE_TABLE_SIZE] {
-        let mut pt_index_table = [u8::MAX; PROCESS_TYPE_TABLE_SIZE];
+        let mut process_type_index_table = [u8::MAX; PROCESS_TYPE_TABLE_SIZE];
         let mut next_pt_idx: u8 = 0;
 
-        pt_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
+        process_type_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
         next_pt_idx += 1;
 
         for &pt in process_type_set {
             let bits = pt.bits() as usize;
-            if bits < PROCESS_TYPE_TABLE_SIZE && pt_index_table[bits] == u8::MAX {
-                pt_index_table[bits] = next_pt_idx;
+            if bits < PROCESS_TYPE_TABLE_SIZE && process_type_index_table[bits] == u8::MAX {
+                process_type_index_table[bits] = next_pt_idx;
                 next_pt_idx += 1;
             }
         }
 
-        pt_index_table
+        process_type_index_table
     }
 
     /// Parses the raw rule table into deduplicated emitted patterns and rule
@@ -233,115 +235,105 @@ impl SimpleMatcher {
     #[optimize(speed)]
     fn parse_rules<'a, I, S1, S2>(
         process_type_word_map: &'a HashMap<ProcessType, HashMap<u32, I, S1>, S2>,
-        pt_index_table: &[u8; PROCESS_TYPE_TABLE_SIZE],
+        process_type_index_table: &[u8; PROCESS_TYPE_TABLE_SIZE],
     ) -> ParsedRules<'a>
     where
         I: AsRef<str> + 'a,
     {
-        let word_size: usize = process_type_word_map.values().map(|map| map.len()).sum();
+        let rule_count_hint: usize = process_type_word_map.values().map(|map| map.len()).sum();
 
-        let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(word_size);
-        let mut rules: Vec<Rule> = Vec::with_capacity(word_size);
-        let mut rule_infos: Vec<RuleInfo> = Vec::with_capacity(word_size);
-        let mut word_id_to_idx: FoldHashMap<(ProcessType, u32), usize> =
-            FoldHashMap::with_capacity(word_size);
+        let mut dedup_entries: Vec<Vec<PatternEntry>> = Vec::with_capacity(rule_count_hint);
+        let mut rules: Vec<Rule> = Vec::with_capacity(rule_count_hint);
+        let mut rule_infos: Vec<RuleInfo> = Vec::with_capacity(rule_count_hint);
+        let mut rule_key_to_idx: FoldHashMap<(ProcessType, u32), usize> =
+            FoldHashMap::with_capacity(rule_count_hint);
 
         let mut next_pattern_id: usize = 0;
-        let mut dedup_patterns = Vec::with_capacity(word_size);
+        let mut dedup_patterns = Vec::with_capacity(rule_count_hint);
         let mut pattern_id_map: FoldHashMap<Cow<'_, str>, usize> =
-            FoldHashMap::with_capacity(word_size);
+            FoldHashMap::with_capacity(rule_count_hint);
 
         let mut and_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
         let mut not_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
-        for (&process_type, simple_word_map) in process_type_word_map {
+        for (&process_type, rule_map) in process_type_word_map {
             let word_process_type = process_type - ProcessType::Delete;
 
-            for (&simple_word_id, simple_word) in simple_word_map {
-                if simple_word.as_ref().is_empty() {
+            for (&rule_id, rule_str) in rule_map {
+                if rule_str.as_ref().is_empty() {
                     continue;
                 }
 
                 and_splits.clear();
                 not_splits.clear();
 
+                // ── Split on &/~ operators ────────────────────
                 let mut start = 0;
                 let mut current_is_not = false;
 
-                let mut add_sub_word = |word: &'a str, is_not: bool| {
-                    if word.is_empty() {
+                let mut count_segment = |segment: &'a str, is_not: bool| {
+                    if segment.is_empty() {
                         return;
                     }
                     if is_not {
-                        let entry = not_splits.entry(word).or_insert(1);
+                        let entry = not_splits.entry(segment).or_insert(1);
                         *entry -= 1;
                     } else {
-                        let entry = and_splits.entry(word).or_insert(0);
+                        let entry = and_splits.entry(segment).or_insert(0);
                         *entry += 1;
                     }
                 };
 
-                for (index, marker) in simple_word.as_ref().match_indices(['&', '~']) {
-                    add_sub_word(&simple_word.as_ref()[start..index], current_is_not);
+                for (index, marker) in rule_str.as_ref().match_indices(['&', '~']) {
+                    count_segment(&rule_str.as_ref()[start..index], current_is_not);
                     current_is_not = marker == "~";
                     start = index + 1;
                 }
-                add_sub_word(&simple_word.as_ref()[start..], current_is_not);
+                count_segment(&rule_str.as_ref()[start..], current_is_not);
 
-                if and_splits.is_empty() && not_splits.is_empty() {
+                // Pure-NOT rules (no AND segments) are unsatisfiable — skip.
+                if and_splits.is_empty() {
                     continue;
                 }
 
-                if and_splits.is_empty() && !not_splits.is_empty() {
-                    continue;
-                }
-
+                // ── Determine satisfaction method ────────────────
                 let and_count = and_splits.len();
-                let segment_counts = and_splits
+                let segment_counts: Vec<i32> = and_splits
                     .values()
                     .copied()
                     .chain(not_splits.values().copied())
-                    .collect::<Vec<i32>>();
+                    .collect();
 
-                let use_matrix = and_count > BITMASK_CAPACITY
-                    || segment_counts.len() > BITMASK_CAPACITY
-                    || segment_counts[..and_count].iter().any(|&value| value != 1)
-                    || segment_counts[and_count..].iter().any(|&value| value != 0);
-                let has_not = and_count != segment_counts.len();
-
-                let method = match (use_matrix, and_count == 1) {
-                    (true, _) => SatisfactionMethod::Matrix,
-                    (false, true) => SatisfactionMethod::Immediate,
-                    (false, false) => SatisfactionMethod::Bitmask,
-                };
+                let (method, has_not) = determine_satisfaction_method(and_count, &segment_counts);
                 let info = RuleInfo {
                     and_count: and_count as u8,
                     method,
                     has_not,
                 };
 
-                let rule_idx = if let Some(&existing_idx) =
-                    word_id_to_idx.get(&(process_type, simple_word_id))
-                {
-                    rules[existing_idx] = Rule {
-                        segment_counts,
-                        word_id: simple_word_id,
-                        word: simple_word.as_ref().to_owned(),
+                // ── Upsert rule ──────────────────────────────
+                let rule_idx =
+                    if let Some(&existing_idx) = rule_key_to_idx.get(&(process_type, rule_id)) {
+                        rules[existing_idx] = Rule {
+                            segment_counts,
+                            rule_id,
+                            pattern: rule_str.as_ref().to_owned(),
+                        };
+                        rule_infos[existing_idx] = info;
+                        existing_idx
+                    } else {
+                        let idx = rules.len();
+                        rule_key_to_idx.insert((process_type, rule_id), idx);
+                        rules.push(Rule {
+                            segment_counts,
+                            rule_id,
+                            pattern: rule_str.as_ref().to_owned(),
+                        });
+                        rule_infos.push(info);
+                        idx
                     };
-                    rule_infos[existing_idx] = info;
-                    existing_idx
-                } else {
-                    let idx = rules.len();
-                    word_id_to_idx.insert((process_type, simple_word_id), idx);
-                    rules.push(Rule {
-                        segment_counts,
-                        word_id: simple_word_id,
-                        word: simple_word.as_ref().to_owned(),
-                    });
-                    rule_infos.push(info);
-                    idx
-                };
 
-                for (offset, &split_word) in and_splits.keys().chain(not_splits.keys()).enumerate()
+                // ── Emit deduplicated patterns per segment ───
+                for (offset, &segment_key) in and_splits.keys().chain(not_splits.keys()).enumerate()
                 {
                     assert!(
                         offset < 256,
@@ -362,7 +354,7 @@ impl SimpleMatcher {
                     // Each alternative becomes a separate AC pattern mapping to the
                     // same segment offset — any single alternative matching satisfies
                     // the segment.
-                    for alternative in split_word.split('|') {
+                    for alternative in segment_key.split('|') {
                         if alternative.is_empty() {
                             continue;
                         }
@@ -372,11 +364,12 @@ impl SimpleMatcher {
                             continue;
                         }
                         for ac_word in reduce_text_process_emit(word_process_type, inner) {
-                            let pt_index = pt_index_table[process_type.bits() as usize];
+                            let process_type_index =
+                                process_type_index_table[process_type.bits() as usize];
                             let entry = PatternEntry {
                                 rule_idx: rule_idx as u32,
                                 offset: offset as u8,
-                                pt_index,
+                                process_type_index,
                                 kind,
                                 boundary: boundary_flags,
                             };
@@ -425,6 +418,29 @@ fn parse_boundary_markers(s: &str) -> (u8, &str) {
     (flags, inner)
 }
 
+/// Selects the satisfaction tracking strategy based on segment shape.
+///
+/// `segment_counts` layout: `[and_0, ..., and_{n-1}, not_0, ...]`.
+/// AND entries hold required hit counts (usually 1); NOT entries start at 0.
+///
+/// Returns `(method, has_not)`.
+fn determine_satisfaction_method(
+    and_count: usize,
+    segment_counts: &[i32],
+) -> (SatisfactionMethod, bool) {
+    let use_matrix = and_count > BITMASK_CAPACITY
+        || segment_counts.len() > BITMASK_CAPACITY
+        || segment_counts[..and_count].iter().any(|&v| v != 1)
+        || segment_counts[and_count..].iter().any(|&v| v != 0);
+    let has_not = and_count != segment_counts.len();
+    let method = match (use_matrix, and_count == 1) {
+        (true, _) => SatisfactionMethod::Matrix,
+        (false, true) => SatisfactionMethod::Immediate,
+        (false, false) => SatisfactionMethod::Bitmask,
+    };
+    (method, has_not)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{super::pattern::PatternKind, *};
@@ -444,10 +460,10 @@ mod tests {
     }
 
     #[test]
-    fn test_pt_index_table() {
+    fn test_process_type_index_table() {
         // None always gets index 0, even when not in the key set
         let keys: HashSet<ProcessType> = [ProcessType::VariantNorm, ProcessType::Delete].into();
-        let table = SimpleMatcher::build_pt_index_table(&keys);
+        let table = SimpleMatcher::build_process_type_index_table(&keys);
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
 
         // Multiple PTs get sequential indices; unused entries are u8::MAX
@@ -457,7 +473,7 @@ mod tests {
             ProcessType::Delete,
         ]
         .into();
-        let table = SimpleMatcher::build_pt_index_table(&keys);
+        let table = SimpleMatcher::build_process_type_index_table(&keys);
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
         let fj = table[ProcessType::VariantNorm.bits() as usize];
         let del = table[ProcessType::Delete.bits() as usize];
@@ -478,8 +494,9 @@ mod tests {
     #[test]
     fn test_parse_rules_simple() {
         let table = single_rule_table(ProcessType::None, 1, "hello");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+        let process_type_index_table =
+            SimpleMatcher::build_process_type_index_table(&table.keys().copied().collect());
+        let parsed = SimpleMatcher::parse_rules(&table, &process_type_index_table);
 
         assert_eq!(parsed.dedup_patterns.len(), 1);
         assert_eq!(parsed.dedup_patterns[0].as_ref(), "hello");
@@ -492,8 +509,9 @@ mod tests {
     fn test_parse_rules_operators() {
         // AND operator: "a&b" → 2 patterns, both kind=And
         let table = single_rule_table(ProcessType::None, 1, "a&b");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+        let process_type_index_table =
+            SimpleMatcher::build_process_type_index_table(&table.keys().copied().collect());
+        let parsed = SimpleMatcher::parse_rules(&table, &process_type_index_table);
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let kinds: Vec<_> = parsed
             .dedup_entries
@@ -505,8 +523,9 @@ mod tests {
 
         // NOT operator: "a~b" → 2 patterns, 1 And + 1 Not
         let table = single_rule_table(ProcessType::None, 1, "a~b");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
-        let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
+        let process_type_index_table =
+            SimpleMatcher::build_process_type_index_table(&table.keys().copied().collect());
+        let parsed = SimpleMatcher::parse_rules(&table, &process_type_index_table);
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let all_entries: Vec<_> = parsed
             .dedup_entries

@@ -26,6 +26,74 @@
 //! - **Span-copy output**: unchanged byte ranges are bulk-copied; only mapped
 //!   codepoints incur per-replacement overhead.
 
+use super::{simd::skip_ascii_simd, utf8::decode_utf8_raw};
+
+// ---------------------------------------------------------------------------
+// Unified find iterator for str-replacement page tables
+// ---------------------------------------------------------------------------
+
+/// Find iterator for page-table-backed string replacement.
+///
+/// Yields `(byte_start, byte_end, &str)` tuples for each codepoint that has a
+/// mapping in the page table. The const generic `CHECK_ASCII` controls ASCII
+/// handling:
+///
+/// - `false` — uses [`skip_ascii_simd`] to bulk-skip ASCII runs. Suitable when
+///   all page-table keys are non-ASCII (e.g., CJK romanization).
+/// - `true` — checks each ASCII byte individually, since some (A–Z) may have
+///   mappings (e.g., Unicode normalization casefolding).
+pub(super) struct StrReplaceFindIter<'a, const CHECK_ASCII: bool> {
+    pub(super) l1: &'a [u16],
+    pub(super) l2: &'a [u32],
+    pub(super) strings: &'a str,
+    pub(super) text: &'a str,
+    pub(super) byte_offset: usize,
+}
+
+impl<'a, const CHECK_ASCII: bool> Iterator for StrReplaceFindIter<'a, CHECK_ASCII> {
+    type Item = (usize, usize, &'a str);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+        let len = bytes.len();
+
+        loop {
+            if !CHECK_ASCII {
+                self.byte_offset = skip_ascii_simd(bytes, self.byte_offset);
+            }
+            if self.byte_offset >= len {
+                return None;
+            }
+
+            let start = self.byte_offset;
+            let b = bytes[start];
+
+            if b < 0x80 {
+                self.byte_offset += 1;
+                if CHECK_ASCII
+                    && b.is_ascii_uppercase()
+                    && let Some(value) = page_table_lookup(b as u32, self.l1, self.l2)
+                    && let Some(s) = unpack_str_ref(value, self.strings)
+                {
+                    return Some((start, start + 1, s));
+                }
+                continue;
+            }
+
+            // SAFETY: positioned at a non-ASCII lead byte in a valid UTF-8 `&str`.
+            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
+            self.byte_offset += char_len;
+
+            if let Some(value) = page_table_lookup(cp, self.l1, self.l2)
+                && let Some(s) = unpack_str_ref(value, self.strings)
+            {
+                return Some((start, self.byte_offset, s));
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shared replacement helpers
 // ---------------------------------------------------------------------------

@@ -97,7 +97,9 @@ A thread-local state buffer bumps a generation counter. No arrays are zeroed —
 
 ### 2.2 Walk the Trie
 
-Each trie node is visited in flat-array order (parents before children). At each terminating node, the transformed text is scanned and hits update per-rule state.
+Each trie node is visited in flat-array order (parents before children). Walk-level constants (`num_variants`, `exit_early`) are bundled into a `WalkConfig`; per-variant scan metadata (`text_index`, `process_type_mask`, `char_density`) is bundled into a `ScanContext` constructed via `WalkConfig::scan_ctx()`. At each terminating node, the transformed text is scanned and hits update per-rule state.
+
+Leaf nodes are handled by `scan_leaf_child`, which dispatches between three strategies: Delete dual-scan (when Delete is a direct root child), fused streaming (transform bytes piped directly into the AC engine), or materialize-then-scan (the fallback). Non-leaf nodes materialize their output into a text arena for children to reuse.
 
 ---
 
@@ -207,7 +209,7 @@ Falls back to the indirect table for multi-entry patterns, matrix-mode rules, or
 
 **Problem:** The normal path materializes a transformed `String`, then scans it — allocating memory and traversing the text twice.
 
-**Solution:** For streaming-friendly transforms (Delete, Normalize, VariantNorm, Romanize), an iterator adapter feeds transformed bytes directly into the scan loop. This eliminates the intermediate allocation and the second traversal.
+**Solution:** For streaming-friendly transforms (Delete, Normalize, VariantNorm, Romanize), an iterator adapter feeds transformed bytes directly into the scan loop. This eliminates the intermediate allocation and the second traversal. The dispatch lives in `scan_leaf_child`, which chooses among fused streaming, DFA materialized scan, and fallback materialization.
 
 A 4-way dispatch selects the strategy:
 
@@ -236,7 +238,7 @@ For a matcher with ProcessTypes {None, VariantNorm, Romanize, Delete} on ASCII t
 
 **Problem:** Passing `&mut SimpleMatchState` through the scan loop forces the compiler to reload struct fields after each method call (pointer aliasing).
 
-**Solution:** `ScanState` borrows individual fields as separate mutable slices. The compiler keeps base pointers in registers across the scan loop, eliminating redundant loads. Profiled: 3–6% throughput improvement.
+**Solution:** `ScanState` borrows individual fields as separate mutable slices. The compiler keeps base pointers in registers across the scan loop, eliminating redundant loads. `ScanContext` is `Copy` (32 bytes) so it lives in registers rather than on the stack. Walk-level constants are separated into `WalkConfig` to avoid repeating them in every `ScanContext` construction. Profiled: 3–6% throughput improvement.
 
 *Source: `simple_matcher/state.rs`*
 
@@ -265,6 +267,8 @@ Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNorm
 ### Page-Table Lookup
 
 VariantNorm, Romanize, EmojiNorm, and Normalize use a two-stage page table for O(1) codepoint lookup. The first stage indexes by `codepoint >> 8` (which 256-codepoint block); the second stage indexes within the block. Unmapped codepoints are passed through unchanged. Both stages use `get_unchecked` for branchless access.
+
+Romanize and Normalize share a unified `StrReplaceFindIter<const CHECK_ASCII: bool>` iterator. When `CHECK_ASCII = false` (Romanize), ASCII runs are bulk-skipped via SIMD since all keys are non-ASCII CJK. When `CHECK_ASCII = true` (Normalize), each ASCII byte is checked individually since A–Z have casefold mappings. Monomorphization produces optimal codegen for each variant.
 
 Romanize and EmojiNorm string buffers store each replacement with a **build-time-prepended leading space** for word boundary separation (source data in `process_map/` is space-free). `RomanizeChar` trims this space at runtime via `trim_romanize_packed`.
 

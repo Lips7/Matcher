@@ -91,6 +91,19 @@
 //! | `dfa` | via `perf` | Enables `aho-corasick` DFA mode in the places where this crate chooses it; other paths still use `daachorse`-backed matchers |
 //! | `simd_runtime_dispatch` | via `perf` | Selects the best available transform kernel at runtime (`AVX2` on x86-64, `NEON` on ARM64, portable fallback elsewhere) |
 //! | `serde` | off | Enables `Serialize`/`Deserialize` impls for [`ProcessType`] and `Serialize` for [`SimpleResult`] |
+//!
+//! # Terminology
+//!
+//! | Term | Meaning |
+//! |------|---------|
+//! | **Rule** | A user-supplied pattern string, possibly with `&` (AND), `~` (NOT), `\|` (OR) operators. Identified by a caller-chosen `word_id`. |
+//! | **Segment** | One sub-pattern within a rule, delimited by `&` or `~`. A segment may contain `\|`-separated alternatives. |
+//! | **Pattern** | A deduplicated sub-pattern string stored in the AC automaton. Multiple rules may share the same pattern. |
+//! | **Variant** | One transformed form of the input text (e.g., after VariantNorm, after Delete). Each variant gets a unique index. |
+//! | **Generation** | A monotonic `u16` counter enabling O(1) amortized state reset between scans. Wraps every ~65K scans. |
+//! | **Direct encoding** | Bit-packing a single-entry pattern's metadata into the automaton value, bypassing entry-table indirection. See `simple_matcher::pattern`. |
+//!
+//! For the full architectural walkthrough, see [DESIGN.md](https://github.com/search?q=repo%3Afoster_guo%2FMatcher+DESIGN.md).
 
 /// Uses [`mimalloc`](https://github.com/purpleprotocol/mimalloc_rust) as the global allocator.
 ///

@@ -10,7 +10,7 @@
 //! storage for cache-friendly iteration, and [`PatternDispatch`] provides the
 //! hot-path dispatch API.
 //!
-//! ## Direct-rule encoding
+//! ## Direct encoding
 //!
 //! When a deduplicated pattern is attached to exactly one non-matrix rule, its
 //! automaton value is bit-packed via [`encode_direct`] so the scan hot path can
@@ -21,11 +21,11 @@
 //! One uniform format for all non-matrix rules:
 //!
 //! ```text
-//! [31: DIRECT] [30: kind(1)] [29-27: pt_index(3)] [26-25: boundary(2)] [24-19: offset(6)] [18-0: rule_idx(19)]
+//! [31: DIRECT] [30: kind(1)] [29-27: process_type_index(3)] [26-25: boundary(2)] [24-19: offset(6)] [18-0: rule_idx(19)]
 //! ```
 //!
 //! - `kind`: 0 = AND, 1 = NOT
-//! - `pt_index`: compact process-type index (max 7)
+//! - `process_type_index`: compact process-type index (max 7)
 //! - `boundary`: word boundary flags (bit 0 = left, bit 1 = right)
 //! - `offset`: segment offset within the rule (max 63)
 //! - `rule_idx`: rule index in [`RuleSet`](super::rule::RuleSet) (max 524287)
@@ -33,14 +33,14 @@
 use super::rule::{RuleInfo, SatisfactionMethod};
 
 // ===========================================================================
-// Direct-rule encoding constants and functions
+// Direct encoding constants and functions
 // ===========================================================================
 
 /// High bit flag marking a direct-encoded automaton value.
 ///
 /// Callers check this before calling [`decode_direct`]. Values without
 /// this bit are indirect indices into the pattern entry table.
-pub(super) const DIRECT_RULE_BIT: u32 = 1 << 31;
+pub(super) const DIRECT_ENCODED_BIT: u32 = 1 << 31;
 
 /// Maximum number of segments handled by the bitmask fast path.
 ///
@@ -64,21 +64,21 @@ const OFFSET_SHIFT: u32 = 19;
 const OFFSET_MASK: u32 = 0x3F << OFFSET_SHIFT;
 const RULE_IDX_MASK: u32 = (1 << OFFSET_SHIFT) - 1; // 19 bits, max 524287
 
-/// Packs a direct rule hit into a `u32` with [`DIRECT_RULE_BIT`] set.
+/// Packs a direct rule hit into a `u32` with [`DIRECT_ENCODED_BIT`] set.
 ///
 /// Returns `None` if any field overflows its bit width:
-/// - `pt_index` must be < 8
+/// - `process_type_index` must be < 8
 /// - `offset` must be < 64
 /// - `rule_idx` must be < 524288
 #[inline(always)]
 pub(super) fn encode_direct(
-    pt_index: u8,
+    process_type_index: u8,
     boundary: u8,
     kind: PatternKind,
     offset: u8,
     rule_idx: u32,
 ) -> Option<u32> {
-    if pt_index >= 8 || offset >= 64 || rule_idx > RULE_IDX_MASK {
+    if process_type_index >= 8 || offset >= 64 || rule_idx > RULE_IDX_MASK {
         return None;
     }
     let kind_bit = match kind {
@@ -86,22 +86,22 @@ pub(super) fn encode_direct(
         PatternKind::Not => 1u32 << KIND_SHIFT,
     };
     Some(
-        DIRECT_RULE_BIT
+        DIRECT_ENCODED_BIT
             | kind_bit
-            | ((pt_index as u32) << PT_SHIFT)
+            | ((process_type_index as u32) << PT_SHIFT)
             | ((boundary as u32) << BOUNDARY_SHIFT)
             | ((offset as u32) << OFFSET_SHIFT)
             | rule_idx,
     )
 }
 
-/// Unpacks a direct-encoded `u32` into `(pt_index, boundary, kind, offset,
-/// rule_idx)`.
+/// Unpacks a direct-encoded `u32` into `(process_type_index, boundary, kind,
+/// offset, rule_idx)`.
 ///
-/// The caller **must** have verified `raw & DIRECT_RULE_BIT != 0`.
+/// The caller **must** have verified `raw & DIRECT_ENCODED_BIT != 0`.
 #[inline(always)]
 pub(super) fn decode_direct(raw: u32) -> (u8, u8, PatternKind, usize, usize) {
-    let pt_index = ((raw & PT_MASK) >> PT_SHIFT) as u8;
+    let process_type_index = ((raw & PT_MASK) >> PT_SHIFT) as u8;
     let boundary = ((raw & BOUNDARY_MASK) >> BOUNDARY_SHIFT) as u8;
     let kind = if (raw >> KIND_SHIFT) & 1 == 0 {
         PatternKind::And
@@ -110,7 +110,7 @@ pub(super) fn decode_direct(raw: u32) -> (u8, u8, PatternKind, usize, usize) {
     };
     let offset = ((raw & OFFSET_MASK) >> OFFSET_SHIFT) as usize;
     let rule_idx = (raw & RULE_IDX_MASK) as usize;
-    (pt_index, boundary, kind, offset, rule_idx)
+    (process_type_index, boundary, kind, offset, rule_idx)
 }
 
 // ===========================================================================
@@ -162,8 +162,11 @@ pub(super) struct PatternEntry {
     /// [`Rule::segment_counts`](super::rule::Rule::segment_counts) array.
     pub(super) offset: u8,
     /// Compact process-type index assigned by
-    /// `SimpleMatcher::build_pt_index_table`.
-    pub(super) pt_index: u8,
+    /// `SimpleMatcher::build_process_type_index_table`.
+    ///
+    /// Maps each distinct [`ProcessType`](crate::ProcessType) to a dense `u8`
+    /// index (0..N) used in bitmask operations.
+    pub(super) process_type_index: u8,
     /// Logical role of this segment hit (AND or NOT).
     pub(super) kind: PatternKind,
     /// Word boundary flags (bit 0 = left `\b`, bit 1 = right `\b`).
@@ -181,7 +184,7 @@ pub(super) struct PatternEntry {
 ///
 /// The automaton raw value for a given pattern is either:
 /// - A deduplicated index into `ranges` (general case), or
-/// - A direct rule index with [`DIRECT_RULE_BIT`] set (fast path for simple
+/// - A direct rule index with [`DIRECT_ENCODED_BIT`] set (fast path for simple
 ///   single-entry patterns).
 #[derive(Clone)]
 pub(super) struct PatternIndex {
@@ -198,10 +201,10 @@ pub(super) struct PatternIndex {
 /// Dispatch result for a non-direct raw scan value.
 ///
 /// Returned by `PatternIndex::dispatch_indirect` for values that do **not**
-/// have [`DIRECT_RULE_BIT`] set. Callers handle direct-rule values inline
-/// (checking `DIRECT_RULE_BIT` and extracting `rule_idx` / `pt_index` from the
-/// bit-packed value) before falling through to `dispatch_indirect` for the
-/// remaining cases.
+/// have [`DIRECT_ENCODED_BIT`] set. Callers handle direct-rule values inline
+/// (checking `DIRECT_ENCODED_BIT` and extracting `rule_idx` /
+/// `process_type_index` from the bit-packed value) before falling through to
+/// `dispatch_indirect` for the remaining cases.
 pub(super) enum PatternDispatch<'a> {
     /// Exactly one attached pattern entry.
     SingleEntry(&'a PatternEntry),
@@ -266,9 +269,9 @@ impl PatternIndex {
     ///
     /// For each deduplicated pattern, produces the `u32` value that the
     /// automaton will report on a hit. Single-entry patterns that fit the
-    /// direct encoding constraints are bit-packed with [`DIRECT_RULE_BIT`] set
-    /// so the hot path skips entry-table indirection. All other patterns store
-    /// the deduplicated index directly.
+    /// direct encoding constraints are bit-packed with [`DIRECT_ENCODED_BIT`]
+    /// set so the hot path skips entry-table indirection. All other
+    /// patterns store the deduplicated index directly.
     ///
     /// # Safety
     pub(super) fn build_value_map(&self, rule_info: &[RuleInfo]) -> Vec<u32> {
@@ -298,7 +301,7 @@ impl PatternIndex {
             return None;
         }
         encode_direct(
-            entry.pt_index,
+            entry.process_type_index,
             entry.boundary,
             entry.kind,
             entry.offset,
@@ -310,18 +313,18 @@ impl PatternIndex {
     /// variant.
     ///
     /// The caller **must** have already checked that `raw_value &
-    /// DIRECT_RULE_BIT == 0`. Direct-rule values are handled inline by the
-    /// caller (extracting `rule_idx` and `pt_index` from the bit-packed
-    /// value). This function handles the remaining cases where the value is
-    /// a deduplicated pattern index into the entry table.
+    /// DIRECT_ENCODED_BIT == 0`. Direct-rule values are handled inline by the
+    /// caller (extracting `rule_idx` and `process_type_index` from the
+    /// bit-packed value). This function handles the remaining cases where
+    /// the value is a deduplicated pattern index into the entry table.
     #[inline(always)]
     pub(super) fn dispatch_indirect(&self, raw_value: u32) -> PatternDispatch<'_> {
         let pattern_idx = raw_value as usize;
-        // SAFETY: Caller verified `DIRECT_RULE_BIT` is clear; `pattern_idx` is a valid
-        // dedup index assigned during construction. `start + len` is within
-        // `entries` by construction invariant.
+        // SAFETY: Caller verified `DIRECT_ENCODED_BIT` is clear; `pattern_idx` is a
+        // valid dedup index assigned during construction. `start + len` is
+        // within `entries` by construction invariant.
         unsafe {
-            core::hint::assert_unchecked(raw_value & DIRECT_RULE_BIT == 0);
+            core::hint::assert_unchecked(raw_value & DIRECT_ENCODED_BIT == 0);
             core::hint::assert_unchecked(pattern_idx < self.ranges.len());
         }
         let (start, len) = self.ranges[pattern_idx];
@@ -353,7 +356,7 @@ mod tests {
         ];
         for &(pt, bd, kind, off, idx) in cases {
             let raw = encode_direct(pt, bd, kind, off, idx).unwrap();
-            assert!(raw & DIRECT_RULE_BIT != 0);
+            assert!(raw & DIRECT_ENCODED_BIT != 0);
             let (dpt, dbd, dkind, doff, didx) = decode_direct(raw);
             assert_eq!(
                 (dpt, dbd, dkind, doff, didx),
@@ -374,14 +377,14 @@ mod tests {
     fn entry(
         rule_idx: u32,
         offset: u8,
-        pt_index: u8,
+        process_type_index: u8,
         kind: PatternKind,
         boundary: u8,
     ) -> PatternEntry {
         PatternEntry {
             rule_idx,
             offset,
-            pt_index,
+            process_type_index,
             kind,
             boundary,
         }
@@ -464,7 +467,7 @@ mod tests {
             let entries = vec![vec![entry(e.0, e.1, e.2, e.3, e.4)]];
             let ri_vec = ri_for(e.0, *ri);
             let raw = PatternIndex::new(entries).build_value_map(&ri_vec)[0];
-            assert!(raw & DIRECT_RULE_BIT != 0, "should use direct encoding");
+            assert!(raw & DIRECT_ENCODED_BIT != 0, "should use direct encoding");
             let (pt, _, kind, _, idx) = decode_direct(raw);
             assert_eq!((pt, kind, idx), (exp_pt, exp_kind, exp_idx));
         }
@@ -474,6 +477,6 @@ mod tests {
     fn test_matrix_always_falls_back() {
         let entries = vec![vec![entry(0, 0, 0, PatternKind::And, 0)]];
         let ri = [matrix_info(2)];
-        assert!(PatternIndex::new(entries).build_value_map(&ri)[0] & DIRECT_RULE_BIT == 0);
+        assert!(PatternIndex::new(entries).build_value_map(&ri)[0] & DIRECT_ENCODED_BIT == 0);
     }
 }

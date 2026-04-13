@@ -15,66 +15,10 @@ use std::borrow::Cow;
 
 use super::{
     filter::{CodepointFilter, FilterAction, FilterIterator},
-    page_table::{decode_page_table, page_table_lookup, replace_spans, unpack_str_ref},
-    utf8::decode_utf8_raw,
+    page_table::{
+        StrReplaceFindIter, decode_page_table, page_table_lookup, replace_spans, unpack_str_ref,
+    },
 };
-
-// ---------------------------------------------------------------------------
-// Find iterator (for materialized replace)
-// ---------------------------------------------------------------------------
-
-/// Materialized find iterator for Unicode normalization.
-///
-/// Yields `(byte_start, byte_end, &str)` tuples. Unlike the other find
-/// iterators, this one checks ASCII bytes too (uppercase A–Z have casefold
-/// mappings), so it cannot use `skip_ascii_simd`.
-struct NormalizeFindIter<'a> {
-    l1: &'a [u16],
-    l2: &'a [u32],
-    strings: &'a str,
-    text: &'a str,
-    byte_offset: usize,
-}
-
-impl<'a> Iterator for NormalizeFindIter<'a> {
-    type Item = (usize, usize, &'a str);
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let bytes = self.text.as_bytes();
-        let len = bytes.len();
-
-        loop {
-            if self.byte_offset >= len {
-                return None;
-            }
-
-            let b = bytes[self.byte_offset];
-            if b < 0x80 {
-                let start = self.byte_offset;
-                self.byte_offset += 1;
-                if b.is_ascii_uppercase()
-                    && let Some(value) = page_table_lookup(b as u32, self.l1, self.l2)
-                    && let Some(s) = unpack_str_ref(value, self.strings)
-                {
-                    return Some((start, start + 1, s));
-                }
-                continue;
-            }
-
-            let start = self.byte_offset;
-            // SAFETY: `b >= 0x80` in a valid UTF-8 `&str` means multi-byte lead byte.
-            let (cp, char_len) = unsafe { decode_utf8_raw(bytes, start) };
-            self.byte_offset += char_len;
-
-            if let Some(value) = page_table_lookup(cp, self.l1, self.l2)
-                && let Some(s) = unpack_str_ref(value, self.strings)
-            {
-                return Some((start, self.byte_offset, s));
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Streaming filter (for fused normalize-scan)
@@ -132,9 +76,12 @@ pub(crate) struct NormalizeMatcher {
 
 impl NormalizeMatcher {
     /// Returns a find iterator over normalizable codepoints in `text`.
+    ///
+    /// Uses `CHECK_ASCII = true` — uppercase A–Z have casefold mappings,
+    /// so ASCII bytes must be checked individually (no SIMD skip).
     #[inline(always)]
-    fn iter<'a>(&'a self, text: &'a str) -> NormalizeFindIter<'a> {
-        NormalizeFindIter {
+    fn iter<'a>(&'a self, text: &'a str) -> StrReplaceFindIter<'a, true> {
+        StrReplaceFindIter {
             l1: &self.l1,
             l2: &self.l2,
             strings: self.strings.as_ref(),

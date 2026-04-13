@@ -48,10 +48,10 @@ pub(crate) struct ProcessTypeBitNode {
     pub(crate) children: Vec<usize>,
     /// Cached reference to the compiled [`TransformStep`] for this node's bit.
     ///
-    /// [`None`] only for the root node (which represents the raw input text and
-    /// needs no transformation). All other nodes hold a `&'static` reference
-    /// obtained from the global `TRANSFORM_STEP_CACHE` in
-    /// [`crate::process::step`].
+    /// **Invariant:** always `Some` for non-root nodes. The root (index 0)
+    /// uses `None` because it represents raw input requiring no transformation.
+    /// Non-root nodes hold a `&'static` reference obtained from the global
+    /// `TRANSFORM_STEP_CACHE` in [`crate::process::step`].
     pub(crate) step: Option<&'static TransformStep>,
     /// Bitmask of compact process-type indices that produce a scannable variant
     /// at this node.
@@ -59,9 +59,9 @@ pub(crate) struct ProcessTypeBitNode {
     /// Bit `i` is set when the composite [`ProcessType`] whose compact index is
     /// `i` terminates at (or passes through) this node. A non-zero mask means
     /// this node's text variant should be scanned by the AC automaton.
-    /// Encoded using sequential indices from `pt_index_table` during
+    /// Encoded using sequential indices from `process_type_index_table` during
     /// construction.
-    pub(crate) pt_index_mask: u64,
+    pub(crate) process_type_index_mask: u64,
 }
 
 impl ProcessTypeBitNode {
@@ -81,9 +81,10 @@ impl ProcessTypeBitNode {
 /// with previously inserted types and creating new child nodes when a path
 /// diverges.
 ///
-/// `pt_index_table` maps raw `ProcessType::bits()` to compact sequential
-/// indices (0..N). The `pt_index_mask` on each node is computed directly using
-/// these indices, so no post-construction reindexing is needed.
+/// `process_type_index_table` maps raw `ProcessType::bits()` to compact
+/// sequential indices (0..N). The `process_type_index_mask` on each node is
+/// computed directly using these indices, so no post-construction reindexing is
+/// needed.
 ///
 /// The resulting `Vec<ProcessTypeBitNode>` is indexed by node position in the
 /// trie. The root (index 0) represents the raw input; each subsequent node
@@ -92,7 +93,7 @@ impl ProcessTypeBitNode {
 ///
 /// ```text
 /// // Given process_type_set = {VariantNorm|Delete, VariantNorm|Delete|Normalize}:
-/// let tree = build_process_type_tree(&set, &pt_index_table);
+/// let tree = build_process_type_tree(&set, &process_type_index_table);
 /// // tree[0] = root (None), children: [1]
 /// // tree[1] = VariantNorm,     children: [2]
 /// // tree[2] = Delete,      children: [3], terminates
@@ -100,7 +101,7 @@ impl ProcessTypeBitNode {
 /// ```
 pub(crate) fn build_process_type_tree(
     process_type_set: &HashSet<ProcessType>,
-    pt_index_table: &[u8; 128],
+    process_type_index_table: &[u8; 128],
 ) -> Vec<ProcessTypeBitNode> {
     let max_nodes: usize = 1 + process_type_set
         .iter()
@@ -111,14 +112,15 @@ pub(crate) fn build_process_type_tree(
         process_type_bit: ProcessType::None,
         children: Vec::new(),
         step: None,
-        pt_index_mask: 0,
+        process_type_index_mask: 0,
     };
     if process_type_set.contains(&ProcessType::None) {
-        root.pt_index_mask |= 1u64 << pt_index_table[ProcessType::None.bits() as usize];
+        root.process_type_index_mask |=
+            1u64 << process_type_index_table[ProcessType::None.bits() as usize];
     }
     process_type_tree.push(root);
     for &process_type in process_type_set.iter() {
-        let pt_mask_bit = 1u64 << pt_index_table[process_type.bits() as usize];
+        let pt_mask_bit = 1u64 << process_type_index_table[process_type.bits() as usize];
         let mut current_node_index = 0;
         for process_type_bit in process_type.iter() {
             let current_node = &process_type_tree[current_node_index];
@@ -134,13 +136,13 @@ pub(crate) fn build_process_type_tree(
 
             if let Some(child_idx) = found_child {
                 current_node_index = child_idx;
-                process_type_tree[current_node_index].pt_index_mask |= pt_mask_bit;
+                process_type_tree[current_node_index].process_type_index_mask |= pt_mask_bit;
             } else {
                 let child = ProcessTypeBitNode {
                     process_type_bit,
                     children: Vec::new(),
                     step: Some(get_transform_step(process_type_bit)),
-                    pt_index_mask: pt_mask_bit,
+                    process_type_index_mask: pt_mask_bit,
                 };
                 process_type_tree.push(child);
                 let new_node_index = process_type_tree.len() - 1;
@@ -175,7 +177,7 @@ mod tests {
         assert_eq!(tree.len(), 1); // root only
         assert!(tree[0].children.is_empty());
         assert_ne!(
-            tree[0].pt_index_mask, 0,
+            tree[0].process_type_index_mask, 0,
             "root should have non-zero mask for None"
         );
         assert_eq!(tree[0].process_type_bit, ProcessType::None);
@@ -214,11 +216,14 @@ mod tests {
 
         let del_bit = 1u64 << table[ProcessType::Delete.bits() as usize];
         assert_eq!(
-            tree[0].pt_index_mask & del_bit,
+            tree[0].process_type_index_mask & del_bit,
             0,
             "root should NOT carry Delete mask"
         );
         assert_eq!(tree[0].children.len(), 1);
-        assert_ne!(tree[tree[0].children[0]].pt_index_mask & del_bit, 0);
+        assert_ne!(
+            tree[tree[0].children[0]].process_type_index_mask & del_bit,
+            0
+        );
     }
 }
