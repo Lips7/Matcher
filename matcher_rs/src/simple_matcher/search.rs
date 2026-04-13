@@ -340,17 +340,19 @@ impl SimpleMatcher {
 
                         // Fused transform-scan dispatch:
                         //
-                        // - DFA available + high char density: skip fused, fall through to
-                        //   materialize path — DFA is 2–5× faster than DAAC bytewise streaming on
-                        //   ASCII-heavy text.
-                        // - No DFA + high char density: stream via DAAC bytewise.
+                        // - DFA + high density + Teddy prefilter: skip fused, fall through to
+                        //   materialize path — Teddy SIMD skips non-matching regions; the
+                        //   next_state streaming loop cannot replicate this.
+                        // - DFA + high density + no prefilter: stream via DFA next_state loop.
+                        // - No DFA + high density: stream via DAAC bytewise.
                         // - Low char density: stream via DAAC charwise.
                         //
                         // Fused paths cover Delete/Normalize/VariantNorm/Romanize.
                         // Parent density is the correct estimate for all fused transforms.
                         // Note: is_noop leaves are already skipped above.
                         let use_fused = !(cfg!(feature = "dfa")
-                            && parent_density >= CHARWISE_DENSITY_THRESHOLD);
+                            && parent_density >= CHARWISE_DENSITY_THRESHOLD
+                            && self.scan.has_dfa_prefilter());
                         let fused_result = if use_fused {
                             let parent_text = texts[parent_aidx].as_ref();
                             step.filter_bytes(parent_text).map(|iter| {

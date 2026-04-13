@@ -76,7 +76,7 @@ Each node caches a reference to a lazily-initialized transform step. The root ap
 
 Two Aho-Corasick engines are built from **all** deduplicated patterns:
 
-- **Bytewise engine**: operates on raw bytes. With the `dfa` feature, uses a DFA with Teddy SIMD prefilter for maximum ASCII throughput. Falls back to a double-array automaton (DAAC) without `dfa`.
+- **Bytewise engine**: operates on raw bytes. With the `dfa` feature, uses a `dfa::DFA` accessed via the `Automaton` trait. When the DFA has a Teddy SIMD prefilter (<~100 patterns), the prefilter is exploited by materializing text first and using a stateful `try_find_overlapping` loop; otherwise, a custom `next_state` byte loop eliminates iterator overhead and runs directly over the transform stream without materialization. Falls back to DAAC without `dfa`.
 - **Charwise engine**: operates on Unicode codepoints. CJK characters are 3 UTF-8 bytes — charwise does 1 state transition instead of 3, making it ~1.6–1.9× faster on CJK-heavy text.
 
 Both engines are correct for any input. Engine selection is a pure speed optimization decided at runtime per text based on character density (codepoints / bytes, via `bytecount::num_chars`).
@@ -207,15 +207,18 @@ Falls back to the indirect table for multi-entry patterns, matrix-mode rules, or
 
 **Problem:** The normal path materializes a transformed `String`, then scans it — allocating memory and traversing the text twice.
 
-**Solution:** For streaming-friendly transforms (Delete, Normalize, VariantNorm, Romanize), an iterator adapter feeds transformed bytes directly to the DAAC automaton's `find_overlapping_iter_from_iter`. This eliminates the intermediate allocation and the second traversal.
+**Solution:** For streaming-friendly transforms (Delete, Normalize, VariantNorm, Romanize), an iterator adapter feeds transformed bytes directly into the scan loop. This eliminates the intermediate allocation and the second traversal.
 
-A 3-way dispatch selects the strategy:
+A 4-way dispatch selects the strategy:
 
 | Condition | Strategy | Rationale |
 |---|---|---|
-| DFA available + char_density ≥ 0.55 | Materialize → DFA scan | DFA's Teddy prefilter outweighs the allocation cost |
+| DFA + char_density ≥ 0.55 + has Teddy prefilter | Materialize → DFA `try_find_overlapping` loop | Teddy skips non-matching regions — needs the full buffer |
+| DFA + char_density ≥ 0.55 + no Teddy prefilter | Stream → DFA `next_state` loop | No prefilter to lose; custom loop eliminates iterator overhead and avoids materialization |
 | No DFA + char_density ≥ 0.55 | Stream → DAAC bytewise | Best available without DFA |
 | char_density < 0.55 | Stream → DAAC charwise | Charwise wins on CJK; streaming avoids allocation |
+
+Teddy is active when the pattern count is below ~100. With `next_state`, the loop checks `is_special(sid)` (fires only for dead/match states) and falls through on most bytes with zero branching overhead.
 
 *Source: `simple_matcher/search.rs`, `process/step.rs`*
 
