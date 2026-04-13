@@ -35,7 +35,7 @@
 /// - Each `get_unchecked` reads a continuation byte at a known offset (1, 2, or
 ///   3 past the lead byte). The lead byte's high bits determine how many
 ///   continuation bytes exist, and valid UTF-8 guarantees they are present.
-#[inline(always)]
+#[inline]
 pub(crate) unsafe fn decode_utf8_raw(bytes: &[u8], offset: usize) -> (u32, usize) {
     // SAFETY: Caller guarantees `offset` points at a valid UTF-8 lead byte within
     // `bytes`.

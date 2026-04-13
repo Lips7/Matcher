@@ -53,7 +53,7 @@ pub(super) struct StrReplaceFindIter<'a, const CHECK_ASCII: bool> {
 impl<'a, const CHECK_ASCII: bool> Iterator for StrReplaceFindIter<'a, CHECK_ASCII> {
     type Item = (usize, usize, &'a str);
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
         let len = bytes.len();

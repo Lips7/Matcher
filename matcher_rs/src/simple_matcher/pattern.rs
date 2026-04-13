@@ -70,7 +70,7 @@ const RULE_IDX_MASK: u32 = (1 << OFFSET_SHIFT) - 1; // 19 bits, max 524287
 /// - `process_type_index` must be < 8
 /// - `offset` must be < 64
 /// - `rule_idx` must be < 524288
-#[inline(always)]
+#[inline]
 pub(super) fn encode_direct(
     process_type_index: u8,
     boundary: u8,
@@ -256,7 +256,7 @@ impl PatternIndex {
     ///
     /// When true and the transform tree has no children, `is_match` can
     /// delegate directly to the AC automaton — each hit is a completed rule.
-    #[inline(always)]
+    #[inline]
     pub(super) fn all_single_and(&self, rule_info: &[RuleInfo]) -> bool {
         self.ranges.iter().all(|&(_, len)| len == 1)
             && self.entries.iter().all(|e| {

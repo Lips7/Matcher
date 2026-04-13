@@ -255,7 +255,7 @@ impl SimpleMatcher {
     /// Called only for non-noop leaves with a non-zero
     /// `process_type_index_mask`. Returns `true` when the caller should
     /// stop scanning.
-    #[inline(always)]
+    #[inline]
     fn scan_leaf_child(
         &self,
         step: &'static TransformStep,

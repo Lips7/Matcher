@@ -121,7 +121,7 @@ pub fn text_process<'a>(process_type: ProcessType, text: &'a str) -> Cow<'a, str
 /// // Last entry is the fully transformed result.
 /// assert_eq!(variants.last().unwrap(), "测a");
 /// ```
-#[inline(always)]
+#[inline]
 pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     reduce_text_process_inner(process_type, text, false)
 }
@@ -152,7 +152,7 @@ pub fn reduce_text_process<'a>(process_type: ProcessType, text: &'a str) -> Vec<
 /// assert_eq!(variants[0], "~测~Ａ~"); // after VariantNorm (replace, overwrites original)
 /// assert_eq!(variants[1], "测a"); // after Delete+Normalize
 /// ```
-#[inline(always)]
+#[inline]
 pub fn reduce_text_process_emit<'a>(process_type: ProcessType, text: &'a str) -> Vec<Cow<'a, str>> {
     reduce_text_process_inner(process_type, text, true)
 }

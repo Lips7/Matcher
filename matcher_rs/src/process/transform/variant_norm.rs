@@ -59,7 +59,7 @@ struct VariantNormFindIter<'a> {
 impl<'a> Iterator for VariantNormFindIter<'a> {
     type Item = (usize, usize, char);
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let bytes = self.text.as_bytes();
         let len = bytes.len();

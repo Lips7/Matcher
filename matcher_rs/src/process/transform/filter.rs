@@ -80,7 +80,7 @@ impl<'a, F> FilterIterator<'a, F> {
 impl<'a, F: CodepointFilter<'a>> Iterator for FilterIterator<'a, F> {
     type Item = u8;
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<u8> {
         // Fast path 1: drain borrowed replacement slice.
         if let Some((&byte, rest)) = self.remaining.split_first() {
