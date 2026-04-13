@@ -2,6 +2,15 @@
 # /// script
 # requires-python = ">=3.10"
 # ///
+"""Compare two benchmark runs and print regressions and improvements.
+
+Inputs can be a run directory, an aggregate.json file, or a raw benchmark .txt file.
+
+Usage:
+    uv run scripts/compare_benchmarks.py <baseline> <candidate>
+    uv run scripts/compare_benchmarks.py <baseline> <candidate> --min-change-pct 5
+    uv run scripts/compare_benchmarks.py <baseline> <candidate> --show-noisy --show-missing
+"""
 
 from __future__ import annotations
 

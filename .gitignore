@@ -45,7 +45,8 @@ matcher_java/.classpath
 matcher_java/.project
 
 # Local benchmark run sets
-matcher_rs/bench_records/*/
+scripts/bench_records/
+scripts/profile_records/
 
 # AI
 .claude/

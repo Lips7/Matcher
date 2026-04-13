@@ -9,9 +9,9 @@ Reads CSV from characterize_engines and generates an interactive HTML dashboard
 with heatmaps showing engine throughput across the dispatch matrix.
 
 Usage:
-    python3 visualize_dispatch.py dispatch.csv
-    python3 visualize_dispatch.py dispatch.csv --open
-    python3 visualize_dispatch.py dispatch.csv -o custom_output.html
+    uv run scripts/visualize_dispatch.py dispatch.csv
+    uv run scripts/visualize_dispatch.py dispatch.csv --open
+    uv run scripts/visualize_dispatch.py dispatch.csv -o custom_output.html
 """
 from __future__ import annotations
 

@@ -42,9 +42,9 @@ repos:
 
       - id: ty-check-scripts
         name: ty check scripts
-        entry: bash -c 'cd matcher_rs/scripts && uv run ty check'
+        entry: bash -c 'cd scripts && uv run ty check'
         language: system
-        files: ^matcher_rs/scripts/.*\.py$
+        files: ^scripts/.*\.py$
         pass_filenames: false
 
       # Java: checkstyle

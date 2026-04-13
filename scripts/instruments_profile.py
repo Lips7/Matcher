@@ -10,15 +10,15 @@ that samply misses.
 
 Usage:
     # Record + analyze in one shot (default 10s):
-    uv run matcher_rs/scripts/instruments_profile.py record --analyze \
+    uv run scripts/instruments_profile.py record --analyze \
         --mode process --shape literal --dict en --rules 10000
 
     # Just record (opens in Instruments.app afterwards):
-    uv run matcher_rs/scripts/instruments_profile.py record \
+    uv run scripts/instruments_profile.py record \
         --mode is_match --dict cn --rules 500 --open
 
     # Analyze an existing .trace bundle:
-    uv run matcher_rs/scripts/instruments_profile.py analyze /tmp/prof_*.trace
+    uv run scripts/instruments_profile.py analyze scripts/profile_records/prof_*.trace
 
 Requires: Xcode (xctrace), cargo, rustfilt (`cargo install rustfilt`)
 """
@@ -34,7 +34,8 @@ from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PROFILE_RECORDS_DIR = REPO_ROOT / "scripts" / "profile_records"
 PROFILE_BINARIES = ("profile_search", "profile_build")
 
 
@@ -114,7 +115,8 @@ def record_profile(
     if target == "build":
         # profile_build: --dict, --rules, --pt, --seconds
         if output is None:
-            output = Path(f"/tmp/prof_build_{dict_lang}_{rules}.trace")
+            PROFILE_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+            output = PROFILE_RECORDS_DIR / f"prof_build_{dict_lang}_{rules}.trace"
         binary_args += [
             "--dict",
             dict_lang,
@@ -130,12 +132,14 @@ def record_profile(
         )
     elif scene:
         if output is None:
-            output = Path(f"/tmp/prof_{scene}.trace")
+            PROFILE_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+            output = PROFILE_RECORDS_DIR / f"prof_{scene}.trace"
         binary_args += ["--scene", scene, "--seconds", str(seconds)]
         print(f"Recording: scene={scene} seconds={seconds}s")
     else:
         if output is None:
-            output = Path(f"/tmp/prof_{mode}_{shape}_{dict_lang}_{rules}.trace")
+            PROFILE_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+            output = PROFILE_RECORDS_DIR / f"prof_{mode}_{shape}_{dict_lang}_{rules}.trace"
         binary_args += [
             "--dict",
             dict_lang,

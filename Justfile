@@ -2,8 +2,8 @@
 #
 # Workspace: matcher_rs (core), matcher_py (Python), matcher_java (Java), matcher_c (C)
 # Toolchain: nightly Rust, divan (bench harness), cargo-nextest (test runner)
-# Bench scripts: matcher_rs/scripts/ (Python, run via uv)
-# Bench records: matcher_rs/bench_records/ (timestamped dirs with aggregate.json)
+# Bench scripts: scripts/ (Python, run via uv)
+# Bench records: scripts/bench_records/ (timestamped dirs with aggregate.json)
 
 ext := if os() == "macos" { "dylib" } else if os() == "linux" { "so" } else { "dll" }
 
@@ -72,7 +72,7 @@ lint-c:
     cargo fmt --all
     cargo clippy -- -D warnings
 
-[working-directory: 'matcher_rs/scripts']
+[working-directory: 'scripts']
 lint-scripts:
     uv run ty check
 
@@ -111,8 +111,8 @@ test-c:
     ./matcher_c/tests/test_matcher
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
-# Harness: divan. Orchestration: matcher_rs/scripts/run_benchmarks.py.
-# Output: timestamped dirs under matcher_rs/bench_records/.
+# Harness: divan. Orchestration: scripts/run_benchmarks.py.
+# Output: timestamped dirs under scripts/bench_records/.
 #
 # Bench targets (3 binaries):
 #   bench_search    — search throughput (scaling, rule shapes, text length, hit/miss)
@@ -125,7 +125,7 @@ test-c:
 #   --repeats N         recorded runs (default: 3)
 #   --profile <name>    cargo profile (default: bench)
 
-_bench_script := "matcher_rs/scripts/run_benchmarks.py"
+_bench_script := "scripts/run_benchmarks.py"
 
 # Search preset: bench_search + bench_transform.
 bench-search *args:
@@ -141,11 +141,11 @@ bench-all *args:
 
 # Compare two benchmark runs. Inputs: run dirs, aggregate.json, or raw .txt files.
 bench-compare baseline candidate *args:
-    uv run matcher_rs/scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
+    uv run scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
 
 # Interactive HTML dashboard from benchmark results (single run or comparison).
 bench-viz *args:
-    uv run matcher_rs/scripts/visualize_benchmarks.py {{args}}
+    uv run scripts/visualize_benchmarks.py {{args}}
 
 # Rebuild std with -C target-cpu=native for authoritative measurements.
 # Use before final adopt/revert bench-compare runs. Adds ~30s compile time.
@@ -168,17 +168,17 @@ characterize-engines-quick:
 
 # Visualize dispatch CSV as interactive Plotly heatmaps.
 characterize-viz *args:
-    uv run matcher_rs/scripts/visualize_dispatch.py {{args}}
+    uv run scripts/visualize_dispatch.py {{args}}
 
 # ── Profiling ─────────────────────────────────────────────────────────────────
 # macOS only (Xcode Instruments Time Profiler). Targets: profile_search, profile_build.
 # Subcommands: record, analyze, open.
 #   just profile record --scene en-search --analyze
 #   just profile record --target build --dict en --rules 50000 --analyze
-#   just profile analyze /tmp/prof_*.trace
+#   just profile analyze scripts/profile_records/prof_*.trace
 
 profile *args:
-    uv run matcher_rs/scripts/instruments_profile.py {{args}}
+    uv run scripts/instruments_profile.py {{args}}
 
 # ── Fuzz ──────────────────────────────────────────────────────────────────────
 

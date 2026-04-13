@@ -2,7 +2,6 @@ Date: 2026-04-08
 Branch: master
 Hardware: Apple M3 Max
 Platform: macOS-26.4-arm64-arm-64bit
-Python: 3.12.13
 
 bench_build                             fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ╰─ build                                              │               │               │               │         │

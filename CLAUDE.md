@@ -35,7 +35,7 @@ just test-c                         # C bindings
 just lint                           # All languages + workspace clippy + doc build
 just lint-check                     # Check-only (no auto-fix) — used in CI
 
-# Benchmarks (harness: divan, orchestration: matcher_rs/scripts/run_benchmarks.py)
+# Benchmarks (harness: divan, orchestration: scripts/run_benchmarks.py)
 # Bench targets: bench_search (throughput), bench_transform (transforms), bench_build (construction)
 # Pass-through args: --quick, --filter <pattern>, --repeats N, --profile <name>
 just bench-search                   # Search + transform presets (full run)
@@ -54,7 +54,7 @@ just bench-viz <baseline_dir> <candidate_dir>          # Comparison visualizatio
 just profile record --scene en-search --analyze        # Record + auto-analyze
 just profile record --scene all --seconds 5            # All scenes, 5s each
 just profile record --target build --dict cn --rules 50000 --analyze
-just profile analyze /tmp/prof_*.trace                 # Analyze existing trace
+just profile analyze scripts/profile_records/prof_*.trace   # Analyze existing trace
 
 # Coverage
 just coverage                       # cargo tarpaulin → cobertura.xml

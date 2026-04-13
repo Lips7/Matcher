@@ -2,6 +2,17 @@
 # /// script
 # requires-python = ">=3.10"
 # ///
+"""Run matcher_rs benchmarks and aggregate results into timestamped run sets.
+
+Usage:
+    uv run scripts/run_benchmarks.py                          # search preset (default)
+    uv run scripts/run_benchmarks.py --preset build           # construction benchmarks
+    uv run scripts/run_benchmarks.py --preset all             # all presets
+    uv run scripts/run_benchmarks.py --quick                  # fast iteration (5 samples, 1 repeat)
+    uv run scripts/run_benchmarks.py --filter scaling         # narrow to a divan module
+    uv run scripts/run_benchmarks.py --filter "scaling::process_cn"
+    uv run scripts/run_benchmarks.py --repeats 5 --profile bench-dev
+"""
 
 from __future__ import annotations
 
@@ -23,8 +34,8 @@ from bench_utils import (
     write_aggregate_json,
 )
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-BENCH_RECORDS_DIR = REPO_ROOT / "matcher_rs" / "bench_records"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+BENCH_RECORDS_DIR = REPO_ROOT / "scripts" / "bench_records"
 
 
 def run_command(command: list[str], capture_output: bool = False) -> subprocess.CompletedProcess[str]:
@@ -113,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         type=pathlib.Path,
         default=BENCH_RECORDS_DIR,
-        help="Directory that will receive the benchmark run set. Default: matcher_rs/bench_records.",
+        help="Directory that will receive the benchmark run set. Default: scripts/bench_records.",
     )
     parser.add_argument(
         "--filter",

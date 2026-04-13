@@ -7,6 +7,12 @@
 #   "requests",
 # ]
 # ///
+"""Generate matcher_rs/process_map/*.txt from OpenCC, Unihan, and pypinyin.
+
+Usage:
+    uv run scripts/generate_process_map.py           # regenerate all map files
+    uv run scripts/generate_process_map.py --check   # verify output matches checked-in files
+"""
 
 from __future__ import annotations
 
@@ -197,7 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(__file__).resolve().parents[2],
+        default=Path(__file__).resolve().parents[1],
         help="Repository root. Defaults to the current script's repo root.",
     )
     parser.add_argument(

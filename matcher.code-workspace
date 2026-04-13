@@ -5,8 +5,8 @@
             "name": "matcher_py"
         },
         {
-            "path": "matcher_rs/scripts",
-            "name": "matcher_rs/scripts"
+            "path": "scripts",
+            "name": "scripts"
         },
         {
             "path": ".",

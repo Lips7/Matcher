@@ -15,9 +15,9 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "python": "${workspaceFolder}/matcher_rs/scripts/.venv/bin/python",
+            "python": "${workspaceFolder}/scripts/.venv/bin/python",
             "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/matcher_rs/scripts"
+            "cwd": "${workspaceFolder}/scripts"
         },
         {
             "name": "Python: pytest (matcher_py)",
