@@ -33,7 +33,8 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dfa")]
 use aho_corasick::{
-    MatchKind as AcMatchKind,
+    Anchored, Input, MatchKind as AcMatchKind,
+    automaton::{Automaton as _, OverlappingState},
     dfa::{Builder as AcDfaBuilder, DFA as AcDfa},
 };
 use daachorse::{
@@ -101,32 +102,161 @@ trait ScanEngine {
     fn heap_bytes(&self) -> usize;
 }
 
-// ── Bytewise engine ─────────────────────────────────────────────────────
+// ── Bytewise DFA engine ─────────────────────────────────────────────────
 
-/// Bytewise scan engine. DAAC bytewise is always built (supports streaming).
-/// DFA is built alongside it when the `dfa` feature is enabled (1.7–3.3× faster
-/// for non-streaming scan).
+/// DFA component of the bytewise scan engine.
+///
+/// Owns the `aho-corasick` DFA and its value map. Accessed via the low-level
+/// `Automaton` API (`next_state`, `is_special`, `is_match`, etc.) for maximum
+/// throughput. All DFA logic lives here; `BytewiseMatcher` delegates to it.
+#[cfg(feature = "dfa")]
 #[derive(Clone)]
-struct BytewiseMatcher {
-    /// DAAC bytewise automaton. Always built — needed for prefilter-present
-    /// streaming paths.
-    daac: BytewiseDAACEngine<u32>,
-    /// Aho-Corasick DFA. 1.7–3.3× faster than DAAC for non-streaming scan.
-    /// Using `dfa::DFA` directly (not `AhoCorasick`) to access the `Automaton`
-    /// trait's low-level `next_state` API.
-    #[cfg(feature = "dfa")]
+struct BytewiseDFAEngine {
     dfa: AcDfa,
     /// Maps DFA pattern index → raw match value (bridges `aho-corasick` pattern
     /// ids to our encoding).
-    #[cfg(feature = "dfa")]
     dfa_to_value: Vec<u32>,
-    /// Whether the DFA has a Teddy SIMD prefilter. When true,
-    /// `find_overlapping_iter` skips non-matching regions before
-    /// byte-at-a-time walking — the custom `next_state` loop cannot
-    /// replicate this, so materialized text paths should use the high-level
-    /// stateful iterator instead.
-    #[cfg(feature = "dfa")]
+    /// Whether the DFA has a Teddy SIMD prefilter. When true, Teddy can skip
+    /// non-matching regions — the custom `next_state` loop cannot replicate
+    /// this, so materialized text paths use `try_find_overlapping` instead.
     has_prefilter: bool,
+}
+
+#[cfg(feature = "dfa")]
+impl BytewiseDFAEngine {
+    fn is_match(&self, text: &str) -> bool {
+        self.dfa
+            .try_find(&Input::new(text))
+            .is_ok_and(|m| m.is_some())
+    }
+
+    /// Prefilter-aware overlapping scan over materialized text.
+    ///
+    /// With Teddy prefilter: drives `try_find_overlapping` (Teddy skips
+    /// non-matching regions). Without: custom `next_state` loop.
+    #[inline(always)]
+    fn for_each_match_value(
+        &self,
+        text: &str,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
+        if self.has_prefilter {
+            let input = Input::new(text);
+            let mut state = OverlappingState::start();
+            loop {
+                if self.dfa.try_find_overlapping(&input, &mut state).is_err() {
+                    break;
+                }
+                match state.get_match() {
+                    None => break,
+                    Some(m) => {
+                        let pid = m.pattern().as_usize();
+                        // SAFETY: `pid` is a pattern id from the DFA; bounded by construction.
+                        unsafe { core::hint::assert_unchecked(pid < self.dfa_to_value.len()) };
+                        let value = self.dfa_to_value[pid];
+                        if on_value(value, m.start(), m.end()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        } else {
+            // No prefilter: is_special fires only for dead/match states (never
+            // start states), so the loop is both correct and branch-minimal.
+            self.scan(text.as_bytes(), on_value)
+        }
+    }
+
+    /// Custom `next_state` scan from a streaming byte iterator.
+    ///
+    /// Only called when `!has_prefilter` — the caller checks before delegating.
+    #[inline(always)]
+    fn scan_from_iter(
+        &self,
+        iter: impl Iterator<Item = u8>,
+        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+    ) -> bool {
+        let anchored = Anchored::No;
+        let mut sid = match self.dfa.start_state(anchored) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        for (pos, byte) in iter.enumerate() {
+            sid = self.dfa.next_state(anchored, sid, byte);
+            if self.dfa.is_special(sid) {
+                if self.dfa.is_dead(sid) {
+                    break;
+                }
+                if self.dfa.is_match(sid) {
+                    let end = pos + 1;
+                    for i in 0..self.dfa.match_len(sid) {
+                        let pid = self.dfa.match_pattern(sid, i);
+                        let start = end - self.dfa.pattern_len(pid);
+                        // SAFETY: pid is a DFA pattern id; bounded by construction.
+                        let value = unsafe { *self.dfa_to_value.get_unchecked(pid.as_usize()) };
+                        if on_value(value, start, end) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn heap_bytes(&self) -> usize {
+        self.dfa.memory_usage() + self.dfa_to_value.capacity() * size_of::<u32>()
+    }
+
+    /// Custom `next_state` scan over materialized bytes.
+    ///
+    /// In the DFA, match states encode all overlapping hits (failure-link
+    /// matches baked in during construction), so `0..match_len(sid)` yields
+    /// the complete overlapping set.
+    #[inline(always)]
+    fn scan(&self, text: &[u8], mut on_value: impl FnMut(u32, usize, usize) -> bool) -> bool {
+        let anchored = Anchored::No;
+        let mut sid = match self.dfa.start_state(anchored) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        for (pos, &byte) in text.iter().enumerate() {
+            sid = self.dfa.next_state(anchored, sid, byte);
+            if self.dfa.is_special(sid) {
+                if self.dfa.is_dead(sid) {
+                    break;
+                }
+                if self.dfa.is_match(sid) {
+                    let end = pos + 1;
+                    for i in 0..self.dfa.match_len(sid) {
+                        let pid = self.dfa.match_pattern(sid, i);
+                        let start = end - self.dfa.pattern_len(pid);
+                        // SAFETY: pid is a DFA pattern id; bounded by construction.
+                        let value = unsafe { *self.dfa_to_value.get_unchecked(pid.as_usize()) };
+                        if on_value(value, start, end) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+// ── Bytewise engine ─────────────────────────────────────────────────────
+
+/// Bytewise scan engine. DAAC bytewise is always built (supports streaming).
+/// With the `dfa` feature, a [`BytewiseDFAEngine`] is built alongside it
+/// (1.7–3.3× faster) and takes over all non-DAAC paths.
+#[derive(Clone)]
+struct BytewiseMatcher {
+    /// DAAC bytewise automaton. Always built — used for streaming when the DFA
+    /// has a Teddy prefilter (Teddy needs materialized text).
+    daac: BytewiseDAACEngine<u32>,
+    #[cfg(feature = "dfa")]
+    dfa_engine: BytewiseDFAEngine,
 }
 
 impl ScanEngine for BytewiseMatcher {
@@ -134,10 +264,7 @@ impl ScanEngine for BytewiseMatcher {
     fn is_match(&self, text: &str) -> bool {
         #[cfg(feature = "dfa")]
         {
-            use aho_corasick::{Input, automaton::Automaton as _};
-            self.dfa
-                .try_find(&Input::new(text))
-                .is_ok_and(|m| m.is_some())
+            self.dfa_engine.is_match(text)
         }
         #[cfg(not(feature = "dfa"))]
         {
@@ -149,46 +276,15 @@ impl ScanEngine for BytewiseMatcher {
     fn for_each_match_value(
         &self,
         text: &str,
-        mut on_value: impl FnMut(u32, usize, usize) -> bool,
+        on_value: impl FnMut(u32, usize, usize) -> bool,
     ) -> bool {
         #[cfg(feature = "dfa")]
         {
-            if self.has_prefilter {
-                // Teddy SIMD prefilter can skip non-matching regions before
-                // byte-at-a-time DFA walking. Use the stateful try_find_overlapping
-                // which applies the prefilter at start states automatically.
-                use aho_corasick::{
-                    Input,
-                    automaton::{Automaton as _, OverlappingState},
-                };
-                let input = Input::new(text);
-                let mut state = OverlappingState::start();
-                loop {
-                    if self.dfa.try_find_overlapping(&input, &mut state).is_err() {
-                        break;
-                    }
-                    match state.get_match() {
-                        None => break,
-                        Some(m) => {
-                            let pid = m.pattern().as_usize();
-                            // SAFETY: `pid` is a pattern id from the DFA; bounded by construction.
-                            unsafe { core::hint::assert_unchecked(pid < self.dfa_to_value.len()) };
-                            let value = self.dfa_to_value[pid];
-                            if on_value(value, m.start(), m.end()) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-                return false;
-            }
-            // No prefilter: custom next_state loop eliminates iterator overhead.
-            // Without prefilter, is_special fires only for dead/match states (never
-            // start states), so the loop is both correct and minimal.
-            Self::scan_with_dfa(&self.dfa, &self.dfa_to_value, text.as_bytes(), on_value)
+            self.dfa_engine.for_each_match_value(text, on_value)
         }
         #[cfg(not(feature = "dfa"))]
         {
+            let mut on_value = on_value;
             for hit in self.daac.find_overlapping_iter(text) {
                 if on_value(hit.value(), hit.start(), hit.end()) {
                     return true;
@@ -207,8 +303,8 @@ impl ScanEngine for BytewiseMatcher {
         // DFA + no prefilter: stream bytes through custom next_state loop,
         // avoiding materialization cost.
         #[cfg(feature = "dfa")]
-        if !self.has_prefilter {
-            return Self::scan_with_dfa_from_iter(&self.dfa, &self.dfa_to_value, iter, on_value);
+        if !self.dfa_engine.has_prefilter {
+            return self.dfa_engine.scan_from_iter(iter, on_value);
         }
         for hit in self.daac.find_overlapping_iter_from_iter(iter) {
             if on_value(hit.value(), hit.start(), hit.end()) {
@@ -222,96 +318,10 @@ impl ScanEngine for BytewiseMatcher {
         let daac = self.daac.heap_bytes();
         #[cfg(feature = "dfa")]
         {
-            use aho_corasick::automaton::Automaton as _;
-            daac + self.dfa.memory_usage() + self.dfa_to_value.capacity() * size_of::<u32>()
+            daac + self.dfa_engine.heap_bytes()
         }
         #[cfg(not(feature = "dfa"))]
         daac
-    }
-}
-
-impl BytewiseMatcher {
-    /// Custom DFA overlapping scan over materialized text via the low-level
-    /// `Automaton` API. Only called when no Teddy prefilter is present.
-    ///
-    /// In the DFA, match states encode all overlapping hits (including those
-    /// from failure links, baked in during construction), so iterating
-    /// `0..match_len(sid)` at each match state yields the complete set.
-    #[cfg(feature = "dfa")]
-    #[inline(always)]
-    fn scan_with_dfa(
-        dfa: &AcDfa,
-        dfa_to_value: &[u32],
-        text: &[u8],
-        mut on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool {
-        use aho_corasick::{Anchored, automaton::Automaton as _};
-        let anchored = Anchored::No;
-        let mut sid = match dfa.start_state(anchored) {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-        for (pos, &byte) in text.iter().enumerate() {
-            sid = dfa.next_state(anchored, sid, byte);
-            if dfa.is_special(sid) {
-                if dfa.is_dead(sid) {
-                    break;
-                }
-                if dfa.is_match(sid) {
-                    let end = pos + 1;
-                    for i in 0..dfa.match_len(sid) {
-                        let pid = dfa.match_pattern(sid, i);
-                        let start = end - dfa.pattern_len(pid);
-                        // SAFETY: pid is a DFA pattern id; bounded by construction.
-                        let value = unsafe { *dfa_to_value.get_unchecked(pid.as_usize()) };
-                        if on_value(value, start, end) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
-
-    /// Custom DFA overlapping scan from a streaming byte iterator via the
-    /// low-level `Automaton` API. Only called when no Teddy prefilter is
-    /// present, enabling the fused transform-scan path to use the DFA.
-    #[cfg(feature = "dfa")]
-    #[inline(always)]
-    fn scan_with_dfa_from_iter(
-        dfa: &AcDfa,
-        dfa_to_value: &[u32],
-        iter: impl Iterator<Item = u8>,
-        mut on_value: impl FnMut(u32, usize, usize) -> bool,
-    ) -> bool {
-        use aho_corasick::{Anchored, automaton::Automaton as _};
-        let anchored = Anchored::No;
-        let mut sid = match dfa.start_state(anchored) {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-        for (pos, byte) in iter.enumerate() {
-            sid = dfa.next_state(anchored, sid, byte);
-            if dfa.is_special(sid) {
-                if dfa.is_dead(sid) {
-                    break;
-                }
-                if dfa.is_match(sid) {
-                    let end = pos + 1;
-                    for i in 0..dfa.match_len(sid) {
-                        let pid = dfa.match_pattern(sid, i);
-                        let start = end - dfa.pattern_len(pid);
-                        // SAFETY: pid is a DFA pattern id; bounded by construction.
-                        let value = unsafe { *dfa_to_value.get_unchecked(pid.as_usize()) };
-                        if on_value(value, start, end) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
     }
 }
 
@@ -375,7 +385,7 @@ impl Engines {
     fn has_dfa_prefilter(&self) -> bool {
         #[cfg(feature = "dfa")]
         {
-            self.bytewise.has_prefilter
+            self.bytewise.dfa_engine.has_prefilter
         }
         #[cfg(not(feature = "dfa"))]
         {
@@ -567,7 +577,8 @@ fn compile_automata(
 /// Builds the bytewise engine from the full pattern set.
 ///
 /// Always builds DAAC bytewise (needed for streaming). With the `dfa` feature,
-/// also builds an `aho-corasick` DFA (1.7–3.3× faster for non-streaming scan).
+/// also builds a [`BytewiseDFAEngine`] (1.7–3.3× faster for non-streaming
+/// scan).
 fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatcher, MatcherError> {
     // Build DFA first (reads via iterator), then DAAC last (consumes the vec),
     // so we avoid cloning all_patvals.
@@ -578,11 +589,6 @@ fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatch
         .match_kind(AcMatchKind::Standard)
         .build(all_patvals.iter().map(|(p, _)| p))
         .map_err(MatcherError::automaton_build)?;
-    #[cfg(feature = "dfa")]
-    let has_prefilter = {
-        use aho_corasick::automaton::Automaton as _;
-        dfa.prefilter().is_some()
-    };
 
     let daac = BytewiseDAACBuilder::new()
         .match_kind(DAACMatchKind::Standard)
@@ -592,10 +598,10 @@ fn build_current_bytewise(all_patvals: Vec<(&str, u32)>) -> Result<BytewiseMatch
     Ok(BytewiseMatcher {
         daac,
         #[cfg(feature = "dfa")]
-        dfa,
-        #[cfg(feature = "dfa")]
-        dfa_to_value,
-        #[cfg(feature = "dfa")]
-        has_prefilter,
+        dfa_engine: BytewiseDFAEngine {
+            has_prefilter: dfa.prefilter().is_some(),
+            dfa,
+            dfa_to_value,
+        },
     })
 }
