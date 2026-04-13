@@ -38,6 +38,7 @@ use super::{
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,
 };
+use crate::process::ProcessType;
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -240,6 +241,34 @@ impl SimpleMatcher {
     /// fire once yet there are three potential collection sites (two early-out
     /// + one post-scan).
     ///
+    /// # Decision path per child node
+    ///
+    /// ```text
+    /// child node
+    /// │
+    /// ├─ build-time no-op? (is_noop_on_ascii_input && parent is ASCII)
+    /// │  └─ YES → folded into parent scan (fold_noop_children_masks) → SKIP
+    /// │
+    /// ├─ step.apply returns None (runtime no-op, text unchanged)
+    /// │  └─ scan parent text (1 scan — only scan for this PT)
+    /// │
+    /// └─ step.apply returns Some (text changed)
+    ///    │
+    ///    ├─ bijective transform (VariantNorm / Normalize / Romanize / …)
+    ///    │  └─ scan changed text (1 scan)
+    ///    │
+    ///    └─ Delete (non-bijective, patterns stored verbatim)
+    ///       │
+    ///       ├─ parent is NOT root (e.g. VariantNorm → Delete)
+    ///       │  └─ scan deleted text (1 scan; parent already scanned
+    ///       │     pre-Delete text as an intermediate node)
+    ///       │
+    ///       └─ parent IS root
+    ///          └─ scan deleted text + scan original text (2 scans;
+    ///             root has no mask, so original needs explicit scan
+    ///             for patterns containing deletable characters)
+    /// ```
+    ///
     /// # Panics
     ///
     /// Panics if a non-root node in the transform trie lacks a cached
@@ -339,6 +368,15 @@ impl SimpleMatcher {
                             continue;
                         }
 
+                        // Delete dual-scan: pre-check whether the text will
+                        // change. If it does, an extra scan of the original
+                        // (pre-Delete) text is needed after the fused/materialize
+                        // scan. Only applies to Delete as a direct root child;
+                        // non-root parents already carry the mask as intermediates.
+                        let need_original_scan = node_idx == 0
+                            && child.process_type_bit == ProcessType::Delete
+                            && step.would_change(texts[parent_aidx].as_ref());
+
                         // Fused transform-scan dispatch:
                         //
                         // - DFA + high density + Teddy prefilter: skip fused, fall through to
@@ -417,6 +455,20 @@ impl SimpleMatcher {
                             }
                         };
 
+                        // Delete dual-scan: scan original (pre-Delete) text for
+                        // patterns that contain deletable characters.
+                        if !stopped && need_original_scan {
+                            let orig_ctx = ScanContext {
+                                text_index: parent_vi,
+                                process_type_mask: child.pt_index_mask,
+                                num_variants,
+                                exit_early,
+                                char_density: parent_density,
+                            };
+                            stopped =
+                                self.scan_variant(texts[parent_aidx].as_ref(), orig_ctx, &mut ss);
+                        }
+
                         if stopped {
                             break 'walk;
                         }
@@ -454,6 +506,26 @@ impl SimpleMatcher {
                         stopped = self.scan_variant(texts[child_aidx].as_ref(), ctx, &mut ss);
                         if stopped {
                             break 'walk;
+                        }
+
+                        // Delete dual-scan (non-leaf): scan original text when
+                        // Delete changed it and parent is root.
+                        if node_idx == 0
+                            && child.process_type_bit == ProcessType::Delete
+                            && child_aidx != parent_aidx
+                        {
+                            let orig_ctx = ScanContext {
+                                text_index: parent_vi,
+                                process_type_mask: scan_mask,
+                                num_variants,
+                                exit_early,
+                                char_density: parent_density,
+                            };
+                            stopped =
+                                self.scan_variant(texts[parent_aidx].as_ref(), orig_ctx, &mut ss);
+                            if stopped {
+                                break 'walk;
+                            }
                         }
                     }
                 }

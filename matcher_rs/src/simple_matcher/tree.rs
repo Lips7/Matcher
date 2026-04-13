@@ -126,8 +126,6 @@ pub(crate) fn build_process_type_tree(
                 continue;
             }
 
-            let parent_idx = current_node_index;
-
             let found_child = current_node
                 .children
                 .iter()
@@ -146,17 +144,10 @@ pub(crate) fn build_process_type_tree(
                 };
                 process_type_tree.push(child);
                 let new_node_index = process_type_tree.len() - 1;
-                process_type_tree[parent_idx].children.push(new_node_index);
+                process_type_tree[current_node_index]
+                    .children
+                    .push(new_node_index);
                 current_node_index = new_node_index;
-            }
-
-            // Delete is non-bijective: patterns are stored verbatim (not
-            // delete-transformed), so the pre-Delete text must also be scanned
-            // when patterns contain deletable characters. Non-root parents
-            // already carry the mask as intermediate nodes; root is the only
-            // node that needs explicit propagation.
-            if process_type_bit == ProcessType::Delete && parent_idx == 0 {
-                process_type_tree[0].pt_index_mask |= pt_mask_bit;
             }
         }
     }
@@ -214,39 +205,20 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_propagates_mask_to_root() {
+    fn test_delete_root_mask_unchanged() {
+        // Delete under root: root does NOT carry the Delete mask.
+        // The dual-scan for Delete is handled in walk_and_scan, not the tree.
         let table = identity_index_table();
-
-        // Delete alone: root must also carry the mask bit so pre-Delete
-        // text is scanned.
         let set: HashSet<ProcessType> = [ProcessType::Delete].into_iter().collect();
         let tree = build_process_type_tree(&set, &table);
 
         let del_bit = 1u64 << table[ProcessType::Delete.bits() as usize];
-        assert_ne!(
+        assert_eq!(
             tree[0].pt_index_mask & del_bit,
             0,
-            "root must carry Delete mask for pre-Delete scan"
+            "root should NOT carry Delete mask"
         );
-        let del_idx = tree[0].children[0];
-        assert_ne!(
-            tree[del_idx].pt_index_mask & del_bit,
-            0,
-            "Delete node must carry its own mask"
-        );
-
-        // VariantNorm|Delete: Delete's parent is VariantNorm (not root),
-        // so root should NOT get the mask.
-        let set2: HashSet<ProcessType> = [ProcessType::VariantNorm | ProcessType::Delete]
-            .into_iter()
-            .collect();
-        let tree2 = build_process_type_tree(&set2, &table);
-        let vn_del_bit =
-            1u64 << table[(ProcessType::VariantNorm | ProcessType::Delete).bits() as usize];
-        assert_eq!(
-            tree2[0].pt_index_mask & vn_del_bit,
-            0,
-            "root should NOT get mask when Delete is not a direct child"
-        );
+        assert_eq!(tree[0].children.len(), 1);
+        assert_ne!(tree[tree[0].children[0]].pt_index_mask & del_bit, 0);
     }
 }

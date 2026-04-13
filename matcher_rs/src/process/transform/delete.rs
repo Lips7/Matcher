@@ -49,6 +49,43 @@ pub(crate) struct DeleteMatcher {
 }
 
 impl DeleteMatcher {
+    /// Returns `true` if `text` contains any deletable codepoint.
+    ///
+    /// Runs only the seek phase (SIMD-accelerated ASCII skip), never
+    /// allocates. Use as a cheap probe before deciding whether to scan
+    /// the delete-transformed text.
+    #[inline(always)]
+    pub(crate) fn has_deletable(&self, text: &str) -> bool {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut offset = 0usize;
+        loop {
+            if offset >= len {
+                return false;
+            }
+            // SAFETY: offset < len per guard above.
+            unsafe { core::hint::assert_unchecked(offset < len) };
+            let byte = bytes[offset];
+            if byte < 0x80 {
+                if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
+                    return true;
+                }
+                offset += 1;
+                offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
+            } else {
+                // SAFETY: `byte >= 0x80` in a valid UTF-8 `&str`; offset in bounds per guard.
+                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
+                let cp = cp as usize;
+                // SAFETY: Valid UTF-8 codepoints ≤ 0x10FFFF; bitset covers 0x0–0x10FFFF.
+                unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
+                if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
+                    return true;
+                }
+                offset += char_len;
+            }
+        }
+    }
+
     /// Removes every configured codepoint from `text`.
     ///
     /// Returns `Some((result, is_ascii))` where `result` is the text with all

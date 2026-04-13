@@ -94,6 +94,19 @@ impl TransformStep {
         )
     }
 
+    /// Returns `true` if this transform would modify `text`.
+    ///
+    /// Non-allocating probe. For Delete, runs the SIMD seek phase only.
+    /// Other transforms conservatively return `true`.
+    #[inline(always)]
+    pub(crate) fn would_change(&self, text: &str) -> bool {
+        match self {
+            Self::None => false,
+            Self::Delete(m) => m.has_deletable(text),
+            _ => true,
+        }
+    }
+
     /// Returns a streaming byte iterator for the fused transform-scan path.
     ///
     /// The iterator applies this step's codepoint-level transformation on the
