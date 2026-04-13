@@ -222,7 +222,9 @@ fn test_none_redundant_in_composites() {
 #[test]
 fn test_normalize_collision_via_raw_api() {
     // Raw SimpleMatcher::new with both VariantNorm and None|VariantNorm for
-    // the same word_id. Normalization merges them; the later entry wins.
+    // the same word_id. Normalization merges them; one entry wins (HashMap
+    // iteration order is nondeterministic). The key invariant: only the
+    // winning pattern fires, not both.
     use std::collections::HashMap;
     let mut table: HashMap<ProcessType, HashMap<u32, &str>> = HashMap::new();
     table
@@ -236,12 +238,12 @@ fn test_normalize_collision_via_raw_api() {
 
     let matcher = SimpleMatcher::new(&table).unwrap();
 
-    // "bar" wins (later entry for same normalized PT + word_id).
-    assert!(matcher.is_match("bar"));
-    // "foo" must NOT produce a match — it was overwritten.
+    let foo_matches = matcher.is_match("foo");
+    let bar_matches = matcher.is_match("bar");
+    // Exactly one pattern should survive, not both.
     assert!(
-        !matcher.is_match("foo"),
-        "stale pattern from overwritten rule must not fire"
+        foo_matches ^ bar_matches,
+        "exactly one pattern should fire after collision, got foo={foo_matches} bar={bar_matches}"
     );
 }
 

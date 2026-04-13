@@ -34,6 +34,7 @@ use super::{
     SimpleMatcher, SimpleResult,
     build::{BOUNDARY_LEFT, BOUNDARY_RIGHT},
     pattern::{DIRECT_RULE_BIT, PatternDispatch, decode_direct},
+    rule::RuleSet,
     scan::{CHARWISE_DENSITY_THRESHOLD, text_char_density},
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,
@@ -282,7 +283,7 @@ impl SimpleMatcher {
         collect: F,
     ) -> (bool, Option<R>)
     where
-        F: FnOnce(&'a super::rule::RuleSet, &ScanState<'_>) -> R,
+        F: FnOnce(&'a RuleSet, &ScanState<'_>) -> R,
     {
         let tree = &self.tree;
         let num_variants = tree.len();

@@ -97,7 +97,7 @@ pub(super) struct SimpleMatchState {
     /// Rule indices touched during the current scan generation.
     ///
     /// Cleared at the start of each scan in [`prepare`](Self::prepare). Used by
-    /// [`RuleSet::collect_matches`](super::rule::RuleSet::collect_matches) and
+    /// [`RuleSet::collect_matches`](RuleSet::collect_matches) and
     /// [`ScanState::has_match`] to iterate only
     /// over rules that received at least one pattern hit.
     pub(super) touched_indices: Vec<usize>,
@@ -340,7 +340,7 @@ pub(super) fn init_matrix(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{super::rule::Rule, *};
 
     fn make_ctx(num_variants: usize, exit_early: bool) -> ScanContext {
         ScanContext {
@@ -413,7 +413,7 @@ mod tests {
         let mut state = SimpleMatchState::new();
         state.prepare(1);
 
-        let rule = super::super::rule::Rule {
+        let rule = Rule {
             segment_counts: vec![2, 1, 0],
             word_id: 1,
             word: "a&a&b~c".to_owned(),

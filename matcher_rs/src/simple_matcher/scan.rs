@@ -46,7 +46,10 @@ use daachorse::{
     },
 };
 
-use super::pattern::{PatternEntry, PatternIndex};
+use super::{
+    pattern::{PatternEntry, PatternIndex},
+    rule::RuleInfo,
+};
 use crate::MatcherError;
 
 /// Character density threshold for switching from bytewise to charwise engine.
@@ -441,7 +444,7 @@ impl ScanPlan {
     pub(super) fn compile(
         dedup_patterns: &[Cow<'_, str>],
         dedup_entries: Vec<Vec<PatternEntry>>,
-        rule_info: &[super::rule::RuleInfo],
+        rule_info: &[RuleInfo],
     ) -> Result<Self, MatcherError> {
         debug_assert!(
             !dedup_patterns.is_empty(),
