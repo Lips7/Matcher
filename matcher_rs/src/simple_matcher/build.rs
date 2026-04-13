@@ -126,15 +126,26 @@ impl SimpleMatcher {
             }
         }
 
-        let pt_index_table =
-            Self::build_pt_index_table(process_type_word_map.keys().map(|pt| pt.normalize()));
+        // Merge buckets that collide after normalization (e.g. VariantNorm
+        // and None|VariantNorm both normalize to VariantNorm). Later entries
+        // for the same (pt, word_id) overwrite earlier ones.
+        let mut normalized_process_type_word_map: HashMap<ProcessType, HashMap<u32, &I>> =
+            HashMap::new();
+        for (&pt, words) in process_type_word_map {
+            let bucket = normalized_process_type_word_map
+                .entry(pt.normalize())
+                .or_default();
+            for (&id, word) in words {
+                bucket.insert(id, word);
+            }
+        }
 
-        let process_type_set: HashSet<ProcessType> = process_type_word_map
-            .keys()
-            .map(|pt| pt.normalize())
-            .collect();
+        let process_type_set: HashSet<ProcessType> =
+            normalized_process_type_word_map.keys().copied().collect();
 
-        let parsed = Self::parse_rules(process_type_word_map, &pt_index_table);
+        let pt_index_table = Self::build_pt_index_table(&process_type_set);
+
+        let parsed = Self::parse_rules(&normalized_process_type_word_map, &pt_index_table);
 
         if parsed.dedup_patterns.is_empty() {
             return Err(MatcherError::EmptyPatterns);
@@ -169,7 +180,7 @@ impl SimpleMatcher {
     /// to build the `process_type_mask` bitmask in
     /// [`ScanContext`](super::state::ScanContext).
     fn build_pt_index_table(
-        process_type_keys: impl Iterator<Item = ProcessType>,
+        process_type_set: &HashSet<ProcessType>,
     ) -> [u8; PROCESS_TYPE_TABLE_SIZE] {
         let mut pt_index_table = [u8::MAX; PROCESS_TYPE_TABLE_SIZE];
         let mut next_pt_idx: u8 = 0;
@@ -177,7 +188,7 @@ impl SimpleMatcher {
         pt_index_table[ProcessType::None.bits() as usize] = next_pt_idx;
         next_pt_idx += 1;
 
-        for pt in process_type_keys {
+        for &pt in process_type_set {
             let bits = pt.bits() as usize;
             if bits < PROCESS_TYPE_TABLE_SIZE && pt_index_table[bits] == u8::MAX {
                 pt_index_table[bits] = next_pt_idx;
@@ -243,7 +254,6 @@ impl SimpleMatcher {
         let mut and_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
         let mut not_splits: FoldHashMap<&str, i32> = FoldHashMap::new();
         for (&process_type, simple_word_map) in process_type_word_map {
-            let process_type = process_type.normalize();
             let word_process_type = process_type - ProcessType::Delete;
 
             for (&simple_word_id, simple_word) in simple_word_map {
@@ -436,17 +446,18 @@ mod tests {
     #[test]
     fn test_pt_index_table() {
         // None always gets index 0, even when not in the key set
-        let keys = vec![ProcessType::VariantNorm, ProcessType::Delete];
-        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
+        let keys: HashSet<ProcessType> = [ProcessType::VariantNorm, ProcessType::Delete].into();
+        let table = SimpleMatcher::build_pt_index_table(&keys);
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
 
         // Multiple PTs get sequential indices; unused entries are u8::MAX
-        let keys = vec![
+        let keys: HashSet<ProcessType> = [
             ProcessType::None,
             ProcessType::VariantNorm,
             ProcessType::Delete,
-        ];
-        let table = SimpleMatcher::build_pt_index_table(keys.into_iter());
+        ]
+        .into();
+        let table = SimpleMatcher::build_pt_index_table(&keys);
         assert_eq!(table[ProcessType::None.bits() as usize], 0);
         let fj = table[ProcessType::VariantNorm.bits() as usize];
         let del = table[ProcessType::Delete.bits() as usize];
@@ -467,7 +478,7 @@ mod tests {
     #[test]
     fn test_parse_rules_simple() {
         let table = single_rule_table(ProcessType::None, 1, "hello");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
         let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
 
         assert_eq!(parsed.dedup_patterns.len(), 1);
@@ -481,7 +492,7 @@ mod tests {
     fn test_parse_rules_operators() {
         // AND operator: "a&b" → 2 patterns, both kind=And
         let table = single_rule_table(ProcessType::None, 1, "a&b");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
         let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let kinds: Vec<_> = parsed
@@ -494,7 +505,7 @@ mod tests {
 
         // NOT operator: "a~b" → 2 patterns, 1 And + 1 Not
         let table = single_rule_table(ProcessType::None, 1, "a~b");
-        let pt_index_table = SimpleMatcher::build_pt_index_table(table.keys().copied());
+        let pt_index_table = SimpleMatcher::build_pt_index_table(&table.keys().copied().collect());
         let parsed = SimpleMatcher::parse_rules(&table, &pt_index_table);
         assert_eq!(parsed.dedup_patterns.len(), 2);
         let all_entries: Vec<_> = parsed
