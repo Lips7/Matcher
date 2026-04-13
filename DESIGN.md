@@ -14,6 +14,76 @@ How `matcher_rs` works, explained through a concrete example. The library is a t
 
 ---
 
+## Call Graph
+
+### Construction
+
+```
+SimpleMatcher::new()                                        [build.rs]
+├── build_process_type_index_table()                        [build.rs]
+├── parse_rules()                                           [build.rs]
+│   ├── count_segment (closure)                             [build.rs]
+│   ├── parse_boundary_markers()                            [build.rs]
+│   ├── determine_satisfaction_method()                     [build.rs]
+│   └── reduce_text_process_emit()                          [process/mod.rs]
+│       └── get_transform_step()                            [process/step.rs]
+│           └── build_transform_step()                      [process/step.rs]
+│               ├── VariantNormMatcher::new()                [transform/variant_norm.rs]
+│               ├── DeleteMatcher::new()                     [transform/delete.rs]
+│               ├── NormalizeMatcher::new()                  [transform/normalize.rs]
+│               └── RomanizeMatcher::new()                   [transform/romanize.rs]
+├── build_process_type_tree()                               [tree.rs]
+│   └── get_transform_step()                                [process/step.rs]
+└── ScanPlan::compile()                                     [scan.rs]
+    ├── PatternIndex::new()                                 [pattern.rs]
+    ├── PatternIndex::build_value_map()                     [pattern.rs]
+    │   └── encode_direct()                                 [pattern.rs]
+    └── compile_automata()                                  [scan.rs]
+        ├── build_current_bytewise()                        [scan.rs]
+        └── CharwiseDAACBuilder::build_with_values()
+```
+
+### Query (Hot Path)
+
+```
+is_match() / process() / for_each_match() / find_match()   [mod.rs]
+│
+├─ FAST PATH (simple literals, no transforms):
+│  └── ScanPlan::is_match()                                 [scan.rs]
+│      └── dispatch! → Bytewise/Charwise::is_match()
+│
+└─ GENERAL PATH:
+   └── walk_and_scan_with()                                 [search.rs]
+       ├── text_char_density()                              [scan.rs, SIMD]
+       ├── fold_noop_children_masks()                       [search.rs, recursive]
+       ├── scan_variant()                                   [search.rs]
+       │   └── ScanPlan::for_each_match_value()             [scan.rs]
+       │       └── dispatch! → Bytewise/Charwise engine
+       │           ├── BytewiseDFAEngine::scan()            [next_state loop]
+       │           └── DAAC find_overlapping_iter
+       │       └── process_match() ← per hit                [search.rs]
+       │           ├── decode_direct()                      [pattern.rs]
+       │           ├── check_word_boundary()                [search.rs]
+       │           └── RuleSet::eval_hit()                  [rule.rs]
+       │               └── init_matrix()                    [state.rs, #[cold]]
+       │
+       ├── scan_leaf_child()                                [search.rs]
+       │   ├── Delete dual-scan → scan_variant() × 2
+       │   ├── Fused streaming  → filter_bytes() → for_each_match_value_from_iter()
+       │   └── Materialize      → step.apply()  → scan_variant()
+       │
+       └── [non-leaf nodes]
+           ├── step.apply()                                 [process/step.rs]
+           ├── fold_noop_children_masks()
+           └── scan_variant()
+
+Result collection (post-walk):
+├── RuleSet::collect_matches()                              [rule.rs]
+└── RuleSet::for_each_satisfied()                           [rule.rs, zero-alloc]
+```
+
+---
+
 ## Running Example
 
 Three rules, each using a different text transformation:

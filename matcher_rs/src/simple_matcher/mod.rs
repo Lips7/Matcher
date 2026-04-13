@@ -5,6 +5,27 @@
 //! accepted by [`SimpleMatcher::new`] for advanced use cases (e.g.
 //! deserialization from JSON).
 //!
+//! # Public API Call Graph
+//!
+//! ```text
+//! is_match(text)
+//! ├─ fast path: ScanPlan::is_match()          ← no transforms, simple literals
+//! └─ general:   walk_and_scan()               ← full trie walk
+//!
+//! process(text) / process_into(text, buf)
+//! └─ walk_and_scan()
+//!    └─ RuleSet::collect_matches()            ← appends to Vec
+//!
+//! for_each_match(text, callback)
+//! └─ walk_and_scan_with(collect = callback)
+//!    └─ RuleSet::for_each_satisfied()         ← zero-allocation
+//!
+//! find_match(text)
+//! └─ for_each_match(text, |r| first = Some(r))
+//!
+//! batch_*: maybe_par_iter! wrapping the above
+//! ```
+//!
 //! # Module Layout
 //!
 //! The implementation is split across private child modules:
@@ -15,7 +36,8 @@
 //! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
 //! - `rule` — Rule metadata (`Rule`/`RuleSet`) and state machine.
 //! - `search` — Hot-path scan loops and rule evaluation.
-//! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`).
+//! - `state` — Thread-local scan state (`SimpleMatchState`, `ScanContext`,
+//!   `WalkConfig`).
 //! - `tree` — Process-type trie construction for transform prefix sharing.
 
 use std::{borrow::Cow, fmt};

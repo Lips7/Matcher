@@ -21,6 +21,29 @@
 //! the walk stops on the first satisfied rule (`is_match`) or exhausts all
 //! variants (`process`).
 //!
+//! ```text
+//! walk_and_scan_with(text, exit_early, collect)
+//! │
+//! ├── text_char_density()                    SIMD density for engine dispatch
+//! ├── fold_noop_children_masks()             merge ASCII no-op masks into parent
+//! ├── scan_variant(text, ctx)                scan one variant
+//! │   └── ScanPlan::for_each_match_value()   density-based engine dispatch
+//! │       └── process_match(value)           per-hit: decode + boundary + eval
+//! │           ├── decode_direct()            bit-unpack direct-encoded value
+//! │           ├── check_word_boundary()      \b LUT check
+//! │           └── RuleSet::eval_hit()        rule state machine
+//! │
+//! ├── scan_leaf_child(step, parent, mask, walk, ...)
+//! │   ├── Delete dual-scan   → scan_variant() × 2 (deleted + original)
+//! │   ├── Fused streaming    → filter_bytes() → for_each_match_value_from_iter()
+//! │   └── Materialize path   → step.apply()  → scan_variant()
+//! │
+//! └── [non-leaf nodes]
+//!     ├── step.apply()                       materialize for children
+//!     ├── fold_noop_children_masks()         merge child no-ops
+//!     └── scan_variant()                     scan if terminating
+//! ```
+//!
 //! # Safety
 //!
 //! All functions in this module obtain `&mut SimpleMatchState` from

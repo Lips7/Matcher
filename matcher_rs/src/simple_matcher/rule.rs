@@ -187,9 +187,30 @@ pub(super) struct RuleInfo {
 /// All metadata for the compiled rule set.
 ///
 /// `rules` is a `Vec` indexed by rule index. `segment_counts` is read on the
-/// `#[cold]` matrix-init path; `word_id` and `word` are read only when
+/// `#[cold]` matrix-init path; `rule_id` and `pattern` are read only when
 /// producing output results. `rule_info` holds the hot-path metadata loaded
 /// during evaluation.
+///
+/// # `eval_hit` decision tree
+///
+/// ```text
+/// eval_hit(rule_idx, kind, offset, ctx, ss) → bool
+/// │
+/// ├── kind == Not?
+/// │   ├── first touch → init state, push to touched list
+/// │   ├── Matrix mode → increment counter, check veto threshold
+/// │   └── else → set vetoed = true
+/// │   return false (NOT hits never trigger early exit)
+/// │
+/// └── kind == And
+///     ├── already satisfied? → return exit_early && !has_not
+///     ├── first touch → init state, push to touched list
+///     └── track satisfaction:
+///         ├── Matrix    → decrement counter, check zero
+///         ├── Immediate → remaining_and = 0 (done)
+///         └── Bitmask   → set bit, decrement remaining_and
+///     return exit_early && satisfied && !has_not && !vetoed
+/// ```
 #[derive(Clone)]
 pub(super) struct RuleSet {
     rules: Vec<Rule>,

@@ -21,6 +21,27 @@
 //! The [`ScanPlan`] struct bundles both engines together with the
 //! [`PatternIndex`] that maps raw automaton values back to rule metadata.
 //!
+//! # Engine dispatch call graph
+//!
+//! ```text
+//! ScanPlan::for_each_match_value(text, density, on_hit)
+//! └── dispatch!(density)
+//!     ├── density ≥ 0.55 → BytewiseMatcher
+//!     │   ├── [dfa + prefilter]   DFA try_find_overlapping (Teddy SIMD skip)
+//!     │   ├── [dfa, no prefilter] BytewiseDFAEngine::scan() (next_state loop)
+//!     │   └── [no dfa]            DAAC find_overlapping_iter
+//!     └── density < 0.55 → CharwiseMatcher
+//!         └── DAAC charwise find_overlapping_iter
+//!
+//! ScanPlan::for_each_match_value_from_iter(iter, density, on_hit)
+//! └── dispatch!(density)
+//!     ├── BytewiseMatcher  → DFAEngine::scan_from_iter() / DAAC from_iter
+//!     └── CharwiseMatcher  → DAAC charwise from_iter
+//!
+//! ScanPlan::is_match(text)       ← fast path, no callbacks
+//! └── dispatch! → is_match()
+//! ```
+//!
 //! # Engine selection
 //!
 //! [`ScanPlan::is_match`] and [`ScanPlan::for_each_match_value`] use a SIMD
