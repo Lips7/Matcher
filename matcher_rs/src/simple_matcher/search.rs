@@ -367,13 +367,58 @@ impl SimpleMatcher {
                             continue;
                         }
 
-                        // Non-bijective dual-scan: when a non-bijective
-                        // transform (Delete) is a direct root child and changes
-                        // the text, the original text must also be scanned for
-                        // patterns containing deletable characters.
-                        let need_original_scan = node_idx == 0
-                            && step.needs_dual_scan()
-                            && step.would_change(texts[parent_aidx].as_ref());
+                        // Non-bijective dual-scan: Delete is the only
+                        // non-bijective transform — patterns are stored verbatim
+                        // and may contain deletable characters. Call apply() once
+                        // and reuse the result: if text changed, scan both the
+                        // deleted and original text; if unchanged, one scan
+                        // covers both. Only needed when Delete is a direct root
+                        // child; non-root parents already scan pre-Delete text
+                        // as intermediates.
+                        if node_idx == 0 && step.is_non_bijective() {
+                            let changed = step.apply(texts[parent_aidx].as_ref(), parent_density);
+                            stopped = if let Some((s, child_density)) = changed {
+                                let vi = variant_counter;
+                                variant_counter += 1;
+                                let del_ctx = ScanContext {
+                                    text_index: vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    char_density: child_density,
+                                };
+                                let del_stopped = self.scan_variant(&s, del_ctx, &mut ss);
+                                if !del_stopped {
+                                    let orig_ctx = ScanContext {
+                                        text_index: parent_vi,
+                                        process_type_mask: child.pt_index_mask,
+                                        num_variants,
+                                        exit_early,
+                                        char_density: parent_density,
+                                    };
+                                    self.scan_variant(
+                                        texts[parent_aidx].as_ref(),
+                                        orig_ctx,
+                                        &mut ss,
+                                    )
+                                } else {
+                                    true
+                                }
+                            } else {
+                                let ctx = ScanContext {
+                                    text_index: parent_vi,
+                                    process_type_mask: child.pt_index_mask,
+                                    num_variants,
+                                    exit_early,
+                                    char_density: parent_density,
+                                };
+                                self.scan_variant(texts[parent_aidx].as_ref(), ctx, &mut ss)
+                            };
+                            if stopped {
+                                break 'walk;
+                            }
+                            continue;
+                        }
 
                         // Fused transform-scan dispatch:
                         //
@@ -453,20 +498,6 @@ impl SimpleMatcher {
                             }
                         };
 
-                        // Delete dual-scan: scan original (pre-Delete) text for
-                        // patterns that contain deletable characters.
-                        if !stopped && need_original_scan {
-                            let orig_ctx = ScanContext {
-                                text_index: parent_vi,
-                                process_type_mask: child.pt_index_mask,
-                                num_variants,
-                                exit_early,
-                                char_density: parent_density,
-                            };
-                            stopped =
-                                self.scan_variant(texts[parent_aidx].as_ref(), orig_ctx, &mut ss);
-                        }
-
                         if stopped {
                             break 'walk;
                         }
@@ -508,7 +539,7 @@ impl SimpleMatcher {
 
                         // Non-bijective dual-scan (non-leaf): scan original
                         // text when the transform changed it and parent is root.
-                        if node_idx == 0 && step.needs_dual_scan() && child_aidx != parent_aidx {
+                        if node_idx == 0 && step.is_non_bijective() && child_aidx != parent_aidx {
                             let orig_ctx = ScanContext {
                                 text_index: parent_vi,
                                 process_type_mask: scan_mask,

@@ -94,25 +94,12 @@ impl TransformStep {
         )
     }
 
-    /// Returns `true` if this transform would modify `text`.
-    ///
-    /// Non-allocating probe. For Delete, runs the SIMD seek phase only.
-    /// Other transforms conservatively return `true`.
+    /// Returns `true` if this transform is non-bijective (patterns are stored
+    /// verbatim, not transformed). When a non-bijective step is a direct child
+    /// of root and changes the text, both the original and transformed text
+    /// must be scanned. Currently only Delete has this property.
     #[inline(always)]
-    pub(crate) fn would_change(&self, text: &str) -> bool {
-        match self {
-            Self::None => false,
-            Self::Delete(m) => m.has_deletable(text),
-            _ => true,
-        }
-    }
-
-    /// Returns `true` if this step is a non-bijective transform that requires
-    /// scanning both the original and transformed text when it is a direct
-    /// child of root. Currently only Delete has this property: patterns are
-    /// stored verbatim and may contain deletable characters.
-    #[inline(always)]
-    pub(crate) fn needs_dual_scan(&self) -> bool {
+    pub(crate) fn is_non_bijective(&self) -> bool {
         matches!(self, Self::Delete(_))
     }
 
