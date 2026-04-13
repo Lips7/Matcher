@@ -49,26 +49,23 @@ pub(crate) struct DeleteMatcher {
 }
 
 impl DeleteMatcher {
-    /// Returns `true` if `text` contains any deletable codepoint.
+    /// Scans `bytes` for the first deletable codepoint starting at `offset`.
     ///
-    /// Runs only the seek phase (SIMD-accelerated ASCII skip), never
-    /// allocates. Use as a cheap probe before deciding whether to scan
-    /// the delete-transformed text.
+    /// Returns the byte offset of the first deletable codepoint, or `len` if
+    /// none found. Uses SIMD-accelerated ASCII skip for bulk scanning.
     #[inline(always)]
-    pub(crate) fn has_deletable(&self, text: &str) -> bool {
-        let bytes = text.as_bytes();
+    fn seek_first_deletable(&self, bytes: &[u8], mut offset: usize) -> usize {
         let len = bytes.len();
-        let mut offset = 0usize;
         loop {
             if offset >= len {
-                return false;
+                return len;
             }
             // SAFETY: offset < len per guard above.
             unsafe { core::hint::assert_unchecked(offset < len) };
             let byte = bytes[offset];
             if byte < 0x80 {
                 if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
-                    return true;
+                    return offset;
                 }
                 offset += 1;
                 offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
@@ -79,26 +76,35 @@ impl DeleteMatcher {
                 // SAFETY: Valid UTF-8 codepoints ≤ 0x10FFFF; bitset covers 0x0–0x10FFFF.
                 unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
                 if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
-                    return true;
+                    return offset;
                 }
                 offset += char_len;
             }
         }
     }
 
+    /// Returns `true` if `text` contains any deletable codepoint.
+    ///
+    /// Runs only the seek phase (SIMD-accelerated ASCII skip), never
+    /// allocates. Use as a cheap probe before deciding whether to scan
+    /// the delete-transformed text.
+    #[inline(always)]
+    pub(crate) fn has_deletable(&self, text: &str) -> bool {
+        self.seek_first_deletable(text.as_bytes(), 0) < text.len()
+    }
+
     /// Removes every configured codepoint from `text`.
     ///
-    /// Returns `Some((result, is_ascii))` where `result` is the text with all
-    /// deletable codepoints stripped, and `is_ascii` indicates whether the
-    /// result is pure ASCII, tracked incrementally (if no non-ASCII char
-    /// was kept, `is_ascii` is `true`). Returns `None` when nothing was
-    /// deleted, allowing callers to keep borrowing the original `&str`.
+    /// Returns `Some(result)` where `result` is the text with all deletable
+    /// codepoints stripped. Returns `None` when nothing was deleted, allowing
+    /// callers to keep borrowing the original `&str`.
     ///
     /// # Algorithm
     ///
-    /// 1. **Seek phase**: Scans forward, using [`skip_ascii_non_delete_simd`]
-    ///    for fast ASCII skipping, until the first deletable codepoint is
-    ///    found. Returns `None` immediately if the entire text is clean.
+    /// 1. **Seek phase**: Scans forward via
+    ///    [`seek_first_deletable`](Self::seek_first_deletable), using SIMD for
+    ///    fast ASCII skipping, until the first deletable codepoint is found.
+    ///    Returns `None` immediately if the entire text is clean.
     /// 2. **Build phase**: Allocates a pooled `String`, copies the clean
     ///    prefix, skips the first deleted codepoint, then enters the copy-skip
     ///    loop.
@@ -121,40 +127,15 @@ impl DeleteMatcher {
     pub(crate) fn delete(&self, text: &str) -> Option<String> {
         let bytes = text.as_bytes();
         let len = bytes.len();
-        let mut offset = 0usize;
-
-        loop {
-            if offset >= len {
-                return None;
-            }
-            // SAFETY: The `offset >= len` guard above ensures `offset < len`.
-            unsafe { core::hint::assert_unchecked(offset < len) };
-            let byte = bytes[offset];
-            if byte < 0x80 {
-                if (self.ascii_lut[(byte as usize) >> 3] & (1 << (byte & 7))) != 0 {
-                    break;
-                }
-                offset += 1;
-                offset = skip_ascii_non_delete_simd(bytes, offset, &self.ascii_lut);
-            } else {
-                // SAFETY: `byte >= 0x80` in a valid UTF-8 `&str`; offset in bounds per guard
-                // above.
-                let (cp, char_len) = unsafe { decode_utf8_raw(bytes, offset) };
-                let cp = cp as usize;
-                // SAFETY: Valid UTF-8 codepoints are ≤ 0x10FFFF; bitset covers 0x0–0x10FFFF
-                // (139,264 bytes). cp / 8 ≤ 139,263 < 139,264.
-                unsafe { core::hint::assert_unchecked(cp / 8 < self.bitset.len()) };
-                if (self.bitset[cp / 8] & (1 << (cp % 8))) != 0 {
-                    break;
-                }
-                offset += char_len;
-            }
+        let mut offset = self.seek_first_deletable(bytes, 0);
+        if offset >= len {
+            return None;
         }
 
         let mut result = String::with_capacity(text.len());
         result.push_str(&text[..offset]);
 
-        // SAFETY: We broke out of the seek loop above, so offset < len.
+        // SAFETY: seek_first_deletable returned offset < len.
         unsafe { core::hint::assert_unchecked(offset < len) };
         let byte = bytes[offset];
         if byte < 0x80 {

@@ -140,7 +140,7 @@ impl ProcessType {
     #[inline]
     pub fn normalize(self) -> Self {
         if self != Self::None && self.contains(Self::None) {
-            self.difference(Self::None)
+            self - Self::None
         } else {
             self
         }

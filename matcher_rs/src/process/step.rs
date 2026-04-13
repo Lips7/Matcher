@@ -107,6 +107,15 @@ impl TransformStep {
         }
     }
 
+    /// Returns `true` if this step is a non-bijective transform that requires
+    /// scanning both the original and transformed text when it is a direct
+    /// child of root. Currently only Delete has this property: patterns are
+    /// stored verbatim and may contain deletable characters.
+    #[inline(always)]
+    pub(crate) fn needs_dual_scan(&self) -> bool {
+        matches!(self, Self::Delete(_))
+    }
+
     /// Returns a streaming byte iterator for the fused transform-scan path.
     ///
     /// The iterator applies this step's codepoint-level transformation on the

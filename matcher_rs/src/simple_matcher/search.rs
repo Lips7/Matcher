@@ -38,7 +38,6 @@ use super::{
     state::{SIMPLE_MATCH_STATE, ScanContext, ScanState},
     tree::ProcessTypeBitNode,
 };
-use crate::process::ProcessType;
 
 /// Lookup table: entry is non-zero iff the byte is a word character
 /// (alphanumeric, underscore, or non-ASCII ≥ 0x80). Replaces per-byte
@@ -368,13 +367,12 @@ impl SimpleMatcher {
                             continue;
                         }
 
-                        // Delete dual-scan: pre-check whether the text will
-                        // change. If it does, an extra scan of the original
-                        // (pre-Delete) text is needed after the fused/materialize
-                        // scan. Only applies to Delete as a direct root child;
-                        // non-root parents already carry the mask as intermediates.
+                        // Non-bijective dual-scan: when a non-bijective
+                        // transform (Delete) is a direct root child and changes
+                        // the text, the original text must also be scanned for
+                        // patterns containing deletable characters.
                         let need_original_scan = node_idx == 0
-                            && child.process_type_bit == ProcessType::Delete
+                            && step.needs_dual_scan()
                             && step.would_change(texts[parent_aidx].as_ref());
 
                         // Fused transform-scan dispatch:
@@ -508,12 +506,9 @@ impl SimpleMatcher {
                             break 'walk;
                         }
 
-                        // Delete dual-scan (non-leaf): scan original text when
-                        // Delete changed it and parent is root.
-                        if node_idx == 0
-                            && child.process_type_bit == ProcessType::Delete
-                            && child_aidx != parent_aidx
-                        {
+                        // Non-bijective dual-scan (non-leaf): scan original
+                        // text when the transform changed it and parent is root.
+                        if node_idx == 0 && step.needs_dual_scan() && child_aidx != parent_aidx {
                             let orig_ctx = ScanContext {
                                 text_index: parent_vi,
                                 process_type_mask: scan_mask,
