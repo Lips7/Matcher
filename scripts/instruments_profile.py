@@ -161,13 +161,24 @@ def record_profile(
     if output.exists():
         subprocess.run(["rm", "-rf", str(output)], check=True)
 
+    # Estimate total runtime: for multi-scene runs (e.g. --scene all),
+    # the binary runs each scene for `seconds` each, so the total is
+    # much longer than a single `seconds` value.
+    if scene and scene != "all" and "," not in scene:
+        time_limit = seconds + 10
+    elif scene == "all" or (scene and "," in scene):
+        num_scenes = len(scene.split(",")) if scene != "all" else 15
+        time_limit = num_scenes * seconds + 30
+    else:
+        time_limit = seconds + 10
+
     cmd = [
         "xctrace",
         "record",
         "--template",
         "Time Profiler",
         "--time-limit",
-        f"{seconds + 5}s",
+        f"{time_limit}s",
         "--output",
         str(output),
         "--launch",
