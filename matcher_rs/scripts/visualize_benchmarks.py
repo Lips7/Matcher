@@ -43,12 +43,6 @@ SERIES_PALETTE = [
     "#F58518", "#72B7B2", "#EECA3B", "#FF9DA6",
 ]
 
-ENGINE_COLORS = {
-    "ac_dfa": SERIES_PALETTE[0],
-    "daac_bytewise": SERIES_PALETTE[1],
-    "daac_charwise": SERIES_PALETTE[2],
-}
-
 LAYOUT_DEFAULTS = dict(
     template="plotly_white",
     font=dict(family="Inter, -apple-system, Segoe UI, sans-serif", size=13),
@@ -200,8 +194,8 @@ def decompose_bars(group: ChartGroup) -> tuple[list[str], list[str], dict[str, d
 # Chart builders
 # =============================================================================
 
-def _color_for(series: str, idx: int) -> str:
-    return ENGINE_COLORS.get(series, SERIES_PALETTE[idx % len(SERIES_PALETTE)])
+def _color_for(idx: int) -> str:
+    return SERIES_PALETTE[idx % len(SERIES_PALETTE)]
 
 
 def build_scaling_fig(group: ChartGroup) -> go.Figure:
@@ -234,7 +228,7 @@ def build_scaling_fig(group: ChartGroup) -> go.Figure:
                 fig.add_trace(go.Scatter(
                     x=[p.size for p in pts], y=[p.value_s for p in pts],
                     mode="lines+markers", name=short_name,
-                    line=dict(color=_color_for(short_name, s_idx), width=2.5),
+                    line=dict(color=_color_for(s_idx), width=2.5),
                     marker=dict(size=7),
                     hovertext=[f"<b>{short_name}</b> @ {p.size:,}<br>{format_duration(p.value_s)}" for p in pts],
                     hoverinfo="text",
@@ -248,7 +242,7 @@ def build_scaling_fig(group: ChartGroup) -> go.Figure:
             fig.add_trace(go.Scatter(
                 x=[p.size for p in pts], y=[p.value_s for p in pts],
                 mode="lines+markers", name=series,
-                line=dict(color=_color_for(series, s_idx), width=2.5),
+                line=dict(color=_color_for(s_idx), width=2.5),
                 marker=dict(size=7),
                 hovertext=[f"<b>{series}</b> @ {p.size:,}<br>{format_duration(p.value_s)}" for p in pts],
                 hoverinfo="text",
@@ -321,62 +315,6 @@ def build_bar_fig(group: ChartGroup) -> go.Figure:
     return fig
 
 
-def build_heatmap_fig(groups: list[ChartGroup]) -> go.Figure | None:
-    """Build engine x category heatmap for 4-part engine data only."""
-    scaling_groups = [g for g in groups if g.kind == GroupKind.SCALING]
-    if not scaling_groups:
-        return None
-
-    # Check if data looks like engine benchmarks (series are engine names)
-    sample_group = scaling_groups[0]
-    series_names, sizes, by_series = decompose_scaling(sample_group)
-    known_engines = {"ac_dfa", "daac_bytewise", "daac_charwise"}
-    if not any(s in known_engines for s in series_names):
-        return None
-
-    engines = [s for s in series_names if s in known_engines]
-    categories = [g.title for g in scaling_groups]
-    mid_size = sizes[len(sizes) // 2] if sizes else None
-    if mid_size is None:
-        return None
-
-    z, text = [], []
-    for engine in engines:
-        row_z, row_t = [], []
-        for group in scaling_groups:
-            _, _, gs = decompose_scaling(group)
-            pts = gs.get(engine, [])
-            match = next((p for p in pts if p.size == mid_size), None)
-            if match:
-                row_z.append(match.value_s * 1000)
-                row_t.append(format_duration(match.value_s))
-            else:
-                row_z.append(None)
-                row_t.append("")
-        z.append(row_z)
-        text.append(row_t)
-
-    fig = go.Figure(go.Heatmap(
-        z=z, x=categories, y=engines,
-        text=text, texttemplate="%{text}", textfont=dict(size=13, color="#222"),
-        colorscale=[
-            [0.0, "#f0f9e8"], [0.25, "#bae4bc"], [0.5, "#7bccc4"],
-            [0.75, "#43a2ca"], [1.0, "#0868ac"],
-        ],
-        reversescale=True,
-        colorbar=dict(title="ms", tickfont=dict(size=11)),
-        hovertemplate="<b>%{y}</b> x %{x}<br>%{text}<extra></extra>",
-    ))
-    fig.update_layout(
-        **LAYOUT_DEFAULTS,
-        title=dict(text=f"Performance Heatmap (n={mid_size:,})", x=0.5, font=dict(size=18, color="#222")),
-        height=max(300, 90 * len(engines) + 140),
-        xaxis=dict(side="bottom", tickfont=dict(size=13)),
-        yaxis=dict(tickfont=dict(size=13)),
-    )
-    return fig
-
-
 def build_delta_fig(baseline: AggregateFile, candidate: AggregateFile) -> go.Figure:
     shared = sorted(set(baseline.rows) & set(candidate.rows))
     deltas = []
@@ -426,7 +364,7 @@ def build_comparison_scaling_fig(base_group: ChartGroup, cand_group: ChartGroup)
 
     fig = go.Figure()
     for s_idx, series in enumerate(all_series):
-        color = _color_for(series, s_idx)
+        color = _color_for(s_idx)
         short = _short(series)
         if series in b_data:
             pts = b_data[series]
@@ -506,10 +444,6 @@ def assemble_single(agg: AggregateFile) -> str:
             figures.append(build_scaling_fig(group))
         else:
             figures.append(build_bar_fig(group))
-
-    heatmap = build_heatmap_fig(groups)
-    if heatmap:
-        figures.append(heatmap)
 
     subtitle = f"{agg.metadata.get('Preset', '')} · {agg.metadata.get('Date', '')} · {agg.metadata.get('Hardware', '')}"
     return _wrap_page("Matcher Benchmark Dashboard", subtitle, _metadata_html(agg, "Run Metadata"), _figures_to_html(figures))
