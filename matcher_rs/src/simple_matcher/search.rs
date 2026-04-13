@@ -149,7 +149,8 @@ impl SimpleMatcher {
     ///   `RuleSet::eval_hit`.
     ///
     /// Returns `true` when the caller should stop scanning.
-    #[inline(always)]
+    #[cfg_attr(feature = "_profile_boundaries", inline(never))]
+    #[cfg_attr(not(feature = "_profile_boundaries"), inline(always))]
     fn process_match(
         &self,
         raw_value: u32,

@@ -301,7 +301,8 @@ impl RuleSet {
     /// Uses `get_unchecked` on all rule-indexed arrays. `rule_idx` is
     /// guaranteed in bounds by construction in
     /// [`SimpleMatcher::new`](super::SimpleMatcher::new).
-    #[inline(always)]
+    #[cfg_attr(feature = "_profile_boundaries", inline(never))]
+    #[cfg_attr(not(feature = "_profile_boundaries"), inline(always))]
     pub(super) fn eval_hit(
         &self,
         rule_idx: usize,

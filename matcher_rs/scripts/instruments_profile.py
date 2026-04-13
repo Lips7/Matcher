@@ -42,6 +42,7 @@ PROFILE_BINARIES = ("profile_search", "profile_build")
 # Build
 # ---------------------------------------------------------------------------
 
+
 def find_profiling_binary(name: str = "profile_search") -> Path:
     target = REPO_ROOT / "target" / "profiling" / "examples" / name
     if target.exists():
@@ -54,10 +55,26 @@ def find_profiling_binary(name: str = "profile_search") -> Path:
     return target
 
 
-def build_profiling_binary(name: str = "profile_search") -> Path:
-    print(f"Building {name} with --profile profiling...")
+def build_profiling_binary(
+    name: str = "profile_search", boundaries: bool = True
+) -> Path:
+    feature_flags = (
+        ["--features", "matcher_rs/_profile_boundaries"] if boundaries else []
+    )
+    label = " +_profile_boundaries" if boundaries else ""
+    print(f"Building {name} with --profile profiling{label}...")
     subprocess.run(
-        ["cargo", "build", "--profile", "profiling", "--example", name, "-p", "matcher_rs"],
+        [
+            "cargo",
+            "build",
+            "--profile",
+            "profiling",
+            "--example",
+            name,
+            "-p",
+            "matcher_rs",
+        ]
+        + feature_flags,
         cwd=REPO_ROOT,
         check=True,
     )
@@ -71,6 +88,7 @@ def build_profiling_binary(name: str = "profile_search") -> Path:
 # Record
 # ---------------------------------------------------------------------------
 
+
 def record_profile(
     *,
     target: str = "search",
@@ -83,13 +101,14 @@ def record_profile(
     seconds: int = 10,
     output: Path | None = None,
     build: bool = True,
+    boundaries: bool = True,
 ) -> Path:
     binary_name = f"profile_{target}"
     binary = find_profiling_binary(binary_name)
     if build:
-        binary = build_profiling_binary(binary_name)
+        binary = build_profiling_binary(binary_name, boundaries=boundaries)
     elif not binary.exists():
-        binary = build_profiling_binary(binary_name)
+        binary = build_profiling_binary(binary_name, boundaries=boundaries)
 
     binary_args: list[str] = []
     if target == "build":
@@ -97,12 +116,18 @@ def record_profile(
         if output is None:
             output = Path(f"/tmp/prof_build_{dict_lang}_{rules}.trace")
         binary_args += [
-            "--dict", dict_lang,
-            "--rules", str(rules),
-            "--pt", pt,
-            "--seconds", str(seconds),
+            "--dict",
+            dict_lang,
+            "--rules",
+            str(rules),
+            "--pt",
+            pt,
+            "--seconds",
+            str(seconds),
         ]
-        print(f"Recording build: dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s")
+        print(
+            f"Recording build: dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s"
+        )
     elif scene:
         if output is None:
             output = Path(f"/tmp/prof_{scene}.trace")
@@ -112,24 +137,39 @@ def record_profile(
         if output is None:
             output = Path(f"/tmp/prof_{mode}_{shape}_{dict_lang}_{rules}.trace")
         binary_args += [
-            "--dict", dict_lang,
-            "--rules", str(rules),
-            "--mode", mode,
-            "--shape", shape,
-            "--pt", pt,
-            "--seconds", str(seconds),
+            "--dict",
+            dict_lang,
+            "--rules",
+            str(rules),
+            "--mode",
+            mode,
+            "--shape",
+            shape,
+            "--pt",
+            pt,
+            "--seconds",
+            str(seconds),
         ]
-        print(f"Recording: mode={mode} shape={shape} dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s")
+        print(
+            f"Recording: mode={mode} shape={shape} dict={dict_lang} rules={rules} pt={pt} seconds={seconds}s"
+        )
 
     if output.exists():
         subprocess.run(["rm", "-rf", str(output)], check=True)
 
     cmd = [
-        "xctrace", "record",
-        "--template", "Time Profiler",
-        "--time-limit", f"{seconds + 5}s",
-        "--output", str(output),
-        "--launch", "--", str(binary), *binary_args,
+        "xctrace",
+        "record",
+        "--template",
+        "Time Profiler",
+        "--time-limit",
+        f"{seconds + 5}s",
+        "--output",
+        str(output),
+        "--launch",
+        "--",
+        str(binary),
+        *binary_args,
     ]
 
     print(f"Output: {output}")
@@ -148,6 +188,7 @@ def record_profile(
 # ---------------------------------------------------------------------------
 # Demangle
 # ---------------------------------------------------------------------------
+
 
 def batch_demangle(mangled: set[str]) -> dict[str, str]:
     """Demangle a set of Rust symbols via rustfilt."""
@@ -190,6 +231,7 @@ def shorten_symbol(demangled: str) -> str:
 # Inline Resolution via atos
 # ---------------------------------------------------------------------------
 
+
 def resolve_addresses_atos(
     binary_path: str,
     load_addr: str,
@@ -218,8 +260,11 @@ def resolve_addresses_atos(
     # Pipe through rustfilt for demangling
     try:
         proc2 = subprocess.run(
-            ["rustfilt"], input=raw_output,
-            capture_output=True, text=True, timeout=10,
+            ["rustfilt"],
+            input=raw_output,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         demangled_output = proc2.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -239,11 +284,13 @@ def resolve_addresses_atos(
             # Format: "symbol (in binary_name) (file:line)" or just "symbol (in binary_name)"
             m = re.match(r"^(.+?)\s+\(in .+?\)\s+\((.+?):(\d+)\)$", line)
             if m:
-                chain.append({
-                    "name": shorten_symbol(m.group(1)),
-                    "file": Path(m.group(2)).name,
-                    "line": m.group(3),
-                })
+                chain.append(
+                    {
+                        "name": shorten_symbol(m.group(1)),
+                        "file": Path(m.group(2)).name,
+                        "line": m.group(3),
+                    }
+                )
             else:
                 m2 = re.match(r"^(.+?)\s+\(in .+?\)", line)
                 name = shorten_symbol(m2.group(1)) if m2 else line
@@ -333,6 +380,7 @@ def _build_source_attribution(
 # ---------------------------------------------------------------------------
 # Parse XML
 # ---------------------------------------------------------------------------
+
 
 def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
     """Parse xctrace time-profile XML into structured samples.
@@ -427,19 +475,23 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
                         path_el = id_map[pref]
                     source_file = (path_el.text or "").strip()
 
-            frames.append({
-                "name": name,
-                "addr": addr,
-                "source_file": source_file,
-                "source_line": source_line,
-            })
+            frames.append(
+                {
+                    "name": name,
+                    "addr": addr,
+                    "source_file": source_file,
+                    "source_line": source_line,
+                }
+            )
 
         if frames:
-            samples.append({
-                "weight_ns": weight_ns,
-                "frames": frames,
-                "thread": thread_name,
-            })
+            samples.append(
+                {
+                    "weight_ns": weight_ns,
+                    "frames": frames,
+                    "thread": thread_name,
+                }
+            )
 
     return samples, binary_info
 
@@ -452,54 +504,135 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
 # Order matters — first match wins.
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
     # ── Scan engines (AC automata) ────────────────────────────────────────
-    ("DFA scan",          ["aho_corasick::dfa", "aho_corasick::automaton",
-                           "aho_corasick::ahocorasick", "AcAutomaton"]),
-    ("Charwise scan",     ["daachorse", "charwise"]),
-
+    (
+        "DFA scan",
+        [
+            "aho_corasick::dfa",
+            "aho_corasick::automaton",
+            "aho_corasick::ahocorasick",
+            "AcAutomaton",
+            "BytewiseDFAEngine",
+        ],
+    ),
+    ("Charwise scan", ["daachorse", "charwise"]),
     # ── Hit processing & rule evaluation ──────────────────────────────────
-    ("Hit evaluation",    ["eval_hit", "process_match", "check_word_boundary",
-                           "check_satisfaction", "SatisfactionMethod",
-                           "fold_noop_children_masks"]),
-    ("Rule state",        ["SimpleMatchState", "WordState", "ScanState", "ScanContext",
-                           "generation", "mark_positive", "state::"]),
-
+    (
+        "Hit evaluation",
+        [
+            "eval_hit",
+            "process_match",
+            "check_word_boundary",
+            "check_satisfaction",
+            "SatisfactionMethod",
+            "fold_noop_children_masks",
+        ],
+    ),
+    (
+        "Rule state",
+        [
+            "SimpleMatchState",
+            "WordState",
+            "ScanState",
+            "ScanContext",
+            "generation",
+            "mark_positive",
+            "state::",
+        ],
+    ),
     # ── Text transform pipeline ───────────────────────────────────────────
-    ("Text transform",    ["DeleteMatcher", "VariantNormMatcher", "NormalizeMatcher",
-                           "RomanizeMatcher", "EmojiNorm", "TransformFilter",
-                           "page_table", "variant_norm", "romanize",
-                           "transform::", "process_type"]),
-
+    (
+        "Text transform",
+        [
+            "DeleteMatcher",
+            "VariantNormMatcher",
+            "NormalizeMatcher",
+            "RomanizeMatcher",
+            "EmojiNorm",
+            "TransformFilter",
+            "page_table",
+            "variant_norm",
+            "romanize",
+            "transform::",
+            "process_type",
+        ],
+    ),
     # ── Construction (automaton build, warm-up) ───────────────────────────
-    ("Construction",      ["build_trie", "fill_failure", "shuffle",
-                           "build_from_noncontiguous", "compile_automata",
-                           "build_current_bytewise", "build_current_charwise",
-                           "parse_rules", "build_process_type_tree",
-                           "SimpleMatcher::new"]),
-
+    (
+        "Construction",
+        [
+            "build_trie",
+            "fill_failure",
+            "shuffle",
+            "build_from_noncontiguous",
+            "compile_automata",
+            "build_current_bytewise",
+            "build_current_charwise",
+            "parse_rules",
+            "build_process_type_tree",
+            "SimpleMatcher::new",
+        ],
+    ),
     # ── Engine plumbing (dispatch, density, pattern tables) ───────────────
-    ("Engine dispatch",   ["ScanPlan", "BytewiseMatcher", "CharwiseMatcher",
-                           "ScanEngine", "count_non_ascii", "text_non_ascii_density",
-                           "PatternIndex", "PatternDispatch", "DIRECT_RULE"]),
-
+    (
+        "Engine dispatch",
+        [
+            "ScanPlan",
+            "BytewiseMatcher",
+            "CharwiseMatcher",
+            "ScanEngine",
+            "text_char_density",
+            "bytecount",
+            "PatternIndex",
+            "PatternDispatch",
+            "DIRECT_RULE",
+        ],
+    ),
     # ── Tree walk / scan loop (catch-all for search.rs self-time) ─────────
-    ("Tree walk",         ["walk_and_scan", "scan_variant",
-                           "ProcessTypeBitNode"]),
-
+    ("Tree walk", ["walk_and_scan", "scan_variant", "ProcessTypeBitNode"]),
     # ── Allocator ─────────────────────────────────────────────────────────
-    ("Allocator",         ["mi_free", "mi_malloc", "mi_zalloc", "mi_realloc",
-                           "mi_page", "_mi_", "malloc", "free", "realloc",
-                           "raw_vec", "finish_grow"]),
-
+    (
+        "Allocator",
+        [
+            "mi_free",
+            "mi_malloc",
+            "mi_zalloc",
+            "mi_realloc",
+            "mi_page",
+            "_mi_",
+            "malloc",
+            "free",
+            "realloc",
+            "raw_vec",
+            "finish_grow",
+        ],
+    ),
     # ── Std / system ──────────────────────────────────────────────────────
-    ("Std / system",      ["dyld", "libsystem", "pthread", "thread_start",
-                           "_platform_mem", "mach_absolute_time", "__bzero",
-                           "DYLD-STUB", "_tlv_get_addr", "clock_gettime",
-                           "memcmp", "memcpy", "memmove",
-                           "sort::", "quicksort", "smallsort",
-                           "black_box", "hint::", "drop_in_place"]),
-
+    (
+        "Std / system",
+        [
+            "dyld",
+            "libsystem",
+            "pthread",
+            "thread_start",
+            "_platform_mem",
+            "mach_absolute_time",
+            "__bzero",
+            "DYLD-STUB",
+            "_tlv_get_addr",
+            "clock_gettime",
+            "memcmp",
+            "memcpy",
+            "memmove",
+            "sort::",
+            "quicksort",
+            "smallsort",
+            "black_box",
+            "hint::",
+            "drop_in_place",
+        ],
+    ),
     # ── Harness ───────────────────────────────────────────────────────────
-    ("Harness",           ["profile_search", "profile_build", "run_scene"]),
+    ("Harness", ["profile_search", "profile_build", "run_scene"]),
 ]
 
 
@@ -534,8 +667,14 @@ def categorize(
 # ---------------------------------------------------------------------------
 
 BOILERPLATE_FRAGMENTS = {
-    "FnOnce", "call_once", "lang_start", "std::rt", "std::sys",
-    "std::panicking", "std::thread::lifecycle", "boxed::Box",
+    "FnOnce",
+    "call_once",
+    "lang_start",
+    "std::rt",
+    "std::sys",
+    "std::panicking",
+    "std::thread::lifecycle",
+    "boxed::Box",
     "core::ops::function",
 }
 
@@ -557,7 +696,8 @@ def analyze_trace(trace_path: Path) -> dict:
     # Get TOC to find the right schema
     toc_result = subprocess.run(
         ["xctrace", "export", "--input", str(trace_path), "--toc"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if toc_result.returncode != 0:
         sys.exit(f"xctrace export --toc failed: {toc_result.stderr}")
@@ -566,7 +706,8 @@ def analyze_trace(trace_path: Path) -> dict:
     xpath = '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]'
     export_result = subprocess.run(
         ["xctrace", "export", "--input", str(trace_path), "--xpath", xpath],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if export_result.returncode != 0:
         sys.exit(f"xctrace export failed: {export_result.stderr}")
@@ -578,11 +719,15 @@ def analyze_trace(trace_path: Path) -> dict:
     print("Parsing samples...")
     samples, binary_info = parse_time_profile(xml_text)
     if not samples:
-        print("No samples parsed. Try opening in Instruments.app for interactive analysis.")
+        print(
+            "No samples parsed. Try opening in Instruments.app for interactive analysis."
+        )
         return {"total_weight_ms": 0, "categories": {}, "top_symbols": [], "samples": 0}
 
     # Filter to main thread only (where our code runs)
-    main_samples = [s for s in samples if "Main Thread" in s["thread"] or "profile_" in s["thread"]]
+    main_samples = [
+        s for s in samples if "Main Thread" in s["thread"] or "profile_" in s["thread"]
+    ]
     if not main_samples:
         main_samples = samples  # fallback
 
@@ -689,10 +834,16 @@ def analyze_trace(trace_path: Path) -> dict:
     call_tree = _build_call_tree(main_samples, demangle_map, total_weight_ns)
 
     # Build heavy backtraces (bottom-up, full stacks for top leaf symbols)
-    heavy_backtraces = _build_heavy_backtraces(main_samples, demangle_map, total_weight_ns, atos_cache)
+    heavy_backtraces = _build_heavy_backtraces(
+        main_samples, demangle_map, total_weight_ns, atos_cache
+    )
 
     # Build source attribution (inline-resolved grouping by our code)
-    source_attribution = _build_source_attribution(main_samples, atos_cache, total_weight_ns) if atos_cache else []
+    source_attribution = (
+        _build_source_attribution(main_samples, atos_cache, total_weight_ns)
+        if atos_cache
+        else []
+    )
 
     return {
         "total_weight_ms": total_weight_ns / 1_000_000,
@@ -711,8 +862,11 @@ def analyze_trace(trace_path: Path) -> dict:
         "source_attribution": source_attribution,
         "inline_breakdown": {
             sym: [
-                {"inner": name, "weight_ms": iw / 1_000_000,
-                 "pct": iw / total_weight_ns * 100}
+                {
+                    "inner": name,
+                    "weight_ms": iw / 1_000_000,
+                    "pct": iw / total_weight_ns * 100,
+                }
                 for name, iw in counter.most_common(8)
             ]
             for sym, counter in inline_breakdown.items()
@@ -724,6 +878,7 @@ def analyze_trace(trace_path: Path) -> dict:
 # ---------------------------------------------------------------------------
 # Call Tree (top-down)
 # ---------------------------------------------------------------------------
+
 
 class CallTreeNode:
     __slots__ = ("name", "total_ns", "self_ns", "children")
@@ -806,7 +961,11 @@ def _print_call_tree(
         return
 
     children = sorted(node.children.values(), key=lambda c: -c.total_ns)
-    hot_children = [c for c in children if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct]
+    hot_children = [
+        c
+        for c in children
+        if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct
+    ]
 
     for child in hot_children:
         # Collapse single-child chains with negligible self-time
@@ -814,7 +973,11 @@ def _print_call_tree(
         walk = child
         while True:
             walk_children = sorted(walk.children.values(), key=lambda c: -c.total_ns)
-            walk_hot = [c for c in walk_children if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct]
+            walk_hot = [
+                c
+                for c in walk_children
+                if (c.total_ns / total_ns * 100 if total_ns else 0) >= min_pct
+            ]
             walk_self_pct = walk.self_ns / total_ns * 100 if total_ns else 0
             if len(walk_hot) == 1 and walk_self_pct < 0.5:
                 collapsed.append(walk.name)
@@ -841,11 +1004,19 @@ def _print_call_tree(
 # ---------------------------------------------------------------------------
 
 HEAVY_BOILERPLATE_EXACT = {
-    "start", "main", "thread_start", "_pthread_start",
+    "start",
+    "main",
+    "thread_start",
+    "_pthread_start",
 }
 HEAVY_BOILERPLATE_FRAGMENTS = {
-    "FnOnce", "call_once", "lang_start", "std::rt", "std::sys",
-    "std::panicking", "std::thread::lifecycle",
+    "FnOnce",
+    "call_once",
+    "lang_start",
+    "std::rt",
+    "std::sys",
+    "std::panicking",
+    "std::thread::lifecycle",
 }
 
 
@@ -913,14 +1084,18 @@ def _build_heavy_backtraces(
             chain = atos_cache[leaf_addr]
             # Skip the leaf itself (chain[0]), show callers (chain[1:])
             atos_callers = tuple(
-                f"{f['name']}  ({f['file']}:{f['line']})" if f.get("file") else f["name"]
+                f"{f['name']}  ({f['file']}:{f['line']})"
+                if f.get("file")
+                else f["name"]
                 for f in chain[1:]
             )
             if leaf_display not in leaf_atos:
                 leaf_atos[leaf_display] = Counter()
             leaf_atos[leaf_display][atos_callers] += w
 
-    leaf_totals = {leaf: sum(w for w, _ in stacks) for leaf, stacks in leaf_stacks.items()}
+    leaf_totals = {
+        leaf: sum(w for w, _ in stacks) for leaf, stacks in leaf_stacks.items()
+    }
     top_leaves = sorted(leaf_totals.items(), key=lambda x: -x[1])[:top_n]
 
     result = []
@@ -937,12 +1112,14 @@ def _build_heavy_backtraces(
         if atos_has_callers:
             top_stacks = []
             for stack_tuple, sw in leaf_atos[leaf_display].most_common(3):
-                top_stacks.append({
-                    "callers": list(stack_tuple),
-                    "weight_ms": sw / 1_000_000,
-                    "pct": sw / total_weight_ns * 100,
-                    "source": "atos",
-                })
+                top_stacks.append(
+                    {
+                        "callers": list(stack_tuple),
+                        "weight_ms": sw / 1_000_000,
+                        "pct": sw / total_weight_ns * 100,
+                        "source": "atos",
+                    }
+                )
         else:
             stack_weights: Counter[tuple[str, ...]] = Counter()
             for w, callers in leaf_stacks[leaf_display]:
@@ -951,18 +1128,22 @@ def _build_heavy_backtraces(
 
             top_stacks = []
             for stack_tuple, sw in stack_weights.most_common(3):
-                top_stacks.append({
-                    "callers": list(stack_tuple),
-                    "weight_ms": sw / 1_000_000,
-                    "pct": sw / total_weight_ns * 100,
-                })
+                top_stacks.append(
+                    {
+                        "callers": list(stack_tuple),
+                        "weight_ms": sw / 1_000_000,
+                        "pct": sw / total_weight_ns * 100,
+                    }
+                )
 
-        result.append({
-            "leaf": leaf_display,
-            "total_ms": total_ns / 1_000_000,
-            "pct": pct,
-            "stacks": top_stacks,
-        })
+        result.append(
+            {
+                "leaf": leaf_display,
+                "total_ms": total_ns / 1_000_000,
+                "pct": pct,
+                "stacks": top_stacks,
+            }
+        )
 
     return result
 
@@ -998,14 +1179,22 @@ def print_report(result: dict, path: Path) -> None:
             for j, item in enumerate(inlines):
                 if item["pct"] < 0.5:
                     break
-                connector = "└─" if j == len(inlines) - 1 or inlines[j + 1]["pct"] < 0.5 else "├─"
-                print(f"           {connector} {item['pct']:4.1f}%  {item['weight_ms']:6.0f}ms  {item['inner']}")
+                connector = (
+                    "└─"
+                    if j == len(inlines) - 1 or inlines[j + 1]["pct"] < 0.5
+                    else "├─"
+                )
+                print(
+                    f"           {connector} {item['pct']:4.1f}%  {item['weight_ms']:6.0f}ms  {item['inner']}"
+                )
 
     if result.get("top_with_caller"):
         print("\n  Top Leaf + Caller:")
         print("  " + "-" * 74)
         for entry in result["top_with_caller"][:15]:
-            print(f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['display']}")
+            print(
+                f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['display']}"
+            )
 
     # Call tree (top-down hot path)
     if result.get("call_tree"):
@@ -1018,16 +1207,20 @@ def print_report(result: dict, path: Path) -> None:
         print("\n  Heavy Backtraces (bottom-up, inline-resolved via atos):")
         print("  " + "=" * 74)
         for entry in result["heavy_backtraces"]:
-            print(f"\n  {entry['pct']:5.1f}%  {entry['total_ms']:7.0f}ms  ▶ {entry['leaf']}")
+            print(
+                f"\n  {entry['pct']:5.1f}%  {entry['total_ms']:7.0f}ms  ▶ {entry['leaf']}"
+            )
             has_any_callers = any(stack["callers"] for stack in entry["stacks"])
             if not has_any_callers:
-                print("         (callers inlined away — open in Instruments.app for full context)")
+                print(
+                    "         (callers inlined away — open in Instruments.app for full context)"
+                )
                 continue
             for i, stack in enumerate(entry["stacks"]):
                 if not stack["callers"]:
                     continue
                 source = stack.get("source", "")
-                label = "inline chain" if source == "atos" else f"stack #{i+1}"
+                label = "inline chain" if source == "atos" else f"stack #{i + 1}"
                 print(f"         {label} ({stack['pct']:.1f}%):")
                 for depth, caller in enumerate(stack["callers"]):
                     prefix = "           " + "  " * depth + "← "
@@ -1041,7 +1234,9 @@ def print_report(result: dict, path: Path) -> None:
             if entry["pct"] < 0.5:
                 break
             chain_suffix = f"  in: {entry['chain']}" if entry.get("chain") else ""
-            print(f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['source']}{chain_suffix}")
+            print(
+                f"  {entry['pct']:5.1f}%  {entry['weight_ms']:7.0f}ms  {entry['source']}{chain_suffix}"
+            )
 
     print()
 
@@ -1049,6 +1244,7 @@ def print_report(result: dict, path: Path) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1060,22 +1256,61 @@ def main():
 
     # --- record ---
     rec = sub.add_parser("record", help="Record a Time Profiler trace")
-    rec.add_argument("--target", default="search", choices=["search", "build"],
-                     help="Profiling target: 'search' (default) or 'build' (construction)")
-    rec.add_argument("--scene", default=None,
-                     help="Named scene (e.g. en-search, cn-transform, all). Overrides --mode/--dict/etc.")
+    rec.add_argument(
+        "--target",
+        default="search",
+        choices=["search", "build"],
+        help="Profiling target: 'search' (default) or 'build' (construction)",
+    )
+    rec.add_argument(
+        "--scene",
+        default=None,
+        help="Named scene (e.g. en-search, cn-transform, all). Overrides --mode/--dict/etc.",
+    )
     rec.add_argument("--mode", default="process", choices=["is_match", "process"])
-    rec.add_argument("--shape", default="literal",
-                     choices=["literal", "and", "not", "or", "word_boundary"])
-    rec.add_argument("--dict", default="en", choices=["en", "cn", "mixed"], dest="dict_lang")
+    rec.add_argument(
+        "--shape",
+        default="literal",
+        choices=["literal", "and", "not", "or", "word_boundary"],
+    )
+    rec.add_argument(
+        "--dict", default="en", choices=["en", "cn", "mixed"], dest="dict_lang"
+    )
     rec.add_argument("--rules", type=int, default=10_000)
-    rec.add_argument("--pt", default="none",
-                     choices=["none", "variant_norm", "delete", "norm", "dn", "fdn", "romanize", "pychar"])
+    rec.add_argument(
+        "--pt",
+        default="none",
+        choices=[
+            "none",
+            "variant_norm",
+            "delete",
+            "norm",
+            "dn",
+            "fdn",
+            "romanize",
+            "pychar",
+        ],
+    )
     rec.add_argument("--seconds", type=int, default=10)
     rec.add_argument("--output", "-o", type=Path, default=None)
-    rec.add_argument("--no-build", action="store_true", help="Skip rebuild (use existing binary as-is)")
-    rec.add_argument("--analyze", action="store_true", help="Analyze immediately after recording")
-    rec.add_argument("--open", action="store_true", help="Open trace in Instruments.app after recording")
+    rec.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Skip rebuild (use existing binary as-is)",
+    )
+    rec.add_argument(
+        "--no-boundaries",
+        action="store_true",
+        help="Omit _profile_boundaries feature (baseline: everything inlined)",
+    )
+    rec.add_argument(
+        "--analyze", action="store_true", help="Analyze immediately after recording"
+    )
+    rec.add_argument(
+        "--open",
+        action="store_true",
+        help="Open trace in Instruments.app after recording",
+    )
 
     # --- analyze ---
     ana = sub.add_parser("analyze", help="Analyze an existing .trace bundle")
@@ -1100,6 +1335,7 @@ def main():
             seconds=args.seconds,
             output=args.output,
             build=not args.no_build,
+            boundaries=not args.no_boundaries,
         )
         if args.analyze:
             result = analyze_trace(trace)

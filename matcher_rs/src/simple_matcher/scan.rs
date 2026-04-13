@@ -171,7 +171,8 @@ impl BytewiseDFAEngine {
     /// Custom `next_state` scan from a streaming byte iterator.
     ///
     /// Only called when `!has_prefilter` — the caller checks before delegating.
-    #[inline(always)]
+    #[cfg_attr(feature = "_profile_boundaries", inline(never))]
+    #[cfg_attr(not(feature = "_profile_boundaries"), inline(always))]
     fn scan_from_iter(
         &self,
         iter: impl Iterator<Item = u8>,
@@ -214,7 +215,8 @@ impl BytewiseDFAEngine {
     /// In the DFA, match states encode all overlapping hits (failure-link
     /// matches baked in during construction), so `0..match_len(sid)` yields
     /// the complete overlapping set.
-    #[inline(always)]
+    #[cfg_attr(feature = "_profile_boundaries", inline(never))]
+    #[cfg_attr(not(feature = "_profile_boundaries"), inline(always))]
     fn scan(&self, text: &[u8], mut on_value: impl FnMut(u32, usize, usize) -> bool) -> bool {
         let anchored = Anchored::No;
         let mut sid = match self.dfa.start_state(anchored) {

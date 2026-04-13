@@ -52,6 +52,10 @@ simd_runtime_dispatch = ["bytecount/runtime-dispatch-simd"]
 rayon = ["dep:rayon"]
 # Enables Serialize/Deserialize impls for ProcessType and Serialize for SimpleResult.
 serde = ["dep:serde", "dep:serde_json"]
+# Inserts `#[inline(never)]` at key boundaries (process_match, eval_hit, decode_direct)
+# so Instruments / samply can distinguish DFA scan work from closure / rule-evaluation work.
+# Only useful with the `profiling` Cargo profile; never enable for release or bench.
+_profile_boundaries = []
 
 [package.metadata.cargo-all-features]
 allowlist = ["perf"]
