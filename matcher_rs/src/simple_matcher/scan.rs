@@ -68,10 +68,10 @@ use daachorse::{
 };
 
 use super::{
+    error::MatcherError,
     pattern::{PatternEntry, PatternIndex},
     rule::RuleInfo,
 };
-use crate::MatcherError;
 
 /// Character density threshold for switching from bytewise to charwise engine.
 ///

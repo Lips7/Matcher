@@ -31,6 +31,7 @@
 //! The implementation is split across private child modules:
 //!
 //! - `build` — [`SimpleMatcher::new`] and rule parsing / deduplication.
+//! - `error` — [`MatcherError`] enum for construction failures.
 //! - `scan` — Aho-Corasick automaton compilation (bytewise and charwise
 //!   engines) and density-based dispatch.
 //! - `pattern` — Deduplicated pattern storage, entry types, and dispatch.
@@ -61,6 +62,7 @@ macro_rules! maybe_par_iter {
 }
 
 mod build;
+mod error;
 mod pattern;
 mod rule;
 mod scan;
@@ -68,6 +70,7 @@ mod search;
 mod state;
 pub(crate) mod tree;
 
+pub use error::MatcherError;
 use rule::RuleSet;
 pub use rule::{SimpleTable, SimpleTableSerde};
 use scan::ScanPlan;
