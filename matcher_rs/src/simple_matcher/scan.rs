@@ -578,21 +578,17 @@ fn compile_automata(
         .map(|(i, p)| (p.as_ref(), value_map[i]))
         .collect();
 
-    let all_patvals_clone = all_patvals.clone();
-    let build_bytewise = move || -> Result<BytewiseMatcher, MatcherError> {
-        build_current_bytewise(all_patvals_clone)
-    };
-
-    let build_charwise = |source: Vec<(&str, u32)>| -> Result<CharwiseMatcher, MatcherError> {
-        CharwiseDAACBuilder::new()
-            .match_kind(DAACMatchKind::Standard)
-            .build_with_values(source)
-            .map_err(MatcherError::automaton_build)
-    };
-
     std::thread::scope(|s| {
-        let bytewise_handle = s.spawn(build_bytewise);
-        let charwise = build_charwise(all_patvals)?;
+        let bytewise_handle = s.spawn(|| build_current_bytewise(all_patvals));
+        let charwise = CharwiseDAACBuilder::new()
+            .match_kind(DAACMatchKind::Standard)
+            .build_with_values(
+                dedup_patterns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (p.as_ref(), value_map[i])),
+            )
+            .map_err(MatcherError::automaton_build)?;
         let bytewise = bytewise_handle
             .join()
             .expect("bytewise automaton build panicked")?;
