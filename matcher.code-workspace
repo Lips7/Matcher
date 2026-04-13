@@ -1,16 +1,16 @@
 {
     "folders": [
         {
-            "path": "matcher_py",
-            "name": "matcher_py"
+            "path": "scripts",
+            "name": "Scripts"
         },
         {
-            "path": "scripts",
-            "name": "scripts"
+            "path": "matcher_py",
+            "name": "Matcher Python"
         },
         {
             "path": ".",
-            "name": "Matcher (root)"
+            "name": "Matcher"
         }
     ],
     "settings": {
