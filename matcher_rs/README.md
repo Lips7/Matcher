@@ -210,7 +210,7 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_op
 
 Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST](../data/word/cn/jieba.txt) against [CN_HAYSTACK](../data/text/cn/三体.txt) and [EN_WORD_LIST](../data/word/en/dictionary.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
-Full records: [../scripts/bench_records/](../scripts/bench_records/). Latest: [latest_benchmark.txt](./latest_benchmark.txt).
+Latest: [latest_benchmark.txt](./latest_benchmark.txt).
 
 ```shell
 # Run benchmarks
