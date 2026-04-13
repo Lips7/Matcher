@@ -1,7 +1,7 @@
 //! Compiled single-step transforms for the text-processing pipeline.
 //!
-//! Each [`TransformStep`] variant wraps a low-level matcher (VariantNorm,
-//! Delete, Normalize, Romanize) and provides a uniform
+//! Each [`TransformStep`] variant wraps a low-level matcher (None, VariantNorm,
+//! Delete, Normalize, Romanize, RomanizeChar, EmojiNorm) and provides a uniform
 //! [`apply`](TransformStep::apply) interface. Returns `Option<String>` — `None`
 //! when the input is unaffected.
 //!
@@ -37,7 +37,7 @@ pub(crate) enum TransformStep {
     VariantNorm(VariantNormMatcher),
     /// Codepoint deletion using a bitset, with optional SIMD acceleration.
     Delete(DeleteMatcher),
-    /// Multi-character normalization replacements via Aho-Corasick.
+    /// Multi-character normalization replacements via page-table lookup.
     Normalize(NormalizeMatcher),
     /// CJK romanization with inter-syllable spaces preserved.
     Romanize(RomanizeMatcher),
@@ -47,13 +47,14 @@ pub(crate) enum TransformStep {
     EmojiNorm(RomanizeMatcher),
 }
 
-/// Streaming byte iterator wrapping one of the four fusible
-/// [`FilterIterator`] specializations.
+/// Streaming byte iterator wrapping one of the four [`FilterIterator`]
+/// specializations (Delete, Normalize, VariantNorm, Romanize).
 ///
 /// Returned by [`TransformStep::filter_bytes`] for steps that support the
-/// fused transform-scan path (Delete, Normalize, VariantNorm, Romanize,
-/// RomanizeChar). `EmojiNorm` and `None` return `Option::None` from
-/// `filter_bytes`.
+/// fused transform-scan path. Five steps support filtering (Delete,
+/// Normalize, VariantNorm, Romanize, RomanizeChar) — RomanizeChar reuses
+/// the `Romanize` filter variant. `EmojiNorm` and `None` return
+/// `Option::None` from `filter_bytes`.
 pub(crate) enum TransformFilter<'a> {
     Delete(FilterIterator<'a, DeleteFilter<'a>>),
     Normalize(FilterIterator<'a, NormalizeFilter<'a>>),

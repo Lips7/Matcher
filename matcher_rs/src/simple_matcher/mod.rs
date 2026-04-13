@@ -144,8 +144,9 @@ pub struct SimpleResult<'a> {
 /// **Pass 1 — Transform and Scan**: The input text is transformed through the
 /// configured [`ProcessType`](crate::ProcessType) pipelines, producing the
 /// distinct text variants needed for this matcher. Each variant is scanned by
-/// the bytewise or charwise engine, selected by SIMD density scan (≤0.67
-/// non-ASCII → bytewise, >0.67 → charwise). Hits update per-rule state;
+/// the bytewise or charwise engine, selected by SIMD density scan (density
+/// ≥ 0.55 → bytewise, < 0.55 → charwise; higher density = more ASCII).
+/// Hits update per-rule state;
 /// simple rules stay on a bitmask fast path, while more complex rules fall
 /// back to a per-rule counter matrix.
 ///

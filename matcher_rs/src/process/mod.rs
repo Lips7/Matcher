@@ -19,8 +19,9 @@
 //!
 //! - [`step`] — [`TransformStep`](step::TransformStep) enum and the global
 //!   `OnceLock` cache that lazily compiles each single-bit step once.
-//! - [`transform`] — Low-level engines (charwise page-table, Aho-Corasick
-//!   normalizer, SIMD delete).
+//! - [`transform`] — Low-level engines (page-table lookups for
+//!   VariantNorm/Normalize/Romanize/EmojiNorm, bitset-based Delete, SIMD skip
+//!   helpers).
 pub(crate) mod process_type;
 pub(crate) mod step;
 pub(crate) mod transform;

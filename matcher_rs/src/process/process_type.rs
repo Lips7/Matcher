@@ -97,7 +97,7 @@ bitflags! {
         /// Applies the Normalize replacement tables (e.g. full-width forms, digit-like
         /// variants).
         ///
-        /// Uses an Aho-Corasick automaton compiled from `process_map/NORM.txt` and
+        /// Uses a page-table lookup compiled from `process_map/NORM.txt` and
         /// `process_map/NUM-NORM.txt`.
         const Normalize = 0b00001000;
 
@@ -125,7 +125,7 @@ bitflags! {
         /// Also strips emoji modifiers (ZWJ, VS16, skin tones) by mapping them to empty string.
         ///
         /// Does NOT compose usefully with [`Delete`](Self::Delete) — Delete removes emoji
-        /// before EmojiNorm can see them. Use one or the other.
+        /// before EmojiNorm can see them. Use `EmojiNorm | Normalize` for emoji→word matching.
         const EmojiNorm = 0b01000000;
     }
 }

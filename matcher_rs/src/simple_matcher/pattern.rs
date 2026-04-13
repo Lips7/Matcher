@@ -125,8 +125,8 @@ pub(super) fn decode_direct(raw: u32) -> (u8, u8, PatternKind, usize, usize) {
 /// - No operator, or `&` → [`And`](Self::And)
 /// - `~` → [`Not`](Self::Not)
 ///
-/// Single-segment rules without NOT use `SatisfactionMethod::SingleAnd` for the
-/// simplified satisfaction path. The DIRECT bit-packing in `process_match`
+/// Single-segment rules without NOT use [`SatisfactionMethod::Immediate`] for
+/// the simplified satisfaction path. The DIRECT bit-packing in `process_match`
 /// handles these inline without consulting `PatternKind`.
 ///
 /// `repr(u8)` keeps this type small for dense storage in [`PatternEntry`].
@@ -137,7 +137,7 @@ pub(super) enum PatternKind {
     ///
     /// All AND segments in a rule must be satisfied (across any text variant)
     /// before the rule can fire. Single-segment rules also use this variant
-    /// (with `SatisfactionMethod::SingleAnd`).
+    /// (with [`SatisfactionMethod::Immediate`]).
     And = 0,
     /// Negative segment that vetoes the rule when observed.
     ///

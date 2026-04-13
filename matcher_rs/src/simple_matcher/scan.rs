@@ -446,7 +446,7 @@ macro_rules! dispatch {
 /// Both engines are always built from the full pattern set. The charwise
 /// engine gives ~1.6–1.9× throughput over bytewise on CJK-heavy text (3 UTF-8
 /// bytes → 1 charwise transition). Engine selection is density-based at
-/// runtime: bytewise for ≤ [`CHARWISE_DENSITY_THRESHOLD`], charwise above.
+/// runtime: bytewise for ≥ [`CHARWISE_DENSITY_THRESHOLD`], charwise below.
 #[derive(Clone)]
 pub(super) struct ScanPlan {
     engines: Engines,
