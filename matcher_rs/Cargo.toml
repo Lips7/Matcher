@@ -26,10 +26,10 @@ crate-type = ["rlib"]
 bytecount = { version = "0.6.9", default-features = false }
 foldhash = "0.2"
 aho-corasick = { version = "1.1.4", optional = true }
-bitflags = "2.11.0"
-daachorse = "1.0.1"
+bitflags = "2.11.1"
+daachorse = "2.0.0"
 mimalloc = { version = "0.1.48", features = ["v3"] }
-rayon = { version = "1.10", optional = true }
+rayon = { version = "1.12", optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
