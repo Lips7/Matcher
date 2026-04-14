@@ -13,11 +13,6 @@ readme = "README.md"
 documentation = "https://docs.rs/crate/matcher_rs/latest"
 build = "build.rs"
 
-[package.metadata.docs.rs]
-features = ["serde"]
-rustc-args = ["-C", "target-feature=native"]
-rustdoc-args = ["-C", "target-feature=native", "--document-private-items"]
-
 [lib]
 name = "matcher_rs"
 crate-type = ["rlib"]
@@ -56,6 +51,9 @@ serde = ["dep:serde", "dep:serde_json"]
 # so Instruments / samply can distinguish DFA scan work from closure / rule-evaluation work.
 # Only useful with the `profiling` Cargo profile; never enable for release or bench.
 _profile_boundaries = []
+
+[package.metadata.docs.rs]
+features = ["serde"]
 
 [package.metadata.cargo-all-features]
 allowlist = ["perf"]

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -28,8 +32,6 @@ jobs:
           cargo all-features nextest run
           cargo test --doc
         working-directory: matcher_rs
-        env:
-          RUST_BACKTRACE: 1
 
   linux:
     needs: [test]
@@ -51,8 +53,6 @@ jobs:
           python-version: "${{ matrix.python }}"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: "-Z threads=0 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python${{ matrix.python }}
@@ -87,8 +87,6 @@ jobs:
           python-version: "${{ matrix.python }}"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: "-Z threads=0 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python${{ matrix.python }}
@@ -121,8 +119,6 @@ jobs:
           python-version: "${{ matrix.python }}"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: "-Z threads=0 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python${{ matrix.python }}
@@ -154,8 +150,6 @@ jobs:
           python-version: "${{ matrix.python }}"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: "-Z threads=0 -D warnings"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python${{ matrix.python }}

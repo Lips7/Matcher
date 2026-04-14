@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
   test:
@@ -33,8 +34,6 @@ jobs:
           cargo all-features nextest run
           cargo test --doc
         working-directory: matcher_rs
-        env:
-          RUST_BACKTRACE: 1
       - name: Doc
         run: cargo doc
         working-directory: matcher_rs

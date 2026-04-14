@@ -43,4 +43,3 @@ cache-keys = [{ file = "matcher_py.pyi"}, { file = "**/*.rs"}, { file = "**/*.to
 [tool.maturin]
 bindings = "pyo3"
 module-name = "matcher_py"
-rustc-args = ["-C", "target-cpu=native"]

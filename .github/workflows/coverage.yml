@@ -23,6 +23,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,8 +34,6 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -Z threads=0
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust

@@ -1,3 +1,2 @@
 [build]
-rustflags = ["-C", "target-cpu=native", "-Z", "threads=0"]
-rustdocflags = ["-C", "target-cpu=native", "--document-private-items"]
+rustdocflags = ["--document-private-items"]

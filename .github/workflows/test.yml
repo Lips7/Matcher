@@ -47,6 +47,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -54,11 +58,6 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      # Override .cargo/config.toml target-cpu=native which may emit
-      # instructions unsupported by the CI runner.
-      RUSTFLAGS: -Z threads=0
-      RUSTDOCFLAGS: --document-private-items
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -78,8 +77,6 @@ jobs:
 
   semver:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -Z threads=0
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -138,17 +135,12 @@ jobs:
           tool: cargo-all-features,cargo-nextest
       - name: Build
         run: cargo build --release -p matcher_c -p matcher_java -p matcher_py --target ${{ matrix.platform.target }}
-        env:
-          RUSTFLAGS: -Z threads=0
 
       - name: Test
         run: |
           cargo all-features nextest run --profile ci --verbose
           cargo test --doc -- --show-output
         working-directory: matcher_rs
-        env:
-          RUST_BACKTRACE: 1
-          RUSTFLAGS: -Z threads=0
 
       - name: Rename & move
         shell: bash
