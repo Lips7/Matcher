@@ -1,6 +1,46 @@
 # Changelog
 
 
+## 0.15.4 - 2026-04-15
+
+### Performance
+
+- **Core**: Custom DFA `next_state` walk via `Automaton` API, replacing materialized-match iteration. Enables fused prefilter-aware dispatch: Teddy active → materialize + `try_find_overlapping`; no prefilter → stream via `next_state` loop.
+- **Core**: Replace NEON scratch-buffer scan with bitmask extraction for SIMD delete filtering.
+- **Core**: Switch engine selection from byte-ratio heuristic to character density (`bytecount::num_chars / len`), improving CJK dispatch accuracy.
+
+### Added
+
+- **Core**: `BytewiseDFAEngine` — extracted DFA engine encapsulating `dfa::DFA`, `dfa_to_value`, and `has_prefilter` flag with 4-way fused-path dispatch.
+- **Core**: Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`) via rayon work-stealing. Behind `rayon` feature flag.
+- **Core**: Profiling boundaries (`#[profiling::function]`) on key DFA and matcher functions.
+- **Tooling**: Benchmarking orchestration (`scripts/run_benchmarks.py`) and interactive Plotly visualization (`scripts/bench_viz.py`).
+- **Tooling**: Profiling workflow via macOS Instruments (`just profile record/analyze`).
+
+### Fixed
+
+- **Core**: Delete dual-scan correctness — propagate mask bit to root when Delete is a direct child, ensuring patterns with deletable characters are scanned against both original and transformed text.
+- **Core**: Merge colliding `ProcessType` buckets before `parse_rules` to prevent pattern index conflicts.
+
+### Changed
+
+- **Core**: Replace `#[inline(always)]` with `#[inline]` across codebase, letting LLVM decide inlining under full LTO.
+- **Core**: Streamline automata compilation by removing unnecessary closures.
+- **Core**: Simplify Delete dual-scan by reusing `apply()` result instead of redundant transform.
+- **Core**: Extract seek helper and encapsulate dual-scan check in scan module.
+- **Core**: Replace inline `super::` paths with top-level imports for readability.
+- **Core**: Introduce `MatcherError` enum for structured construction failure reporting.
+- **Config**: Clean up configuration files, remove unnecessary flags, consolidate environment variables.
+
+### Dependencies
+
+- Update `bitflags`, `daachorse`, `rayon`.
+
+### Documentation
+
+- Comprehensive call-graph documentation for public API and internal logic.
+- Update CLAUDE.md for `BytewiseDFAEngine` and prefilter-aware dispatch.
+
 ## 0.15.3 - 2026-04-12
 
 ### Changed
