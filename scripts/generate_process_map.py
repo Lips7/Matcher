@@ -60,6 +60,7 @@ NUMERIC_FRACTION_EPSILON = 1e-12
 VARIANT_NORM_CONFIGS = ("t2s", "tw2s", "hk2s")
 
 UNIHAN_ZIP_URL = "https://unicode.org/Public/UCD/latest/ucd/Unihan.zip"
+CONFUSABLES_URL = "https://www.unicode.org/Public/security/latest/confusables.txt"
 
 # ---------------------------------------------------------------------------
 # Kana → Romaji tables (Modified Hepburn)
@@ -304,6 +305,57 @@ def _parse_unihan_hangul() -> dict[int, int]:
 
 
 # ---------------------------------------------------------------------------
+# Unicode Confusables (UTS #39): visually similar cross-script mappings
+# ---------------------------------------------------------------------------
+
+_confusables_cache: dict[int, str] | None = None
+
+
+def _download_confusables() -> dict[int, str]:
+    """Download Unicode confusables table, returning {source_codepoint: target_string}.
+
+    Only includes single-codepoint sources whose target is all ASCII Latin (a-z/A-Z).
+    Used as a fallback in Normalize to resolve Greek/Cyrillic lookalikes to Latin.
+    """
+    global _confusables_cache
+    if _confusables_cache is not None:
+        return _confusables_cache
+
+    print("Downloading confusables.txt from unicode.org...", file=sys.stderr)
+    resp = requests.get(CONFUSABLES_URL, timeout=30)
+    resp.raise_for_status()
+
+    combining_categories = frozenset({"Mn", "Mc", "Me"})
+    ascii_latin = set(range(0x41, 0x5B)) | set(range(0x61, 0x7B))
+    result: dict[int, str] = {}
+    for line in resp.text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(";")
+        if len(parts) < 3:
+            continue
+        src_cps = [int(h, 16) for h in parts[0].strip().split()]
+        tgt_cps = [int(h, 16) for h in parts[1].strip().split()]
+        if len(src_cps) != 1:
+            continue
+        src_cp = src_cps[0]
+        if src_cp in ascii_latin:
+            continue
+        # Strip combining marks from target (e.g. η → n̩ becomes n)
+        raw_target = "".join(chr(cp) for cp in tgt_cps)
+        stripped = "".join(
+            c for c in raw_target
+            if unicodedata.category(c) not in combining_categories
+        )
+        if stripped and all(ord(c) in ascii_latin for c in stripped):
+            result[src_cp] = stripped
+
+    _confusables_cache = result
+    return result
+
+
+# ---------------------------------------------------------------------------
 # VariantNorm: merged Chinese + Japanese + Korean variant normalization
 # ---------------------------------------------------------------------------
 
@@ -354,6 +406,8 @@ def build_text_delete_codepoints(chars: list[str]) -> list[int]:
 def build_norm_map(chars: list[str], num_norm: dict[str, str]) -> dict[str, str]:
     combining_categories = frozenset({"Mn", "Mc", "Me"})
     mapping: dict[str, str] = {}
+
+    # Pass 1: NFKD → strip combining marks → NFKC → casefold
     for char in chars:
         # Skip codepoints already handled by NUM-NORM (which takes priority
         # at build time because it is loaded second into the same HashMap).
@@ -366,6 +420,29 @@ def build_norm_map(chars: list[str], num_norm: dict[str, str]) -> dict[str, str]
         normalized = unicodedata.normalize("NFKC", stripped).casefold()
         if normalized and normalized != char:
             mapping[char] = normalized
+
+    # Pass 2: resolve non-ASCII endpoints via Unicode confusables (UTS #39).
+    # When NFKC+casefold leaves a character mapped to a non-ASCII lookalike
+    # (e.g. Greek η, Cyrillic а), fall back to the confusables table to reach
+    # the Latin equivalent. Never overrides an existing ASCII mapping.
+    confusables = _download_confusables()
+    for char in chars:
+        if char in num_norm:
+            continue
+        # Never remap ASCII characters themselves
+        if char.isascii():
+            continue
+        if char in mapping and mapping[char].isascii():
+            continue
+        cp = ord(char)
+        if cp not in confusables:
+            continue
+        target = confusables[cp].casefold()
+        if not target or target == char:
+            continue
+        if target.isascii():
+            mapping[char] = target
+
     return mapping
 
 
@@ -396,7 +473,7 @@ def _build_hangul_rr() -> dict[str, str]:
         final = idx % 28
         roman = RR_INITIAL[initial] + RR_MEDIAL[medial] + RR_FINAL[final]
         if roman:
-            mapping[chr(cp)] = f" {roman}"
+            mapping[chr(cp)] = roman
     return mapping
 
 
@@ -404,9 +481,9 @@ def _build_kana_romaji() -> dict[str, str]:
     """Build kana → romaji mapping from static tables."""
     mapping: dict[str, str] = {}
     for cp, romaji in HIRAGANA_ROMAJI.items():
-        mapping[chr(cp)] = f" {romaji}"
+        mapping[chr(cp)] = romaji
     for cp, romaji in KATAKANA_ROMAJI.items():
-        mapping[chr(cp)] = f" {romaji}"
+        mapping[chr(cp)] = romaji
     return mapping
 
 
@@ -423,7 +500,7 @@ def build_romanize_map() -> dict[str, str]:
         syllable = syllables[0].strip().lower()
         if not syllable or syllable == char.casefold():
             continue
-        mapping[char] = f" {syllable}"
+        mapping[char] = syllable
 
     # 2. Japanese kana → Romaji (disjoint Unicode blocks, no conflicts)
     kana_romaji = _build_kana_romaji()
@@ -502,7 +579,7 @@ def build_emoji_norm_map() -> dict[str, str]:
             continue
         snake = _to_snake_case(name)
         if snake:
-            mapping[char] = f" {snake}"
+            mapping[char] = snake
 
     # 2. Modifier codepoints → empty string (strip them)
     for cp in sorted(EMOJI_MODIFIER_CODEPOINTS):
@@ -564,6 +641,10 @@ def collect_outputs(root: Path) -> tuple[dict[Path, str], dict[str, str | dict[s
             "opencc",
             "unihan_kyujitai",
             "halfwidth_katakana",
+        ],
+        "norm_sources": [
+            "nfkd_casefold",
+            "unicode_confusables",
         ],
         "romanize_sources": [
             "pypinyin",
