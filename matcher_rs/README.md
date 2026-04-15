@@ -190,6 +190,7 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_op
 | `dfa` | via `perf` | `aho-corasick` DFA for bytewise engine. 1.7–3.3× faster, ~17× more memory. |
 | `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection (AVX2/NEON) for transforms and `bytecount` character density |
 | `rayon` | off | Parallel batch API (`batch_is_match`, `batch_process`, `batch_find_match`) via rayon. Enabled by all binding crates. |
+| `serde` | off | Enables `Serialize`/`Deserialize` for `ProcessType` and `Serialize` for `SimpleResult`. Required for JSON constructor. Enabled by all binding crates. |
 
 ### Feature Comparison
 
@@ -208,7 +209,7 @@ For more examples, run `cargo run --example basic -p matcher_rs` or see [test_op
 
 ## Benchmarks
 
-Benchmarked on **MacBook Air M4 (24GB RAM)**. Test data: [CN_WORD_LIST](../data/word/cn/jieba.txt) against [CN_HAYSTACK](../data/text/cn/三体.txt) and [EN_WORD_LIST](../data/word/en/dictionary.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
+Benchmarked on **MacBook Pro M3 Max**. Test data: [CN_WORD_LIST](../data/word/cn/jieba.txt) against [CN_HAYSTACK](../data/text/cn/三体.txt) and [EN_WORD_LIST](../data/word/en/dictionary.txt) against [EN_HAYSTACK](../data/text/en/sherlock.txt).
 
 Latest: [latest_benchmark.txt](./latest_benchmark.txt).
 

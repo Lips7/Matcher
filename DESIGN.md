@@ -4,10 +4,12 @@ How `matcher_rs` works, explained through a concrete example. The library is a t
 
 ## Table of Contents
 
+- [Call Graph](#call-graph)
 - [Running Example](#running-example)
 - [1. Construction](#1-construction)
 - [2. Query](#2-query)
 - [3. `is_match` Fast Path](#3-is_match-fast-path)
+- [4. Batch API](#4-batch-api)
 - [Why It's Fast](#why-its-fast)
 - [Transform Pipeline](#transform-pipeline)
 - [Feature Flags](#feature-flags)

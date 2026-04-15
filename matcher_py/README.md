@@ -11,8 +11,8 @@ For detailed implementation, see the [Design Document](../DESIGN.md).
 ## Features
 
 - **Text Transformation**:
-  - **VariantNorm**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫艹`
+  - **VariantNorm**: CJK variant normalization.
+    Example: `測試` -> `测试`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
@@ -145,7 +145,7 @@ assert matcher.is_match("bright darken color")     # "darken" ≠ \bdark\b
 ### ProcessType
 
 * `NONE`: No transformation.
-* `VARIANT_NORM`: Traditional Chinese to simplified Chinese transformation. Based on [VARIANT_NORM](../matcher_rs/process_map/VARIANT_NORM.txt).
+* `VARIANT_NORM`: CJK variant normalization. Based on [VARIANT_NORM](../matcher_rs/process_map/VARIANT_NORM.txt).
   * `測試` -> `测试`
   * `現⾝` -> `现身`
 * `DELETE`: Delete all punctuation, special characters, separator characters, and configured control/format codepoints. Based on [TEXT_DELETE](../matcher_rs/process_map/TEXT-DELETE.txt).

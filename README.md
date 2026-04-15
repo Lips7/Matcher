@@ -43,12 +43,12 @@ For the full narrative walkthrough, see the [Design Document](./DESIGN.md).
 ## Features
 
 - **Text Transformation**:
-  - **VariantNorm**: Simplify traditional Chinese characters to simplified ones.
-    Example: `蟲艸` -> `虫艹`
+  - **VariantNorm**: CJK variant normalization.
+    Example: `測試` -> `测试`
   - **Delete**: Remove specific characters.
     Example: `*Fu&*iii&^%%*&kkkk` -> `Fuiiikkkk`
   - **Normalize**: Normalize special characters to identifiable characters.
-    Example: `𝜢𝕰𝕃𝙻𝝧 𝙒ⓞᵣℒ𝒟!` -> `hello world!`
+    Example: `ＡＢⅣ①℉` -> `ab41°f`
   - **Romanize**: Convert CJK characters to space-separated romanized form (Pinyin, Romaji, RR) for fuzzy matching.
     Example: `西安` -> ` xi an`, matches `洗按` -> ` xi an`, but not `先` -> ` xian`
   - **RomanizeChar**: Convert CJK characters to romanized form without boundary spaces.
