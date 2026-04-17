@@ -1,6 +1,21 @@
 # Changelog
 
 
+## 0.15.5 - 2026-04-17
+
+### Changed
+
+- **Process Maps**: Significantly expanded `NORM.txt` with Unicode confusables data — non-ASCII characters that are visually similar to ASCII equivalents are now normalized, improving coverage against homoglyph-based evasion.
+- **Process Maps**: Extended `NUM-NORM.txt` with additional numeric character mappings and corrected existing values.
+- **Process Maps**: Extended `TEXT-DELETE.txt` with new codepoints for more comprehensive deletion coverage.
+- **Process Maps**: Removed comments from `ROMANIZE.txt` and `VARIANT_NORM.txt`, retaining only essential mappings.
+- **Process Maps**: Updated `manifest.json` to reflect new counts, sources, and Python/Unicode data versions.
+- **Tooling**: Enhanced `generate_process_map.py` to download and apply Unicode confusables, mapping non-ASCII characters to ASCII equivalents where applicable, with improved handling of combining marks.
+
+### Documentation
+
+- Clarify CJK variant normalization in README and DESIGN docs.
+
 ## 0.15.4 - 2026-04-15
 
 ### Performance
