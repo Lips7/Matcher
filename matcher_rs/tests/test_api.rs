@@ -27,10 +27,27 @@ fn test_construction_validation() {
     // Empty builder → EmptyPatterns error
     assert!(SimpleMatcherBuilder::new().build().is_err());
 
-    // Invalid ProcessType bits >= 64 → rejected
+    // Invalid ProcessType bits >= 128 → rejected
     let bad_pt = ProcessType::from_bits_retain(128);
     let result = SimpleMatcher::new(&HashMap::from([(bad_pt, HashMap::from([(1u32, "test")]))]));
     assert!(result.is_err());
+
+    // ProcessType::empty() (raw 0) → rejected; would cause is_match/process
+    // divergence
+    let empty_pt = ProcessType::empty();
+    let result = SimpleMatcher::new(&HashMap::from([(
+        empty_pt,
+        HashMap::from([(1u32, "hello")]),
+    )]));
+    assert!(
+        result.is_err(),
+        "ProcessType::empty() must be rejected at construction"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("0x00") || err_msg.contains("empty"),
+        "error message should identify the empty process type: {err_msg}"
+    );
 }
 
 // ---------------------------------------------------------------------------

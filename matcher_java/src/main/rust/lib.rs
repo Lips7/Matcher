@@ -106,8 +106,9 @@ fn build_result_object<'a>(
     result: &matcher_rs::SimpleResult<'_>,
 ) -> JniResult<JObject<'a>> {
     let word = env.new_string(result.word.as_ref())?;
+    let word_raw = <jni::objects::JString as AsRef<JObject>>::as_ref(&word).as_raw();
     // SAFETY: `init` is the (int, String) constructor resolved from `class`.
-    unsafe {
+    let obj = unsafe {
         env.new_object_unchecked(
             class,
             init,
@@ -115,10 +116,13 @@ fn build_result_object<'a>(
                 jvalue {
                     i: result.word_id as jint,
                 },
-                jvalue { l: word.into_raw() },
+                jvalue { l: word_raw },
             ],
         )
-    }
+    }?;
+    // The constructor holds its own reference to `word`; delete our local ref.
+    env.delete_local_ref(word);
+    Ok(obj)
 }
 
 /// Constructs a JNI `SimpleResult[]` array from a slice of Rust match results.
@@ -132,6 +136,8 @@ fn build_result_array<'a>(
     for (i, r) in results.iter().enumerate() {
         let obj = build_result_object(env, class, init, r)?;
         array.set_element(env, i, &obj)?;
+        // Delete local ref immediately — prevents accumulation across large batches.
+        env.delete_local_ref(obj);
     }
     Ok(array)
 }
@@ -182,6 +188,8 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_reduceTextProcess<'local
         for (index, variant) in variants.iter().enumerate() {
             let value = env.new_string(variant.as_ref())?;
             array.set_element(env, index, &value)?;
+            // Delete string local ref immediately — prevents accumulation.
+            env.delete_local_ref(value);
         }
 
         Ok(array.into_raw())
@@ -357,6 +365,8 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchProces
         for (i, results) in all_results.iter().enumerate() {
             let inner = build_result_array(env, &class, init, results)?;
             outer.set_element(env, i, &inner)?;
+            // Delete inner array local ref — prevents accumulation across large batches.
+            env.delete_local_ref(inner);
         }
 
         Ok(outer.into_raw())
@@ -393,6 +403,8 @@ pub extern "system" fn Java_com_matcherjava_MatcherJava_simpleMatcherBatchFindMa
             if let Some(result) = result {
                 let obj = build_result_object(env, &class, init, result)?;
                 array.set_element(env, i, &obj)?;
+                // Delete local ref immediately — prevents accumulation across large batches.
+                env.delete_local_ref(obj);
             }
         }
 

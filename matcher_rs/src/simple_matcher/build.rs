@@ -85,8 +85,9 @@ impl SimpleMatcher {
     /// Returns [`MatcherError`] if:
     ///
     /// - The pattern set is empty after parsing (no scannable patterns).
-    /// - Any [`ProcessType`] key in `process_type_word_map` has undefined bits
-    ///   set (bits 6–7 must be zero).
+    /// - Any [`ProcessType`] key in `process_type_word_map` is zero
+    ///   (`ProcessType::empty()`) or has bit 7 set (undefined). Use
+    ///   [`ProcessType::None`] for raw-text matching.
     /// - The underlying Aho-Corasick automaton construction (`daachorse` or
     ///   `aho-corasick`) fails internally.
     ///
@@ -119,7 +120,7 @@ impl SimpleMatcher {
         I: AsRef<str> + 'a,
     {
         for &pt in process_type_word_map.keys() {
-            if (pt.bits() as usize) >= PROCESS_TYPE_TABLE_SIZE {
+            if pt.is_empty() || (pt.bits() as usize) >= PROCESS_TYPE_TABLE_SIZE {
                 return Err(MatcherError::invalid_process_type(pt.bits()));
             }
         }

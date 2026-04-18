@@ -81,6 +81,42 @@ fn test_concurrent_same_state_matrix() {
 }
 
 #[test]
+fn test_reentrant_scan_panics() {
+    // Calling any matcher method from within a for_each_match callback on the
+    // same thread must panic with a clear message — not produce aliased-&mut UB.
+    let matcher = Arc::new(
+        SimpleMatcherBuilder::new()
+            .add_word(ProcessType::None, 1, "hello")
+            .build()
+            .unwrap(),
+    );
+
+    let m = Arc::clone(&matcher);
+    let result = thread::spawn(move || {
+        m.for_each_match("hello world", |_r| {
+            // Nested scan on the same thread — process always uses walk_and_scan_with
+            // and must trigger the ScanGuard panic.
+            let _ = m.process("hello");
+            false
+        });
+    })
+    .join();
+
+    assert!(result.is_err(), "nested scan on the same thread must panic");
+    if let Err(payload) = result {
+        let msg = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        assert!(
+            msg.contains("re-entrant") || msg.contains("reentrant"),
+            "panic message should describe re-entrancy: {msg:?}"
+        );
+    }
+}
+
+#[test]
 fn test_concurrent_different_matchers() {
     // Two matchers of very different sizes on different threads.
     let small = Arc::new(

@@ -73,8 +73,10 @@
 //! This uses `#[thread_local]` + `UnsafeCell` instead of the `thread_local!`
 //! macro to avoid per-access closure overhead. Safety relies on two invariants:
 //! (1) `#[thread_local]` guarantees single-threaded access — no data races.
-//! (2) No public function is re-entrant: the borrow from `UnsafeCell::get()` is
-//! always dropped before any call that could re-enter the same state.
+//! (2) Re-entrancy is enforced at runtime by `ScanGuard` (a `Cell<bool>` TLS
+//! flag that panics if a scan is already active on the current thread). This
+//! converts potential aliased-`&mut` UB into a defined panic if a user callback
+//! (e.g. inside `for_each_match`) calls any matcher method on the same thread.
 //!
 //! ## Bounds-elided indexing
 //!

@@ -26,7 +26,7 @@
 //! // No zeroing needed between calls — stale stamps are simply ignored.
 //! ```
 
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 
 /// Per-rule mutable state reused across scans.
 ///
@@ -105,6 +105,49 @@ pub(super) struct SimpleMatchState {
     generation: u16,
 }
 
+/// Thread-local re-entrancy guard flag.
+///
+/// Set to `true` while a scan holds `&mut SimpleMatchState`. Acquiring
+/// [`ScanGuard`] checks and sets this flag; `Drop` clears it. Any attempt to
+/// start a nested scan on the same thread — even on a different `SimpleMatcher`
+/// instance — panics immediately rather than producing aliased `&mut` UB.
+#[thread_local]
+static SCANNING: Cell<bool> = Cell::new(false);
+
+/// RAII guard that prevents re-entrant use of the thread-local scan state.
+///
+/// Acquired at the top of `SimpleMatcher::walk_and_scan_with` (`search.rs`)
+/// before the `&mut SimpleMatchState` is obtained. Released (flag cleared) on
+/// `Drop` at the end of the function.
+pub(super) struct ScanGuard;
+
+impl ScanGuard {
+    /// Acquires the guard.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a scan is already active on the current thread. This converts
+    /// what would otherwise be aliased `&mut` undefined behavior into a defined
+    /// panic.
+    #[inline]
+    pub(super) fn acquire() -> Self {
+        assert!(
+            !SCANNING.get(),
+            "SimpleMatcher: re-entrant scan detected — do not call matcher \
+             methods from within a for_each_match / process callback on the same thread"
+        );
+        SCANNING.set(true);
+        ScanGuard
+    }
+}
+
+impl Drop for ScanGuard {
+    #[inline]
+    fn drop(&mut self) {
+        SCANNING.set(false);
+    }
+}
+
 /// Thread-local reusable scan state shared by all matchers on the current
 /// thread.
 ///
@@ -114,11 +157,10 @@ pub(super) struct SimpleMatchState {
 ///
 /// 1. `#[thread_local]` guarantees that each thread has its own instance — no
 ///    cross-thread sharing occurs.
-/// 2. The scan functions that access this static (`is_match_inner`,
-///    `process_simple`, `process_preprocessed_into`) are not re-entrant: they
-///    obtain a `&mut` reference via `SIMPLE_MATCH_STATE.get()` at the top of
-///    the call and hold it for the entire duration. No callback or nested call
-///    re-enters the same path.
+/// 2. Every entry point that obtains `&mut` via `SIMPLE_MATCH_STATE.get()`
+///    first acquires a [`ScanGuard`], which panics on nested entry. This
+///    enforces the non-re-entrancy invariant at runtime rather than relying on
+///    documentation.
 ///
 /// This pattern avoids the overhead of `RefCell` on the scan hot path.
 #[thread_local]

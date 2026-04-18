@@ -59,7 +59,7 @@ use super::{
     pattern::{DIRECT_ENCODED_BIT, PatternDispatch, decode_direct},
     rule::RuleSet,
     scan::{CHARWISE_DENSITY_THRESHOLD, text_char_density},
-    state::{SIMPLE_MATCH_STATE, ScanContext, ScanState, WalkConfig},
+    state::{SIMPLE_MATCH_STATE, ScanContext, ScanGuard, ScanState, WalkConfig},
     tree::ProcessTypeBitNode,
 };
 use crate::process::step::TransformStep;
@@ -400,7 +400,11 @@ impl SimpleMatcher {
             num_variants: tree.len(),
             exit_early,
         };
-        // SAFETY: `#[thread_local]` guarantees single-thread ownership; not re-entrant.
+        // Acquire re-entrancy guard before taking &mut. Panics if a scan is
+        // already active on this thread (e.g. from a for_each_match callback).
+        let _guard = ScanGuard::acquire();
+        // SAFETY: `#[thread_local]` guarantees single-thread ownership; the
+        // ScanGuard above enforces non-re-entrancy so no aliased &mut can exist.
         let state = unsafe { &mut *SIMPLE_MATCH_STATE.get() };
         state.prepare(self.rules.len());
         let mut ss = state.as_scan_state();

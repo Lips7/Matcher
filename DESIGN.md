@@ -157,6 +157,8 @@ Both engines are correct for any input. Engine selection is a pure speed optimiz
 
 The final `SimpleMatcher` holds: the transform trie, the dual scan engines with pattern metadata, the compiled rule set, and a flag indicating whether the `is_match` AC-direct fast path is available. The fast path is enabled only when all rules are simple literals under a single ProcessType with no word boundaries.
 
+**Construction rejects invalid `ProcessType` keys:** any key that is either zero (`ProcessType::empty()`) or has bit 7 set (undefined) returns `MatcherError::InvalidProcessType`. `ProcessType::empty()` has no defined matching semantics — use `ProcessType::None` for raw-text matching.
+
 ---
 
 ## 2. Query
@@ -165,7 +167,9 @@ The final `SimpleMatcher` holds: the transform trie, the dual scan engines with 
 
 ### 2.1 Prepare State
 
-A thread-local state buffer bumps a generation counter. No arrays are zeroed — entries from previous calls have a stale generation and are ignored. This gives O(1) amortized reset regardless of rule count.
+A thread-local state buffer (`SIMPLE_MATCH_STATE`) bumps a generation counter. No arrays are zeroed — entries from previous calls have a stale generation and are ignored. This gives O(1) amortized reset regardless of rule count.
+
+**Re-entrancy:** a `ScanGuard` (TLS `Cell<bool>`) is acquired before `&mut SimpleMatchState` is taken and released on drop. Any attempt to start a nested scan on the same thread — for example, calling `process` or `for_each_match` from inside a `for_each_match` callback — panics immediately with a descriptive message. Do not call matcher methods from within scan callbacks.
 
 ### 2.2 Walk the Trie
 
