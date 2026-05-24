@@ -1,15 +1,14 @@
 package com.matcherjava;
 
-import com.matcherjava.extensiontypes.ProcessType;
-import com.matcherjava.extensiontypes.SimpleResult;
-
-import org.junit.Test;
 import static org.junit.Assert.*;
 
+import com.matcherjava.extensiontypes.ProcessType;
+import com.matcherjava.extensiontypes.SimpleResult;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -17,11 +16,14 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.ArrayList;
+import org.junit.Test;
 
 public class TestSimpleMatcher {
 
-  private static byte[] buildTable(ProcessType pt, Map<String, String> wordMap) {
+  private static byte[] buildTable(
+    ProcessType pt,
+    Map<String, String> wordMap
+  ) {
     SimpleMatcherBuilder builder = new SimpleMatcherBuilder();
     for (Map.Entry<String, String> entry : wordMap.entrySet()) {
       builder.add(pt, Integer.parseInt(entry.getKey()), entry.getValue());
@@ -130,9 +132,14 @@ public class TestSimpleMatcher {
 
   @Test
   public void testBatchIsMatch() {
-    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    byte[] table = buildTable(
+      ProcessType.NONE,
+      words("1", "hello", "2", "world")
+    );
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
-      List<Boolean> results = matcher.batchIsMatch(Arrays.asList("hello", "miss", "world", ""));
+      List<Boolean> results = matcher.batchIsMatch(
+        Arrays.asList("hello", "miss", "world", "")
+      );
       assertEquals(Arrays.asList(true, false, true, false), results);
     }
   }
@@ -148,10 +155,14 @@ public class TestSimpleMatcher {
 
   @Test
   public void testBatchProcess() {
-    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    byte[] table = buildTable(
+      ProcessType.NONE,
+      words("1", "hello", "2", "world")
+    );
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
-      List<List<SimpleResult>> results =
-          matcher.batchProcess(Arrays.asList("hello world", "miss", "hello"));
+      List<List<SimpleResult>> results = matcher.batchProcess(
+        Arrays.asList("hello world", "miss", "hello")
+      );
       assertEquals(3, results.size());
       assertEquals(2, results.get(0).size());
       assertTrue(results.get(1).isEmpty());
@@ -162,7 +173,10 @@ public class TestSimpleMatcher {
 
   @Test
   public void testFindMatch() {
-    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    byte[] table = buildTable(
+      ProcessType.NONE,
+      words("1", "hello", "2", "world")
+    );
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
       SimpleResult result = matcher.findMatch("hello world");
       assertNotNull(result);
@@ -193,10 +207,14 @@ public class TestSimpleMatcher {
 
   @Test
   public void testBatchFindMatch() {
-    byte[] table = buildTable(ProcessType.NONE, words("1", "hello", "2", "world"));
+    byte[] table = buildTable(
+      ProcessType.NONE,
+      words("1", "hello", "2", "world")
+    );
     try (SimpleMatcher matcher = new SimpleMatcher(table)) {
-      List<SimpleResult> results =
-          matcher.batchFindMatch(Arrays.asList("hello", "miss", "world", ""));
+      List<SimpleResult> results = matcher.batchFindMatch(
+        Arrays.asList("hello", "miss", "world", "")
+      );
       assertEquals(4, results.size());
       assertNotNull(results.get(0));
       assertEquals(1, results.get(0).wordId());
@@ -240,14 +258,18 @@ public class TestSimpleMatcher {
     byte[] table = buildTable(ProcessType.NONE, words("1", "hello&world"));
 
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (SimpleMatcher original = new SimpleMatcher(table);
-        ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+    try (
+      SimpleMatcher original = new SimpleMatcher(table);
+      ObjectOutputStream oos = new ObjectOutputStream(baos)
+    ) {
       oos.writeObject(original);
     }
 
     ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-    try (ObjectInputStream ois = new ObjectInputStream(bais);
-        SimpleMatcher restored = (SimpleMatcher) ois.readObject()) {
+    try (
+      ObjectInputStream ois = new ObjectInputStream(bais);
+      SimpleMatcher restored = (SimpleMatcher) ois.readObject()
+    ) {
       assertTrue(restored.isMatch("hello,world"));
       assertFalse(restored.isMatch("goodbye"));
       List<SimpleResult> results = restored.process("hello,world");
@@ -260,10 +282,12 @@ public class TestSimpleMatcher {
 
   @Test
   public void testBuilderBasic() {
-    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    try (
+      SimpleMatcher matcher = new SimpleMatcherBuilder()
         .add(ProcessType.NONE, 1, "hello")
         .add(ProcessType.NONE, 2, "world")
-        .build()) {
+        .build()
+    ) {
       assertTrue(matcher.isMatch("hello"));
       assertTrue(matcher.isMatch("world"));
       assertFalse(matcher.isMatch("miss"));
@@ -277,18 +301,22 @@ public class TestSimpleMatcher {
 
   @Test
   public void testBuilderWithProcessTypes() {
-    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    try (
+      SimpleMatcher matcher = new SimpleMatcherBuilder()
         .add(ProcessType.VARIANT_NORM, 1, "测试")
-        .build()) {
+        .build()
+    ) {
       assertTrue(matcher.isMatch("測試"));
     }
   }
 
   @Test
   public void testBuilderBackslashPattern() {
-    try (SimpleMatcher matcher = new SimpleMatcherBuilder()
+    try (
+      SimpleMatcher matcher = new SimpleMatcherBuilder()
         .add(ProcessType.NONE, 1, "\\bcat\\b")
-        .build()) {
+        .build()
+    ) {
       assertTrue(matcher.isMatch("the cat sat"));
       assertFalse(matcher.isMatch("concatenate"));
     }
@@ -297,17 +325,21 @@ public class TestSimpleMatcher {
   @Test
   public void testBuilderSerializationRoundTrip() throws Exception {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (SimpleMatcher original = new SimpleMatcherBuilder()
+    try (
+      SimpleMatcher original = new SimpleMatcherBuilder()
         .add(ProcessType.NONE, 1, "hello")
         .add(ProcessType.DELETE, 2, "你好")
         .build();
-        ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+      ObjectOutputStream oos = new ObjectOutputStream(baos)
+    ) {
       oos.writeObject(original);
     }
 
     ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-    try (ObjectInputStream ois = new ObjectInputStream(bais);
-        SimpleMatcher restored = (SimpleMatcher) ois.readObject()) {
+    try (
+      ObjectInputStream ois = new ObjectInputStream(bais);
+      SimpleMatcher restored = (SimpleMatcher) ois.readObject()
+    ) {
       assertTrue(restored.isMatch("hello"));
       assertTrue(restored.isMatch("你！好"));
     }
