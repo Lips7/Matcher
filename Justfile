@@ -13,9 +13,9 @@ ext := if os() == "macos" { "dylib" } else if os() == "linux" { "so" } else { "d
 build:
     cargo update
     cargo build --release -p matcher_c -p matcher_java -p matcher_py
-    cp ./target/release/libmatcher_c.{{ext}} ./matcher_c/libmatcher_c.{{ext}}
+    cp ./target/release/libmatcher_c.{{ ext }} ./matcher_c/libmatcher_c.{{ ext }}
     mkdir -p ./matcher_java/src/main/resources
-    cp ./target/release/libmatcher_java.{{ext}} ./matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    cp ./target/release/libmatcher_java.{{ ext }} ./matcher_java/src/main/resources/libmatcher_java.{{ ext }}
     cd matcher_py && uv sync
 
 # Upgrade all dependencies (requires cargo-upgrade).
@@ -50,29 +50,29 @@ lint-check:
     cargo all-features clippy --workspace --all-targets -- -D warnings
     cargo doc --workspace --all-features --no-deps
 
-[working-directory: 'matcher_rs']
+[working-directory('matcher_rs')]
 lint-rs:
     cargo fmt --all
     cargo all-features clippy -- -- -D warnings
 
-[working-directory: 'matcher_py']
+[working-directory('matcher_py')]
 lint-py:
     cargo fmt --all
     cargo clippy -- -D warnings
     uv run ruff check --fix && uv run ty check
 
-[working-directory: 'matcher_java']
+[working-directory('matcher_java')]
 lint-java:
     cargo fmt --all
     cargo clippy -- -D warnings
     mvn checkstyle:check
 
-[working-directory: 'matcher_c']
+[working-directory('matcher_c')]
 lint-c:
     cargo fmt --all
     cargo clippy -- -D warnings
 
-[working-directory: 'scripts']
+[working-directory('scripts')]
 lint-scripts:
     uv run ty check
 
@@ -82,31 +82,31 @@ lint-scripts:
 test: test-rs test-py test-java test-c
 
 # Rust: all feature combos via cargo-all-features + doctests.
-[working-directory: 'matcher_rs']
+[working-directory('matcher_rs')]
 test-rs *args:
-    cargo all-features nextest run {{args}}
+    cargo all-features nextest run {{ args }}
     cargo test --doc
 
 # Rust: default features only (fastest iteration).
 # Pass-through args: test name (substring match), --no-default-features, --test <file>.
-[working-directory: 'matcher_rs']
+[working-directory('matcher_rs')]
 test-quick *args:
-    cargo nextest run {{args}}
+    cargo nextest run {{ args }}
 
-[working-directory: 'matcher_py']
+[working-directory('matcher_py')]
 test-py:
     uv run pytest
 
 test-java:
     cargo build --release -p matcher_java
     mkdir -p ./matcher_java/src/main/resources
-    cp ./target/release/libmatcher_java.{{ext}} ./matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    cp ./target/release/libmatcher_java.{{ ext }} ./matcher_java/src/main/resources/libmatcher_java.{{ ext }}
     cd matcher_java && mvn test
 
 test-c:
     cargo build --release -p matcher_c
-    cp ./target/release/libmatcher_c.{{ext}} ./matcher_c/libmatcher_c.{{ext}}
-    {{env("CC", "cc")}} -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
+    cp ./target/release/libmatcher_c.{{ ext }} ./matcher_c/libmatcher_c.{{ ext }}
+    {{ env("CC", "cc") }} -Wall -Wextra -L./matcher_c -Wl,-rpath,./matcher_c -lmatcher_c -I./matcher_c \
         matcher_c/tests/test_matcher.c -o matcher_c/tests/test_matcher
     ./matcher_c/tests/test_matcher
 
@@ -125,32 +125,33 @@ test-c:
 #   --repeats N         recorded runs (default: 3)
 #   --profile <name>    cargo profile (default: bench)
 
+[private]
 _bench_script := "scripts/run_benchmarks.py"
 
 # Search preset: bench_search + bench_transform.
 bench-search *args:
-    uv run {{_bench_script}} --preset search {{args}}
+    uv run {{ _bench_script }} --preset search {{ args }}
 
 # Build preset: bench_build only.
 bench-build *args:
-    uv run {{_bench_script}} --preset build {{args}}
+    uv run {{ _bench_script }} --preset build {{ args }}
 
 # All presets: search + build.
 bench-all *args:
-    uv run {{_bench_script}} --preset all {{args}}
+    uv run {{ _bench_script }} --preset all {{ args }}
 
 # Compare two benchmark runs. Inputs: run dirs, aggregate.json, or raw .txt files.
 bench-compare baseline candidate *args:
-    uv run scripts/compare_benchmarks.py "{{baseline}}" "{{candidate}}" {{args}}
+    uv run scripts/compare_benchmarks.py "{{ baseline }}" "{{ candidate }}" {{ args }}
 
 # Interactive HTML dashboard from benchmark results (single run or comparison).
 bench-viz *args:
-    uv run scripts/visualize_benchmarks.py {{args}}
+    uv run scripts/visualize_benchmarks.py {{ args }}
 
 # Rebuild std with -C target-cpu=native for authoritative measurements.
 # Use before final adopt/revert bench-compare runs. Adds ~30s compile time.
 bench-buildstd *args:
-    RUSTFLAGS="-C target-cpu=native" cargo +nightly -Z build-std=std,core bench --profile bench -p matcher_rs {{args}}
+    RUSTFLAGS="-C target-cpu=native" cargo +nightly -Z build-std=std,core bench --profile bench -p matcher_rs {{ args }}
 
 # ── Engine Characterization ───────────────────────────────────────────────────
 # Sweeps (engine x size x pat_cjk x text_cjk) matrix → CSV to stdout.
@@ -159,7 +160,7 @@ bench-buildstd *args:
 
 # Full matrix sweep.
 characterize-engines *args:
-    cargo run --profile bench --example characterize_engines -p matcher_rs {{args}}
+    cargo run --profile bench --example characterize_engines -p matcher_rs {{ args }}
 
 # Quick subset for directional signal.
 characterize-engines-quick:
@@ -168,7 +169,7 @@ characterize-engines-quick:
 
 # Visualize dispatch CSV as interactive Plotly heatmaps.
 characterize-viz *args:
-    uv run scripts/visualize_dispatch.py {{args}}
+    uv run scripts/visualize_dispatch.py {{ args }}
 
 # ── Profiling ─────────────────────────────────────────────────────────────────
 # macOS only (Xcode Instruments Time Profiler). Targets: profile_search, profile_build.
@@ -178,15 +179,15 @@ characterize-viz *args:
 #   just profile analyze scripts/profile_records/prof_*.trace
 
 profile *args:
-    uv run scripts/instruments_profile.py {{args}}
+    uv run scripts/instruments_profile.py {{ args }}
 
 # ── Fuzz ──────────────────────────────────────────────────────────────────────
 
-[working-directory: 'matcher_rs']
+[working-directory('matcher_rs')]
 fuzz target="fuzz_matcher_new" *args="":
-    cargo fuzz run {{target}} {{args}}
+    cargo fuzz run {{ target }} {{ args }}
 
-[working-directory: 'matcher_rs']
+[working-directory('matcher_rs')]
 fuzz-list:
     cargo fuzz list
 
@@ -205,6 +206,6 @@ coverage:
 
 clean:
     cargo clean
-    rm -f matcher_c/libmatcher_c.{{ext}}
-    rm -f matcher_java/src/main/resources/libmatcher_java.{{ext}}
+    rm -f matcher_c/libmatcher_c.{{ ext }}
+    rm -f matcher_java/src/main/resources/libmatcher_java.{{ ext }}
     rm -f matcher_c/tests/test_matcher

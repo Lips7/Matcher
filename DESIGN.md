@@ -90,11 +90,11 @@ Result collection (post-walk):
 
 Three rules, each using a different text transformation:
 
-| Rule | ProcessType | word_id | Pattern |
-|------|-------------|---------|---------|
-| R1 | `None` | 1 | `"hello&world"` |
-| R2 | `VariantNorm \| Delete` | 2 | `"你好"` |
-| R3 | `Romanize` | 3 | `"zhongguo"` |
+| Rule | ProcessType             | word_id | Pattern         |
+| ---- | ----------------------- | ------- | --------------- |
+| R1   | `None`                  | 1       | `"hello&world"` |
+| R2   | `VariantNorm \| Delete` | 2       | `"你好"`        |
+| R3   | `Romanize`              | 3       | `"zhongguo"`    |
 
 Query text: `"Hello! 你好世界 china is cool"`
 
@@ -222,10 +222,10 @@ This node terminates. The bytewise AC finds no match for `"zhongguo"` (the text 
 
 After the tree walk, touched rules are checked for satisfaction. A rule is satisfied when all its AND segments have been matched and no NOT segment has vetoed it:
 
-| Rule | All AND segments matched? | No NOT veto? | Result |
-|------|--------------------------|-------------|--------|
-| R1 | No (0 of 2 matched) | — | Not satisfied |
-| R2 | Yes (1 of 1) | Yes (no NOT segments) | **Satisfied** → `{ word_id: 2, word: "你好" }` |
+| Rule | All AND segments matched? | No NOT veto?          | Result                                         |
+| ---- | ------------------------- | --------------------- | ---------------------------------------------- |
+| R1   | No (0 of 2 matched)       | —                     | Not satisfied                                  |
+| R2   | Yes (1 of 1)              | Yes (no NOT segments) | **Satisfied** → `{ word_id: 2, word: "你好" }` |
 
 R3 was never touched (no hit). Final output: `[{ word_id: 2, word: "你好" }]`.
 
@@ -245,7 +245,7 @@ This works without locking because `SimpleMatcher` is `Send + Sync` (all fields 
 
 Throughput scales linearly with core count when `rayon` is enabled: 2.6–7.2× on M3 Max (12P + 4E cores) for typical workloads, with higher gains on CJK text (more work per line amortizes scheduling overhead).
 
-*Source: `simple_matcher/mod.rs` (batch methods in the main `impl SimpleMatcher` block, `maybe_par_iter!` macro)*
+_Source: `simple_matcher/mod.rs` (batch methods in the main `impl SimpleMatcher` block, `maybe_par_iter!` macro)_
 
 ---
 
@@ -259,7 +259,7 @@ Throughput scales linearly with core count when `rayon` is enabled: 2.6–7.2× 
 
 The threshold was calibrated from an 8,932-point characterization sweep across 12 pattern sizes × 11 pattern CJK compositions × 11 text CJK densities. The crossover is consistent regardless of pattern composition.
 
-*Source: `simple_matcher/scan.rs`*
+_Source: `simple_matcher/scan.rs`_
 
 ### Generation-Based State Reuse
 
@@ -269,7 +269,7 @@ The threshold was calibrated from an 8,932-point characterization sweep across 1
 
 Cost: O(1) amortized reset. The counter wraps at `u16::MAX` (~65K calls), triggering a bulk reset that costs ~15µs — amortized to <1ns per scan.
 
-*Source: `simple_matcher/state.rs`*
+_Source: `simple_matcher/state.rs`_
 
 ### Direct-Rule Bypass
 
@@ -279,7 +279,7 @@ Cost: O(1) amortized reset. The counter wraps at `u16::MAX` (~65K calls), trigge
 
 Falls back to the indirect table for multi-entry patterns, matrix-mode rules, or rule indices exceeding the packed capacity.
 
-*Source: `simple_matcher/pattern.rs`*
+_Source: `simple_matcher/pattern.rs`_
 
 ### Fused Transform-Scan
 
@@ -289,16 +289,16 @@ Falls back to the indirect table for multi-entry patterns, matrix-mode rules, or
 
 A 4-way dispatch selects the strategy:
 
-| Condition | Strategy | Rationale |
-|---|---|---|
-| DFA + char_density ≥ 0.55 + has Teddy prefilter | Materialize → DFA `try_find_overlapping` loop | Teddy skips non-matching regions — needs the full buffer |
-| DFA + char_density ≥ 0.55 + no Teddy prefilter | Stream → DFA `next_state` loop | No prefilter to lose; custom loop eliminates iterator overhead and avoids materialization |
-| No DFA + char_density ≥ 0.55 | Stream → DAAC bytewise | Best available without DFA |
-| char_density < 0.55 | Stream → DAAC charwise | Charwise wins on CJK; streaming avoids allocation |
+| Condition                                       | Strategy                                      | Rationale                                                                                 |
+| ----------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| DFA + char_density ≥ 0.55 + has Teddy prefilter | Materialize → DFA `try_find_overlapping` loop | Teddy skips non-matching regions — needs the full buffer                                  |
+| DFA + char_density ≥ 0.55 + no Teddy prefilter  | Stream → DFA `next_state` loop                | No prefilter to lose; custom loop eliminates iterator overhead and avoids materialization |
+| No DFA + char_density ≥ 0.55                    | Stream → DAAC bytewise                        | Best available without DFA                                                                |
+| char_density < 0.55                             | Stream → DAAC charwise                        | Charwise wins on CJK; streaming avoids allocation                                         |
 
 Teddy is active when the pattern count is below ~100. With `next_state`, the loop checks `is_special(sid)` (fires only for dead/match states) and falls through on most bytes with zero branching overhead.
 
-*Source: `simple_matcher/search.rs`, `process/step.rs`*
+_Source: `simple_matcher/search.rs`, `process/step.rs`_
 
 ### No-Op Scan Folding
 
@@ -308,7 +308,7 @@ Teddy is active when the pattern count is below ~100. With `next_state`, the loo
 
 For a matcher with ProcessTypes {None, VariantNorm, Romanize, Delete} on ASCII text, this reduces 4 scans to 2 (root + VN + Romanize merged; Delete separate).
 
-*Source: `simple_matcher/search.rs`*
+_Source: `simple_matcher/search.rs`_
 
 ### Split-Borrow State Access
 
@@ -316,7 +316,7 @@ For a matcher with ProcessTypes {None, VariantNorm, Romanize, Delete} on ASCII t
 
 **Solution:** `ScanState` borrows individual fields as separate mutable slices. The compiler keeps base pointers in registers across the scan loop, eliminating redundant loads. `ScanContext` is `Copy` (32 bytes) so it lives in registers rather than on the stack. Walk-level constants are separated into `WalkConfig` to avoid repeating them in every `ScanContext` construction. Profiled: 3–6% throughput improvement.
 
-*Source: `simple_matcher/state.rs`*
+_Source: `simple_matcher/state.rs`_
 
 ---
 
@@ -326,15 +326,15 @@ For a matcher with ProcessTypes {None, VariantNorm, Romanize, Delete} on ASCII t
 
 `ProcessType` is a `u8` where each bit selects a transformation step:
 
-| Flag | Bit | Effect | Data Source |
-|------|-----|--------|-------------|
-| `None` | 0 | No transformation | — |
-| `VariantNorm` | 1 | CJK variant normalization (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width) | OpenCC + Unihan + JIS |
-| `Delete` | 2 | Remove punctuation/symbols/whitespace | Unicode categories |
-| `Normalize` | 3 | NFKC casefold + numeric normalization | Unicode standard |
-| `Romanize` | 4 | CJK → space-separated romanization (Pinyin, Romaji, Revised Romanization) | pypinyin + kana/hangul tables |
-| `RomanizeChar` | 5 | CJK → concatenated romanization (no spaces) | Same as Romanize |
-| `EmojiNorm` | 6 | Emoji → English words, strips modifiers | CLDR short names |
+| Flag           | Bit | Effect                                                                                               | Data Source                   |
+| -------------- | --- | ---------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `None`         | 0   | No transformation                                                                                    | —                             |
+| `VariantNorm`  | 1   | CJK variant normalization (Chinese T→S, Japanese Kyūjitai→Shinjitai, half-width katakana→full-width) | OpenCC + Unihan + JIS         |
+| `Delete`       | 2   | Remove punctuation/symbols/whitespace                                                                | Unicode categories            |
+| `Normalize`    | 3   | NFKC casefold + numeric normalization                                                                | Unicode standard              |
+| `Romanize`     | 4   | CJK → space-separated romanization (Pinyin, Romaji, Revised Romanization)                            | pypinyin + kana/hangul tables |
+| `RomanizeChar` | 5   | CJK → concatenated romanization (no spaces)                                                          | Same as Romanize              |
+| `EmojiNorm`    | 6   | Emoji → English words, strips modifiers                                                              | CLDR short names              |
 
 Flags compose with `|`. Named aliases: `DeleteNormalize`, `VariantNormDeleteNormalize`.
 
@@ -348,20 +348,20 @@ Romanize and Normalize share a unified `StrReplaceFindIter<const CHECK_ASCII: bo
 
 Romanize and EmojiNorm string buffers store each replacement with a **build-time-prepended leading space** for word boundary separation (source data in `process_map/` is space-free). `RomanizeChar` trims this space at runtime via `trim_romanize_packed`.
 
-*Source: `process/transform/page_table.rs`*
+_Source: `process/transform/page_table.rs`_
 
 ### SIMD Skip Functions
 
 Transform iterators use SIMD to skip irrelevant ASCII byte runs:
 
-| Transform | Skip Function | What It Skips |
-|-----------|--------------|---------------|
-| VariantNorm, Romanize | `skip_ascii_simd` | All ASCII bytes (only CJK keys exist) |
-| Delete | `skip_ascii_non_delete_simd` | ASCII bytes not in the delete bitset |
+| Transform             | Skip Function                | What It Skips                         |
+| --------------------- | ---------------------------- | ------------------------------------- |
+| VariantNorm, Romanize | `skip_ascii_simd`            | All ASCII bytes (only CJK keys exist) |
+| Delete                | `skip_ascii_non_delete_simd` | ASCII bytes not in the delete bitset  |
 
 Dispatch: AVX2 on x86-64 (runtime detection), NEON on AArch64 (compile-time), portable `std::simd` fallback.
 
-*Source: `process/transform/simd.rs`*
+_Source: `process/transform/simd.rs`_
 
 ### Compiled Tables
 
@@ -371,9 +371,9 @@ Dispatch: AVX2 on x86-64 (runtime detection), NEON on AArch64 (compile-time), po
 
 ## Feature Flags
 
-| Flag | Default | Effect |
-|------|---------|--------|
-| `perf` | on | Meta-feature enabling `dfa` + `simd_runtime_dispatch` |
-| `dfa` | via `perf` | Aho-Corasick DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster. |
-| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON) and `bytecount` character density (NEON/AVX2) |
-| `rayon` | off | Enables parallel execution for batch methods (always available; sequential without this feature). Enabled by binding crates. |
+| Flag                    | Default    | Effect                                                                                                                       |
+| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `perf`                  | on         | Meta-feature enabling `dfa` + `simd_runtime_dispatch`                                                                        |
+| `dfa`                   | via `perf` | Aho-Corasick DFA for bytewise engine. ~17× more memory, ~1.7–3.3× faster.                                                    |
+| `simd_runtime_dispatch` | via `perf` | Runtime SIMD kernel selection for transforms (AVX2/NEON) and `bytecount` character density (NEON/AVX2)                       |
+| `rayon`                 | off        | Enables parallel execution for batch methods (always available; sequential without this feature). Enabled by binding crates. |

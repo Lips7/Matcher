@@ -74,8 +74,9 @@ class SimpleMatcherBuilder:
     """
 
     def __init__(self) -> None: ...
-
-    def add_word(self, process_type: int | ProcessType, word_id: int, word: str) -> None:
+    def add_word(
+        self, process_type: int | ProcessType, word_id: int, word: str
+    ) -> None:
         """
         Register a pattern under the given process type and word ID.
 
