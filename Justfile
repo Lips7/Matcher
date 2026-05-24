@@ -182,11 +182,13 @@ profile *args:
 
 # ── Fuzz ──────────────────────────────────────────────────────────────────────
 
+[working-directory: 'matcher_rs']
 fuzz target="fuzz_matcher_new" *args="":
-    cd matcher_rs && cargo fuzz run {{target}} {{args}}
+    cargo fuzz run {{target}} {{args}}
 
+[working-directory: 'matcher_rs']
 fuzz-list:
-    cd matcher_rs && cargo fuzz list
+    cargo fuzz list
 
 # ── Coverage ──────────────────────────────────────────────────────────────────
 
