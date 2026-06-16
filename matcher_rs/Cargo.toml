@@ -21,8 +21,8 @@ crate-type = ["rlib"]
 bytecount = { version = "0.6.9", default-features = false }
 foldhash = "0.2"
 aho-corasick = { version = "1.1.4", optional = true }
-bitflags = "2.11.1"
-daachorse = "3.0.0"
+bitflags = "2.13.0"
+daachorse = "3.0.2"
 mimalloc = "0.1.52"
 rayon = { version = "1.12", optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
