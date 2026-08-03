@@ -59,12 +59,10 @@ use aho_corasick::{
     dfa::{Builder as AcDfaBuilder, DFA as AcDfa},
 };
 use daachorse::{
+    CharwiseDoubleArrayAhoCorasick as CharwiseDAACEngine,
+    CharwiseDoubleArrayAhoCorasickBuilder as CharwiseDAACBuilder,
     DoubleArrayAhoCorasick as BytewiseDAACEngine,
     DoubleArrayAhoCorasickBuilder as BytewiseDAACBuilder, MatchKind as DAACMatchKind,
-    charwise::{
-        CharwiseDoubleArrayAhoCorasick as CharwiseDAACEngine,
-        CharwiseDoubleArrayAhoCorasickBuilder as CharwiseDAACBuilder,
-    },
 };
 
 use super::{

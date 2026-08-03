@@ -128,18 +128,50 @@ pub struct SimpleResult<'a> {
 ///
 /// # Pattern Syntax
 ///
-/// Each pattern string may contain two special operators:
+/// Pattern strings support logical operators, alternative branches, and
+/// boundary markers:
 ///
-/// | Operator | Meaning |
-/// |----------|---------|
-/// | `&` | All adjacent sub-patterns must appear (order-independent AND) |
-/// | `~` | The following sub-pattern must be **absent** (NOT) |
+/// | Operator / Marker | Meaning | Description |
+/// |-------------------|---------|-------------|
+/// | `&` | AND | All adjacent segments must appear (order-independent). |
+/// | `~` | NOT | The following segment must be absent (veto). |
+/// | `|` | OR | Alternative options within a segment; any single alternative matching satisfies it. |
+/// | `\b` | Word Boundary | Ensures the segment starts or ends at a word boundary (letters, digits, or underscore). |
+///
+/// ### Operators & Binding
+///
+/// - **OR (`|`)** binds tighter than **AND (`&`)** and **NOT (`~`)**.
+///   - `"apple|pear&pie"` matches if either (`"apple"` OR `"pear"`) is present
+///     AND `"pie"` is present.
+///   - `"banana~peel|skin"` matches if `"banana"` is present AND neither
+///     `"peel"` nor `"skin"` is present.
+/// - **Repeated Segments** can specify frequency requirements:
+///   - `"a&a~b~b"` matches if `"a"` appears at least twice, and `"b"` appears
+///     fewer than twice (vetoed only on 2 or more hits).
+///
+/// ### Word Boundaries (`\b`)
+///
+/// Placed at the start or end of any segment or alternative (e.g., `\bpattern`
+/// or `pattern\b`):
+///
+/// - **Left Boundary (`\b`)**: Ensures the pattern does not start immediately
+///   after a word character (`[a-zA-Z0-9_]`).
+///   - `"\bcat"` matches `"a cat"` or `"cat"`, but not `"scat"`.
+/// - **Right Boundary (`\b`)**: Ensures the pattern does not end immediately
+///   before a word character.
+///   - `"cat\b"` matches `"cat food"` or `"cat"`, but not `"catch"`.
+/// - **Exact Word**: `"\bcat\b"` matches `"a cat in the hat"`, but not
+///   `"catch"` or `"scat"`.
+///
+/// ### Examples
 ///
 /// ```text
-/// "apple&pie"      -- fires only when both "apple" and "pie" appear
-/// "banana~peel"    -- fires when "banana" appears but "peel" does not
-/// "a&b~c"          -- fires when both "a" and "b" appear and "c" does not
-/// "a&a~b~b"        -- fires when "a" appears twice and "b" appears fewer than twice
+/// "apple&pie"              -- fires only when both "apple" and "pie" appear
+/// "banana~peel"            -- fires when "banana" appears but "peel" does not
+/// "a&b~c"                  -- fires when both "a" and "b" appear and "c" does not
+/// "a&a~b~b"                -- fires when "a" appears twice and "b" appears fewer than twice
+/// "a|b&c|d~e|f"            -- fires when (a OR b) AND (c OR d) appear, and neither e nor f appears
+/// "\bapple\b|\bpear\b&pie" -- fires when either "apple" or "pear" as a whole word appears, and "pie" appears
 /// ```
 ///
 /// # Two-Pass Matching

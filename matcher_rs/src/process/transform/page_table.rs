@@ -187,7 +187,9 @@ pub(crate) fn page_table_lookup(cp: u32, l1: &[u16], l2: &[u32]) -> Option<u32> 
 fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
     debug_assert_eq!(bytes.len() % 2, 0);
     bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect::<Vec<_>>()
         .into_boxed_slice()
@@ -197,7 +199,9 @@ fn decode_u16_table(bytes: &[u8]) -> Box<[u16]> {
 fn decode_u32_table(bytes: &[u8]) -> Box<[u32]> {
     debug_assert_eq!(bytes.len() % 4, 0);
     bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect::<Vec<_>>()
         .into_boxed_slice()

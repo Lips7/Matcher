@@ -2,13 +2,17 @@
 
 ## Prerequisites
 
-Run the setup checker to verify your environment:
+To contribute to Matcher, please ensure you have the following tools installed:
 
-```shell
-./scripts/dev-setup.sh
-```
-
-This validates: Rust nightly, `just`, `cargo-nextest`, `cargo-all-features`, `uv`, Python 3.8+, Java 21+, Maven, and a C compiler. Use `--check` for non-interactive mode.
+- **Rust Nightly**: Configured in [rust-toolchain.toml](file:///Users/lippsapple/Personal/project/Matcher/rust-toolchain.toml). Install via [rustup](https://rustup.rs/).
+- **just**: Command runner. Install via `cargo install just` or your system package manager.
+- **cargo-nextest**: Test runner. Install via `cargo install cargo-nextest`.
+- **cargo-all-features**: For checking/testing all cargo features. Install via `cargo install cargo-all-features`.
+- **prek**: Pre-commit runner. Install via `cargo install prek`.
+- **uv**: Python package/environment manager. Install via [astral.sh/uv](https://astral.sh/uv/).
+- **Python (>= 3.8)**: Required for Python bindings (`matcher_py`) and benchmarking.
+- **Java (>= 21)** & **Maven**: Required for Java bindings (`matcher_java`).
+- **C compiler** (e.g. `cc` / `clang` / `gcc`): Required for C bindings (`matcher_c`).
 
 ## Development Workflow
 
