@@ -235,6 +235,8 @@ R3 was never touched (no hit). Final output: `[{ word_id: 2, word: "你好" }]`.
 
 When all rules are simple single-segment literals under one ProcessType with no word boundaries, the matcher skips the full pipeline entirely. `is_match` delegates directly to the AC automaton — a single character-density-based engine dispatch returns a boolean. No thread-local state, no generation counters, no trie walking.
 
+For exhaustive `process` searches, those same single positive literals use a direct-hit rule-state path. On the first hit it stamps the thread-local rule state and records the rule for collection; repeat hits only confirm the existing state. Rules with NOT segments, repeated segments, or matrix counters continue through the general evaluator so matching semantics are unchanged.
+
 All other query methods (`process`, `process_into`, `for_each_match`, `find_match`) always use the full trie walk. For simple matchers without transforms, this naturally short-circuits: the trie has only a root node, so one scan handles everything.
 
 ## 4. Batch API

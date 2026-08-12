@@ -302,6 +302,42 @@ impl RuleSet {
         }
     }
 
+    /// Evaluates a direct-encoded pattern hit, specializing the common
+    /// single-positive-literal case before falling back to the general rule
+    /// state machine.
+    #[inline(always)]
+    pub(super) fn eval_direct_hit(
+        &self,
+        rule_idx: usize,
+        kind: PatternKind,
+        offset: usize,
+        ctx: ScanContext,
+        ss: &mut ScanState<'_>,
+    ) -> bool {
+        let info = self.info(rule_idx);
+        if matches!(kind, PatternKind::And)
+            && matches!(info.method, SatisfactionMethod::Immediate)
+            && !info.has_not
+        {
+            // SAFETY: `rule_idx` comes from the direct encoding assembled at
+            // matcher construction, and `prepare` sizes the TLS state.
+            unsafe {
+                core::hint::assert_unchecked(rule_idx < ss.rule_states.len());
+            }
+            let rule_state = &mut ss.rule_states[rule_idx];
+            if rule_state.generation != ss.generation {
+                rule_state.generation = ss.generation;
+                rule_state.remaining_and = 0;
+                rule_state.vetoed = false;
+                rule_state.satisfied_mask = 0;
+                ss.touched_indices.push(rule_idx);
+            }
+            return ctx.exit_early;
+        }
+
+        self.eval_hit(rule_idx, kind, offset, ctx, ss)
+    }
+
     /// Unified rule evaluation: processes one pattern hit.
     ///
     /// This is the single entry point for all rule state transitions. Both
@@ -496,6 +532,22 @@ mod tests {
             result2,
             "already-satisfied Simple should still return exit_early"
         );
+    }
+
+    #[test]
+    fn test_eval_direct_immediate_reuses_touched_rule() {
+        let rules = make_simple_ruleset(1, "hello");
+        let mut state = SimpleMatchState::new();
+        state.prepare(1);
+        let mut ss = state.as_scan_state();
+        let ctx = make_ctx(false);
+
+        assert!(!rules.eval_direct_hit(0, PatternKind::And, 0, ctx, &mut ss));
+        assert!(ss.rule_is_satisfied(0));
+        assert_eq!(ss.touched_indices.len(), 1);
+
+        assert!(!rules.eval_direct_hit(0, PatternKind::And, 0, ctx, &mut ss));
+        assert_eq!(ss.touched_indices.len(), 1);
     }
 
     #[test]

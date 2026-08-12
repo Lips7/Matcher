@@ -206,7 +206,7 @@ impl SimpleMatcher {
             if boundary != 0 && !check_word_boundary(text, start, end, boundary) {
                 return false;
             }
-            return self.rules.eval_hit(rule_idx, kind, offset, ctx, ss);
+            return self.rules.eval_direct_hit(rule_idx, kind, offset, ctx, ss);
         }
         match self.scan.patterns().dispatch_indirect(raw_value) {
             PatternDispatch::SingleEntry(entry) => {

@@ -28,6 +28,20 @@ fn test_direct_vs_indirect_dispatch() {
     assert_eq!(r3.len(), 3);
 }
 
+#[test]
+fn test_direct_literal_repeated_hits_are_collected_once() {
+    let matcher = SimpleMatcherBuilder::new()
+        .add_word(ProcessType::None, 1, "needle")
+        .build()
+        .unwrap();
+
+    let mut results = Vec::new();
+    matcher.process_into("needle needle needle", &mut results);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].word_id, 1);
+}
+
 // ---------------------------------------------------------------------------
 // Bitmask vs matrix dispatch threshold
 // ---------------------------------------------------------------------------

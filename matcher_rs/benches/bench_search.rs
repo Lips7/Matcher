@@ -269,6 +269,83 @@ mod rule_complexity {
     }
 }
 
+// ── Hit Density ───────────────────────────────────────────────────────────
+// These cases isolate callback/rule-evaluation overhead that miss-oriented
+// throughput benchmarks do not expose. `process_into` removes output-vector
+// allocation from the measurement while retaining result construction.
+
+mod hit_density {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    const HAYSTACK: &str = "needle needle needle needle needle needle needle needle";
+
+    fn literal_table() -> HashMap<ProcessType, HashMap<u32, String>> {
+        wrap_table(ProcessType::None, HashMap::from([(1, "needle".to_owned())]))
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn direct_literal_process_into(bencher: Bencher) {
+        let matcher = SimpleMatcher::new(&literal_table()).unwrap();
+        bencher
+            .counter(BytesCount::new(HAYSTACK.len()))
+            .bench_local(|| {
+                let mut results = Vec::new();
+                matcher.process_into(HAYSTACK, &mut results);
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn duplicate_entries_process_into(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            (1..=1_000).map(|id| (id, "needle".to_owned())).collect(),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        bencher
+            .counter(BytesCount::new(HAYSTACK.len()))
+            .bench_local(|| {
+                let mut results = Vec::new();
+                matcher.process_into(HAYSTACK, &mut results);
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn boundary_process_into(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            HashMap::from([(1, r"\bneedle\b".to_owned())]),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        bencher
+            .counter(BytesCount::new(HAYSTACK.len()))
+            .bench_local(|| {
+                let mut results = Vec::new();
+                matcher.process_into(HAYSTACK, &mut results);
+                black_box(results)
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn and_not_process_into(bencher: Bencher) {
+        let table = wrap_table(
+            ProcessType::None,
+            HashMap::from([(1, "needle&needle~blocked".to_owned())]),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        bencher
+            .counter(BytesCount::new(HAYSTACK.len()))
+            .bench_local(|| {
+                let mut results = Vec::new();
+                matcher.process_into(HAYSTACK, &mut results);
+                black_box(results)
+            });
+    }
+}
+
 // ── Text Length
 // ──────────────────────────────────────────────────────────────────
 // Question: How does input text length affect per-call latency?
