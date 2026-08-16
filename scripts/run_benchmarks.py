@@ -11,7 +11,6 @@ Usage:
     uv run scripts/run_benchmarks.py --quick                  # fast iteration (5 samples, 1 repeat)
     uv run scripts/run_benchmarks.py --filter scaling         # narrow to a divan module
     uv run scripts/run_benchmarks.py --filter "scaling::process_cn"
-    uv run scripts/run_benchmarks.py --repeats 5 --profile bench-dev
 """
 
 from __future__ import annotations

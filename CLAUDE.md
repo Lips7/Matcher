@@ -43,7 +43,6 @@ just bench-search --quick           # Quick directional signal
 just bench-search --filter scaling  # Only scaling benchmarks
 just bench-search --filter rule_complexity
 just bench-search --filter "scaling::process_cn"       # Single benchmark group
-just bench-search --profile bench-dev                  # Faster rebuild (thin LTO)
 just bench-build                    # Construction benchmarks
 just bench-all                      # All presets (search + build)
 just bench-compare <baseline> <candidate>              # Compare runs, dirs, or raw files
