@@ -288,12 +288,34 @@ mod hit_density {
     #[divan::bench(max_time = 5)]
     fn direct_literal_process_into(bencher: Bencher) {
         let matcher = SimpleMatcher::new(&literal_table()).unwrap();
+        let mut results = Vec::new();
         bencher
             .counter(BytesCount::new(HAYSTACK.len()))
             .bench_local(|| {
-                let mut results = Vec::new();
+                results.clear();
                 matcher.process_into(HAYSTACK, &mut results);
-                black_box(results)
+                black_box(results.len())
+            });
+    }
+
+    #[divan::bench(max_time = 5)]
+    fn direct_bitmask_and_process_into(bencher: Bencher) {
+        const BATCH_SIZE: usize = 100;
+        let table = wrap_table(
+            ProcessType::None,
+            HashMap::from([(1, "needle&thread&haystack".to_owned())]),
+        );
+        let matcher = SimpleMatcher::new(&table).unwrap();
+        let haystack = "needle thread haystack needle thread haystack needle thread haystack";
+        let mut results = Vec::new();
+        bencher
+            .counter(BytesCount::new(haystack.len() * BATCH_SIZE))
+            .bench_local(|| {
+                for _ in 0..BATCH_SIZE {
+                    results.clear();
+                    matcher.process_into(haystack, &mut results);
+                    black_box(results.len());
+                }
             });
     }
 
@@ -304,12 +326,13 @@ mod hit_density {
             (1..=1_000).map(|id| (id, "needle".to_owned())).collect(),
         );
         let matcher = SimpleMatcher::new(&table).unwrap();
+        let mut results = Vec::new();
         bencher
             .counter(BytesCount::new(HAYSTACK.len()))
             .bench_local(|| {
-                let mut results = Vec::new();
+                results.clear();
                 matcher.process_into(HAYSTACK, &mut results);
-                black_box(results)
+                black_box(results.len())
             });
     }
 
@@ -320,12 +343,13 @@ mod hit_density {
             HashMap::from([(1, r"\bneedle\b".to_owned())]),
         );
         let matcher = SimpleMatcher::new(&table).unwrap();
+        let mut results = Vec::new();
         bencher
             .counter(BytesCount::new(HAYSTACK.len()))
             .bench_local(|| {
-                let mut results = Vec::new();
+                results.clear();
                 matcher.process_into(HAYSTACK, &mut results);
-                black_box(results)
+                black_box(results.len())
             });
     }
 
@@ -336,12 +360,13 @@ mod hit_density {
             HashMap::from([(1, "needle&needle~blocked".to_owned())]),
         );
         let matcher = SimpleMatcher::new(&table).unwrap();
+        let mut results = Vec::new();
         bencher
             .counter(BytesCount::new(HAYSTACK.len()))
             .bench_local(|| {
-                let mut results = Vec::new();
+                results.clear();
                 matcher.process_into(HAYSTACK, &mut results);
-                black_box(results)
+                black_box(results.len())
             });
     }
 }
