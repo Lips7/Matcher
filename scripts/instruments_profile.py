@@ -453,13 +453,16 @@ def parse_time_profile(xml_text: str) -> tuple[list[dict], dict]:
                 thread_el = id_map[ref]
             thread_name = thread_el.get("fmt", "")
 
-        # Find backtrace — may be nested inside <tagged-backtrace>
+        # Find backtrace. Xcode 16 exports frames directly under
+        # <tagged-backtrace>, while older versions nest them in <backtrace>.
         tbt_el = row.find("tagged-backtrace")
         if tbt_el is not None:
             ref = tbt_el.get("ref")
             if ref and ref in id_map:
                 tbt_el = id_map[ref]
             bt_el = tbt_el.find("backtrace")
+            if bt_el is None:
+                bt_el = tbt_el
         else:
             bt_el = row.find("backtrace")
         if bt_el is None:
