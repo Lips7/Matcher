@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
 # dependencies = ["plotly"]
@@ -63,7 +62,7 @@ def group_by(rows: list[dict], *keys: str) -> dict:
 
 
 def unique_sorted(rows: list[dict], key: str) -> list:
-    return sorted(set(row[key] for row in rows))
+    return sorted({row[key] for row in rows})
 
 
 def make_throughput_heatmaps(rows: list[dict], mode: str, pat_cjk: int) -> go.Figure:
@@ -98,7 +97,7 @@ def make_throughput_heatmaps(rows: list[dict], mode: str, pat_cjk: int) -> go.Fi
                 x=[str(tc) for tc in text_cjks],
                 y=[str(n) for n in sizes],
                 colorscale="Viridis",
-                colorbar=dict(title="MB/s", x=1.0 if idx == n_engines - 1 else None),
+                colorbar={"title": "MB/s", "x": 1.0 if idx == n_engines - 1 else None},
                 showscale=(idx == n_engines - 1),
                 hovertemplate="text_cjk=%{x}%<br>n=%{y}<br>%{z:.0f} MB/s<extra></extra>",
             ),
@@ -167,11 +166,11 @@ def make_winner_heatmap(rows: list[dict], mode: str, pat_cjk: int) -> go.Figure:
         y=[str(n) for n in sizes],
         colorscale=colorscale,
         zmin=0, zmax=len(engines) - 1,
-        colorbar=dict(
-            title="Engine",
-            tickvals=list(range(len(engines))),
-            ticktext=engines,
-        ),
+        colorbar={
+            "title": "Engine",
+            "tickvals": list(range(len(engines))),
+            "ticktext": engines,
+        },
         text=hover_text,
         hovertemplate="%{text}<extra></extra>",
     ))
@@ -219,7 +218,7 @@ def make_crossover_charts(rows: list[dict], mode: str, pat_cjk: int) -> go.Figur
                     name=engine,
                     legendgroup=engine,
                     showlegend=(si == 0),
-                    line=dict(color=ENGINE_COLORS.get(engine, "#999")),
+                    line={"color": ENGINE_COLORS.get(engine, "#999")},
                     hovertemplate=f"{engine}<br>text_cjk=%{{x}}%<br>%{{y:.0f}} MB/s<extra></extra>",
                 ),
                 row=r_idx, col=c_idx,
@@ -253,7 +252,7 @@ def make_pat_composition_chart(rows: list[dict], mode: str, engine: str, n: int)
             x=x, y=y,
             mode="lines+markers",
             name=f"text_cjk={tc}%",
-            line=dict(color=colors[i]),
+            line={"color": colors[i]},
         ))
 
     fig.update_layout(
@@ -278,8 +277,8 @@ def build_dashboard(rows: list[dict], output: pathlib.Path):
         "<style>body{font-family:sans-serif;margin:20px;} .chart{margin-bottom:40px;}</style>",
         "</head><body>",
         "<h1>Engine Dispatch Characterization</h1>",
-        f"<p>{len(rows)} data points: {len(engines)} engines, {len(sizes)} sizes, "
-        f"{len(pat_cjks)} pat_cjk levels, {len(unique_sorted(rows, 'text_cjk'))} text_cjk levels</p>",
+        (f"<p>{len(rows)} data points: {len(engines)} engines, {len(sizes)} sizes, "
+        f"{len(pat_cjks)} pat_cjk levels, {len(unique_sorted(rows, 'text_cjk'))} text_cjk levels</p>"),
     ]
 
     chart_id = 0

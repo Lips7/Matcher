@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
 # dependencies = ["plotly"]
@@ -24,8 +23,6 @@ import webbrowser
 from collections import defaultdict
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
 from bench_utils import (
     METRIC_CHOICES,
     AggregateFile,
@@ -33,6 +30,7 @@ from bench_utils import (
     format_duration,
     load_aggregate_input,
 )
+from plotly.subplots import make_subplots
 
 # =============================================================================
 # Constants
@@ -43,14 +41,14 @@ SERIES_PALETTE = [
     "#F58518", "#72B7B2", "#EECA3B", "#FF9DA6",
 ]
 
-LAYOUT_DEFAULTS = dict(
-    template="plotly_white",
-    font=dict(family="Inter, -apple-system, Segoe UI, sans-serif", size=13),
-    paper_bgcolor="white",
-    plot_bgcolor="#fafafa",
-    hoverlabel=dict(font_size=12, bgcolor="white"),
-    margin=dict(t=80, b=60, l=70, r=30),
-)
+LAYOUT_DEFAULTS = {
+    "template": "plotly_white",
+    "font": {"family": "Inter, -apple-system, Segoe UI, sans-serif", "size": 13},
+    "paper_bgcolor": "white",
+    "plot_bgcolor": "#fafafa",
+    "hoverlabel": {"font_size": 12, "bgcolor": "white"},
+    "margin": {"t": 80, "b": 60, "l": 70, "r": 30},
+}
 
 PAGE_STYLE = """\
 body {
@@ -228,8 +226,8 @@ def build_scaling_fig(group: ChartGroup) -> go.Figure:
                 fig.add_trace(go.Scatter(
                     x=[p.size for p in pts], y=[p.value_s for p in pts],
                     mode="lines+markers", name=short_name,
-                    line=dict(color=_color_for(s_idx), width=2.5),
-                    marker=dict(size=7),
+                    line={"color": _color_for(s_idx), "width": 2.5},
+                    marker={"size": 7},
                     hovertext=[f"<b>{short_name}</b> @ {p.size:,}<br>{format_duration(p.value_s)}" for p in pts],
                     hoverinfo="text",
                     legendgroup=short_name, showlegend=(facet_idx == 0),
@@ -242,8 +240,8 @@ def build_scaling_fig(group: ChartGroup) -> go.Figure:
             fig.add_trace(go.Scatter(
                 x=[p.size for p in pts], y=[p.value_s for p in pts],
                 mode="lines+markers", name=series,
-                line=dict(color=_color_for(s_idx), width=2.5),
-                marker=dict(size=7),
+                line={"color": _color_for(s_idx), "width": 2.5},
+                marker={"size": 7},
                 hovertext=[f"<b>{series}</b> @ {p.size:,}<br>{format_duration(p.value_s)}" for p in pts],
                 hoverinfo="text",
             ))
@@ -259,13 +257,13 @@ def build_scaling_fig(group: ChartGroup) -> go.Figure:
     legend_rows = (n_legend + 3) // 4
 
     fig.update_layout(
-        **{**LAYOUT_DEFAULTS, "margin": dict(t=80 + legend_rows * 22, b=60, l=70, r=30)},
-        title=dict(text=group.title, x=0.5, font=dict(size=18, color="#222")),
+        **{**LAYOUT_DEFAULTS, "margin": {"t": 80 + legend_rows * 22, "b": 60, "l": 70, "r": 30}},
+        title={"text": group.title, "x": 0.5, "font": {"size": 18, "color": "#222"}},
         height=max(450, 420 * rows) + legend_rows * 22,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.0, xanchor="center", x=0.5,
-            font=dict(size=12),
-        ),
+        legend={
+            "orientation": "h", "yanchor": "bottom", "y": 1.0, "xanchor": "center", "x": 0.5,
+            "font": {"size": 12},
+        },
     )
     return fig
 
@@ -302,15 +300,15 @@ def build_bar_fig(group: ChartGroup) -> go.Figure:
 
     fig.update_layout(
         **LAYOUT_DEFAULTS,
-        title=dict(text=group.title, x=0.5, font=dict(size=18, color="#222")),
+        title={"text": group.title, "x": 0.5, "font": {"size": 18, "color": "#222"}},
         barmode="group", bargap=0.20, bargroupgap=0.06,
-        yaxis=dict(type="log", title="time (s)", exponentformat="SI", gridcolor="#e8e8e8"),
-        xaxis=dict(tickfont=dict(size=13)),
+        yaxis={"type": "log", "title": "time (s)", "exponentformat": "SI", "gridcolor": "#e8e8e8"},
+        xaxis={"tickfont": {"size": 13}},
         height=480,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
-            font=dict(size=13),
-        ),
+        legend={
+            "orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
+            "font": {"size": 13},
+        },
     )
     return fig
 
@@ -341,21 +339,21 @@ def build_delta_fig(baseline: AggregateFile, candidate: AggregateFile) -> go.Fig
         hovertext=hovers, hoverinfo="text",
     ))
     fig.update_layout(
-        **{**LAYOUT_DEFAULTS, "margin": dict(l=340, t=80, b=50, r=30)},
-        title=dict(text="Performance Delta", x=0.5, font=dict(size=18, color="#222")),
-        xaxis=dict(
-            title="change %", zeroline=True, zerolinecolor="#333", zerolinewidth=2,
-            gridcolor="#e8e8e8",
-        ),
+        **{**LAYOUT_DEFAULTS, "margin": {"l": 340, "t": 80, "b": 50, "r": 30}},
+        title={"text": "Performance Delta", "x": 0.5, "font": {"size": 18, "color": "#222"}},
+        xaxis={
+            "title": "change %", "zeroline": True, "zerolinecolor": "#333", "zerolinewidth": 2,
+            "gridcolor": "#e8e8e8",
+        },
         height=max(400, 24 * len(deltas) + 120),
-        yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+        yaxis={"autorange": "reversed", "tickfont": {"size": 11}},
     )
     return fig
 
 
 def build_comparison_scaling_fig(base_group: ChartGroup, cand_group: ChartGroup) -> go.Figure:
-    b_series, b_sizes, b_data = decompose_scaling(base_group)
-    c_series, c_sizes, c_data = decompose_scaling(cand_group)
+    b_series, _b_sizes, b_data = decompose_scaling(base_group)
+    c_series, _c_sizes, c_data = decompose_scaling(cand_group)
     all_series = list(dict.fromkeys(b_series + c_series))
 
     def _short(name: str) -> str:
@@ -371,14 +369,14 @@ def build_comparison_scaling_fig(base_group: ChartGroup, cand_group: ChartGroup)
             fig.add_trace(go.Scatter(
                 x=[p.size for p in pts], y=[p.value_s for p in pts],
                 mode="lines", name=f"{short} base", legendgroup=series,
-                line=dict(color=color, width=1.5, dash="dash"), opacity=0.45,
+                line={"color": color, "width": 1.5, "dash": "dash"}, opacity=0.45,
             ))
         if series in c_data:
             pts = c_data[series]
             fig.add_trace(go.Scatter(
                 x=[p.size for p in pts], y=[p.value_s for p in pts],
                 mode="lines+markers", name=f"{short} cand", legendgroup=series,
-                line=dict(color=color, width=2.5), marker=dict(size=6),
+                line={"color": color, "width": 2.5}, marker={"size": 6},
             ))
 
     n_legend_items = sum((s in b_data) + (s in c_data) for s in all_series)
@@ -387,13 +385,13 @@ def build_comparison_scaling_fig(base_group: ChartGroup, cand_group: ChartGroup)
     fig.update_xaxes(type="log", dtick=1, gridcolor="#e8e8e8", title_standoff=10)
     fig.update_yaxes(type="log", exponentformat="SI", gridcolor="#e8e8e8", title_standoff=10)
     fig.update_layout(
-        **{**LAYOUT_DEFAULTS, "margin": dict(t=80 + legend_rows * 24, b=60, l=70, r=30)},
-        title=dict(text=f"{base_group.title} — Comparison", x=0.5, font=dict(size=18, color="#222")),
+        **{**LAYOUT_DEFAULTS, "margin": {"t": 80 + legend_rows * 24, "b": 60, "l": 70, "r": 30}},
+        title={"text": f"{base_group.title} — Comparison", "x": 0.5, "font": {"size": 18, "color": "#222"}},
         height=500 + legend_rows * 24,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.0, xanchor="center", x=0.5,
-            font=dict(size=12), tracegroupgap=4,
-        ),
+        legend={
+            "orientation": "h", "yanchor": "bottom", "y": 1.0, "xanchor": "center", "x": 0.5,
+            "font": {"size": 12}, "tracegroupgap": 4,
+        },
     )
     return fig
 

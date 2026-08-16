@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
@@ -223,7 +222,7 @@ def iter_scalar_chars() -> list[str]:
     ]
 
 
-def format_numeric_value(value: int | float) -> str:
+def format_numeric_value(value: float) -> str:
     if not math.isfinite(value):
         raise ValueError(f"unsupported numeric value: {value!r}")
     if isinstance(value, int) or value.is_integer():

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
 # ///
@@ -224,7 +223,7 @@ def prebuild(command_sets: OrderedDict[str, list[str]], profile: str = "bench") 
 
 
 def timestamp_slug() -> str:
-    return dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def bench_header(metadata: dict[str, str]) -> str:
@@ -263,7 +262,7 @@ def main() -> int:
 
     metadata = OrderedDict(
         [
-            ("Date", dt.datetime.now().isoformat(timespec="seconds")),
+            ("Date", dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")),
             ("Preset", args.preset),
             ("Repeat Count", str(args.repeats)),
             ("Metric", args.metric),

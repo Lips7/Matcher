@@ -1,13 +1,11 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import dataclasses
 import json
 import pathlib
 import re
+from collections.abc import Iterable
 from statistics import median
-from typing import Iterable
 
 METRIC_CHOICES = ["median", "mean", "fastest", "slowest"]
 

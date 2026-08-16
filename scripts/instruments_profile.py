@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
 # ///
@@ -106,9 +105,7 @@ def record_profile(
 ) -> Path:
     binary_name = f"profile_{target}"
     binary = find_profiling_binary(binary_name)
-    if build:
-        binary = build_profiling_binary(binary_name, boundaries=boundaries)
-    elif not binary.exists():
+    if build or not binary.exists():
         binary = build_profiling_binary(binary_name, boundaries=boundaries)
 
     binary_args: list[str] = []
@@ -139,7 +136,9 @@ def record_profile(
     else:
         if output is None:
             PROFILE_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
-            output = PROFILE_RECORDS_DIR / f"prof_{mode}_{shape}_{dict_lang}_{rules}.trace"
+            output = (
+                PROFILE_RECORDS_DIR / f"prof_{mode}_{shape}_{dict_lang}_{rules}.trace"
+            )
         binary_args += [
             "--dict",
             dict_lang,
@@ -189,7 +188,7 @@ def record_profile(
 
     print(f"Output: {output}")
 
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         sys.exit(f"xctrace record failed (exit {result.returncode})")
 
@@ -218,6 +217,7 @@ def batch_demangle(mangled: set[str]) -> dict[str, str]:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         demangled = proc.stdout.strip().split("\n")
         if len(demangled) == len(names):
@@ -264,7 +264,9 @@ def resolve_addresses_atos(
 
     try:
         cmd = ["atos", "-i", "-o", binary_path, "-l", load_addr] + unique_addrs
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, check=False
+        )
         raw_output = proc.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return {}
@@ -280,6 +282,7 @@ def resolve_addresses_atos(
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         demangled_output = proc2.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -716,6 +719,7 @@ def analyze_trace(trace_path: Path) -> dict:
         ["xctrace", "export", "--input", str(trace_path), "--toc"],
         capture_output=True,
         text=True,
+        check=False,
     )
     if toc_result.returncode != 0:
         sys.exit(f"xctrace export --toc failed: {toc_result.stderr}")
@@ -726,6 +730,7 @@ def analyze_trace(trace_path: Path) -> dict:
         ["xctrace", "export", "--input", str(trace_path), "--xpath", xpath],
         capture_output=True,
         text=True,
+        check=False,
     )
     if export_result.returncode != 0:
         sys.exit(f"xctrace export failed: {export_result.stderr}")
@@ -899,7 +904,7 @@ def analyze_trace(trace_path: Path) -> dict:
 
 
 class CallTreeNode:
-    __slots__ = ("name", "total_ns", "self_ns", "children")
+    __slots__ = ("children", "name", "self_ns", "total_ns")
 
     def __init__(self, name: str):
         self.name = name
@@ -1359,7 +1364,7 @@ def main():
             result = analyze_trace(trace)
             print_report(result, trace)
         if args.open:
-            subprocess.run(["open", str(trace)])
+            subprocess.run(["open", str(trace)], check=False)
         if not args.analyze and not args.open:
             print(f"Open in Instruments:  open {trace}")
 
@@ -1371,12 +1376,12 @@ def main():
             result = analyze_trace(path)
             print_report(result, path)
             if args.open:
-                subprocess.run(["open", str(path)])
+                subprocess.run(["open", str(path)], check=False)
 
     elif args.command == "open":
         if not args.trace.exists():
             sys.exit(f"Error: {args.trace} not found")
-        subprocess.run(["open", str(args.trace)])
+        subprocess.run(["open", str(args.trace)], check=False)
 
 
 if __name__ == "__main__":

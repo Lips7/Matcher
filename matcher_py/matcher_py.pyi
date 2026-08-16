@@ -137,8 +137,6 @@ class SimpleMatcher:
     def __getnewargs__(self) -> tuple[bytes]:
         """Return constructor args for pickle support."""
 
-    def __repr__(self) -> str:
-        """Return a summary string showing rule count."""
 
     def stats(self) -> Stats:
         """
