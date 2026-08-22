@@ -20,7 +20,7 @@ build:
 
 # Upgrade all dependencies (requires cargo-upgrade).
 update:
-    cargo update --verbose --recursive --breaking -Z unstable-options
+    cargo update --verbose --recursive
     cargo upgrade --verbose --recursive
 
 # ── Check / Format ────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ lint-py:
 lint-java:
     cargo fmt --all
     cargo clippy -- -D warnings
-    mvn checkstyle:check
+    ./mvnw checkstyle:check
 
 [working-directory('matcher_c')]
 lint-c:
@@ -74,7 +74,7 @@ lint-c:
 
 [working-directory('scripts')]
 lint-scripts:
-    uv run ty check
+    uv run ty check --config-file ty.toml
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ test-java:
     cargo build --release -p matcher_java
     mkdir -p ./matcher_java/src/main/resources
     cp ./target/release/libmatcher_java.{{ ext }} ./matcher_java/src/main/resources/libmatcher_java.{{ ext }}
-    cd matcher_java && mvn test
+    cd matcher_java && ./mvnw test
 
 test-c:
     cargo build --release -p matcher_c

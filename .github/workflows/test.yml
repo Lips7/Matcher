@@ -167,5 +167,5 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
       - name: Java Test
-        run: mvn test -e
+        run: ./mvnw test -e
         working-directory: matcher_java

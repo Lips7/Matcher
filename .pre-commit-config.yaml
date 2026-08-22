@@ -42,7 +42,7 @@ repos:
 
       - id: ty-check-scripts
         name: ty check scripts
-        entry: bash -c 'cd scripts && uv run ty check'
+        entry: bash -c 'cd scripts && uv run ty check --config-file ty.toml'
         language: system
         files: ^scripts/.*\.py$
         pass_filenames: false
@@ -50,7 +50,7 @@ repos:
       # Java: checkstyle
       - id: checkstyle-matcher-java
         name: java checkstyle
-        entry: bash -c 'cd matcher_java && mvn checkstyle:check'
+        entry: bash -c 'cd matcher_java && ./mvnw checkstyle:check'
         language: system
         files: ^matcher_java/.*\.java$
         pass_filenames: false
