@@ -6,9 +6,9 @@
 Inputs can be a run directory, an aggregate.json file, or a raw benchmark .txt file.
 
 Usage:
-    uv run --project scripts python -m scripts.compare_benchmarks <baseline> <candidate>
-    uv run --project scripts python -m scripts.compare_benchmarks <baseline> <candidate> --min-change-pct 5
-    uv run --project scripts python -m scripts.compare_benchmarks <baseline> <candidate> --show-noisy --show-missing
+    uv run scripts/compare_benchmarks.py <baseline> <candidate>
+    uv run scripts/compare_benchmarks.py <baseline> <candidate> --min-change-pct 5
+    uv run scripts/compare_benchmarks.py <baseline> <candidate> --show-noisy --show-missing
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from scripts.bench_utils import (
+from bench_utils import (
     METRIC_CHOICES,
     compare_result_maps,
     load_aggregate_input,

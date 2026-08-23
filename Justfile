@@ -107,7 +107,7 @@ test-c:
     ./matcher_c/tests/test_matcher
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
-# Harness: divan. Orchestration: scripts.run_benchmarks.
+# Harness: divan. Orchestration: scripts/run_benchmarks.py.
 # Output: timestamped dirs under scripts/bench_records/.
 #
 # Bench targets (3 binaries):
@@ -122,27 +122,27 @@ test-c:
 #   --profile <name>    cargo profile (default: bench)
 
 [private]
-_bench_module := "scripts.run_benchmarks"
+_bench_script := "scripts/run_benchmarks.py"
 
 # Search preset: bench_search + bench_transform.
 bench-search *args:
-    uv run --project scripts python -m {{ _bench_module }} --preset search {{ args }}
+    uv run {{ _bench_script }} --preset search {{ args }}
 
 # Build preset: bench_build only.
 bench-build *args:
-    uv run --project scripts python -m {{ _bench_module }} --preset build {{ args }}
+    uv run {{ _bench_script }} --preset build {{ args }}
 
 # All presets: search + build.
 bench-all *args:
-    uv run --project scripts python -m {{ _bench_module }} --preset all {{ args }}
+    uv run {{ _bench_script }} --preset all {{ args }}
 
 # Compare two benchmark runs. Inputs: run dirs, aggregate.json, or raw .txt files.
 bench-compare baseline candidate *args:
-    uv run --project scripts python -m scripts.compare_benchmarks "{{ baseline }}" "{{ candidate }}" {{ args }}
+    uv run scripts/compare_benchmarks.py "{{ baseline }}" "{{ candidate }}" {{ args }}
 
 # Interactive HTML dashboard from benchmark results (single run or comparison).
 bench-viz *args:
-    uv run --project scripts python -m scripts.visualize_benchmarks {{ args }}
+    uv run scripts/visualize_benchmarks.py {{ args }}
 
 # Rebuild std with -C target-cpu=native for authoritative measurements.
 # Use before final adopt/revert bench-compare runs. Adds ~30s compile time.

@@ -8,9 +8,9 @@ Reads aggregate.json (or run directories) produced by run_benchmarks.py and
 generates an interactive HTML dashboard using Plotly.
 
 Usage:
-    uv run --project scripts python -m scripts.visualize_benchmarks <run_dir>                      # single run
-    uv run --project scripts python -m scripts.visualize_benchmarks <baseline_dir> <candidate_dir> # comparison
-    uv run --project scripts python -m scripts.visualize_benchmarks <path> --open                  # auto-open browser
+    uv run scripts/visualize_benchmarks.py <run_dir>                          # single run
+    uv run scripts/visualize_benchmarks.py <baseline_dir> <candidate_dir>     # comparison
+    uv run scripts/visualize_benchmarks.py <path> --open                      # auto-open browser
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from collections import defaultdict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from scripts.bench_utils import (
+from bench_utils import (
     METRIC_CHOICES,
     AggregateFile,
     AggregateRow,

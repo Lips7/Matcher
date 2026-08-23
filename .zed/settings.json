@@ -4,7 +4,7 @@
       "settings": {
         "configuration": {
           "environment": {
-            "extra-paths": ["."]
+            "extra-paths": ["scripts"]
           }
         }
       }
