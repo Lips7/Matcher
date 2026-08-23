@@ -4,12 +4,12 @@
 """Run matcher_rs benchmarks and aggregate results into timestamped run sets.
 
 Usage:
-    uv run scripts/run_benchmarks.py                          # search preset (default)
-    uv run scripts/run_benchmarks.py --preset build           # construction benchmarks
-    uv run scripts/run_benchmarks.py --preset all             # all presets
-    uv run scripts/run_benchmarks.py --quick                  # fast iteration (5 samples, 1 repeat)
-    uv run scripts/run_benchmarks.py --filter scaling         # narrow to a divan module
-    uv run scripts/run_benchmarks.py --filter "scaling::process_cn"
+    uv run --project scripts python -m scripts.run_benchmarks                          # search preset (default)
+    uv run --project scripts python -m scripts.run_benchmarks --preset build           # construction benchmarks
+    uv run --project scripts python -m scripts.run_benchmarks --preset all             # all presets
+    uv run --project scripts python -m scripts.run_benchmarks --quick                  # fast iteration (5 samples, 1 repeat)
+    uv run --project scripts python -m scripts.run_benchmarks --filter scaling         # narrow to a divan module
+    uv run --project scripts python -m scripts.run_benchmarks --filter "scaling::process_cn"
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import subprocess
 import sys
 from collections import OrderedDict
 
-from bench_utils import (
+from scripts.bench_utils import (
     METRIC_CHOICES,
     AggregateFile,
     aggregate_bench_files,

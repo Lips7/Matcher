@@ -1,2 +1,2 @@
 [environment]
-extra-paths = ["."]
+extra-paths = [".."]

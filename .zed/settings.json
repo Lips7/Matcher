@@ -1,4 +1,15 @@
 {
+  "lsp": {
+    "ty": {
+      "settings": {
+        "configuration": {
+          "environment": {
+            "extra-paths": ["."]
+          }
+        }
+      }
+    }
+  },
   "languages": {
     "Python": {
       "language_servers": ["ty", "ruff", "!basedpyright"]
