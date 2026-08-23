@@ -11,7 +11,6 @@ ext := if os() == "macos" { "dylib" } else if os() == "linux" { "so" } else { "d
 
 # Full workspace build + copy binding artifacts to language-specific dirs.
 build:
-    cargo update
     cargo build --release -p matcher_c -p matcher_java -p matcher_py
     cp ./target/release/libmatcher_c.{{ ext }} ./matcher_c/libmatcher_c.{{ ext }}
     mkdir -p ./matcher_java/src/main/resources
@@ -45,31 +44,28 @@ lint: lint-rs lint-py lint-java lint-c lint-scripts
     cargo doc --workspace --all-features --no-deps
 
 # Check-only lint (no auto-fix) — used in CI and pre-commit.
-lint-check:
-    cargo fmt --all --check
-    cargo all-features clippy --workspace --all-targets -- -D warnings
-    cargo doc --workspace --all-features --no-deps
+lint-check: lint
 
 [working-directory('matcher_rs')]
 lint-rs:
-    cargo fmt --all
+    cargo fmt --all --check
     cargo all-features clippy -- -- -D warnings
 
 [working-directory('matcher_py')]
 lint-py:
-    cargo fmt --all
+    cargo fmt --all --check
     cargo clippy -- -D warnings
-    uv run ruff check --fix && uv run ty check
+    uv run ruff check && uv run ty check
 
 [working-directory('matcher_java')]
 lint-java:
-    cargo fmt --all
+    cargo fmt --all --check
     cargo clippy -- -D warnings
     ./mvnw checkstyle:check
 
 [working-directory('matcher_c')]
 lint-c:
-    cargo fmt --all
+    cargo fmt --all --check
     cargo clippy -- -D warnings
 
 [working-directory('scripts')]
@@ -197,7 +193,13 @@ fuzz-list:
 # Intended for post-merge CI; use `just fuzz <target>` for an unbounded local session.
 [working-directory('matcher_rs')]
 fuzz-smoke:
-    cargo fuzz run fuzz_matcher_new -- -runs=100
+    temp_dir=$(mktemp -d); \
+    cleanup() { rm -rf fuzz/corpus; mv "$temp_dir/original" fuzz/corpus; rm -rf "$temp_dir"; }; \
+    trap cleanup EXIT; \
+    mv fuzz/corpus "$temp_dir/original"; \
+    cp -R "$temp_dir/original" "$temp_dir/corpus"; \
+    ln -s "$temp_dir/corpus" fuzz/corpus; \
+    cargo fuzz run fuzz_matcher_new -- -runs=100; \
     cargo fuzz run fuzz_text_process -- -runs=100
 
 # ── Coverage ──────────────────────────────────────────────────────────────────

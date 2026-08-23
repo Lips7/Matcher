@@ -29,12 +29,6 @@ __pycache__/
 .idea/
 .metals/
 
-# Rust-specific
-Cargo.lock
-
-# Python-specific
-uv.lock
-
 # C-specific
 matcher_c/tests/test_matcher
 

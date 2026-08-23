@@ -4,4 +4,4 @@ version = "0.0.0"
 requires-python = ">=3.10"
 
 [dependency-groups]
-dev = ["plotly", "opencc", "pypinyin", "requests"]
+dev = ["opencc", "plotly", "pypinyin", "requests", "ruff", "ty"]

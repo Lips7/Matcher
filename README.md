@@ -8,6 +8,14 @@
 
 ![PyPI - Version](https://img.shields.io/pypi/v/matcher_py)![PyPI - Python Version](https://img.shields.io/pypi/pyversions/matcher_py)![PyPI - Downloads](https://img.shields.io/pypi/dm/matcher_py)
 
+## Development environments
+
+`matcher_py/` and `scripts/` are separate Python projects, each with its own
+`pyproject.toml`, `uv.lock`, `.venv`, and ty configuration. Run `uv sync` in
+the directory you are working in. In Zed, open this repository once and use
+the toolchain selector to choose that subproject's `.venv`; do not select a
+single Python environment for the repository root.
+
 A high-performance matcher designed to solve **LOGICAL** and **TEXT VARIATIONS** problems in word matching, implemented in Rust.
 
 It's helpful for
