@@ -18,40 +18,40 @@ final class MatcherJava {
   public static native String textProcess(int processType, byte[] textBytes);
 
   public static native String[] reduceTextProcess(
-    int processType,
-    byte[] textBytes
+      int processType,
+      byte[] textBytes
   );
 
   public static native long initSimpleMatcher(byte[] simpleTableBytes);
 
   public static native boolean simpleMatcherIsMatch(
-    long matcherPtr,
-    byte[] textBytes
+      long matcherPtr,
+      byte[] textBytes
   );
 
   public static native SimpleResult[] simpleMatcherProcess(
-    long matcherPtr,
-    byte[] textBytes
+      long matcherPtr,
+      byte[] textBytes
   );
 
   public static native SimpleResult simpleMatcherFindMatch(
-    long matcherPtr,
-    byte[] textBytes
+      long matcherPtr,
+      byte[] textBytes
   );
 
   public static native boolean[] simpleMatcherBatchIsMatch(
-    long matcherPtr,
-    byte[][] textsBytes
+      long matcherPtr,
+      byte[][] textsBytes
   );
 
   public static native SimpleResult[][] simpleMatcherBatchProcess(
-    long matcherPtr,
-    byte[][] textsBytes
+      long matcherPtr,
+      byte[][] textsBytes
   );
 
   public static native SimpleResult[] simpleMatcherBatchFindMatch(
-    long matcherPtr,
-    byte[][] textsBytes
+      long matcherPtr,
+      byte[][] textsBytes
   );
 
   public static native void dropSimpleMatcher(long matcherPtr);

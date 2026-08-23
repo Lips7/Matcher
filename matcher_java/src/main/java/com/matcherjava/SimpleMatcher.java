@@ -149,7 +149,7 @@ public final class SimpleMatcher implements AutoCloseable, Serializable {
 
   @java.io.Serial
   private void readObject(java.io.ObjectInputStream in)
-    throws IOException, ClassNotFoundException {
+      throws IOException, ClassNotFoundException {
     in.defaultReadObject();
     initNative();
   }

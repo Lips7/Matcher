@@ -62,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also print benchmarks that exist in only one input.",
     )
+    parser.add_argument(
+        "--allow-empty-overlap",
+        action="store_true",
+        help="Return success when inputs have no comparable benchmark rows.",
+    )
     return parser
 
 
@@ -106,6 +111,8 @@ def main() -> int:
         if args.show_noisy or path not in noisy_rows
     }
 
+    comparable_paths = sorted(set(baseline_values) & set(candidate_values))
+
     regressions, improvements, baseline_only, candidate_only = compare_result_maps(
         baseline_values,
         candidate_values,
@@ -118,6 +125,17 @@ def main() -> int:
     print(format_metadata("Baseline", baseline.metadata))
     print(format_metadata("Candidate", candidate.metadata))
     print()
+
+    if not shared_paths:
+        print("Error: inputs have no shared benchmark rows; they are not comparable.")
+        print_path_section("Only in baseline", set(baseline.rows) - set(candidate.rows))
+        print_path_section("Only in candidate", set(candidate.rows) - set(baseline.rows))
+        return 0 if args.allow_empty_overlap else 2
+
+    if not comparable_paths:
+        print("Error: all shared benchmark rows were suppressed as noisy.")
+        print("Re-run with --show-noisy to compare them explicitly.")
+        return 0 if args.allow_empty_overlap else 2
 
     print_change_section("Regression", regressions)
     print()

@@ -180,6 +180,14 @@ proptest! {
         );
     }
 
+}
+
+proptest! {
+    // This property exercises all 63 non-empty process-type combinations for
+    // every generated input. A smaller case count preserves broad coverage
+    // while keeping the full nextest suite within its timeout on LLVM.
+    #![proptest_config(ProptestConfig::with_cases(25))]
+
     #[test]
     fn prop_transform_round_trip(
         input in prop::collection::vec(

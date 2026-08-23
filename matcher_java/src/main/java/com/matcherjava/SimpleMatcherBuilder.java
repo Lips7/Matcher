@@ -19,13 +19,13 @@ import java.util.Objects;
 public final class SimpleMatcherBuilder {
 
   private final Map<Integer, Map<Integer, String>> table =
-    new LinkedHashMap<>();
+      new LinkedHashMap<>();
 
   /** Register a pattern under the given process type and word ID. */
   public SimpleMatcherBuilder add(
-    ProcessType processType,
-    int wordId,
-    String word
+      ProcessType processType,
+      int wordId,
+      String word
   ) {
     return add(processType.getValue(), wordId, word);
   }
@@ -34,8 +34,8 @@ public final class SimpleMatcherBuilder {
   public SimpleMatcherBuilder add(int processType, int wordId, String word) {
     Objects.requireNonNull(word, "word");
     table
-      .computeIfAbsent(processType, k -> new LinkedHashMap<>())
-      .put(wordId, word);
+        .computeIfAbsent(processType, k -> new LinkedHashMap<>())
+        .put(wordId, word);
     return this;
   }
 

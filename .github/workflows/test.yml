@@ -14,6 +14,7 @@ on:
       - 'matcher_rs/process_map/**'
       - 'matcher_rs/build.rs'
       - 'matcher_rs/Cargo.toml'
+      - 'matcher_rs/fuzz/**'
       - 'matcher_c/src/**'
       - 'matcher_c/Cargo.toml'
       - 'matcher_java/rust_src/**'
@@ -22,6 +23,7 @@ on:
       - 'matcher_java/pom.xml'
       - '.github/workflows/test.yml'
       - '.cargo/config.toml'
+      - 'Justfile'
   pull_request:
     paths:
       - 'matcher_py/src/**'
@@ -35,6 +37,7 @@ on:
       - 'matcher_rs/process_map/**'
       - 'matcher_rs/build.rs'
       - 'matcher_rs/Cargo.toml'
+      - 'matcher_rs/fuzz/**'
       - 'matcher_c/src/**'
       - 'matcher_c/Cargo.toml'
       - 'matcher_java/rust_src/**'
@@ -43,6 +46,7 @@ on:
       - 'matcher_java/pom.xml'
       - '.github/workflows/test.yml'
       - '.cargo/config.toml'
+      - 'Justfile'
 
 permissions:
   contents: read
@@ -169,3 +173,18 @@ jobs:
       - name: Java Test
         run: ./mvnw test -e
         working-directory: matcher_java
+
+  fuzz-smoke:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Run committed fuzz seeds
+        run: just fuzz-smoke

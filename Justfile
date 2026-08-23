@@ -169,6 +169,7 @@ characterize-engines-quick:
 
 # Visualize dispatch CSV as interactive Plotly heatmaps.
 characterize-viz *args:
+    @test -n "{{ args }}" || (echo "Usage: just characterize-viz <dispatch.csv> [--open]"; exit 2)
     uv run scripts/visualize_dispatch.py {{ args }}
 
 # ── Profiling ─────────────────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ characterize-viz *args:
 #   just profile analyze scripts/profile_records/prof_*.trace
 
 profile *args:
+    @test -n "{{ args }}" || (echo "Usage: just profile record [options] | analyze <trace> | open <trace>"; exit 2)
     uv run scripts/instruments_profile.py {{ args }}
 
 # ── Fuzz ──────────────────────────────────────────────────────────────────────
@@ -190,6 +192,13 @@ fuzz target="fuzz_matcher_new" *args="":
 [working-directory('matcher_rs')]
 fuzz-list:
     cargo fuzz list
+
+# Run each fuzz target against the committed seed corpus for a bounded number of inputs.
+# Intended for post-merge CI; use `just fuzz <target>` for an unbounded local session.
+[working-directory('matcher_rs')]
+fuzz-smoke:
+    cargo fuzz run fuzz_matcher_new -- -runs=100
+    cargo fuzz run fuzz_text_process -- -runs=100
 
 # ── Coverage ──────────────────────────────────────────────────────────────────
 
